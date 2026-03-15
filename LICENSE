@@ -1,0 +1,50 @@
+FWEledit License
+================
+
+Copyright (c) 2024 FWEledit Contributors
+Based on sELedit++ by Wrechid (https://github.com/Wrechid/sELedit-)
+Based on sELedit by PW-Tools
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to use,
+copy, modify, merge, publish, and distribute the Software, subject to the
+following conditions:
+
+
+1. Attribution
+--------------
+All copies or substantial portions of the Software, whether modified or
+unmodified, must retain this license text, the above copyright notice, and
+a visible credit to the original projects (FWEledit, sELedit++ by Wrechid,
+and sELedit by PW-Tools) in any documentation, about screen, or other
+materials accompanying the distribution.
+
+
+2. Commercial Use — Free Tier Requirement
+------------------------------------------
+If the Software, or any product derived from it, is used for commercial
+purposes — including but not limited to paid software, paid services,
+subscription-based tools, or products bundled with paid game server packages
+— the following condition applies:
+
+    A fully functional free tier of the product must be made publicly
+    available at no cost. The free tier may have a reduced feature set
+    compared to any paid offering, but it must allow users to perform the
+    core function of reading and editing elements.data files without
+    payment.
+
+"Commercial purposes" means any use primarily intended for or directed
+toward commercial advantage or monetary compensation. Internal use within
+an organization, without distribution or sale to third parties, is not
+considered commercial use under this license.
+
+
+3. No Warranty
+--------------
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+IN THE SOFTWARE.

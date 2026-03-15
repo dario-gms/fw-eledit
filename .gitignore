@@ -1,0 +1,24 @@
+# Build artifacts
+bin/
+obj/
+*.exe
+*.pdb
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Backup and temp files
+*.bak
+*.tmp_fweledit
+0000.ico.bak
+
+# Logs
+logs/
+
+# Exceptions - keep these compiled dependencies
+!FWEledit/lib/Ionic.Zlib.dll
+!FWEledit/colorprogressbar.dll
