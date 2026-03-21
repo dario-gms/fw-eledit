@@ -26,6 +26,8 @@ _dist/
 _tmp_*
 sELedit.zip
 list0_fw_dump_*.csv
+FWEledit_CHANGELOG.md
+FWEledit_MODEL_CHOOSER_ROADMAP.md
 
 # Exceptions - keep these compiled dependencies
 !FWEledit/lib/Ionic.Zlib.dll
