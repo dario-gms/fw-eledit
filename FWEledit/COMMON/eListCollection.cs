@@ -588,7 +588,9 @@ namespace sELedit
             string[] searchDirectories = GetConfigSearchDirectories(elFile);
             string[] patterns = new string[]
             {
-                "FW_*_v" + version + ".cfg"
+                "FW_*_v" + version + ".cfg",
+                "PW_*_v" + version + ".cfg",
+                "*_v" + version + ".cfg"
             };
 
             foreach (string pattern in patterns)
@@ -843,7 +845,7 @@ namespace sELedit
                 string[] searchDirectories = GetConfigSearchDirectories(elFile);
 				MessageBox.Show(
                     "No corressponding configuration file found!\nVersion: " + Version +
-                    "\nPattern: FW_*_v" + Version + ".cfg" +
+                    "\nPatterns: FW_*_v" + Version + ".cfg, PW_*_v" + Version + ".cfg, *_v" + Version + ".cfg" +
                     "\nSearched in:\n" + string.Join("\n", searchDirectories)
                 );
 			}

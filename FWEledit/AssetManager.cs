@@ -145,6 +145,7 @@ namespace sELedit
                 }
 
                 string gamePck = Path.Combine(GameRootPath, "resources", packageName + ".pck");
+                string gamePkx = Path.Combine(GameRootPath, "resources", packageName + ".pkx");
                 if (!File.Exists(gamePck))
                 {
                     return false;
@@ -158,6 +159,7 @@ namespace sELedit
                 Directory.CreateDirectory(workspaceResources);
 
                 string workspacePck = Path.Combine(workspaceResources, packageName + ".pck");
+                string workspacePkx = Path.Combine(workspaceResources, packageName + ".pkx");
                 bool copyNeeded = !File.Exists(workspacePck);
                 if (!copyNeeded)
                 {
@@ -168,6 +170,20 @@ namespace sELedit
                 if (copyNeeded)
                 {
                     File.Copy(gamePck, workspacePck, true);
+                }
+                if (File.Exists(gamePkx))
+                {
+                    bool pkxCopyNeeded = !File.Exists(workspacePkx);
+                    if (!pkxCopyNeeded)
+                    {
+                        DateTime gamePkxTime = File.GetLastWriteTimeUtc(gamePkx);
+                        DateTime wsPkxTime = File.GetLastWriteTimeUtc(workspacePkx);
+                        pkxCopyNeeded = gamePkxTime > wsPkxTime;
+                    }
+                    if (pkxCopyNeeded)
+                    {
+                        File.Copy(gamePkx, workspacePkx, true);
+                    }
                 }
 
                 if (!ensureExtracted)
@@ -198,6 +214,59 @@ namespace sELedit
                     if (!RunPckExtraction(workspacePck))
                     {
                         return false;
+                    }
+                    if (!Directory.Exists(extractedDir))
+                    {
+                        return false;
+                    }
+                    if (!Directory.Exists(extractedDir))
+                    {
+                        // Some spck builds extract next to the game pck path or spck working directory.
+                        string altGame = Path.Combine(Path.GetDirectoryName(gamePck), Path.GetFileName(workspacePck) + ".files");
+                        if (Directory.Exists(altGame))
+                        {
+                            try
+                            {
+                                if (Directory.Exists(extractedDir))
+                                {
+                                    Directory.Delete(extractedDir, true);
+                                }
+                            }
+                            catch
+                            { }
+                            try
+                            {
+                                Directory.Move(altGame, extractedDir);
+                            }
+                            catch
+                            { }
+                        }
+                        else
+                        {
+                            string spckExe = FindSpckExecutable();
+                            if (!string.IsNullOrWhiteSpace(spckExe))
+                            {
+                                string altSpck = Path.Combine(Path.GetDirectoryName(spckExe), Path.GetFileName(workspacePck) + ".files");
+                                if (Directory.Exists(altSpck))
+                                {
+                                    try
+                                    {
+                                        if (Directory.Exists(extractedDir))
+                                        {
+                                            Directory.Delete(extractedDir, true);
+                                        }
+                                    }
+                                    catch
+                                    { }
+                                    try
+                                    {
+                                        Directory.Move(altSpck, extractedDir);
+                                    }
+                                    catch
+                                    { }
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -642,7 +711,8 @@ namespace sELedit
 
             if (sourceBitmap == null)
             {
-
+                // Ensure surfaces are extracted so iconset files are available on first load.
+                EnsureWorkspacePckPrepared("surfaces", true);
                 imageposition = loadSurfaces();
                 loadItem_color();
                 firstLoad = true;
@@ -1096,6 +1166,8 @@ namespace sELedit
                 psi.Arguments = "-fw -x \"" + pckFilePath + "\"";
                 psi.WorkingDirectory = Path.GetDirectoryName(spck);
                 psi.UseShellExecute = false;
+                psi.RedirectStandardOutput = true;
+                psi.RedirectStandardError = true;
                 psi.CreateNoWindow = true;
                 psi.WindowStyle = ProcessWindowStyle.Hidden;
 
@@ -1108,6 +1180,7 @@ namespace sELedit
                     int timeoutMs = 120000;
                     string fileName = Path.GetFileName(pckFilePath) ?? string.Empty;
                     if (string.Equals(fileName, "models.pck", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(fileName, "surfaces.pck", StringComparison.OrdinalIgnoreCase)
                         || string.Equals(fileName, "gfx.pck", StringComparison.OrdinalIgnoreCase)
                         || string.Equals(fileName, "grasses.pck", StringComparison.OrdinalIgnoreCase))
                     {
@@ -1116,14 +1189,66 @@ namespace sELedit
                     bool exited = p.WaitForExit(timeoutMs);
                     if (!exited)
                     {
+                        TryWriteSpckLog(pckFilePath, spck, -1, string.Empty, "Timed out.");
                         return false;
                     }
-                    return p.ExitCode == 0;
+                    string stdout = string.Empty;
+                    string stderr = string.Empty;
+                    try { stdout = p.StandardOutput.ReadToEnd(); } catch { }
+                    try { stderr = p.StandardError.ReadToEnd(); } catch { }
+                    if (p.ExitCode != 0)
+                    {
+                        TryWriteSpckLog(pckFilePath, spck, p.ExitCode, stdout, stderr);
+                        return false;
+                    }
+                    if (!string.IsNullOrWhiteSpace(stderr))
+                    {
+                        TryWriteSpckLog(pckFilePath, spck, p.ExitCode, stdout, stderr);
+                    }
+                    return true;
                 }
             }
             catch
             {
                 return false;
+            }
+        }
+
+        private void TryWriteSpckLog(string pckFilePath, string spckPath, int exitCode, string stdout, string stderr)
+        {
+            try
+            {
+                string root = !string.IsNullOrWhiteSpace(WorkspaceRootPath)
+                    ? WorkspaceRootPath
+                    : Path.GetTempPath();
+                string logDir = Path.Combine(root, "spck_logs");
+                Directory.CreateDirectory(logDir);
+                string name = Path.GetFileName(pckFilePath) ?? "pck";
+                string logPath = Path.Combine(logDir, name + "_extract.log");
+                using (StreamWriter sw = new StreamWriter(logPath, false))
+                {
+                    sw.WriteLine("pck: " + pckFilePath);
+                    sw.WriteLine("spck: " + spckPath);
+                    sw.WriteLine("exit: " + exitCode);
+                    sw.WriteLine("---- stdout ----");
+                    sw.WriteLine(stdout ?? string.Empty);
+                    sw.WriteLine("---- stderr ----");
+                    sw.WriteLine(stderr ?? string.Empty);
+                }
+            }
+            catch
+            { }
+        }
+
+        public string GetSpckExecutablePath()
+        {
+            try
+            {
+                return FindSpckExecutable();
+            }
+            catch
+            {
+                return string.Empty;
             }
         }
 
@@ -1827,6 +1952,20 @@ namespace sELedit
             sourceFilename = ResolveResourceFile(Path.Combine("surfaces", "iconset", "iconlist_ivtr0.dds"));
             iconListFilename = ResolveResourceFile(Path.Combine("surfaces", "iconset", "iconlist_ivtr0.txt"));
             return File.Exists(sourceFilename) && File.Exists(iconListFilename);
+        }
+
+        public bool TryGetIconsetPair(out string sourceFilename, out string iconListFilename)
+        {
+            sourceFilename = string.Empty;
+            iconListFilename = string.Empty;
+            try
+            {
+                return TryResolveIconsetFiles(out sourceFilename, out iconListFilename);
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private Bitmap TryLoadDdsWithPfim(string ddsPath)
