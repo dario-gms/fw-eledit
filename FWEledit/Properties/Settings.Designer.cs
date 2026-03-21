@@ -71,5 +71,20 @@ namespace sELedit.Properties
 				this["LastItemId"] = value;
 			}
 		}
+
+		[global::System.Configuration.UserScopedSettingAttribute()]
+		[global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+		[global::System.Configuration.DefaultSettingValueAttribute("")]
+		public string LastRunVersion
+		{
+			get
+			{
+				return ((string)(this["LastRunVersion"]));
+			}
+			set
+			{
+				this["LastRunVersion"] = value;
+			}
+		}
 	}
 }

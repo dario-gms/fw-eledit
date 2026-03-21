@@ -19,6 +19,19 @@ obj/
 # Logs
 logs/
 
+# Repo-only build/test output
+_build_test/
+_dist/
+.dotnet/
+_tmp_*
+sELedit.zip
+list0_fw_dump_*.csv
+
 # Exceptions - keep these compiled dependencies
 !FWEledit/lib/Ionic.Zlib.dll
 !FWEledit/colorprogressbar.dll
+!tools/7za.exe
+!tools/Pfim.dll
+!tools/spck/spck/bin/spck.exe
+!tools/spck/spck/bin/packdll.dll
+!tools/spck/spck/bin/p2sp_4th_lib.dll

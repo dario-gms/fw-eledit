@@ -3913,8 +3913,8 @@ namespace sELedit
             }
         }
 
-		public MainWindow()
-		{
+        public MainWindow()
+        {
             InitializeComponent();
             foreach (DataGridViewColumn col in dataGridView_elems.Columns)
             {
@@ -3954,6 +3954,20 @@ namespace sELedit
             catch
             { }
             label_Version.Text = "FWEledit v" + displayVersion;
+            try
+            {
+                string lastRun = Properties.Settings.Default.LastRunVersion ?? string.Empty;
+                if (!string.Equals(lastRun, displayVersion, StringComparison.OrdinalIgnoreCase))
+                {
+                    Properties.Settings.Default.LastGameFolder = string.Empty;
+                    Properties.Settings.Default.LastListIndex = 0;
+                    Properties.Settings.Default.LastItemId = -1;
+                    Properties.Settings.Default.LastRunVersion = displayVersion;
+                    Properties.Settings.Default.Save();
+                }
+            }
+            catch
+            { }
 
             asm = new AssetManager();
             asm.load();
@@ -4686,6 +4700,24 @@ namespace sELedit
                 this.Text = "FWEledit (" + elementsFile + " [Version: " + eLC.Version.ToString() + timestamp + "])";
                 ElementsPath = elementsFile;
                 LoadItemDescriptionsFromConfigs();
+                try
+                {
+                    asm.EnsurePackageExtracted("surfaces");
+                    string iconImg;
+                    string iconTxt;
+                    if (!asm.TryGetIconsetPair(out iconImg, out iconTxt))
+                    {
+                        MessageBox.Show(
+                            "Icon list not found. Ensure surfaces.pck is present and extracted.\n" +
+                            "Expected in workspace or game resources:\n" +
+                            "surfaces.pck.files\\iconset\\iconlist_*.{dds,png}",
+                            "Icons",
+                            MessageBoxButtons.OK,
+                            MessageBoxIcon.Warning);
+                    }
+                }
+                catch
+                { }
 
 					cpb2.Value = 0;
 					//progressBar_progress.Style = ProgressBarStyle.Continuous;
