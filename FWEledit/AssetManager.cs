@@ -1,5 +1,5 @@
-﻿using sELedit.DDSReader;
-using sELedit.Properties;
+using FWEledit.DDSReader;
+using FWEledit.Properties;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -14,10 +14,11 @@ using System.Runtime.InteropServices;
 using System.Reflection;
 using System.Security.Cryptography;
 
-namespace sELedit
+namespace FWEledit
 {
     public class AssetManager
     {
+        private readonly ISessionService sessionService;
         public static string GameRootPath = string.Empty;
         public static string WorkspaceRootPath = string.Empty;
         // Keep UNKNOWN by default so DDSReader auto-detects compression from file header (DXT1/3/5...).
@@ -32,7 +33,6 @@ namespace sELedit
         private SortedList<int, string> imagesx;
         private SortedList<int, string> imagesById;
         private SortedList<string, Point> imageposition;
-        private SortedList<int, string> item_desc;
         private List<string> arrTheme;
         private Dictionary<string, List<string>> resourceFileIndex = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
         private string indexedGameRoot = string.Empty;
@@ -45,6 +45,16 @@ namespace sELedit
         private bool pathDataDirty = false;
 
         public static object anydata;
+
+        public AssetManager()
+            : this(new SessionService())
+        {
+        }
+
+        public AssetManager(ISessionService sessionService)
+        {
+            this.sessionService = sessionService ?? new SessionService();
+        }
 
         public void SetGameRootFromElements(string elementsFilePath)
         {
@@ -704,7 +714,7 @@ namespace sELedit
         {
             if (string.IsNullOrWhiteSpace(GameRootPath) || !Directory.Exists(GameRootPath))
             {
-                MainWindow.database = database;
+                sessionService.Database = database;
                 return false;
             }
             EnsureWorkspaceReady();
@@ -741,7 +751,7 @@ namespace sELedit
                 Application.DoEvents();
                 firstLoad = false;
             }
-            MainWindow.database = database;
+            sessionService.Database = database;
 
             return true;
         }
@@ -2190,7 +2200,7 @@ namespace sELedit
         {
             if (database.item_ext_desc != null)
             {
-                MainWindow.item_ext_desc = database.item_ext_desc;
+                sessionService.ItemExtDesc = database.item_ext_desc;
                 return;
             }
             try
@@ -2205,9 +2215,9 @@ namespace sELedit
                     try
                     {
                         StreamReader sr = new StreamReader(path, Encoding.Unicode);
-                        MainWindow.item_ext_desc = sr.ReadToEnd().Split(new char[] { '\"' });
-                        string[] temp = MainWindow.item_ext_desc[0].Split(new char[] { '\n' });
-                        MainWindow.item_ext_desc[0] = temp[temp.Length - 1];
+                        sessionService.ItemExtDesc = sr.ReadToEnd().Split(new char[] { '\"' });
+                        string[] temp = sessionService.ItemExtDesc[0].Split(new char[] { '\n' });
+                        sessionService.ItemExtDesc[0] = temp[temp.Length - 1];
                         sr.Dispose();
                         sr.Close();
                     }
@@ -2218,15 +2228,15 @@ namespace sELedit
                 }
                 else
                 {
-                    MainWindow.item_ext_desc = new string[0];
+                    sessionService.ItemExtDesc = new string[0];
                 }
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                MainWindow.item_ext_desc = new string[0];
+                sessionService.ItemExtDesc = new string[0];
             }
             GC.Collect();
-            database.item_ext_desc = MainWindow.item_ext_desc;
+            database.item_ext_desc = sessionService.ItemExtDesc;
         }
 
         private SortedList<string, Point> loadSurfaces()
@@ -2381,7 +2391,7 @@ namespace sELedit
         {
             if (database.skillstr != null)
             {
-                MainWindow.skillstr = database.skillstr;
+                sessionService.SkillStr = database.skillstr;
                 return;
             }
             String path = ResolveResourceFileAny(
@@ -2393,9 +2403,9 @@ namespace sELedit
                 try
                 {
                     StreamReader sr = new StreamReader(path, Encoding.Unicode);
-                    MainWindow.skillstr = sr.ReadToEnd().Split(new char[] { '\"' });
-                    string[] temp = MainWindow.skillstr[0].Split(new char[] { '\n' });
-                    MainWindow.skillstr[0] = temp[temp.Length - 1];
+                    sessionService.SkillStr = sr.ReadToEnd().Split(new char[] { '\"' });
+                    string[] temp = sessionService.SkillStr[0].Split(new char[] { '\n' });
+                    sessionService.SkillStr[0] = temp[temp.Length - 1];
                     sr.Close();
                 }
                 catch (Exception e)
@@ -2405,23 +2415,23 @@ namespace sELedit
             }
             else
             {
-                MainWindow.skillstr = new string[0];
+                sessionService.SkillStr = new string[0];
             }
-            database.skillstr = MainWindow.skillstr;
+            database.skillstr = sessionService.SkillStr;
         }
 
         private void LoadAddonList()
         {
             if (database.addonslist != null)
             {
-                MainWindow.addonslist = database.addonslist;
+                sessionService.AddonsList = database.addonslist;
                 return;
             }
             String path = ResolveResourceFileAny(
                 Path.Combine("data", "addon_table.txt"),
                 "addon_table.txt",
                 Path.Combine("configs.pck.files", "addon_table.txt"));
-            MainWindow.addonslist = new SortedList();
+            sessionService.AddonsList = new SortedList();
             if (File.Exists(path))
             {
                 try
@@ -2437,7 +2447,7 @@ namespace sELedit
                         if (line.Contains("\t") && line != "" && !line.StartsWith("/") && !line.StartsWith("#"))
                         {
                             split = line.Split(seperator);
-                            MainWindow.addonslist.Add(split[0], split[1]);
+                            sessionService.AddonsList.Add(split[0], split[1]);
                         }
                     }
 
@@ -2514,13 +2524,13 @@ namespace sELedit
                                     }
                                     string idKey = id.ToString();
                                     string typeValue = currentType.ToString();
-                                    if (MainWindow.addonslist.ContainsKey(idKey))
+                                    if (sessionService.AddonsList.ContainsKey(idKey))
                                     {
-                                        MainWindow.addonslist[idKey] = typeValue;
+                                        sessionService.AddonsList[idKey] = typeValue;
                                     }
                                     else
                                     {
-                                        MainWindow.addonslist.Add(idKey, typeValue);
+                                        sessionService.AddonsList.Add(idKey, typeValue);
                                     }
                                 }
                             }
@@ -2528,16 +2538,16 @@ namespace sELedit
                     }
                     catch
                     {
-                        MainWindow.addonslist = new SortedList();
+                        sessionService.AddonsList = new SortedList();
                     }
                 }
             }
-            database.addonslist = MainWindow.addonslist;
+            database.addonslist = sessionService.AddonsList;
         }
 
         public void LoadLocalizationText()
         {
-            MainWindow.LocalizationText = new SortedList();
+            sessionService.LocalizationText = new SortedList();
             string path = ResolveResourceFileAny(
                 Path.Combine("data", "language_en.txt"),
                 "language_en.txt",
@@ -2595,23 +2605,23 @@ namespace sELedit
                                 }
                                 string key = line.Substring(0, firstQuote).Trim();
                                 string value = line.Substring(firstQuote + 1, lastQuote - firstQuote - 1);
-                                if (key.Length == 0 || MainWindow.LocalizationText.ContainsKey(key))
+                                if (key.Length == 0 || sessionService.LocalizationText.ContainsKey(key))
                                 {
                                     continue;
                                 }
-                                MainWindow.LocalizationText.Add(key, value);
+                                sessionService.LocalizationText.Add(key, value);
                             }
                         }
                     }
                     catch
                     {
-                        MainWindow.LocalizationText = new SortedList();
+                        sessionService.LocalizationText = new SortedList();
                     }
                 }
             }
 
             MergeEditorLocalizationOverrides();
-            database.LocalizationText = MainWindow.LocalizationText;
+            database.LocalizationText = sessionService.LocalizationText;
         }
 
         private bool TryLoadLocalizationFile(string path)
@@ -2639,13 +2649,13 @@ namespace sELedit
                         {
                             continue;
                         }
-                        if (MainWindow.LocalizationText.ContainsKey(key))
+                        if (sessionService.LocalizationText.ContainsKey(key))
                         {
-                            MainWindow.LocalizationText[key] = value;
+                            sessionService.LocalizationText[key] = value;
                         }
                         else
                         {
-                            MainWindow.LocalizationText.Add(key, value);
+                            sessionService.LocalizationText.Add(key, value);
                         }
                     }
                 }
@@ -2747,13 +2757,13 @@ namespace sELedit
                             continue;
                         }
 
-                        if (MainWindow.LocalizationText.ContainsKey(key))
+                        if (sessionService.LocalizationText.ContainsKey(key))
                         {
-                            MainWindow.LocalizationText[key] = value;
+                            sessionService.LocalizationText[key] = value;
                         }
                         else
                         {
-                            MainWindow.LocalizationText.Add(key, value);
+                            sessionService.LocalizationText.Add(key, value);
                         }
                     }
                 }
@@ -2766,12 +2776,12 @@ namespace sELedit
         //{
         //    if (database.InstanceList != null)
         //    {
-        //        MainWindow.InstanceList = database.InstanceList;
+        //        sessionService.InstanceList = database.InstanceList;
         //        return;
         //    }
 
         //    database.defaultMapsTemplate = new SortedList<int, Map>();
-        //    MainWindow.InstanceList = new SortedList();
+        //    sessionService.InstanceList = new SortedList();
         //    String path = Path.GetDirectoryName(Application.ExecutablePath) + "\\configs\\instance_en.txt";
         //    if (File.Exists(path))
         //    {
@@ -2790,7 +2800,7 @@ namespace sELedit
         //                    split = line.Split(seperator);
         //                    if (split.Length > 2)
         //                    {
-        //                        MainWindow.InstanceList.Add(split[0], " [" + split[1] + "] [" + split[2] + "] " + split[3] + "");
+        //                        sessionService.InstanceList.Add(split[0], " [" + split[1] + "] [" + split[2] + "] " + split[3] + "");
         //                        Map map = new Map();
         //                        map.name = split[3];
         //                        map.realName = split[2];
@@ -2798,7 +2808,7 @@ namespace sELedit
         //                    }
         //                    else
         //                    {
-        //                        MainWindow.InstanceList.Add(split[0], split[1]);
+        //                        sessionService.InstanceList.Add(split[0], split[1]);
         //                    }
         //                }
         //            }
@@ -2814,14 +2824,14 @@ namespace sELedit
         //    {
         //        MessageBox.Show("NOT FOUND localization:" + path + "!");
         //    }
-        //    database.InstanceList = MainWindow.InstanceList;
+        //    database.InstanceList = sessionService.InstanceList;
         //}
 
         public void LoadBuffList()
         {
             if (database.buff_str != null)
             {
-                MainWindow.buff_str = database.buff_str;
+                sessionService.BuffStr = database.buff_str;
                 return;
             }
             string path = ResolveResourceFileAny(
@@ -2833,9 +2843,9 @@ namespace sELedit
                 try
                 {
                     StreamReader sr = new StreamReader(path, Encoding.Unicode);
-                    MainWindow.buff_str = sr.ReadToEnd().Split(new char[] { '\"' });
-                    string[] temp = MainWindow.buff_str[0].Split(new char[] { '\n' });
-                    MainWindow.buff_str[0] = temp[temp.Length - 1];
+                    sessionService.BuffStr = sr.ReadToEnd().Split(new char[] { '\"' });
+                    string[] temp = sessionService.BuffStr[0].Split(new char[] { '\n' });
+                    sessionService.BuffStr[0] = temp[temp.Length - 1];
 
                     sr.Close();
                 }
@@ -2846,9 +2856,9 @@ namespace sELedit
             }
             else
             {
-                MainWindow.buff_str = new string[0];
+                sessionService.BuffStr = new string[0];
             }
-            database.buff_str = MainWindow.buff_str;
+            database.buff_str = sessionService.BuffStr;
         }
     }
 }

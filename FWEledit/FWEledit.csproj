@@ -6,7 +6,7 @@
     <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
     <ProjectGuid>{243153A5-A6AC-4731-B8A9-8415179CA584}</ProjectGuid>
     <OutputType>WinExe</OutputType>
-    <RootNamespace>sELedit</RootNamespace>
+    <RootNamespace>FWEledit</RootNamespace>
     <AssemblyName>FWEledit</AssemblyName>
     <TargetFrameworkVersion>v4.5.2</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
@@ -22,7 +22,7 @@
     <UpdateRequired>false</UpdateRequired>
     <MapFileExtensions>true</MapFileExtensions>
     <ApplicationRevision>0</ApplicationRevision>
-    <ApplicationVersion>0.9.1.0</ApplicationVersion>
+    <ApplicationVersion>0.9.2.0</ApplicationVersion>
     <IsWebBootstrapper>false</IsWebBootstrapper>
     <UseApplicationTrust>false</UseApplicationTrust>
     <BootstrapperEnabled>true</BootstrapperEnabled>
@@ -101,11 +101,29 @@
     <Compile Include="About.cs">
       <SubType>Form</SubType>
     </Compile>
+    <Compile Include="About.EventHandlers.cs">
+      <DependentUpon>About.cs</DependentUpon>
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="About.Setup.cs">
+      <DependentUpon>About.cs</DependentUpon>
+      <SubType>Form</SubType>
+    </Compile>
     <Compile Include="About.Designer.cs">
       <DependentUpon>About.cs</DependentUpon>
     </Compile>
     <Compile Include="AssetManager.cs" />
+    <Compile Include="Catalogs\ItemQualityCatalog.cs" />
+    <Compile Include="Catalogs\ModelPickerCatalog.cs" />
     <Compile Include="ClassMaskWindow.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="ClassMaskWindow.EventHandlers.cs">
+      <DependentUpon>ClassMaskWindow.cs</DependentUpon>
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="ClassMaskWindow.Setup.cs">
+      <DependentUpon>ClassMaskWindow.cs</DependentUpon>
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="ClassMaskWindow.Designer.cs">
@@ -169,6 +187,14 @@
     <Compile Include="ConfigWindow.cs">
       <SubType>Form</SubType>
     </Compile>
+    <Compile Include="ConfigWindow.EventHandlers.cs">
+      <DependentUpon>ConfigWindow.cs</DependentUpon>
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="ConfigWindow.Setup.cs">
+      <DependentUpon>ConfigWindow.cs</DependentUpon>
+      <SubType>Form</SubType>
+    </Compile>
     <Compile Include="ConfigWindow.Designer.cs">
       <DependentUpon>ConfigWindow.cs</DependentUpon>
     </Compile>
@@ -179,10 +205,26 @@
     <Compile Include="FieldCompare.cs">
       <SubType>Form</SubType>
     </Compile>
+    <Compile Include="FieldCompare.EventHandlers.cs">
+      <DependentUpon>FieldCompare.cs</DependentUpon>
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="FieldCompare.Setup.cs">
+      <DependentUpon>FieldCompare.cs</DependentUpon>
+      <SubType>Form</SubType>
+    </Compile>
     <Compile Include="FieldCompare.Designer.cs">
       <DependentUpon>FieldCompare.cs</DependentUpon>
     </Compile>
     <Compile Include="FieldReplaceWindow.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="FieldReplaceWindow.EventHandlers.cs">
+      <DependentUpon>FieldReplaceWindow.cs</DependentUpon>
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="FieldReplaceWindow.Setup.cs">
+      <DependentUpon>FieldReplaceWindow.cs</DependentUpon>
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="FieldReplaceWindow.Designer.cs">
@@ -192,7 +234,31 @@
     <Compile Include="IconPickerWindow.cs">
       <SubType>Form</SubType>
     </Compile>
+    <Compile Include="IconPickerWindow.AtlasGrid.cs">
+      <DependentUpon>IconPickerWindow.cs</DependentUpon>
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="IconPickerWindow.Setup.cs">
+      <DependentUpon>IconPickerWindow.cs</DependentUpon>
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="IconPickerWindow.Search.cs">
+      <DependentUpon>IconPickerWindow.cs</DependentUpon>
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="IconPickerWindow.Selection.cs">
+      <DependentUpon>IconPickerWindow.cs</DependentUpon>
+      <SubType>Form</SubType>
+    </Compile>
     <Compile Include="IToolType.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="IToolType.EventHandlers.cs">
+      <DependentUpon>IToolType.cs</DependentUpon>
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="IToolType.Setup.cs">
+      <DependentUpon>IToolType.cs</DependentUpon>
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="IToolType.designer.cs">
@@ -201,21 +267,147 @@
     <Compile Include="JoinWindow.cs">
       <SubType>Form</SubType>
     </Compile>
+    <Compile Include="JoinWindow.EventHandlers.cs">
+      <DependentUpon>JoinWindow.cs</DependentUpon>
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="JoinWindow.Setup.cs">
+      <DependentUpon>JoinWindow.cs</DependentUpon>
+      <SubType>Form</SubType>
+    </Compile>
     <Compile Include="JoinWindow.Designer.cs">
       <DependentUpon>JoinWindow.cs</DependentUpon>
     </Compile>
     <Compile Include="LoseQuestWindow.cs">
       <SubType>Form</SubType>
     </Compile>
+    <Compile Include="LoseQuestWindow.EventHandlers.cs">
+      <DependentUpon>LoseQuestWindow.cs</DependentUpon>
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="LoseQuestWindow.Setup.cs">
+      <DependentUpon>LoseQuestWindow.cs</DependentUpon>
+      <SubType>Form</SubType>
+    </Compile>
     <Compile Include="LoseQuestWindow.Designer.cs">
       <DependentUpon>LoseQuestWindow.cs</DependentUpon>
     </Compile>
+    <Compile Include="ISessionService.cs" />
+    <Compile Include="SessionService.cs" />
     <Compile Include="MainWindow.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="MainWindow.Description.cs">
+      <DependentUpon>MainWindow.cs</DependentUpon>
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="MainWindow.EventHandlers.Actions.cs">
+      <DependentUpon>MainWindow.cs</DependentUpon>
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="MainWindow.EventHandlers.Dialogs.cs">
+      <DependentUpon>MainWindow.cs</DependentUpon>
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="MainWindow.EventHandlers.ListBox.cs">
+      <DependentUpon>MainWindow.cs</DependentUpon>
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="MainWindow.EventHandlers.Misc.cs">
+      <DependentUpon>MainWindow.cs</DependentUpon>
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="MainWindow.EventHandlers.Save.cs">
+      <DependentUpon>MainWindow.cs</DependentUpon>
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="MainWindow.EventHandlers.Search.cs">
+      <DependentUpon>MainWindow.cs</DependentUpon>
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="MainWindow.EventHandlers.Selection.cs">
+      <DependentUpon>MainWindow.cs</DependentUpon>
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="MainWindow.EventHandlers.Tooltips.cs">
+      <DependentUpon>MainWindow.cs</DependentUpon>
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="MainWindow.EventHandlers.ValueInput.cs">
+      <DependentUpon>MainWindow.cs</DependentUpon>
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="MainWindow.SaveNavigation.cs">
+      <DependentUpon>MainWindow.cs</DependentUpon>
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="MainWindow.Setup.cs">
+      <DependentUpon>MainWindow.cs</DependentUpon>
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="MainWindow.ValuePickers.cs">
+      <DependentUpon>MainWindow.cs</DependentUpon>
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="MainWindow.Designer.cs">
       <DependentUpon>MainWindow.cs</DependentUpon>
     </Compile>
+    <Compile Include="Models\AddonTypeOption.cs" />
+    <Compile Include="Models\ClassMaskFlags.cs" />
+    <Compile Include="Models\ClipboardCopyResult.cs" />
+    <Compile Include="Models\XrefLookupResult.cs" />
+    <Compile Include="Models\XrefResultRow.cs" />
+    <Compile Include="Models\ConfigData.cs" />
+    <Compile Include="Models\ElementsSaveContext.cs" />
+    <Compile Include="Models\ElementsLoadResult.cs" />
+    <Compile Include="Models\ElementsFileInfo.cs" />
+    <Compile Include="Models\ElementsJoinOptions.cs" />
+    <Compile Include="Models\ElementsJoinResult.cs" />
+    <Compile Include="Models\IconEntryModel.cs" />
+    <Compile Include="Models\IconPickerData.cs" />
+    <Compile Include="Models\ItemTooltipResult.cs" />
+    <Compile Include="Models\ItemSelectionRequest.cs" />
+    <Compile Include="Models\ItemSelectionResult.cs" />
+    <Compile Include="Models\ItemSelectionContext.cs" />
+    <Compile Include="Models\ListSelectionRequest.cs" />
+    <Compile Include="Models\ListSelectionResult.cs" />
+    <Compile Include="Models\NavigationSettingsSnapshot.cs" />
+    <Compile Include="Models\NavigationSnapshot.cs" />
+    <Compile Include="Models\FieldCompareRequest.cs" />
+    <Compile Include="Models\FieldCompareResult.cs" />
+    <Compile Include="Models\FieldReplaceRequest.cs" />
+    <Compile Include="Models\FieldReplaceResult.cs" />
+    <Compile Include="Models\ModelPickerEntry.cs" />
+    <Compile Include="Models\ModelPickerPackageCacheEntry.cs" />
+    <Compile Include="Models\QualityOption.cs" />
+    <Compile Include="Models\ReplaceParameters.cs" />
+    <Compile Include="Models\ReplaceResult.cs" />
+    <Compile Include="Models\ReplacementSummary.cs" />
+    <Compile Include="Models\SearchSuggestion.cs" />
+    <Compile Include="Models\SelectionState.cs" />
+    <Compile Include="Models\ToolPreviewData.cs" />
+    <Compile Include="Models\WindowOpenResult.cs" />
+    <Compile Include="Models\ValueRowDisplay.cs" />
+    <Compile Include="Models\ListRowUpdate.cs" />
+    <Compile Include="Models\ValueChangeRequest.cs" />
+    <Compile Include="Models\ValueChangeResult.cs" />
+    <Compile Include="Models\ValueChangeContext.cs" />
+    <Compile Include="Models\ValueChangeSelectionContext.cs" />
+    <Compile Include="Models\DescriptionSelectionResult.cs" />
+    <Compile Include="Models\DescriptionPreviewSegment.cs" />
+    <Compile Include="Models\DescriptionChangeResult.cs" />
+    <Compile Include="Models\DescriptionFlushResult.cs" />
+    <Compile Include="Models\EquipmentValuesTab.cs" />
+    <Compile Include="Models\ElementSearchRequest.cs" />
+    <Compile Include="Models\ElementSearchResult.cs" />
+    <Compile Include="Models\ElementDeleteResult.cs" />
+    <Compile Include="Models\ElementCloneResult.cs" />
+    <Compile Include="Models\ElementMoveResult.cs" />
+    <Compile Include="Models\ElementImportResult.cs" />
+    <Compile Include="Models\ElementBatchAddResult.cs" />
+    <Compile Include="Models\ElementExportResult.cs" />
+    <Compile Include="Models\FileExportResult.cs" />
+    <Compile Include="Models\QuestOverflowReport.cs" />
     <Compile Include="OOP_NET\oops\Constants.cs" />
     <Compile Include="OOP_NET\oops\FileLog.cs" />
     <Compile Include="OOP_NET\oops\IClass\SimpleComand.cs" />
@@ -431,10 +623,22 @@
     <Compile Include="ReferencesWindow.cs">
       <SubType>Form</SubType>
     </Compile>
+    <Compile Include="ReferencesWindow.Setup.cs">
+      <DependentUpon>ReferencesWindow.cs</DependentUpon>
+      <SubType>Form</SubType>
+    </Compile>
     <Compile Include="ReferencesWindow.Designer.cs">
       <DependentUpon>ReferencesWindow.cs</DependentUpon>
     </Compile>
     <Compile Include="ReplaceWindow.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="ReplaceWindow.EventHandlers.cs">
+      <DependentUpon>ReplaceWindow.cs</DependentUpon>
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="ReplaceWindow.Setup.cs">
+      <DependentUpon>ReplaceWindow.cs</DependentUpon>
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="ReplaceWindow.Designer.cs">
@@ -444,8 +648,305 @@
     <Compile Include="RulesWindow.cs">
       <SubType>Form</SubType>
     </Compile>
+    <Compile Include="RulesWindow.EventHandlers.cs">
+      <DependentUpon>RulesWindow.cs</DependentUpon>
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="RulesWindow.Setup.cs">
+      <DependentUpon>RulesWindow.cs</DependentUpon>
+      <SubType>Form</SubType>
+    </Compile>
     <Compile Include="RulesWindow.Designer.cs">
       <DependentUpon>RulesWindow.cs</DependentUpon>
+    </Compile>
+    <Compile Include="Services\AboutWindowCommandService.cs" />
+    <Compile Include="Services\ClassMaskService.cs" />
+    <Compile Include="Services\ClassMaskCommandService.cs" />
+    <Compile Include="Services\ComboBoxThemeRendererService.cs" />
+    <Compile Include="Services\ConfigFileService.cs" />
+    <Compile Include="Services\ConfigWindowCommandService.cs" />
+    <Compile Include="Services\DescriptionFlushUiService.cs" />
+    <Compile Include="Services\DescriptionLoadUiService.cs" />
+    <Compile Include="Services\DescriptionRuntimeBridgeService.cs" />
+    <Compile Include="Services\DescriptionUiService.cs" />
+    <Compile Include="Services\DialogService.cs" />
+    <Compile Include="Services\DirtyStateTracker.cs" />
+    <Compile Include="Services\DirtyTrackingUiService.cs" />
+    <Compile Include="Services\EditorWindowService.cs" />
+    <Compile Include="Services\ElementBatchAddCommandService.cs" />
+    <Compile Include="Services\ElementCloneCommandService.cs" />
+    <Compile Include="Services\ElementDeleteCommandService.cs" />
+    <Compile Include="Services\ElementExportCommandService.cs" />
+    <Compile Include="Services\ElementImportCommandService.cs" />
+    <Compile Include="Services\ElementMoveCommandService.cs" />
+    <Compile Include="Services\ElementsInfoDialogService.cs" />
+    <Compile Include="Services\GameFolderDialogService.cs" />
+    <Compile Include="Services\ElementsJoinUiService.cs" />
+    <Compile Include="Services\AddonParamService.cs" />
+    <Compile Include="Services\AddonTypeHintService.cs" />
+    <Compile Include="Services\AddonTypeOptionService.cs" />
+    <Compile Include="Services\AddonTypeDisplayService.cs" />
+    <Compile Include="Services\ElementsImportExportService.cs" />
+    <Compile Include="Services\ElementsFileInfoService.cs" />
+    <Compile Include="Services\ExportRulesCommandService.cs" />
+    <Compile Include="Services\FieldCompareWorkflowService.cs" />
+    <Compile Include="Services\FieldCompareCommandService.cs" />
+    <Compile Include="Services\FieldCompareThemeUiService.cs" />
+    <Compile Include="Services\FieldCompareUiService.cs" />
+    <Compile Include="Services\FieldCompareCoordinatorService.cs" />
+    <Compile Include="Services\FieldIndexLookupService.cs" />
+    <Compile Include="Services\RulesWindowService.cs" />
+    <Compile Include="Services\ElementsRulesExportWorkflowService.cs" />
+    <Compile Include="Services\ElementsLoadService.cs" />
+    <Compile Include="Services\ElementsLoadWorkflowService.cs" />
+    <Compile Include="Services\ElementsJoinWorkflowService.cs" />
+    <Compile Include="Services\ElementsSessionService.cs" />
+    <Compile Include="Services\ElementIndexResolverService.cs" />
+    <Compile Include="Services\EquipmentTabService.cs" />
+    <Compile Include="Services\GridActiveRowService.cs" />
+    <Compile Include="Services\GridSelectionService.cs" />
+    <Compile Include="Services\GridDoubleBufferService.cs" />
+    <Compile Include="Services\IconUsageLookupService.cs" />
+    <Compile Include="Services\InlineIconButtonService.cs" />
+    <Compile Include="Services\ItemQualityColorService.cs" />
+    <Compile Include="Services\ItemQualityRowStyleService.cs" />
+    <Compile Include="Services\ItemSelectionUiService.cs" />
+    <Compile Include="Services\ItemSelectionCommandService.cs" />
+    <Compile Include="Services\ItemSelectionContextService.cs" />
+    <Compile Include="Services\ItemSelectionRequestBuilderService.cs" />
+    <Compile Include="Services\ListCountExportService.cs" />
+    <Compile Include="Services\ListSelectionCommandService.cs" />
+    <Compile Include="Services\ListSelectionRequestBuilderService.cs" />
+    <Compile Include="Services\ListSelectionUiService.cs" />
+    <Compile Include="Services\ListDisplayRowsService.cs" />
+    <Compile Include="Services\ListItemHoverTooltipService.cs" />
+    <Compile Include="Services\ListItemTooltipService.cs" />
+    <Compile Include="Services\ItemTooltipUiService.cs" />
+    <Compile Include="Services\ModelPackageNotificationService.cs" />
+    <Compile Include="Services\ModelPreviewService.cs" />
+    <Compile Include="Services\NpcExportService.cs" />
+    <Compile Include="Services\OffsetUpdateService.cs" />
+    <Compile Include="Services\PathIdResolutionService.cs" />
+    <Compile Include="Services\PlaceholderTextService.cs" />
+    <Compile Include="Services\PlaceholderValueService.cs" />
+    <Compile Include="Services\ProbabilityValidationService.cs" />
+    <Compile Include="Services\PropertyValidationService.cs" />
+    <Compile Include="Services\QuestOverflowUiService.cs" />
+    <Compile Include="Services\SkillValidationService.cs" />
+    <Compile Include="Services\SetValueActionService.cs" />
+    <Compile Include="Services\TomeValidationService.cs" />
+    <Compile Include="Services\SaveConfirmationService.cs" />
+    <Compile Include="Services\SavePathService.cs" />
+    <Compile Include="Services\SaveProgressService.cs" />
+    <Compile Include="Services\SearchSuggestionUiService.cs" />
+    <Compile Include="Services\SelectionStateService.cs" />
+    <Compile Include="Services\ElementsValidationService.cs" />
+    <Compile Include="Services\ElementClipboardService.cs" />
+    <Compile Include="Services\ExportRulesMenuService.cs" />
+    <Compile Include="Services\XrefLookupService.cs" />
+    <Compile Include="Services\ElementsReplaceService.cs" />
+    <Compile Include="Services\ReplaceMappingFileService.cs" />
+    <Compile Include="Services\FieldCompareService.cs" />
+    <Compile Include="Services\FieldReplaceService.cs" />
+    <Compile Include="Services\FieldReplaceThemeUiService.cs" />
+    <Compile Include="Services\FieldReplaceWindowCoordinatorService.cs" />
+    <Compile Include="Services\EquipmentFieldService.cs" />
+    <Compile Include="Services\IconResolutionService.cs" />
+    <Compile Include="Services\IconPickerService.cs" />
+    <Compile Include="Services\IDialogService.cs" />
+    <Compile Include="Services\IdGenerationService.cs" />
+    <Compile Include="Services\ItemDescriptionFileService.cs" />
+    <Compile Include="Services\ItemDescriptionCodec.cs" />
+    <Compile Include="Services\ItemFieldClassifierService.cs" />
+    <Compile Include="Services\ItemTooltipService.cs" />
+    <Compile Include="Services\FieldValueValidationService.cs" />
+    <Compile Include="Services\ValueCompatibilityService.cs" />
+    <Compile Include="Services\DescriptionPreviewService.cs" />
+    <Compile Include="Services\DescriptionRuntimeService.cs" />
+    <Compile Include="Services\AddonParamFloatService.cs" />
+    <Compile Include="Services\ColorShadeService.cs" />
+    <Compile Include="Services\ItemValueRowBuilderService.cs" />
+    <Compile Include="Services\ValueRowIndexService.cs" />
+    <Compile Include="Services\ItemSelectionWorkflowService.cs" />
+    <Compile Include="Services\ListRowBuilderService.cs" />
+    <Compile Include="Services\ListSelectionWorkflowService.cs" />
+    <Compile Include="Services\ValueChangeService.cs" />
+    <Compile Include="Services\ValueRowPickerUiService.cs" />
+    <Compile Include="Services\ItemDescriptionStore.cs" />
+    <Compile Include="Services\DescriptionWorkflowService.cs" />
+    <Compile Include="Services\DescriptionPreviewUiService.cs" />
+    <Compile Include="Services\DescriptionLoadService.cs" />
+    <Compile Include="Services\MainWindowDescriptionUiService.cs" />
+    <Compile Include="Services\MainWindowElementsLoadUiService.cs" />
+    <Compile Include="Services\MainWindowElementActionsUiService.cs" />
+    <Compile Include="Services\MainWindowReplaceMappingUiService.cs" />
+    <Compile Include="Services\MainWindowValidationUiService.cs" />
+    <Compile Include="Services\MainWindowNpcExportUiService.cs" />
+    <Compile Include="Services\MainWindowDialogActionsUiService.cs" />
+    <Compile Include="Services\MainWindowXrefUiService.cs" />
+    <Compile Include="Services\MainWindowNavigationUiService.cs" />
+    <Compile Include="Services\MainWindowNavigationCoordinatorService.cs" />
+    <Compile Include="Services\MainWindowDescriptionCoordinatorService.cs" />
+    <Compile Include="Services\MainWindowTooltipCoordinatorService.cs" />
+    <Compile Include="Services\MainWindowActionsCoordinatorService.cs" />
+    <Compile Include="Services\MainWindowDialogsCoordinatorService.cs" />
+    <Compile Include="Services\MainWindowSearchCoordinatorService.cs" />
+    <Compile Include="Services\MainWindowSelectionCoordinatorService.cs" />
+    <Compile Include="Services\MainWindowListBoxCoordinatorService.cs" />
+    <Compile Include="Services\MainWindowValueInputCoordinatorService.cs" />
+    <Compile Include="Services\MainWindowValuePickerCoordinatorService.cs" />
+    <Compile Include="Services\MainWindowSaveUiService.cs" />
+    <Compile Include="Services\MainWindowSearchUiService.cs" />
+    <Compile Include="Services\MainWindowSelectionUiService.cs" />
+    <Compile Include="Services\MainWindowSaveCoordinatorService.cs" />
+    <Compile Include="Services\MainWindowMiscCoordinatorService.cs" />
+    <Compile Include="Services\MainWindowThemeUiService.cs" />
+    <Compile Include="Services\MainWindowLayoutUiService.cs" />
+    <Compile Include="Services\MainWindowLayoutBuilderService.cs" />
+    <Compile Include="Services\MainWindowLayoutResult.cs" />
+    <Compile Include="Services\MainWindowVersionUiService.cs" />
+    <Compile Include="Services\MainWindowWorkflowSetupResult.cs" />
+    <Compile Include="Services\MainWindowWorkflowSetupService.cs" />
+    <Compile Include="Services\MainWindowAssetSetupResult.cs" />
+    <Compile Include="Services\MainWindowAssetSetupService.cs" />
+    <Compile Include="Services\MainWindowBootstrapService.cs" />
+    <Compile Include="Services\MainWindowGridSetupService.cs" />
+    <Compile Include="Services\MainWindowEventWiringService.cs" />
+    <Compile Include="Services\MainWindowNavigationTimerService.cs" />
+    <Compile Include="Services\MainWindowDirtyTrackingService.cs" />
+    <Compile Include="Services\MainWindowValueRowPickerUiService.cs" />
+    <Compile Include="Services\GameFolderLoadUiService.cs" />
+    <Compile Include="Services\FieldReplaceUiService.cs" />
+    <Compile Include="Services\FieldReplaceUiServiceExtensions.cs" />
+    <Compile Include="Services\InfoDialogUiService.cs" />
+    <Compile Include="Services\ConfigWindowUiService.cs" />
+    <Compile Include="Services\ConfigWindowSetupCoordinatorService.cs" />
+    <Compile Include="Services\ConfigWindowCoordinatorService.cs" />
+    <Compile Include="Services\ElementExportUiService.cs" />
+    <Compile Include="Services\OffsetChangeUiService.cs" />
+    <Compile Include="Services\RulesWindowUiService.cs" />
+    <Compile Include="Services\ClassMaskUiService.cs" />
+    <Compile Include="Services\ThemeComboBoxDrawService.cs" />
+    <Compile Include="Services\ConfigThemeUiService.cs" />
+    <Compile Include="Services\ConfigFileLoadUiService.cs" />
+    <Compile Include="Services\ConfigFileSaveUiService.cs" />
+    <Compile Include="Services\ConfigListDisplayUiService.cs" />
+    <Compile Include="Services\ConfigListMutationUiService.cs" />
+    <Compile Include="Services\ConfigFieldSetUiService.cs" />
+    <Compile Include="Services\ConfigListUpdateUiService.cs" />
+    <Compile Include="Services\ConfigRowUpdateUiService.cs" />
+    <Compile Include="Services\ConfigRowInsertUiService.cs" />
+    <Compile Include="Services\ConfigRowCopyService.cs" />
+    <Compile Include="Services\ConfigRowPasteUiService.cs" />
+    <Compile Include="Services\ConfigRowDeleteUiService.cs" />
+    <Compile Include="Services\ConfigSequelScannerService.cs" />
+    <Compile Include="Services\GridCellSelectionService.cs" />
+    <Compile Include="Services\DdsIconService.cs" />
+    <Compile Include="Services\ElementSearchService.cs" />
+    <Compile Include="Services\ElementDeletionUiService.cs" />
+    <Compile Include="Services\ElementCloneUiService.cs" />
+    <Compile Include="Services\ElementMoveUiService.cs" />
+    <Compile Include="Services\ElementImportExportUiService.cs" />
+    <Compile Include="Services\ErrorLoggingService.cs" />
+    <Compile Include="Services\ElementListMutationService.cs" />
+    <Compile Include="Services\ElementImportExportWorkflowService.cs" />
+    <Compile Include="Services\ElementsLoadUiService.cs" />
+    <Compile Include="Services\ElementImportUiService.cs" />
+    <Compile Include="Services\ListDisplayService.cs" />
+    <Compile Include="Services\ListComboPopulationService.cs" />
+    <Compile Include="Services\ModelPickerCacheService.cs" />
+    <Compile Include="Services\ModelPickerService.cs" />
+    <Compile Include="Services\NpcAiExportService.cs" />
+    <Compile Include="Services\NpcExportUiService.cs" />
+    <Compile Include="Services\QuestOverflowService.cs" />
+    <Compile Include="Services\NavigationSnapshotService.cs" />
+    <Compile Include="Services\NavigationSnapshotUiService.cs" />
+    <Compile Include="Services\NavigationStateService.cs" />
+    <Compile Include="Services\ReplaceService.cs" />
+    <Compile Include="Services\RulesService.cs" />
+    <Compile Include="Services\RulesExportUiService.cs" />
+    <Compile Include="Services\RulesThemeUiService.cs" />
+    <Compile Include="Services\RulesWindowActionsService.cs" />
+    <Compile Include="Services\RulesWindowCoordinatorService.cs" />
+    <Compile Include="Services\ReplaceMappingUiService.cs" />
+    <Compile Include="Services\ReplaceWindowThemeUiService.cs" />
+    <Compile Include="Services\SearchSuggestionService.cs" />
+    <Compile Include="Services\SearchPlaceholderService.cs" />
+    <Compile Include="Services\SearchBoxUiService.cs" />
+    <Compile Include="Services\SearchWorkflowService.cs" />
+    <Compile Include="Services\SearchUiService.cs" />
+    <Compile Include="Services\SaveSessionUiService.cs" />
+    <Compile Include="Services\SaveProgressUiService.cs" />
+    <Compile Include="Services\SaveConfirmationUiService.cs" />
+    <Compile Include="Services\SaveContextBuilderService.cs" />
+    <Compile Include="Services\ToolPreviewService.cs" />
+    <Compile Include="Services\ToolPreviewUiService.cs" />
+    <Compile Include="Services\IToolTypeCoordinatorService.cs" />
+    <Compile Include="Services\TextExportDialogService.cs" />
+    <Compile Include="Services\ValueChangeCommandService.cs" />
+    <Compile Include="Services\ValueChangeSelectionService.cs" />
+    <Compile Include="Services\ValueChangeRequestBuilderService.cs" />
+    <Compile Include="Services\ValueChangeResultUiService.cs" />
+    <Compile Include="Services\ValueInputPlaceholderService.cs" />
+    <Compile Include="Services\UniqueIdValidationService.cs" />
+    <Compile Include="Services\NavigationPersistenceService.cs" />
+    <Compile Include="Services\NavigationPersistenceUiService.cs" />
+    <Compile Include="Services\NavigationSelectionService.cs" />
+    <Compile Include="Services\ClosePromptService.cs" />
+    <Compile Include="Services\ClosePromptUiService.cs" />
+    <Compile Include="Services\IconListAvailabilityService.cs" />
+    <Compile Include="Services\WindowTitleService.cs" />
+    <Compile Include="Services\InfoMessageService.cs" />
+    <Compile Include="Services\ItemListThemeService.cs" />
+    <Compile Include="Services\ClipboardUiService.cs" />
+    <Compile Include="Services\ValidationUiService.cs" />
+    <Compile Include="Services\ThemeUiService.cs" />
+    <Compile Include="Services\ThemeMenuRenderer.cs" />
+    <Compile Include="Services\SplitContainerSizingService.cs" />
+    <Compile Include="Services\StartupSessionService.cs" />
+    <Compile Include="Services\ReplaceWindowUiService.cs" />
+    <Compile Include="Services\ReplaceWindowUiServiceExtensions.cs" />
+    <Compile Include="Services\XrefItemUiService.cs" />
+    <Compile Include="Services\CursorScopeService.cs" />
+    <Compile Include="Services\DescriptionIdRemapService.cs" />
+    <Compile Include="Services\ReplaceWindowCommandService.cs" />
+    <Compile Include="Services\ReplaceWindowCoordinatorService.cs" />
+    <Compile Include="Services\XrefLookupUiService.cs" />
+    <Compile Include="Services\XrefMenuService.cs" />
+    <Compile Include="Services\JoinWindowThemeUiService.cs" />
+    <Compile Include="Services\JoinWindowDialogUiService.cs" />
+    <Compile Include="Services\JoinWindowCoordinatorService.cs" />
+    <Compile Include="Services\ClassMaskThemeUiService.cs" />
+    <Compile Include="Services\LoseQuestWindowCoordinatorService.cs" />
+    <Compile Include="Services\ReferencesWindowCoordinatorService.cs" />
+    <Compile Include="Services\ClassMaskCoordinatorService.cs" />
+    <Compile Include="Services\AboutCoordinatorService.cs" />
+    <Compile Include="Services\DebugWindowCoordinatorService.cs" />
+    <Compile Include="Services\IconPickerWindowCoordinatorService.cs" />
+    <Compile Include="ViewModels\AboutViewModel.cs" />
+    <Compile Include="ViewModels\ClassMaskViewModel.cs" />
+    <Compile Include="ViewModels\ConfigWindowViewModel.cs" />
+    <Compile Include="ViewModels\DescriptionViewModel.cs" />
+    <Compile Include="ViewModels\FieldCompareViewModel.cs" />
+    <Compile Include="ViewModels\FieldReplaceViewModel.cs" />
+    <Compile Include="ViewModels\IconPickerViewModel.cs" />
+    <Compile Include="ViewModels\IToolTypeViewModel.cs" />
+    <Compile Include="ViewModels\JoinWindowViewModel.cs" />
+    <Compile Include="ViewModels\LoseQuestWindowViewModel.cs" />
+    <Compile Include="ViewModels\MainWindowViewModel.cs" />
+    <Compile Include="ViewModels\ReferencesWindowViewModel.cs" />
+    <Compile Include="ViewModels\RelayCommand.cs" />
+    <Compile Include="ViewModels\ReplaceWindowViewModel.cs" />
+    <Compile Include="ViewModels\RulesWindowViewModel.cs" />
+    <Compile Include="ViewModels\ViewModelBase.cs" />
+    <Compile Include="Views\AddonTypePickerWindow.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Views\ModelPickerWindow.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Views\QualityPickerWindow.cs">
+      <SubType>Form</SubType>
     </Compile>
     <EmbeddedResource Include="About.resx">
       <DependentUpon>About.cs</DependentUpon>

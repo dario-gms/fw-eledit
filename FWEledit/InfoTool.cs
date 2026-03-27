@@ -1,7 +1,7 @@
-﻿using System;
+using System;
 using System.Drawing;
 
-namespace sELedit
+namespace FWEledit
 {
     public class InfoTool
     {

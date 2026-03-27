@@ -1,4 +1,4 @@
-﻿using SharkShield.classes;
+using SharkShield.classes;
 using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;

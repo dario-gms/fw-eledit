@@ -1,7 +1,7 @@
-﻿using System;
-using sELedit.DDSReader.Utils;
+using System;
+using FWEledit.DDSReader.Utils;
 
-namespace sELedit.DDSReader
+namespace FWEledit.DDSReader
 {
 	internal class Decompressor
 	{

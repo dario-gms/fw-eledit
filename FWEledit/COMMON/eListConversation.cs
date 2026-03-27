@@ -1,6 +1,6 @@
-﻿using System.IO;
+using System.IO;
 
-namespace sELedit
+namespace FWEledit
 {
 	public class eListConversation
 	{

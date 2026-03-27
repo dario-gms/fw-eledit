@@ -1,11 +1,11 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Collections;
 using System.Text;
 using System.Windows.Forms;
 using System.Collections.Generic;
 
-namespace sELedit
+namespace FWEledit
 {
 	public class eListCollection
 	{

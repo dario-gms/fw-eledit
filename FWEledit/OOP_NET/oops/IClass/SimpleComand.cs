@@ -1,4 +1,4 @@
-﻿namespace Shield.classes.oops.IClass
+namespace Shield.classes.oops.IClass
 {
     public interface SimpleComand
     {

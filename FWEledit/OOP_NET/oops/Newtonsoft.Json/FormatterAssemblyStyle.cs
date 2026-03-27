@@ -1,4 +1,4 @@
-﻿
+
 #if DOTNET || PORTABLE40 || PORTABLE
 
 namespace System.Runtime.Serialization.Formatters

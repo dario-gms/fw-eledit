@@ -24,12 +24,7 @@ _build_test/
 _dist/
 .dotnet/
 _tmp_*
-sELedit.zip
-list0_fw_dump_*.csv
-FWEledit_CHANGELOG.md
-FWEledit_MODEL_CHOOSER_ROADMAP.md
-SUCCESSOR_HANDOFF.txt
-make_dist.bat
+list0_fw_dump_61567_61596.csv
 
 # Exceptions - keep these compiled dependencies
 !FWEledit/lib/Ionic.Zlib.dll
