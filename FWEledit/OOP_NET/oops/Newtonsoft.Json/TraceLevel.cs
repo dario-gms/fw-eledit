@@ -1,4 +1,4 @@
-﻿
+
 #if (DOTNET || PORTABLE40 || PORTABLE)
 using Newtonsoft.Json.Serialization;
 

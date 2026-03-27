@@ -1,4 +1,4 @@
-﻿namespace sELedit
+namespace FWEledit
 {
 	public class RuleConfig
 	{

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Globalization;
@@ -6,7 +6,7 @@ using System.IO;
 
 using System.Text;
 
-namespace sELedit
+namespace FWEledit
 {
     class Extensions
     {
@@ -229,12 +229,12 @@ namespace sELedit
         //        }
         //        catch
         //        {
-        //            result = Extensions.GetLocalization(404);
+        //            result = Extensions.GetLocalization(sessionService, 404);
         //        }
         //    }
         //    else
         //    {
-        //        result = Extensions.GetLocalization(402);
+        //        result = Extensions.GetLocalization(sessionService, 402);
         //    }
 
         //    return result/*.Replace("\\n", Environment.NewLine).Replace("\\t", "" + (char)9)*/;
@@ -251,12 +251,12 @@ namespace sELedit
         //        }
         //        catch
         //        {
-        //            result = Extensions.GetLocalization(404);
+        //            result = Extensions.GetLocalization(sessionService, 404);
         //        }
         //    }
         //    else
         //    {
-        //        result = Extensions.GetLocalization(402);
+        //        result = Extensions.GetLocalization(sessionService, 402);
         //    }
 
         //    return result/*.Replace("\\n", Environment.NewLine).Replace("\\t", "" + (char)9)*/;
@@ -273,12 +273,12 @@ namespace sELedit
         //        }
         //        catch
         //        {
-        //            result = Extensions.GetLocalization(404);
+        //            result = Extensions.GetLocalization(sessionService, 404);
         //        }
         //    }
         //    else
         //    {
-        //        result = Extensions.GetLocalization(402);
+        //        result = Extensions.GetLocalization(sessionService, 402);
         //    }
 
         //    return result/*.Replace("\\n", Environment.NewLine).Replace("\\t", "" + (char)9)*/;
@@ -295,12 +295,12 @@ namespace sELedit
         //        }
         //        catch
         //        {
-        //            result = Extensions.GetLocalization(404);
+        //            result = Extensions.GetLocalization(sessionService, 404);
         //        }
         //    }
         //    else
         //    {
-        //        result = Extensions.GetLocalization(402);
+        //        result = Extensions.GetLocalization(sessionService, 402);
         //    }
 
         //    return result/*.Replace("\\n", Environment.NewLine).Replace("\\t", "" + (char)9)*/;
@@ -315,7 +315,7 @@ namespace sELedit
         //    }
         //    catch
         //    {
-        //        result = Extensions.GetLocalization(404);
+        //        result = Extensions.GetLocalization(sessionService, 404);
         //    }
 
         //    return result.Replace("\\n", Environment.NewLine).Replace("\\t", "" + (char)9);
@@ -342,23 +342,23 @@ namespace sELedit
         //                result = ElementsEditor.database.buff_str[index];
         //            }else
         //            {
-        //                result = Extensions.GetLocalization(404);
+        //                result = Extensions.GetLocalization(sessionService, 404);
         //            }
         //        }
         //        catch
         //        {
-        //            result = Extensions.GetLocalization(404);
+        //            result = Extensions.GetLocalization(sessionService, 404);
         //        }
         //    }
         //    else
         //    {
-        //        result = Extensions.GetLocalization(402);
+        //        result = Extensions.GetLocalization(sessionService, 402);
         //    }
 
         //    return result.Replace("\\n", Environment.NewLine).Replace("\\t", "" + (char)9);
         //}
 
-        public static string ItemDesc(int id)
+        public static string ItemDesc(ISessionService sessionService, int id)
         {
             string result;
             if (id != 0)
@@ -366,17 +366,17 @@ namespace sELedit
                 try
                 {
                     int index = -1;
-                    for (int num25 = 0; num25 < MainWindow.database.item_ext_desc.Length - 1; num25 += 2)
+                    for (int num25 = 0; num25 < sessionService.Database.item_ext_desc.Length - 1; num25 += 2)
                     {
-                        if (Convert.ToInt32(MainWindow.database.item_ext_desc[num25 + 0]) == id)
+                        if (Convert.ToInt32(sessionService.Database.item_ext_desc[num25 + 0]) == id)
                         {
                             index = num25 + 1;
                             break;
                         }
                     }
-                    if (MainWindow.database.item_ext_desc.Length > index && index != -1)
+                    if (sessionService.Database.item_ext_desc.Length > index && index != -1)
                     {
-                        result = MainWindow.database.item_ext_desc[index];
+                        result = sessionService.Database.item_ext_desc[index];
                     }
                     else
                     {
@@ -390,72 +390,72 @@ namespace sELedit
             }
             else
             {
-                result = Extensions.GetLocalization(402);
+                result = Extensions.GetLocalization(sessionService, 402);
             }
 
             return result.Replace("\\r", Environment.NewLine).Replace("\\t", "" + (char)9);
         }
 
-        public static string SkillName(int id)
+        public static string SkillName(ISessionService sessionService, int id)
         {
             string result;
             string nameid = id.ToString() + "0";
             try
             {
                 int index = -1;
-                for (int num25 = 0; num25 < MainWindow.database.skillstr.Length - 1; num25 += 4)
+                for (int num25 = 0; num25 < sessionService.Database.skillstr.Length - 1; num25 += 4)
                 {
-                    if (Convert.ToInt32(MainWindow.database.skillstr[num25 + 0]) == Convert.ToInt32(nameid))
+                    if (Convert.ToInt32(sessionService.Database.skillstr[num25 + 0]) == Convert.ToInt32(nameid))
                     {
                         index = num25 + 1;
                         break;
                     }
                 }
-                result = MainWindow.database.skillstr[index];
+                result = sessionService.Database.skillstr[index];
             }
             catch
             {
-                result = Extensions.GetLocalization(404);
+                result = Extensions.GetLocalization(sessionService, 404);
             }
 
             return result/*.Replace("\\n", Environment.NewLine).Replace("\\t", "" + (char)9)*/;
         }
 
-        public static string SkillDesc(int id)
+        public static string SkillDesc(ISessionService sessionService, int id)
         {
             string result;
             string descid = id.ToString() + "1";
             try
             {
                 int index = -1;
-                for (int num25 = 0; num25 < MainWindow.database.skillstr.Length - 1; num25 += 4)
+                for (int num25 = 0; num25 < sessionService.Database.skillstr.Length - 1; num25 += 4)
                 {
-                    if (Convert.ToInt32(MainWindow.database.skillstr[num25 + 2]) == Convert.ToInt32(descid))
+                    if (Convert.ToInt32(sessionService.Database.skillstr[num25 + 2]) == Convert.ToInt32(descid))
                     {
                         index = num25 + 3;
                         break;
                     }
                 }
-                result = MainWindow.database.skillstr[index];
+                result = sessionService.Database.skillstr[index];
             }
             catch
             {
-                result = Extensions.GetLocalization(404);
+                result = Extensions.GetLocalization(sessionService, 404);
             }
 
             return result.Replace("%%", "%")/*.Replace("\\n", Environment.NewLine).Replace("\\t", "" + (char)9)*/;
         }
 
-        public static string SkillText(int id)
+        public static string SkillText(ISessionService sessionService, int id)
         {
             string result;
             if (id != 0)
             {
                 try
                 {
-                    string name = Extensions.SkillName(id);
-                    string desc = Extensions.SkillDesc(id);
-                    if (name != Extensions.GetLocalization(404) && desc != Extensions.GetLocalization(404))
+                    string name = Extensions.SkillName(sessionService, id);
+                    string desc = Extensions.SkillDesc(sessionService, id);
+                    if (name != Extensions.GetLocalization(sessionService, 404) && desc != Extensions.GetLocalization(sessionService, 404))
                     {
                         if (name != "")
                         {
@@ -475,17 +475,17 @@ namespace sELedit
                     }
                     else
                     {
-                        result = Extensions.GetLocalization(404);
+                        result = Extensions.GetLocalization(sessionService, 404);
                     }
                 }
                 catch
                 {
-                    result = Extensions.GetLocalization(404);
+                    result = Extensions.GetLocalization(sessionService, 404);
                 }
             }
             else
             {
-                result = Extensions.GetLocalization(402);
+                result = Extensions.GetLocalization(sessionService, 402);
             }
 
             return result.Replace("\\n", Environment.NewLine).Replace("\\t", "" + (char)9);
@@ -511,25 +511,25 @@ namespace sELedit
         //        }
         //        catch
         //        {
-        //            result = Extensions.GetLocalization(404);
+        //            result = Extensions.GetLocalization(sessionService, 404);
         //        }
         //    }
         //    else
         //    {
-        //        result = Extensions.GetLocalization(402);
+        //        result = Extensions.GetLocalization(sessionService, 402);
         //    }
 
         //    return result.Replace("\\n", Environment.NewLine).Replace("\\t", "" + (char)9);
         //}
 
-        public static string GetLocalization(int key)
+        public static string GetLocalization(ISessionService sessionService, int key)
         {
             string result;
             try
             {
-                if (MainWindow.LocalizationText.ContainsKey(key.ToString()))
+                if (sessionService.LocalizationText.ContainsKey(key.ToString()))
                 {
-                    result = MainWindow.LocalizationText[key.ToString()].ToString();
+                    result = sessionService.LocalizationText[key.ToString()].ToString();
                 }
                 else
                 {
@@ -598,7 +598,7 @@ namespace sELedit
             }
         }
 
-        public static string GetItemProps(int Id, uint Period)
+        public static string GetItemProps(ISessionService sessionService, int Id, uint Period)
         {
             string line = "";
             uint proctypes;
@@ -606,21 +606,21 @@ namespace sELedit
             int pos_item = -1;
             int pos_proc_type = -1;
             bool Suc = false;
-            if (MainWindow.database == null || MainWindow.eLC == null ||
-                MainWindow.database.task_items_list == null || MainWindow.database.task_items_list.Length < 2)
+            if (sessionService.Database == null || sessionService.ListCollection == null ||
+                sessionService.Database.task_items_list == null || sessionService.Database.task_items_list.Length < 2)
             {
                 return line;
             }
             try
             {
-                for (int i = 0; i < MainWindow.database.task_items_list.Length; i += 2)
+                for (int i = 0; i < sessionService.Database.task_items_list.Length; i += 2)
                 {
-                    if (MainWindow.eLC.Version >= Convert.ToInt32(MainWindow.database.task_items_list[i + 1]))
+                    if (sessionService.ListCollection.Version >= Convert.ToInt32(sessionService.Database.task_items_list[i + 1]))
                     {
-                        l = Convert.ToInt32(MainWindow.database.task_items_list[i]);
-                        for (int t = 0; t < MainWindow.eLC.Lists[l].elementValues.Length; t++)
+                        l = Convert.ToInt32(sessionService.Database.task_items_list[i]);
+                        for (int t = 0; t < sessionService.ListCollection.Lists[l].elementValues.Length; t++)
                         {
-                            if (Convert.ToInt32(MainWindow.eLC.GetValue(l, t, 0)) == Id)
+                            if (Convert.ToInt32(sessionService.ListCollection.GetValue(l, t, 0)) == Id)
                             {
                                 pos_item = t;
                                 Suc = true;
@@ -634,27 +634,27 @@ namespace sELedit
                 {
                     return line;
                 }
-                for (int k = 0; k < MainWindow.eLC.Lists[l].elementFields.Length; k++)
+                for (int k = 0; k < sessionService.ListCollection.Lists[l].elementFields.Length; k++)
                 {
-                    if (MainWindow.eLC.Lists[l].elementFields[k] == "Name")
+                    if (sessionService.ListCollection.Lists[l].elementFields[k] == "Name")
                     {
-                        line += MainWindow.eLC.GetValue(l, pos_item, k);
+                        line += sessionService.ListCollection.GetValue(l, pos_item, k);
                         break;
                     }
                 }
                 if (Period != 0)
                 {
-                    line += "\n" + Extensions.GetLocalization(7113) + Extensions.ItemPropsSecondsToString2(Period);
+                    line += "\n" + Extensions.GetLocalization(sessionService, 7113) + Extensions.ItemPropsSecondsToString2(sessionService, Period);
                 }
-                for (int k = 0; k < MainWindow.eLC.Lists[l].elementFields.Length; k++)
+                for (int k = 0; k < sessionService.ListCollection.Lists[l].elementFields.Length; k++)
                 {
-                    if (MainWindow.eLC.Lists[l].elementFields[k] == "proc_type")
+                    if (sessionService.ListCollection.Lists[l].elementFields[k] == "proc_type")
                     {
                         pos_proc_type = k;
                         break;
                     }
                 }
-                bool result = uint.TryParse(MainWindow.eLC.GetValue(l, pos_item, pos_proc_type), out proctypes);
+                bool result = uint.TryParse(sessionService.ListCollection.GetValue(l, pos_item, pos_proc_type), out proctypes);
                 List<uint> powers = new List<uint>(Extensions.GetPowers(proctypes));
                 for (int p = 0; p < powers.Count; p++)
                 {
@@ -663,10 +663,10 @@ namespace sELedit
                     switch (p)
                     {
                         case 6:
-                            line += "\n" + Extensions.GetLocalization(3006);//proc_type_64
+                            line += "\n" + Extensions.GetLocalization(sessionService, 3006);//proc_type_64
                             break;
                         case 15:
-                            line += "\n" + Extensions.GetLocalization(3015);//proc_type_32768
+                            line += "\n" + Extensions.GetLocalization(sessionService, 3015);//proc_type_32768
                             break;
                     }
                 }
@@ -677,59 +677,59 @@ namespace sELedit
                     switch (p)
                     {
                         case 13:
-                            line += Extensions.GetLocalization(3013);//proc_type_8192
+                            line += Extensions.GetLocalization(sessionService, 3013);//proc_type_8192
                             break;
                     }
                 }
-                if (l == 3) line += WEAPON_ESSENCE.GetProps(pos_item);
-                if (l == 6) line += ARMOR_ESSENCE.GetProps(pos_item);
-                if (l == 9) line += DECORATION_ESSENCE.GetProps(pos_item);
-                if (l == 12) line += MEDICINE_ESSENCE.GetProps(pos_item);
-                if (l == 17) line += DAMAGERUNE_ESSENCE.GetProps(pos_item);
-                if (l == 19) line += ARMORRUNE_ESSENCE.GetProps(pos_item);
-                if (l == 22) line += FLYSWORD_ESSENCE.GetProps(pos_item);
-                if (l == 23) line += WINGMANWING_ESSENCE.GetProps(pos_item);
-                if (l == 27) line += ELEMENT_ESSENCE.GetProps(pos_item);
-                if (l == 28) line += "\n" + Extensions.GetLocalization(7118);
-                if (l == 31) line += PROJECTILE_ESSENCE.GetProps(pos_item);
-                if (l == 83) line += FASHION_ESSENCE.GetProps(pos_item);
-                if (l == 89) line += FACEPILL_ESSENCE.GetProps(pos_item);
-                if (l == 95) line += PET_EGG_ESSENCE.GetProps(pos_item);
-                if (l == 96) line += PET_FOOD_ESSENCE.GetProps(pos_item);
-                if (l == 98) line += FIREWORKS_ESSENCE.GetProps(pos_item);
-                if (l == 106) line += SKILLMATTER_ESSENCE.GetProps(pos_item);
-                if (l == 107) line += REFINE_TICKET_ESSENCE.GetProps(pos_item);
-                if (l == 114) line += AUTOHP_ESSENCE.GetProps(pos_item);
-                if (l == 115) line += AUTOMP_ESSENCE.GetProps(pos_item);
-                if (l == 119) line += GOBLIN_ESSENCE.GetProps(pos_item);
-                if (l == 121) line += GOBLIN_EQUIP_ESSENCE.GetProps(pos_item);
-                if (l == 122) line += GOBLIN_EXPPILL_ESSENCE.GetProps(pos_item);
-                if (l == 123) line += SELL_CERTIFICATE_ESSENCE.GetProps(pos_item);
-                if (l == 124) line += TARGET_ITEM_ESSENCE.GetProps(pos_item);
-                if (l == 130) line += INC_SKILL_ABILITY_ESSENCE.GetProps(pos_item);
-                if (l == 133) line += WEDDING_BOOKCARD_ESSENCE.GetProps(pos_item);
-                if (l == 135) line += SHARPENER_ESSENCE.GetProps(pos_item);
-                if (l == 141) line += CONGREGATE_ESSENCE.GetProps(pos_item);
-                if (l == 151) line += FORCE_TOKEN_ESSENCE.GetProps(pos_item);
-                if (l == 184) line += POKER_ESSENCE.GetProps(pos_item);
-                if (l == 191) line += UNIVERSAL_TOKEN_ESSENCE.GetProps(pos_item);
-                if (l == 197) line += ASTROLABE_ESSENCE.GetProps(pos_item);
-                if (l == 212) line += FIREWORKS2_ESSENCE.GetProps(pos_item);
-                if (l == 218) line += HOME_FORMULAS_ITEM_ESSENCE.GetProps(pos_item);
+                if (l == 3) line += WEAPON_ESSENCE.GetProps(sessionService, pos_item);
+                if (l == 6) line += ARMOR_ESSENCE.GetProps(sessionService, pos_item);
+                if (l == 9) line += DECORATION_ESSENCE.GetProps(sessionService, pos_item);
+                if (l == 12) line += MEDICINE_ESSENCE.GetProps(sessionService, pos_item);
+                if (l == 17) line += DAMAGERUNE_ESSENCE.GetProps(sessionService, pos_item);
+                if (l == 19) line += ARMORRUNE_ESSENCE.GetProps(sessionService, pos_item);
+                if (l == 22) line += FLYSWORD_ESSENCE.GetProps(sessionService, pos_item);
+                if (l == 23) line += WINGMANWING_ESSENCE.GetProps(sessionService, pos_item);
+                if (l == 27) line += ELEMENT_ESSENCE.GetProps(sessionService, pos_item);
+                if (l == 28) line += "\n" + Extensions.GetLocalization(sessionService, 7118);
+                if (l == 31) line += PROJECTILE_ESSENCE.GetProps(sessionService, pos_item);
+                if (l == 83) line += FASHION_ESSENCE.GetProps(sessionService, pos_item);
+                if (l == 89) line += FACEPILL_ESSENCE.GetProps(sessionService, pos_item);
+                if (l == 95) line += PET_EGG_ESSENCE.GetProps(sessionService, pos_item);
+                if (l == 96) line += PET_FOOD_ESSENCE.GetProps(sessionService, pos_item);
+                if (l == 98) line += FIREWORKS_ESSENCE.GetProps(sessionService, pos_item);
+                if (l == 106) line += SKILLMATTER_ESSENCE.GetProps(sessionService, pos_item);
+                if (l == 107) line += REFINE_TICKET_ESSENCE.GetProps(sessionService, pos_item);
+                if (l == 114) line += AUTOHP_ESSENCE.GetProps(sessionService, pos_item);
+                if (l == 115) line += AUTOMP_ESSENCE.GetProps(sessionService, pos_item);
+                if (l == 119) line += GOBLIN_ESSENCE.GetProps(sessionService, pos_item);
+                if (l == 121) line += GOBLIN_EQUIP_ESSENCE.GetProps(sessionService, pos_item);
+                if (l == 122) line += GOBLIN_EXPPILL_ESSENCE.GetProps(sessionService, pos_item);
+                if (l == 123) line += SELL_CERTIFICATE_ESSENCE.GetProps(sessionService, pos_item);
+                if (l == 124) line += TARGET_ITEM_ESSENCE.GetProps(sessionService, pos_item);
+                if (l == 130) line += INC_SKILL_ABILITY_ESSENCE.GetProps(sessionService, pos_item);
+                if (l == 133) line += WEDDING_BOOKCARD_ESSENCE.GetProps(sessionService, pos_item);
+                if (l == 135) line += SHARPENER_ESSENCE.GetProps(sessionService, pos_item);
+                if (l == 141) line += CONGREGATE_ESSENCE.GetProps(sessionService, pos_item);
+                if (l == 151) line += FORCE_TOKEN_ESSENCE.GetProps(sessionService, pos_item);
+                if (l == 184) line += POKER_ESSENCE.GetProps(sessionService, pos_item);
+                if (l == 191) line += UNIVERSAL_TOKEN_ESSENCE.GetProps(sessionService, pos_item);
+                if (l == 197) line += ASTROLABE_ESSENCE.GetProps(sessionService, pos_item);
+                if (l == 212) line += FIREWORKS2_ESSENCE.GetProps(sessionService, pos_item);
+                if (l == 218) line += HOME_FORMULAS_ITEM_ESSENCE.GetProps(sessionService, pos_item);
                 if (l != 3 && l != 6 && l != 9 && l != 12 && l != 17 && l != 19 && l != 22 && l != 23 &&
                     l != 27 && l != 31 && l != 83 && l != 89 && l != 95 && l != 96 && l != 98 && l != 106 &&
                     l != 107 && l != 114 && l != 115 && l != 119 && l != 121 && l != 122 && l != 123 &&
                     l != 124 && l != 130 && l != 133 && l != 135 && l != 141 && l != 151 && l != 184 &&
                     l != 191 && l != 197 && l != 212 && l != 218)
                 {
-                    for (int k = 0; k < MainWindow.eLC.Lists[l].elementFields.Length; k++)
+                    for (int k = 0; k < sessionService.ListCollection.Lists[l].elementFields.Length; k++)
                     {
-                        if (MainWindow.eLC.Lists[l].elementFields[k] == "price")
+                        if (sessionService.ListCollection.Lists[l].elementFields[k] == "price")
                         {
-                            string price = MainWindow.eLC.GetValue(l, pos_item, k);
+                            string price = sessionService.ListCollection.GetValue(l, pos_item, k);
                             if (price != "0")
                             {
-                                line += "\n" + Extensions.GetLocalization(7024) + " " + Convert.ToInt32(price).ToString("N0", CultureInfo.CreateSpecificCulture("zh-CN"));
+                                line += "\n" + Extensions.GetLocalization(sessionService, 7024) + " " + Convert.ToInt32(price).ToString("N0", CultureInfo.CreateSpecificCulture("zh-CN"));
                             }
                             break;
                         }
@@ -743,43 +743,43 @@ namespace sELedit
                     switch (p)
                     {
                         case 0:
-                            line += Extensions.GetLocalization(3000);//proc_type_1
+                            line += Extensions.GetLocalization(sessionService, 3000);//proc_type_1
                             break;
                         case 1:
-                            line += Extensions.GetLocalization(3001);//proc_type_2
+                            line += Extensions.GetLocalization(sessionService, 3001);//proc_type_2
                             break;
                         case 2:
-                            line += Extensions.GetLocalization(3002);//proc_type_4
+                            line += Extensions.GetLocalization(sessionService, 3002);//proc_type_4
                             break;
                         case 3:
-                            line += Extensions.GetLocalization(3003);//proc_type_8
+                            line += Extensions.GetLocalization(sessionService, 3003);//proc_type_8
                             break;
                         case 4:
-                            line += Extensions.GetLocalization(3004);//proc_type_16
+                            line += Extensions.GetLocalization(sessionService, 3004);//proc_type_16
                             break;
                         case 5:
-                            line += Extensions.GetLocalization(3005);//proc_type_32
+                            line += Extensions.GetLocalization(sessionService, 3005);//proc_type_32
                             break;
                         case 7:
-                            line += Extensions.GetLocalization(3007);//proc_type_128
+                            line += Extensions.GetLocalization(sessionService, 3007);//proc_type_128
                             break;
                         case 8:
-                            line += Extensions.GetLocalization(3008);//proc_type_256
+                            line += Extensions.GetLocalization(sessionService, 3008);//proc_type_256
                             break;
                         case 9:
-                            line += Extensions.GetLocalization(3009);//proc_type_512
+                            line += Extensions.GetLocalization(sessionService, 3009);//proc_type_512
                             break;
                         case 10:
-                            line += Extensions.GetLocalization(3010);//proc_type_1024
+                            line += Extensions.GetLocalization(sessionService, 3010);//proc_type_1024
                             break;
                         case 11:
-                            line += Extensions.GetLocalization(3011);//proc_type_2048
+                            line += Extensions.GetLocalization(sessionService, 3011);//proc_type_2048
                             break;
                         case 12:
-                            line += Extensions.GetLocalization(3012);//proc_type_4096
+                            line += Extensions.GetLocalization(sessionService, 3012);//proc_type_4096
                             break;
                         case 14:
-                            line += Extensions.GetLocalization(3014);//proc_type_16384
+                            line += Extensions.GetLocalization(sessionService, 3014);//proc_type_16384
                             break;
                     }
                 }
@@ -791,7 +791,7 @@ namespace sELedit
             return line;
         }
 
-        public static InfoTool GetItemProps2(int Id, uint Period, int l, int pos_item)
+        public static InfoTool GetItemProps2(ISessionService sessionService, int Id, uint Period, int l, int pos_item)
         {
             InfoTool ift = new InfoTool();
             uint proctypes;
@@ -800,27 +800,27 @@ namespace sELedit
             try
             {
 
-                for (int k = 0; k < MainWindow.eLC.Lists[l].elementFields.Length; k++)
+                for (int k = 0; k < sessionService.ListCollection.Lists[l].elementFields.Length; k++)
                 {
-                    if (MainWindow.eLC.Lists[l].elementFields[k] == "Name")
+                    if (sessionService.ListCollection.Lists[l].elementFields[k] == "Name")
                     {
-                        ift.name = MainWindow.eLC.GetValue(l, pos_item, k);
+                        ift.name = sessionService.ListCollection.GetValue(l, pos_item, k);
                         break;
                     }
                 }
                 if (Period != 0)
                 {
-                    ift.time = "\n" + Extensions.GetLocalization(7113) + Extensions.ItemPropsSecondsToString2(Period);
+                    ift.time = "\n" + Extensions.GetLocalization(sessionService, 7113) + Extensions.ItemPropsSecondsToString2(sessionService, Period);
                 }
-                for (int k = 0; k < MainWindow.eLC.Lists[l].elementFields.Length; k++)
+                for (int k = 0; k < sessionService.ListCollection.Lists[l].elementFields.Length; k++)
                 {
-                    if (MainWindow.eLC.Lists[l].elementFields[k] == "proc_type")
+                    if (sessionService.ListCollection.Lists[l].elementFields[k] == "proc_type")
                     {
                         pos_proc_type = k;
                         break;
                     }
                 }
-                bool result = uint.TryParse(MainWindow.eLC.GetValue(l, pos_item, pos_proc_type), out proctypes);
+                bool result = uint.TryParse(sessionService.ListCollection.GetValue(l, pos_item, pos_proc_type), out proctypes);
                 List<uint> powers = new List<uint>(Extensions.GetPowers(proctypes));
                 for (int p = 0; p < powers.Count; p++)
                 {
@@ -829,10 +829,10 @@ namespace sELedit
                     switch (p)
                     {
                         case 6:
-                            ift.powers += "\n" + Extensions.GetLocalization(3006);//proc_type_64
+                            ift.powers += "\n" + Extensions.GetLocalization(sessionService, 3006);//proc_type_64
                             break;
                         case 15:
-                            ift.powers += "\n" + Extensions.GetLocalization(3015);//proc_type_32768
+                            ift.powers += "\n" + Extensions.GetLocalization(sessionService, 3015);//proc_type_32768
                             break;
                     }
                 }
@@ -844,60 +844,60 @@ namespace sELedit
                     switch (p)
                     {
                         case 13:
-                            ift.powers += Extensions.GetLocalization(3013);//proc_type_8192
+                            ift.powers += Extensions.GetLocalization(sessionService, 3013);//proc_type_8192
                             break;
                     }
                 }
-                if (l == 3) ift.addons += WEAPON_ESSENCE.GetProps(pos_item);
-                if (l == 6) ift.addons += ARMOR_ESSENCE.GetProps(pos_item);
-                if (l == 9) ift.addons += DECORATION_ESSENCE.GetProps(pos_item);
-                if (l == 12) ift.addons += MEDICINE_ESSENCE.GetProps(pos_item);
-                if (l == 17) ift.addons += DAMAGERUNE_ESSENCE.GetProps(pos_item);
-                if (l == 19) ift.addons += ARMORRUNE_ESSENCE.GetProps(pos_item);
-                if (l == 22) ift.addons += FLYSWORD_ESSENCE.GetProps(pos_item);
-                if (l == 23) ift.addons += WINGMANWING_ESSENCE.GetProps(pos_item);
-                if (l == 27) ift.addons += ELEMENT_ESSENCE.GetProps(pos_item);
-                if (l == 28) ift.addons += "\n" + Extensions.GetLocalization(7118);
-                if (l == 31) ift.addons += PROJECTILE_ESSENCE.GetProps(pos_item);
-                if (l == 83) ift.addons += FASHION_ESSENCE.GetProps(pos_item);
-                if (l == 89) ift.addons += FACEPILL_ESSENCE.GetProps(pos_item);
-                if (l == 94) ift.addons += PET_EGG_ESSENCE.GetProps(pos_item);
-                if (l == 95) ift.addons += PET_EGG_ESSENCE.GetProps(pos_item);
-                if (l == 96) ift.addons += PET_FOOD_ESSENCE.GetProps(pos_item);
-                if (l == 98) ift.addons += FIREWORKS_ESSENCE.GetProps(pos_item);
-                if (l == 106) ift.addons += SKILLMATTER_ESSENCE.GetProps(pos_item);
-                if (l == 107) ift.addons += REFINE_TICKET_ESSENCE.GetProps(pos_item);
-                if (l == 114) ift.addons += AUTOHP_ESSENCE.GetProps(pos_item);
-                if (l == 115) ift.addons += AUTOMP_ESSENCE.GetProps(pos_item);
-                if (l == 119) ift.addons += GOBLIN_ESSENCE.GetProps(pos_item);
-                if (l == 121) ift.addons += GOBLIN_EQUIP_ESSENCE.GetProps(pos_item);
-                if (l == 122) ift.addons += GOBLIN_EXPPILL_ESSENCE.GetProps(pos_item);
-                if (l == 123) ift.addons += SELL_CERTIFICATE_ESSENCE.GetProps(pos_item);
-                if (l == 124) ift.addons += TARGET_ITEM_ESSENCE.GetProps(pos_item);
-                if (l == 130) ift.addons += INC_SKILL_ABILITY_ESSENCE.GetProps(pos_item);
-                if (l == 133) ift.addons += WEDDING_BOOKCARD_ESSENCE.GetProps(pos_item);
-                if (l == 135) ift.addons += SHARPENER_ESSENCE.GetProps(pos_item);
-                if (l == 141) ift.addons += CONGREGATE_ESSENCE.GetProps(pos_item);
-                if (l == 151) ift.addons += FORCE_TOKEN_ESSENCE.GetProps(pos_item);
-                if (l == 184) ift.addons += POKER_ESSENCE.GetProps(pos_item);
-                if (l == 191) ift.addons += UNIVERSAL_TOKEN_ESSENCE.GetProps(pos_item);
-                if (l == 197) ift.addons += ASTROLABE_ESSENCE.GetProps(pos_item);
-                if (l == 212) ift.addons += FIREWORKS2_ESSENCE.GetProps(pos_item);
-                if (l == 218) ift.addons += HOME_FORMULAS_ITEM_ESSENCE.GetProps(pos_item);
+                if (l == 3) ift.addons += WEAPON_ESSENCE.GetProps(sessionService, pos_item);
+                if (l == 6) ift.addons += ARMOR_ESSENCE.GetProps(sessionService, pos_item);
+                if (l == 9) ift.addons += DECORATION_ESSENCE.GetProps(sessionService, pos_item);
+                if (l == 12) ift.addons += MEDICINE_ESSENCE.GetProps(sessionService, pos_item);
+                if (l == 17) ift.addons += DAMAGERUNE_ESSENCE.GetProps(sessionService, pos_item);
+                if (l == 19) ift.addons += ARMORRUNE_ESSENCE.GetProps(sessionService, pos_item);
+                if (l == 22) ift.addons += FLYSWORD_ESSENCE.GetProps(sessionService, pos_item);
+                if (l == 23) ift.addons += WINGMANWING_ESSENCE.GetProps(sessionService, pos_item);
+                if (l == 27) ift.addons += ELEMENT_ESSENCE.GetProps(sessionService, pos_item);
+                if (l == 28) ift.addons += "\n" + Extensions.GetLocalization(sessionService, 7118);
+                if (l == 31) ift.addons += PROJECTILE_ESSENCE.GetProps(sessionService, pos_item);
+                if (l == 83) ift.addons += FASHION_ESSENCE.GetProps(sessionService, pos_item);
+                if (l == 89) ift.addons += FACEPILL_ESSENCE.GetProps(sessionService, pos_item);
+                if (l == 94) ift.addons += PET_EGG_ESSENCE.GetProps(sessionService, pos_item);
+                if (l == 95) ift.addons += PET_EGG_ESSENCE.GetProps(sessionService, pos_item);
+                if (l == 96) ift.addons += PET_FOOD_ESSENCE.GetProps(sessionService, pos_item);
+                if (l == 98) ift.addons += FIREWORKS_ESSENCE.GetProps(sessionService, pos_item);
+                if (l == 106) ift.addons += SKILLMATTER_ESSENCE.GetProps(sessionService, pos_item);
+                if (l == 107) ift.addons += REFINE_TICKET_ESSENCE.GetProps(sessionService, pos_item);
+                if (l == 114) ift.addons += AUTOHP_ESSENCE.GetProps(sessionService, pos_item);
+                if (l == 115) ift.addons += AUTOMP_ESSENCE.GetProps(sessionService, pos_item);
+                if (l == 119) ift.addons += GOBLIN_ESSENCE.GetProps(sessionService, pos_item);
+                if (l == 121) ift.addons += GOBLIN_EQUIP_ESSENCE.GetProps(sessionService, pos_item);
+                if (l == 122) ift.addons += GOBLIN_EXPPILL_ESSENCE.GetProps(sessionService, pos_item);
+                if (l == 123) ift.addons += SELL_CERTIFICATE_ESSENCE.GetProps(sessionService, pos_item);
+                if (l == 124) ift.addons += TARGET_ITEM_ESSENCE.GetProps(sessionService, pos_item);
+                if (l == 130) ift.addons += INC_SKILL_ABILITY_ESSENCE.GetProps(sessionService, pos_item);
+                if (l == 133) ift.addons += WEDDING_BOOKCARD_ESSENCE.GetProps(sessionService, pos_item);
+                if (l == 135) ift.addons += SHARPENER_ESSENCE.GetProps(sessionService, pos_item);
+                if (l == 141) ift.addons += CONGREGATE_ESSENCE.GetProps(sessionService, pos_item);
+                if (l == 151) ift.addons += FORCE_TOKEN_ESSENCE.GetProps(sessionService, pos_item);
+                if (l == 184) ift.addons += POKER_ESSENCE.GetProps(sessionService, pos_item);
+                if (l == 191) ift.addons += UNIVERSAL_TOKEN_ESSENCE.GetProps(sessionService, pos_item);
+                if (l == 197) ift.addons += ASTROLABE_ESSENCE.GetProps(sessionService, pos_item);
+                if (l == 212) ift.addons += FIREWORKS2_ESSENCE.GetProps(sessionService, pos_item);
+                if (l == 218) ift.addons += HOME_FORMULAS_ITEM_ESSENCE.GetProps(sessionService, pos_item);
                 if (l != 3 && l != 6 && l != 9 && l != 12 && l != 17 && l != 19 && l != 22 && l != 23 &&
                     l != 27 && l != 31 && l != 83 && l != 89 && l != 95 && l != 96 && l != 98 && l != 106 &&
                     l != 107 && l != 114 && l != 115 && l != 119 && l != 121 && l != 122 && l != 123 &&
                     l != 124 && l != 130 && l != 133 && l != 135 && l != 141 && l != 151 && l != 184 &&
                     l != 191 && l != 197 && l != 212 && l != 218)
                 {
-                    for (int k = 0; k < MainWindow.eLC.Lists[l].elementFields.Length; k++)
+                    for (int k = 0; k < sessionService.ListCollection.Lists[l].elementFields.Length; k++)
                     {
-                        if (MainWindow.eLC.Lists[l].elementFields[k] == "price")
+                        if (sessionService.ListCollection.Lists[l].elementFields[k] == "price")
                         {
-                            string price = MainWindow.eLC.GetValue(l, pos_item, k);
+                            string price = sessionService.ListCollection.GetValue(l, pos_item, k);
                             if (price != "0")
                             {
-                                ift.price += "\n" + Extensions.GetLocalization(7024) + " " + Convert.ToInt32(price).ToString("N0", CultureInfo.CreateSpecificCulture("zh-CN"));
+                                ift.price += "\n" + Extensions.GetLocalization(sessionService, 7024) + " " + Convert.ToInt32(price).ToString("N0", CultureInfo.CreateSpecificCulture("zh-CN"));
                             }
                             break;
                         }
@@ -914,67 +914,67 @@ namespace sELedit
                     switch (p)
                     {
                         case 0:
-                            ift.protect += Extensions.GetLocalization(3000);//proc_type_1
+                            ift.protect += Extensions.GetLocalization(sessionService, 3000);//proc_type_1
                             break;
                         case 1:
-                            ift.protect += Extensions.GetLocalization(3001);//proc_type_2
+                            ift.protect += Extensions.GetLocalization(sessionService, 3001);//proc_type_2
                             break;
                         case 2:
-                            ift.protect += Extensions.GetLocalization(3002);//proc_type_4
+                            ift.protect += Extensions.GetLocalization(sessionService, 3002);//proc_type_4
                             break;
                         case 3:
-                            ift.protect += Extensions.GetLocalization(3003);//proc_type_8
+                            ift.protect += Extensions.GetLocalization(sessionService, 3003);//proc_type_8
                             break;
                         case 4:
-                            ift.protect += Extensions.GetLocalization(3004);//proc_type_16
+                            ift.protect += Extensions.GetLocalization(sessionService, 3004);//proc_type_16
                             break;
                         case 5:
-                            ift.protect += Extensions.GetLocalization(3005);//proc_type_32
+                            ift.protect += Extensions.GetLocalization(sessionService, 3005);//proc_type_32
                             break;
                         case 7:
-                            ift.protect += Extensions.GetLocalization(3007);//proc_type_128
+                            ift.protect += Extensions.GetLocalization(sessionService, 3007);//proc_type_128
                             break;
                         case 8:
-                            ift.protect += Extensions.GetLocalization(3008);//proc_type_256
+                            ift.protect += Extensions.GetLocalization(sessionService, 3008);//proc_type_256
                             break;
                         case 9:
-                            ift.protect += Extensions.GetLocalization(3009);//proc_type_512
+                            ift.protect += Extensions.GetLocalization(sessionService, 3009);//proc_type_512
                             break;
                         case 10:
-                            ift.protect += Extensions.GetLocalization(3010);//proc_type_1024
+                            ift.protect += Extensions.GetLocalization(sessionService, 3010);//proc_type_1024
                             break;
                         case 11:
-                            ift.protect += Extensions.GetLocalization(3011);//proc_type_2048
+                            ift.protect += Extensions.GetLocalization(sessionService, 3011);//proc_type_2048
                             break;
                         case 12:
-                            ift.protect += Extensions.GetLocalization(3012);//proc_type_4096
+                            ift.protect += Extensions.GetLocalization(sessionService, 3012);//proc_type_4096
                             break;
                         case 14:
-                            ift.protect += Extensions.GetLocalization(3014);//proc_type_16384
+                            ift.protect += Extensions.GetLocalization(sessionService, 3014);//proc_type_16384
                             break;
                     }
                 }
 
-                for (int k = 0; k < MainWindow.eLC.Lists[l].elementFields.Length; k++)
+                for (int k = 0; k < sessionService.ListCollection.Lists[l].elementFields.Length; k++)
                 {
-                    if (MainWindow.eLC.Lists[l].elementFields[k] == "file_icon")
+                    if (sessionService.ListCollection.Lists[l].elementFields[k] == "file_icon")
                     {
-                        string image = MainWindow.eLC.GetValue(l, pos_item, k);
+                        string image = sessionService.ListCollection.GetValue(l, pos_item, k);
                         String path = Path.GetFileName(image);
-                        if (MainWindow.database.ContainsKey(path))
+                        if (sessionService.Database.ContainsKey(path))
                         {
-                            ift.img = MainWindow.database.images(path);
+                            ift.img = sessionService.Database.images(path);
                         }
                         else
                         {
-                            ift.img = MainWindow.database.images("unknown.dds");
+                            ift.img = sessionService.Database.images("unknown.dds");
                         }
                         break;
                     }
                 }
-                //if (MainWindow.database.item_desc.ContainsKey(ift.itemId))
+                //if (sessionService.Database.item_desc.ContainsKey(ift.itemId))
                 //{
-                //    ift.description = MainWindow.database.item_desc[ift.itemId];
+                //    ift.description = sessionService.Database.item_desc[ift.itemId];
                 //}
 
             }
@@ -1142,7 +1142,7 @@ namespace sELedit
         //    return recipe;
         //}
 
-        public static InfoTool GetItemProps2byId(int Id, uint Period)
+        public static InfoTool GetItemProps2byId(ISessionService sessionService, int Id, uint Period)
         {
             InfoTool ift = new InfoTool();
             uint proctypes;
@@ -1151,42 +1151,42 @@ namespace sELedit
             int l = 0;
             int pos_item = 0;
             bool Suc = false;
-            if (MainWindow.database == null || MainWindow.eLC == null)
+            if (sessionService.Database == null || sessionService.ListCollection == null)
             {
                 return ift;
             }
 
 
-            if (MainWindow.database.task_items != null && MainWindow.database.task_items.ContainsKey(Id))
+            if (sessionService.Database.task_items != null && sessionService.Database.task_items.ContainsKey(Id))
             {
-                pos_item = MainWindow.database.task_items[Id].index;
-                l = MainWindow.database.task_items[Id].listID;
-                ift.name = MainWindow.database.task_items[Id].name;
-                ift.price = ift.price += "\n" + Extensions.GetLocalization(7024) + " " + MainWindow.database.task_items[Id].price;
-                ift.test = MainWindow.database.task_items[Id];
-                if (MainWindow.database.ContainsKey(MainWindow.database.task_items[Id].iconpath))
+                pos_item = sessionService.Database.task_items[Id].index;
+                l = sessionService.Database.task_items[Id].listID;
+                ift.name = sessionService.Database.task_items[Id].name;
+                ift.price = ift.price += "\n" + Extensions.GetLocalization(sessionService, 7024) + " " + sessionService.Database.task_items[Id].price;
+                ift.test = sessionService.Database.task_items[Id];
+                if (sessionService.Database.ContainsKey(sessionService.Database.task_items[Id].iconpath))
                 {
-                    ift.img = MainWindow.database.images(MainWindow.database.task_items[Id].iconpath);
+                    ift.img = sessionService.Database.images(sessionService.Database.task_items[Id].iconpath);
                 }
                 else
                 {
-                    ift.img = MainWindow.database.images("unknown.dds");
+                    ift.img = sessionService.Database.images("unknown.dds");
                 }
             }
             else
             {
-                if (MainWindow.database.task_items_list == null || MainWindow.database.task_items_list.Length < 2)
+                if (sessionService.Database.task_items_list == null || sessionService.Database.task_items_list.Length < 2)
                 {
                     return ift;
                 }
-                for (int i = 0; i < MainWindow.database.task_items_list.Length; i += 2)
+                for (int i = 0; i < sessionService.Database.task_items_list.Length; i += 2)
                 {
-                    if (MainWindow.eLC.Version >= Convert.ToInt32(MainWindow.database.task_items_list[i + 1]))
+                    if (sessionService.ListCollection.Version >= Convert.ToInt32(sessionService.Database.task_items_list[i + 1]))
                     {
-                        l = Convert.ToInt32(MainWindow.database.task_items_list[i]);
-                        for (int t = 0; t < MainWindow.eLC.Lists[l].elementValues.Length; t++)
+                        l = Convert.ToInt32(sessionService.Database.task_items_list[i]);
+                        for (int t = 0; t < sessionService.ListCollection.Lists[l].elementValues.Length; t++)
                         {
-                            if (Convert.ToInt32(MainWindow.eLC.GetValue(l, t, 0)) == Id)
+                            if (Convert.ToInt32(sessionService.ListCollection.GetValue(l, t, 0)) == Id)
                             {
                                 pos_item = t;
                                 Suc = true;
@@ -1197,25 +1197,25 @@ namespace sELedit
                     }
                 }
 
-                for (int k = 0; k < MainWindow.eLC.Lists[l].elementFields.Length; k++)
+                for (int k = 0; k < sessionService.ListCollection.Lists[l].elementFields.Length; k++)
                 {
-                    if (MainWindow.eLC.Lists[l].elementFields[k] == "Name")
+                    if (sessionService.ListCollection.Lists[l].elementFields[k] == "Name")
                     {
-                        ift.name = MainWindow.eLC.GetValue(l, pos_item, k);
+                        ift.name = sessionService.ListCollection.GetValue(l, pos_item, k);
                         break;
                     }
                 }
 
-                for (int k = 0; k < MainWindow.eLC.Lists[l].elementFields.Length; k++)
+                for (int k = 0; k < sessionService.ListCollection.Lists[l].elementFields.Length; k++)
                 {
-                    if (MainWindow.eLC.Lists[l].elementFields[k] == "file_icon")
+                    if (sessionService.ListCollection.Lists[l].elementFields[k] == "file_icon")
                     {
-                        ift.file_icon = MainWindow.eLC.GetValue(l, pos_item, k);
+                        ift.file_icon = sessionService.ListCollection.GetValue(l, pos_item, k);
                         String path = Path.GetFileName(ift.file_icon);
                         Bitmap img = null;
-                        if (MainWindow.database.ContainsKey(path))
+                        if (sessionService.Database.ContainsKey(path))
                         {
-                            img = MainWindow.database.images(path);
+                            img = sessionService.Database.images(path);
                         }
                         if (img != null)
                         {
@@ -1227,29 +1227,29 @@ namespace sELedit
 
                 if (Period != 0)
                 {
-                    ift.time = "\n" + Extensions.GetLocalization(7113) + Extensions.ItemPropsSecondsToString2(Period);
+                    ift.time = "\n" + Extensions.GetLocalization(sessionService, 7113) + Extensions.ItemPropsSecondsToString2(sessionService, Period);
                 }
-                for (int k = 0; k < MainWindow.eLC.Lists[l].elementFields.Length; k++)
+                for (int k = 0; k < sessionService.ListCollection.Lists[l].elementFields.Length; k++)
                 {
-                    if (MainWindow.eLC.Lists[l].elementFields[k] == "proc_type")
+                    if (sessionService.ListCollection.Lists[l].elementFields[k] == "proc_type")
                     {
                         pos_proc_type = k;
                         break;
                     }
                 }
-                for (int k = 0; k < MainWindow.eLC.Lists[l].elementFields.Length; k++)
+                for (int k = 0; k < sessionService.ListCollection.Lists[l].elementFields.Length; k++)
                 {
-                    if (MainWindow.eLC.Lists[l].elementFields[k] == "file_icon")
+                    if (sessionService.ListCollection.Lists[l].elementFields[k] == "file_icon")
                     {
-                        string image = MainWindow.eLC.GetValue(l, pos_item, k);
+                        string image = sessionService.ListCollection.GetValue(l, pos_item, k);
                         String path = Path.GetFileName(image);
-                        if (MainWindow.database.ContainsKey(path))
+                        if (sessionService.Database.ContainsKey(path))
                         {
-                            ift.img = MainWindow.database.images(path);
+                            ift.img = sessionService.Database.images(path);
                         }
                         else
                         {
-                            ift.img = MainWindow.database.images("unknown.dds");
+                            ift.img = sessionService.Database.images("unknown.dds");
                         }
                         break;
                     }
@@ -1261,14 +1261,14 @@ namespace sELedit
                     l != 124 && l != 130 && l != 133 && l != 135 && l != 141 && l != 151 && l != 184 &&
                     l != 191 && l != 197 && l != 212 && l != 218)
                 {
-                    for (int k = 0; k < MainWindow.eLC.Lists[l].elementFields.Length; k++)
+                    for (int k = 0; k < sessionService.ListCollection.Lists[l].elementFields.Length; k++)
                     {
-                        if (MainWindow.eLC.Lists[l].elementFields[k] == "price")
+                        if (sessionService.ListCollection.Lists[l].elementFields[k] == "price")
                         {
-                            string price = MainWindow.eLC.GetValue(l, pos_item, k);
+                            string price = sessionService.ListCollection.GetValue(l, pos_item, k);
                             if (price != "0")
                             {
-                                ift.price += "\n" + Extensions.GetLocalization(7024) + " " + Convert.ToInt32(price).ToString("N0", CultureInfo.CreateSpecificCulture("zh-CN"));
+                                ift.price += "\n" + Extensions.GetLocalization(sessionService, 7024) + " " + Convert.ToInt32(price).ToString("N0", CultureInfo.CreateSpecificCulture("zh-CN"));
                             }
                             break;
                         }
@@ -1280,7 +1280,7 @@ namespace sELedit
             {
                 return ift;
             }
-            bool result = uint.TryParse(MainWindow.eLC.GetValue(l, pos_item, pos_proc_type), out proctypes);
+            bool result = uint.TryParse(sessionService.ListCollection.GetValue(l, pos_item, pos_proc_type), out proctypes);
             List<uint> powers = new List<uint>(Extensions.GetPowers(proctypes));
             for (int p = 0; p < powers.Count; p++)
             {
@@ -1289,10 +1289,10 @@ namespace sELedit
                 switch (p)
                 {
                     case 6:
-                        ift.powers += "\n" + Extensions.GetLocalization(3006);//proc_type_64
+                        ift.powers += "\n" + Extensions.GetLocalization(sessionService, 3006);//proc_type_64
                         break;
                     case 15:
-                        ift.powers += "\n" + Extensions.GetLocalization(3015);//proc_type_32768
+                        ift.powers += "\n" + Extensions.GetLocalization(sessionService, 3015);//proc_type_32768
                         break;
                 }
             }
@@ -1304,45 +1304,45 @@ namespace sELedit
                 switch (p)
                 {
                     case 13:
-                        ift.powers += Extensions.GetLocalization(3013);//proc_type_8192
+                        ift.powers += Extensions.GetLocalization(sessionService, 3013);//proc_type_8192
                         break;
                 }
             }
-            if (l == 3) ift.addons += WEAPON_ESSENCE.GetProps(pos_item);
-            if (l == 6) ift.addons += ARMOR_ESSENCE.GetProps(pos_item);
-            if (l == 9) ift.addons += DECORATION_ESSENCE.GetProps(pos_item);
-            if (l == 12) ift.addons += MEDICINE_ESSENCE.GetProps(pos_item);
-            if (l == 17) ift.addons += DAMAGERUNE_ESSENCE.GetProps(pos_item);
-            if (l == 19) ift.addons += ARMORRUNE_ESSENCE.GetProps(pos_item);
-            if (l == 22) ift.addons += FLYSWORD_ESSENCE.GetProps(pos_item);
-            if (l == 23) ift.addons += WINGMANWING_ESSENCE.GetProps(pos_item);
-            if (l == 27) ift.addons += ELEMENT_ESSENCE.GetProps(pos_item);
-            if (l == 28) ift.addons += "\n" + Extensions.GetLocalization(7118);
-            if (l == 31) ift.addons += PROJECTILE_ESSENCE.GetProps(pos_item);
-            if (l == 83) ift.addons += FASHION_ESSENCE.GetProps(pos_item);
-            if (l == 89) ift.addons += FACEPILL_ESSENCE.GetProps(pos_item);
-            if (l == 95) ift.addons += PET_EGG_ESSENCE.GetProps(pos_item);
-            if (l == 96) ift.addons += PET_FOOD_ESSENCE.GetProps(pos_item);
-            if (l == 98) ift.addons += FIREWORKS_ESSENCE.GetProps(pos_item);
-            if (l == 106) ift.addons += SKILLMATTER_ESSENCE.GetProps(pos_item);
-            if (l == 107) ift.addons += REFINE_TICKET_ESSENCE.GetProps(pos_item);
-            if (l == 114) ift.addons += AUTOHP_ESSENCE.GetProps(pos_item);
-            if (l == 115) ift.addons += AUTOMP_ESSENCE.GetProps(pos_item);
-            if (l == 119) ift.addons += GOBLIN_ESSENCE.GetProps(pos_item);
-            if (l == 121) ift.addons += GOBLIN_EQUIP_ESSENCE.GetProps(pos_item);
-            if (l == 122) ift.addons += GOBLIN_EXPPILL_ESSENCE.GetProps(pos_item);
-            if (l == 123) ift.addons += SELL_CERTIFICATE_ESSENCE.GetProps(pos_item);
-            if (l == 124) ift.addons += TARGET_ITEM_ESSENCE.GetProps(pos_item);
-            if (l == 130) ift.addons += INC_SKILL_ABILITY_ESSENCE.GetProps(pos_item);
-            if (l == 133) ift.addons += WEDDING_BOOKCARD_ESSENCE.GetProps(pos_item);
-            if (l == 135) ift.addons += SHARPENER_ESSENCE.GetProps(pos_item);
-            if (l == 141) ift.addons += CONGREGATE_ESSENCE.GetProps(pos_item);
-            if (l == 151) ift.addons += FORCE_TOKEN_ESSENCE.GetProps(pos_item);
-            if (l == 184) ift.addons += POKER_ESSENCE.GetProps(pos_item);
-            if (l == 191) ift.addons += UNIVERSAL_TOKEN_ESSENCE.GetProps(pos_item);
-            if (l == 197) ift.addons += ASTROLABE_ESSENCE.GetProps(pos_item);
-            if (l == 212) ift.addons += FIREWORKS2_ESSENCE.GetProps(pos_item);
-            if (l == 218) ift.addons += HOME_FORMULAS_ITEM_ESSENCE.GetProps(pos_item);
+            if (l == 3) ift.addons += WEAPON_ESSENCE.GetProps(sessionService, pos_item);
+            if (l == 6) ift.addons += ARMOR_ESSENCE.GetProps(sessionService, pos_item);
+            if (l == 9) ift.addons += DECORATION_ESSENCE.GetProps(sessionService, pos_item);
+            if (l == 12) ift.addons += MEDICINE_ESSENCE.GetProps(sessionService, pos_item);
+            if (l == 17) ift.addons += DAMAGERUNE_ESSENCE.GetProps(sessionService, pos_item);
+            if (l == 19) ift.addons += ARMORRUNE_ESSENCE.GetProps(sessionService, pos_item);
+            if (l == 22) ift.addons += FLYSWORD_ESSENCE.GetProps(sessionService, pos_item);
+            if (l == 23) ift.addons += WINGMANWING_ESSENCE.GetProps(sessionService, pos_item);
+            if (l == 27) ift.addons += ELEMENT_ESSENCE.GetProps(sessionService, pos_item);
+            if (l == 28) ift.addons += "\n" + Extensions.GetLocalization(sessionService, 7118);
+            if (l == 31) ift.addons += PROJECTILE_ESSENCE.GetProps(sessionService, pos_item);
+            if (l == 83) ift.addons += FASHION_ESSENCE.GetProps(sessionService, pos_item);
+            if (l == 89) ift.addons += FACEPILL_ESSENCE.GetProps(sessionService, pos_item);
+            if (l == 95) ift.addons += PET_EGG_ESSENCE.GetProps(sessionService, pos_item);
+            if (l == 96) ift.addons += PET_FOOD_ESSENCE.GetProps(sessionService, pos_item);
+            if (l == 98) ift.addons += FIREWORKS_ESSENCE.GetProps(sessionService, pos_item);
+            if (l == 106) ift.addons += SKILLMATTER_ESSENCE.GetProps(sessionService, pos_item);
+            if (l == 107) ift.addons += REFINE_TICKET_ESSENCE.GetProps(sessionService, pos_item);
+            if (l == 114) ift.addons += AUTOHP_ESSENCE.GetProps(sessionService, pos_item);
+            if (l == 115) ift.addons += AUTOMP_ESSENCE.GetProps(sessionService, pos_item);
+            if (l == 119) ift.addons += GOBLIN_ESSENCE.GetProps(sessionService, pos_item);
+            if (l == 121) ift.addons += GOBLIN_EQUIP_ESSENCE.GetProps(sessionService, pos_item);
+            if (l == 122) ift.addons += GOBLIN_EXPPILL_ESSENCE.GetProps(sessionService, pos_item);
+            if (l == 123) ift.addons += SELL_CERTIFICATE_ESSENCE.GetProps(sessionService, pos_item);
+            if (l == 124) ift.addons += TARGET_ITEM_ESSENCE.GetProps(sessionService, pos_item);
+            if (l == 130) ift.addons += INC_SKILL_ABILITY_ESSENCE.GetProps(sessionService, pos_item);
+            if (l == 133) ift.addons += WEDDING_BOOKCARD_ESSENCE.GetProps(sessionService, pos_item);
+            if (l == 135) ift.addons += SHARPENER_ESSENCE.GetProps(sessionService, pos_item);
+            if (l == 141) ift.addons += CONGREGATE_ESSENCE.GetProps(sessionService, pos_item);
+            if (l == 151) ift.addons += FORCE_TOKEN_ESSENCE.GetProps(sessionService, pos_item);
+            if (l == 184) ift.addons += POKER_ESSENCE.GetProps(sessionService, pos_item);
+            if (l == 191) ift.addons += UNIVERSAL_TOKEN_ESSENCE.GetProps(sessionService, pos_item);
+            if (l == 197) ift.addons += ASTROLABE_ESSENCE.GetProps(sessionService, pos_item);
+            if (l == 212) ift.addons += FIREWORKS2_ESSENCE.GetProps(sessionService, pos_item);
+            if (l == 218) ift.addons += HOME_FORMULAS_ITEM_ESSENCE.GetProps(sessionService, pos_item);
 
             if (ift.addons.Length > 1)
             {
@@ -1355,50 +1355,50 @@ namespace sELedit
                 switch (p)
                 {
                     case 0:
-                        ift.protect += Extensions.GetLocalization(3000);//proc_type_1
+                        ift.protect += Extensions.GetLocalization(sessionService, 3000);//proc_type_1
                         break;
                     case 1:
-                        ift.protect += Extensions.GetLocalization(3001);//proc_type_2
+                        ift.protect += Extensions.GetLocalization(sessionService, 3001);//proc_type_2
                         break;
                     case 2:
-                        ift.protect += Extensions.GetLocalization(3002);//proc_type_4
+                        ift.protect += Extensions.GetLocalization(sessionService, 3002);//proc_type_4
                         break;
                     case 3:
-                        ift.protect += Extensions.GetLocalization(3003);//proc_type_8
+                        ift.protect += Extensions.GetLocalization(sessionService, 3003);//proc_type_8
                         break;
                     case 4:
-                        ift.protect += Extensions.GetLocalization(3004);//proc_type_16
+                        ift.protect += Extensions.GetLocalization(sessionService, 3004);//proc_type_16
                         break;
                     case 5:
-                        ift.protect += Extensions.GetLocalization(3005);//proc_type_32
+                        ift.protect += Extensions.GetLocalization(sessionService, 3005);//proc_type_32
                         break;
                     case 7:
-                        ift.protect += Extensions.GetLocalization(3007);//proc_type_128
+                        ift.protect += Extensions.GetLocalization(sessionService, 3007);//proc_type_128
                         break;
                     case 8:
-                        ift.protect += Extensions.GetLocalization(3008);//proc_type_256
+                        ift.protect += Extensions.GetLocalization(sessionService, 3008);//proc_type_256
                         break;
                     case 9:
-                        ift.protect += Extensions.GetLocalization(3009);//proc_type_512
+                        ift.protect += Extensions.GetLocalization(sessionService, 3009);//proc_type_512
                         break;
                     case 10:
-                        ift.protect += Extensions.GetLocalization(3010);//proc_type_1024
+                        ift.protect += Extensions.GetLocalization(sessionService, 3010);//proc_type_1024
                         break;
                     case 11:
-                        ift.protect += Extensions.GetLocalization(3011);//proc_type_2048
+                        ift.protect += Extensions.GetLocalization(sessionService, 3011);//proc_type_2048
                         break;
                     case 12:
-                        ift.protect += Extensions.GetLocalization(3012);//proc_type_4096
+                        ift.protect += Extensions.GetLocalization(sessionService, 3012);//proc_type_4096
                         break;
                     case 14:
-                        ift.protect += Extensions.GetLocalization(3014);//proc_type_16384
+                        ift.protect += Extensions.GetLocalization(sessionService, 3014);//proc_type_16384
                         break;
                 }
             }
 
-            //if (MainWindow.database.item_desc.ContainsKey(ift.itemId))
+            //if (sessionService.Database.item_desc.ContainsKey(ift.itemId))
             //{
-            //    ift.description = MainWindow.database.item_desc[ift.itemId];
+            //    ift.description = sessionService.Database.item_desc[ift.itemId];
             //}
             return ift;
         }
@@ -1491,12 +1491,12 @@ namespace sELedit
         //    return line;
         //}
 
-        public static string DecodingCharacterComboId(string character_combo_id)
+        public static string DecodingCharacterComboId(ISessionService sessionService, string character_combo_id)
         {
             string line = "";
-            if ((character_combo_id != "0" && character_combo_id != "255" && MainWindow.eLC.Version < 52) || (character_combo_id != "0" && character_combo_id != "4095"))
+            if ((character_combo_id != "0" && character_combo_id != "255" && sessionService.ListCollection.Version < 52) || (character_combo_id != "0" && character_combo_id != "4095"))
             {
-                line += "\n" + Extensions.GetLocalization(7017);
+                line += "\n" + Extensions.GetLocalization(sessionService, 7017);
                 uint charactercomboids;
                 bool result_character_combo_id = uint.TryParse(character_combo_id, out charactercomboids);
                 List<uint> powers_character_combo_id = new List<uint>(Extensions.GetPowers(charactercomboids));
@@ -1507,40 +1507,40 @@ namespace sELedit
                     switch (p)
                     {
                         case 0:
-                            line += " " + Extensions.GetLocalization(1120);//character_combo_id_1
+                            line += " " + Extensions.GetLocalization(sessionService, 1120);//character_combo_id_1
                             break;
                         case 1:
-                            line += " " + Extensions.GetLocalization(1121);//character_combo_id_2
+                            line += " " + Extensions.GetLocalization(sessionService, 1121);//character_combo_id_2
                             break;
                         case 2:
-                            line += " " + Extensions.GetLocalization(1122);//character_combo_id_4
+                            line += " " + Extensions.GetLocalization(sessionService, 1122);//character_combo_id_4
                             break;
                         case 3:
-                            line += " " + Extensions.GetLocalization(1123);//character_combo_id_8
+                            line += " " + Extensions.GetLocalization(sessionService, 1123);//character_combo_id_8
                             break;
                         case 4:
-                            line += " " + Extensions.GetLocalization(1124);//character_combo_id_16
+                            line += " " + Extensions.GetLocalization(sessionService, 1124);//character_combo_id_16
                             break;
                         case 5:
-                            line += " " + Extensions.GetLocalization(1125);//character_combo_id_32
+                            line += " " + Extensions.GetLocalization(sessionService, 1125);//character_combo_id_32
                             break;
                         case 6:
-                            line += " " + Extensions.GetLocalization(1126);//character_combo_id_64
+                            line += " " + Extensions.GetLocalization(sessionService, 1126);//character_combo_id_64
                             break;
                         case 7:
-                            line += " " + Extensions.GetLocalization(1127);//character_combo_id_128
+                            line += " " + Extensions.GetLocalization(sessionService, 1127);//character_combo_id_128
                             break;
                         case 8:
-                            line += " " + Extensions.GetLocalization(1128);//character_combo_id_256
+                            line += " " + Extensions.GetLocalization(sessionService, 1128);//character_combo_id_256
                             break;
                         case 9:
-                            line += " " + Extensions.GetLocalization(1129);//character_combo_id_512
+                            line += " " + Extensions.GetLocalization(sessionService, 1129);//character_combo_id_512
                             break;
                         case 10:
-                            line += " " + Extensions.GetLocalization(1130);//character_combo_id_1024
+                            line += " " + Extensions.GetLocalization(sessionService, 1130);//character_combo_id_1024
                             break;
                         case 11:
-                            line += " " + Extensions.GetLocalization(1131);//character_combo_id_2048
+                            line += " " + Extensions.GetLocalization(sessionService, 1131);//character_combo_id_2048
                             break;
                     }
                 }
@@ -1548,12 +1548,12 @@ namespace sELedit
             return line;
         }
 
-        public static string DecodingFoodMask(string food_mask)
+        public static string DecodingFoodMask(ISessionService sessionService, string food_mask)
         {
             string line = "";
             if (food_mask != "0")
             {
-                line += "\n" + Extensions.GetLocalization(7050);
+                line += "\n" + Extensions.GetLocalization(sessionService, 7050);
                 uint foodmasks;
                 bool result_food_mask = uint.TryParse(food_mask, out foodmasks);
                 List<uint> powers_food_mask = new List<uint>(Extensions.GetPowers(foodmasks));
@@ -1564,19 +1564,19 @@ namespace sELedit
                     switch (p)
                     {
                         case 0:
-                            line += " " + Extensions.GetLocalization(3050);//food_mask_1
+                            line += " " + Extensions.GetLocalization(sessionService, 3050);//food_mask_1
                             break;
                         case 1:
-                            line += " " + Extensions.GetLocalization(3051);//food_mask_2
+                            line += " " + Extensions.GetLocalization(sessionService, 3051);//food_mask_2
                             break;
                         case 2:
-                            line += " " + Extensions.GetLocalization(3052);//food_mask_4
+                            line += " " + Extensions.GetLocalization(sessionService, 3052);//food_mask_4
                             break;
                         case 3:
-                            line += " " + Extensions.GetLocalization(3053);//food_mask_8
+                            line += " " + Extensions.GetLocalization(sessionService, 3053);//food_mask_8
                             break;
                         case 4:
-                            line += " " + Extensions.GetLocalization(3054);//food_mask_16
+                            line += " " + Extensions.GetLocalization(sessionService, 3054);//food_mask_16
                             break;
                     }
                 }
@@ -1584,7 +1584,7 @@ namespace sELedit
             return line;
         }
 
-        public static string ItemPropsSecondsToString(uint time)
+        public static string ItemPropsSecondsToString(ISessionService sessionService, uint time)
         {
             string result = "";
             uint time1 = time;
@@ -1597,14 +1597,14 @@ namespace sELedit
             if (time1 == 60) seconds = 60;
             if (time1 == 3600) minutes = 60;
             if (time1 == 86400) hours = 60;
-            if (time1 <= 60) result = seconds.ToString() + Extensions.GetLocalization(7091);
-            if (time1 > 60 && time1 <= 3600) result = minutes.ToString() + Extensions.GetLocalization(7092) + " " + seconds.ToString() + Extensions.GetLocalization(7091);
-            if (time1 > 3600 && time1 <= 86400) result = hours.ToString() + Extensions.GetLocalization(7093) + " " + minutes.ToString() + Extensions.GetLocalization(7092);
-            if (time1 > 86400) result = days.ToString() + Extensions.GetLocalization(7094) + " " + hours.ToString() + Extensions.GetLocalization(7093);
+            if (time1 <= 60) result = seconds.ToString() + Extensions.GetLocalization(sessionService, 7091);
+            if (time1 > 60 && time1 <= 3600) result = minutes.ToString() + Extensions.GetLocalization(sessionService, 7092) + " " + seconds.ToString() + Extensions.GetLocalization(sessionService, 7091);
+            if (time1 > 3600 && time1 <= 86400) result = hours.ToString() + Extensions.GetLocalization(sessionService, 7093) + " " + minutes.ToString() + Extensions.GetLocalization(sessionService, 7092);
+            if (time1 > 86400) result = days.ToString() + Extensions.GetLocalization(sessionService, 7094) + " " + hours.ToString() + Extensions.GetLocalization(sessionService, 7093);
             return result;
         }
 
-        public static string ItemPropsSecondsToString2(uint time)
+        public static string ItemPropsSecondsToString2(ISessionService sessionService, uint time)
         {
             string result = "";
             uint time1 = time;
@@ -1617,10 +1617,10 @@ namespace sELedit
             if (time1 == 60) seconds = 60;
             if (time1 == 3600) minutes = 60;
             if (time1 == 86400) hours = 60;
-            if (time1 <= 60) result = seconds.ToString() + Extensions.GetLocalization(7114);
-            if (time1 > 60 && time1 <= 3600) result = minutes.ToString() + Extensions.GetLocalization(7115) + " " + seconds.ToString() + Extensions.GetLocalization(7114);
-            if (time1 > 3600 && time1 <= 86400) result = hours.ToString() + Extensions.GetLocalization(7116) + " " + minutes.ToString() + Extensions.GetLocalization(7115);
-            if (time1 > 86400) result = days.ToString() + Extensions.GetLocalization(7117) + " " + hours.ToString() + Extensions.GetLocalization(7116);
+            if (time1 <= 60) result = seconds.ToString() + Extensions.GetLocalization(sessionService, 7114);
+            if (time1 > 60 && time1 <= 3600) result = minutes.ToString() + Extensions.GetLocalization(sessionService, 7115) + " " + seconds.ToString() + Extensions.GetLocalization(sessionService, 7114);
+            if (time1 > 3600 && time1 <= 86400) result = hours.ToString() + Extensions.GetLocalization(sessionService, 7116) + " " + minutes.ToString() + Extensions.GetLocalization(sessionService, 7115);
+            if (time1 > 86400) result = days.ToString() + Extensions.GetLocalization(sessionService, 7117) + " " + hours.ToString() + Extensions.GetLocalization(sessionService, 7116);
             return result;
         }
 

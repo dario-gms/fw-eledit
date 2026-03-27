@@ -1,4 +1,4 @@
-﻿namespace Shield.classes.oops.util
+namespace Shield.classes.oops.util
 {
     public class HashMap<T1, T2, T3>
     {

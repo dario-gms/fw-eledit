@@ -1,11 +1,11 @@
-﻿using System;
+using System;
 using System.Collections;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
-namespace sELedit
+namespace FWEledit
 {
 	public class eList
 	{
@@ -167,7 +167,7 @@ namespace sELedit
 		}
 
 		// add Item
-		public void AddItem(object[] itemValues)//Вроде работает
+		public void AddItem(object[] itemValues)//????? ????????
 		{
 			object[][] newValues = new object[elementValues.Length + 1][];
 			Array.Resize(ref elementValues, elementValues.Length + 1);

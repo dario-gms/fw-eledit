@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Globalization;
 using System.IO;
 #if !(NET20 || NET35 || PORTABLE || PORTABLE40)

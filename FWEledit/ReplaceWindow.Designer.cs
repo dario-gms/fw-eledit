@@ -1,4 +1,4 @@
-﻿namespace sELedit
+namespace FWEledit
 {
 	partial class ReplaceWindow
 	{

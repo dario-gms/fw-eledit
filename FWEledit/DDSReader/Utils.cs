@@ -1,7 +1,7 @@
-﻿using System.Drawing;
+using System.Drawing;
 using System.Runtime.InteropServices;
 
-namespace sELedit.DDSReader.Utils
+namespace FWEledit.DDSReader.Utils
 {
 	public class Helper
 	{

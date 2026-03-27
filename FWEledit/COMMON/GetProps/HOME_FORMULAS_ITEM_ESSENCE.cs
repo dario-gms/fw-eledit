@@ -1,12 +1,12 @@
-﻿
+
 using System;
 using System.Globalization;
 
-namespace sELedit
+namespace FWEledit
 {
     class HOME_FORMULAS_ITEM_ESSENCE
     {
-        public static string GetProps(int pos_item)
+        public static string GetProps(ISessionService sessionService, int pos_item)
         {
             string line = "";
             try
@@ -23,33 +23,33 @@ namespace sELedit
                 string resources_num_3 = "0";
                 string resources_num_4 = "0";
                 string price1 = "0";
-                for (int k = 0; k < MainWindow.eLC.Lists[218].elementFields.Length; k++)
+                for (int k = 0; k < sessionService.ListCollection.Lists[218].elementFields.Length; k++)
                 {
-                    if (MainWindow.eLC.Lists[218].elementFields[k] == "id_recipe")
+                    if (sessionService.ListCollection.Lists[218].elementFields[k] == "id_recipe")
                     {
-                        string id_recipe = MainWindow.eLC.GetValue(218, pos_item, k);
+                        string id_recipe = sessionService.ListCollection.GetValue(218, pos_item, k);
                         if (id_recipe != "0")
                         {
-                            for (int t = 0; t < MainWindow.eLC.Lists[217].elementValues.Length; t++)
+                            for (int t = 0; t < sessionService.ListCollection.Lists[217].elementValues.Length; t++)
                             {
-                                if (MainWindow.eLC.GetValue(217, t, 0) == id_recipe)
+                                if (sessionService.ListCollection.GetValue(217, t, 0) == id_recipe)
                                 {
-                                    for (int a = 0; a < MainWindow.eLC.Lists[217].elementFields.Length; a++)
+                                    for (int a = 0; a < sessionService.ListCollection.Lists[217].elementFields.Length; a++)
                                     {
-                                        if (MainWindow.eLC.Lists[217].elementFields[a] == "id_to_make")
+                                        if (sessionService.ListCollection.Lists[217].elementFields[a] == "id_to_make")
                                         {
-                                            string id_to_make = MainWindow.eLC.GetValue(217, t, a);
+                                            string id_to_make = sessionService.ListCollection.GetValue(217, t, a);
                                             if (id_to_make != "0")
                                             {
-                                                for (int i = 0; i < MainWindow.eLC.Lists[223].elementValues.Length; i++)
+                                                for (int i = 0; i < sessionService.ListCollection.Lists[223].elementValues.Length; i++)
                                                 {
-                                                    if (MainWindow.eLC.GetValue(223, i, 0) == id_to_make)
+                                                    if (sessionService.ListCollection.GetValue(223, i, 0) == id_to_make)
                                                     {
-                                                        for (int f = 0; f < MainWindow.eLC.Lists[223].elementFields.Length; f++)
+                                                        for (int f = 0; f < sessionService.ListCollection.Lists[223].elementFields.Length; f++)
                                                         {
-                                                            if (MainWindow.eLC.Lists[223].elementFields[f] == "Name")
+                                                            if (sessionService.ListCollection.Lists[223].elementFields[f] == "Name")
                                                             {
-                                                                name = MainWindow.eLC.GetValue(223, i, f);
+                                                                name = sessionService.ListCollection.GetValue(223, i, f);
                                                                 break;
                                                             }
                                                         }
@@ -60,54 +60,54 @@ namespace sELedit
                                             break;
                                         }
                                     }
-                                    for (int a = 0; a < MainWindow.eLC.Lists[217].elementFields.Length; a++)
+                                    for (int a = 0; a < sessionService.ListCollection.Lists[217].elementFields.Length; a++)
                                     {
-                                        if (MainWindow.eLC.Lists[217].elementFields[a] == "require_produce_type")
+                                        if (sessionService.ListCollection.Lists[217].elementFields[a] == "require_produce_type")
                                         {
-                                            require_produce_type = MainWindow.eLC.GetValue(217, t, a);
+                                            require_produce_type = sessionService.ListCollection.GetValue(217, t, a);
                                             break;
                                         }
                                     }
-                                    for (int a = 0; a < MainWindow.eLC.Lists[217].elementFields.Length; a++)
+                                    for (int a = 0; a < sessionService.ListCollection.Lists[217].elementFields.Length; a++)
                                     {
-                                        if (MainWindow.eLC.Lists[217].elementFields[a] == "require_factory_type")
+                                        if (sessionService.ListCollection.Lists[217].elementFields[a] == "require_factory_type")
                                         {
-                                            require_factory_type = MainWindow.eLC.GetValue(217, t, a);
+                                            require_factory_type = sessionService.ListCollection.GetValue(217, t, a);
                                             break;
                                         }
                                     }
-                                    for (int a = 0; a < MainWindow.eLC.Lists[217].elementFields.Length; a++)
+                                    for (int a = 0; a < sessionService.ListCollection.Lists[217].elementFields.Length; a++)
                                     {
-                                        if (MainWindow.eLC.Lists[217].elementFields[a] == "require_factory_level")
+                                        if (sessionService.ListCollection.Lists[217].elementFields[a] == "require_factory_level")
                                         {
-                                            require_factory_level = MainWindow.eLC.GetValue(217, t, a);
+                                            require_factory_level = sessionService.ListCollection.GetValue(217, t, a);
                                             break;
                                         }
                                     }
-                                    for (int a = 0; a < MainWindow.eLC.Lists[217].elementFields.Length; a++)
+                                    for (int a = 0; a < sessionService.ListCollection.Lists[217].elementFields.Length; a++)
                                     {
-                                        if (MainWindow.eLC.Lists[217].elementFields[a] == "home_exp")
+                                        if (sessionService.ListCollection.Lists[217].elementFields[a] == "home_exp")
                                         {
-                                            home_exp = MainWindow.eLC.GetValue(217, t, a);
+                                            home_exp = sessionService.ListCollection.GetValue(217, t, a);
                                             break;
                                         }
                                     }
-                                    for (int a = 0; a < MainWindow.eLC.Lists[217].elementFields.Length; a++)
+                                    for (int a = 0; a < sessionService.ListCollection.Lists[217].elementFields.Length; a++)
                                     {
-                                        if (MainWindow.eLC.Lists[217].elementFields[a] == "resources_num_1")
+                                        if (sessionService.ListCollection.Lists[217].elementFields[a] == "resources_num_1")
                                         {
-                                            resources_num_1 = MainWindow.eLC.GetValue(217, t, a);
-                                            resources_num_2 = MainWindow.eLC.GetValue(217, t, a + 1);
-                                            resources_num_3 = MainWindow.eLC.GetValue(217, t, a + 2);
-                                            resources_num_4 = MainWindow.eLC.GetValue(217, t, a + 3);
+                                            resources_num_1 = sessionService.ListCollection.GetValue(217, t, a);
+                                            resources_num_2 = sessionService.ListCollection.GetValue(217, t, a + 1);
+                                            resources_num_3 = sessionService.ListCollection.GetValue(217, t, a + 2);
+                                            resources_num_4 = sessionService.ListCollection.GetValue(217, t, a + 3);
                                             break;
                                         }
                                     }
-                                    for (int a = 0; a < MainWindow.eLC.Lists[217].elementFields.Length; a++)
+                                    for (int a = 0; a < sessionService.ListCollection.Lists[217].elementFields.Length; a++)
                                     {
-                                        if (MainWindow.eLC.Lists[217].elementFields[a] == "price")
+                                        if (sessionService.ListCollection.Lists[217].elementFields[a] == "price")
                                         {
-                                            price1 = MainWindow.eLC.GetValue(217, t, a);
+                                            price1 = sessionService.ListCollection.GetValue(217, t, a);
                                             break;
                                         }
                                     }
@@ -118,44 +118,44 @@ namespace sELedit
                         break;
                     }
                 }
-                for (int k = 0; k < MainWindow.eLC.Lists[218].elementFields.Length; k++)
+                for (int k = 0; k < sessionService.ListCollection.Lists[218].elementFields.Length; k++)
                 {
-                    if (MainWindow.eLC.Lists[218].elementFields[k] == "max_produces")
+                    if (sessionService.ListCollection.Lists[218].elementFields[k] == "max_produces")
                     {
-                        max_produces = MainWindow.eLC.GetValue(218, pos_item, k);
+                        max_produces = sessionService.ListCollection.GetValue(218, pos_item, k);
                         break;
                     }
                 }
-                for (int k = 0; k < MainWindow.eLC.Lists[218].elementFields.Length; k++)
+                for (int k = 0; k < sessionService.ListCollection.Lists[218].elementFields.Length; k++)
                 {
-                    if (MainWindow.eLC.Lists[218].elementFields[k] == "price")
+                    if (sessionService.ListCollection.Lists[218].elementFields[k] == "price")
                     {
-                        string price = MainWindow.eLC.GetValue(218, pos_item, k);
+                        string price = sessionService.ListCollection.GetValue(218, pos_item, k);
                         if (price != "0")
                         {
-                            line += "\n" + Extensions.GetLocalization(7024) + " " + Convert.ToInt32(price).ToString("N0", CultureInfo.CreateSpecificCulture("zh-CN"));
+                            line += "\n" + Extensions.GetLocalization(sessionService, 7024) + " " + Convert.ToInt32(price).ToString("N0", CultureInfo.CreateSpecificCulture("zh-CN"));
                         }
                         break;
                     }
                 }
                 if (require_produce_type == "0")
                 {
-                    if (require_factory_type == "0") factoryname = Extensions.GetLocalization(3070);
-                    if (require_factory_type == "1") factoryname = Extensions.GetLocalization(3071);
-                    if (require_factory_type == "2") factoryname = Extensions.GetLocalization(3072);
-                    if (require_factory_type == "3") factoryname = Extensions.GetLocalization(3073);
-                    if (require_factory_type == "4") factoryname = Extensions.GetLocalization(3074);
+                    if (require_factory_type == "0") factoryname = Extensions.GetLocalization(sessionService, 3070);
+                    if (require_factory_type == "1") factoryname = Extensions.GetLocalization(sessionService, 3071);
+                    if (require_factory_type == "2") factoryname = Extensions.GetLocalization(sessionService, 3072);
+                    if (require_factory_type == "3") factoryname = Extensions.GetLocalization(sessionService, 3073);
+                    if (require_factory_type == "4") factoryname = Extensions.GetLocalization(sessionService, 3074);
                 }
                 if (require_produce_type == "1")
                 {
-                    factoryname = Extensions.GetLocalization(3075);
+                    factoryname = Extensions.GetLocalization(sessionService, 3075);
                 }
-                line += "\n\n" + Extensions.GetLocalization(7108) + name;
+                line += "\n\n" + Extensions.GetLocalization(sessionService, 7108) + name;
                 if (Convert.ToInt32(max_produces) > 0)
                 {
-                    line += "\n" + String.Format(Extensions.GetLocalization(7109), max_produces);
+                    line += "\n" + String.Format(Extensions.GetLocalization(sessionService, 7109), max_produces);
                 }
-                line += "\n" + String.Format(Extensions.GetLocalization(7110), factoryname, require_factory_level, resources_num_1, resources_num_2, resources_num_3, resources_num_4, price1, home_exp);
+                line += "\n" + String.Format(Extensions.GetLocalization(sessionService, 7110), factoryname, require_factory_level, resources_num_1, resources_num_2, resources_num_3, resources_num_4, price1, home_exp);
             }
             catch
             {

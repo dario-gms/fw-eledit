@@ -1,6 +1,6 @@
-﻿using System.Text;
+using System.Text;
 
-namespace sELedit
+namespace FWEledit
 {
 	public class window
 	{

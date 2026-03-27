@@ -1,14 +1,14 @@
-﻿//using PWDE.Element_Editor_Classes;
+//using PWDE.Element_Editor_Classes;
 using Newtonsoft.Json;
 using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Imaging;
-using sELedit.Properties;
+using FWEledit.Properties;
 using eELedit;
 
-namespace sELedit
+namespace FWEledit
 {
 
     public class CacheSave

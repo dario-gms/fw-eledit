@@ -1,12 +1,12 @@
-﻿
+
 using System;
 using System.Globalization;
 
-namespace sELedit
+namespace FWEledit
 {
     class POKER_ESSENCE
     {
-        public static string GetProps(int pos_item)
+        public static string GetProps(ISessionService sessionService, int pos_item)
         {
             string line = "";
             try
@@ -19,32 +19,32 @@ namespace sELedit
                 string poker_adjust_4 = "0";
                 string poker_adjust_5 = "0";
                 string poker_adjust_6 = "0";
-                for (int k = 0; k < MainWindow.eLC.Lists[71].elementValues.Length; k++)
+                for (int k = 0; k < sessionService.ListCollection.Lists[71].elementValues.Length; k++)
                 {
-                    if (Convert.ToInt32(MainWindow.eLC.GetValue(71, k, 0)) == 2)
+                    if (Convert.ToInt32(sessionService.ListCollection.GetValue(71, k, 0)) == 2)
                     {
-                        for (int t = 0; t < MainWindow.eLC.Lists[71].elementFields.Length; t++)
+                        for (int t = 0; t < sessionService.ListCollection.Lists[71].elementFields.Length; t++)
                         {
-                            if (MainWindow.eLC.Lists[71].elementFields[t] == "poker_adjust_1")
+                            if (sessionService.ListCollection.Lists[71].elementFields[t] == "poker_adjust_1")
                             {
-                                poker_adjust_1 = MainWindow.eLC.GetValue(71, k, t);
-                                poker_adjust_2 = MainWindow.eLC.GetValue(71, k, t + 1);
-                                poker_adjust_3 = MainWindow.eLC.GetValue(71, k, t + 2);
-                                poker_adjust_4 = MainWindow.eLC.GetValue(71, k, t + 3);
-                                poker_adjust_5 = MainWindow.eLC.GetValue(71, k, t + 4);
-                                poker_adjust_6 = MainWindow.eLC.GetValue(71, k, t + 5);
+                                poker_adjust_1 = sessionService.ListCollection.GetValue(71, k, t);
+                                poker_adjust_2 = sessionService.ListCollection.GetValue(71, k, t + 1);
+                                poker_adjust_3 = sessionService.ListCollection.GetValue(71, k, t + 2);
+                                poker_adjust_4 = sessionService.ListCollection.GetValue(71, k, t + 3);
+                                poker_adjust_5 = sessionService.ListCollection.GetValue(71, k, t + 4);
+                                poker_adjust_6 = sessionService.ListCollection.GetValue(71, k, t + 5);
                                 break;
                             }
                         }
                         break;
                     }
                 }
-                for (int k = 0; k < MainWindow.eLC.Lists[184].elementFields.Length; k++)
+                for (int k = 0; k < sessionService.ListCollection.Lists[184].elementFields.Length; k++)
                 {
-                    if (MainWindow.eLC.Lists[184].elementFields[k] == "rank")
+                    if (sessionService.ListCollection.Lists[184].elementFields[k] == "rank")
                     {
-                        rank = MainWindow.eLC.GetValue(184, pos_item, k);
-                        line += "\n" + Extensions.GetLocalization(7098);
+                        rank = sessionService.ListCollection.GetValue(184, pos_item, k);
+                        line += "\n" + Extensions.GetLocalization(sessionService, 7098);
                         if (rank == "0") line += " C";
                         if (rank == "1") line += " B";
                         if (rank == "2") line += " A";
@@ -53,54 +53,54 @@ namespace sELedit
                         break;
                     }
                 }
-                for (int k = 0; k < MainWindow.eLC.Lists[184].elementFields.Length; k++)
+                for (int k = 0; k < sessionService.ListCollection.Lists[184].elementFields.Length; k++)
                 {
-                    if (MainWindow.eLC.Lists[184].elementFields[k] == "id_sub_type")
+                    if (sessionService.ListCollection.Lists[184].elementFields[k] == "id_sub_type")
                     {
-                        id_sub_type = MainWindow.eLC.GetValue(184, pos_item, k);
-                        line += "\n" + Extensions.GetLocalization(7044);
-                        if (id_sub_type == "41061") line += " " + Extensions.GetLocalization(3060);
-                        if (id_sub_type == "41062") line += " " + Extensions.GetLocalization(3061);
-                        if (id_sub_type == "41063") line += " " + Extensions.GetLocalization(3062);
-                        if (id_sub_type == "41064") line += " " + Extensions.GetLocalization(3063);
-                        if (id_sub_type == "41065") line += " " + Extensions.GetLocalization(3064);
-                        if (id_sub_type == "41066") line += " " + Extensions.GetLocalization(3065);
+                        id_sub_type = sessionService.ListCollection.GetValue(184, pos_item, k);
+                        line += "\n" + Extensions.GetLocalization(sessionService, 7044);
+                        if (id_sub_type == "41061") line += " " + Extensions.GetLocalization(sessionService, 3060);
+                        if (id_sub_type == "41062") line += " " + Extensions.GetLocalization(sessionService, 3061);
+                        if (id_sub_type == "41063") line += " " + Extensions.GetLocalization(sessionService, 3062);
+                        if (id_sub_type == "41064") line += " " + Extensions.GetLocalization(sessionService, 3063);
+                        if (id_sub_type == "41065") line += " " + Extensions.GetLocalization(sessionService, 3064);
+                        if (id_sub_type == "41066") line += " " + Extensions.GetLocalization(sessionService, 3065);
                         break;
                     }
                 }
-                for (int k = 0; k < MainWindow.eLC.Lists[184].elementFields.Length; k++)
+                for (int k = 0; k < sessionService.ListCollection.Lists[184].elementFields.Length; k++)
                 {
-                    if (MainWindow.eLC.Lists[184].elementFields[k] == "max_level")
+                    if (sessionService.ListCollection.Lists[184].elementFields[k] == "max_level")
                     {
-                        line += "\n" + String.Format(Extensions.GetLocalization(7119), 1, MainWindow.eLC.GetValue(184, pos_item, k));
+                        line += "\n" + String.Format(Extensions.GetLocalization(sessionService, 7119), 1, sessionService.ListCollection.GetValue(184, pos_item, k));
                         break;
                     }
                 }
-                for (int k = 0; k < MainWindow.eLC.Lists[180].elementFields.Length; k++)
+                for (int k = 0; k < sessionService.ListCollection.Lists[180].elementFields.Length; k++)
                 {
-                    if (MainWindow.eLC.Lists[180].elementFields[k] == "exp_adjust_" + (Convert.ToInt32(rank) + 1))
+                    if (sessionService.ListCollection.Lists[180].elementFields[k] == "exp_adjust_" + (Convert.ToInt32(rank) + 1))
                     {
-                        string exp_adjust = MainWindow.eLC.GetValue(180, 0, k);
-                        for (int t = 0; t < MainWindow.eLC.Lists[180].elementFields.Length; t++)
+                        string exp_adjust = sessionService.ListCollection.GetValue(180, 0, k);
+                        for (int t = 0; t < sessionService.ListCollection.Lists[180].elementFields.Length; t++)
                         {
-                            if (MainWindow.eLC.Lists[180].elementFields[t] == "exp_1")
+                            if (sessionService.ListCollection.Lists[180].elementFields[t] == "exp_1")
                             {
-                                string exp_1 = MainWindow.eLC.GetValue(180, 0, t);
-                                line += "\n" + String.Format(Extensions.GetLocalization(7099), 0, Convert.ToInt32(Convert.ToSingle(exp_1) * Convert.ToSingle(exp_adjust)));
+                                string exp_1 = sessionService.ListCollection.GetValue(180, 0, t);
+                                line += "\n" + String.Format(Extensions.GetLocalization(sessionService, 7099), 0, Convert.ToInt32(Convert.ToSingle(exp_1) * Convert.ToSingle(exp_adjust)));
                                 break;
                             }
                         }
                         break;
                     }
                 }
-                for (int k = 0; k < MainWindow.eLC.Lists[184].elementFields.Length; k++)
+                for (int k = 0; k < sessionService.ListCollection.Lists[184].elementFields.Length; k++)
                 {
-                    if (MainWindow.eLC.Lists[184].elementFields[k] == "hp")
+                    if (sessionService.ListCollection.Lists[184].elementFields[k] == "hp")
                     {
-                        string hp = MainWindow.eLC.GetValue(184, pos_item, k);
+                        string hp = sessionService.ListCollection.GetValue(184, pos_item, k);
                         if (hp != "0")
                         {
-                            line += "\n" + Extensions.GetLocalization(7006) + " +";
+                            line += "\n" + Extensions.GetLocalization(sessionService, 7006) + " +";
                             if (id_sub_type == "41061") line += Convert.ToInt32(Convert.ToSingle(hp) * Convert.ToSingle(poker_adjust_1));
                             if (id_sub_type == "41062") line += Convert.ToInt32(Convert.ToSingle(hp) * Convert.ToSingle(poker_adjust_2));
                             if (id_sub_type == "41063") line += Convert.ToInt32(Convert.ToSingle(hp) * Convert.ToSingle(poker_adjust_3));
@@ -111,14 +111,14 @@ namespace sELedit
                         break;
                     }
                 }
-                for (int k = 0; k < MainWindow.eLC.Lists[184].elementFields.Length; k++)
+                for (int k = 0; k < sessionService.ListCollection.Lists[184].elementFields.Length; k++)
                 {
-                    if (MainWindow.eLC.Lists[184].elementFields[k] == "damage")
+                    if (sessionService.ListCollection.Lists[184].elementFields[k] == "damage")
                     {
-                        string damage = MainWindow.eLC.GetValue(184, pos_item, k);
+                        string damage = sessionService.ListCollection.GetValue(184, pos_item, k);
                         if (damage != "0")
                         {
-                            line += "\n" + Extensions.GetLocalization(7004) + " +";
+                            line += "\n" + Extensions.GetLocalization(sessionService, 7004) + " +";
                             if (id_sub_type == "41061") line += Convert.ToInt32(Convert.ToSingle(damage) * Convert.ToSingle(poker_adjust_1));
                             if (id_sub_type == "41062") line += Convert.ToInt32(Convert.ToSingle(damage) * Convert.ToSingle(poker_adjust_2));
                             if (id_sub_type == "41063") line += Convert.ToInt32(Convert.ToSingle(damage) * Convert.ToSingle(poker_adjust_3));
@@ -129,14 +129,14 @@ namespace sELedit
                         break;
                     }
                 }
-                for (int k = 0; k < MainWindow.eLC.Lists[184].elementFields.Length; k++)
+                for (int k = 0; k < sessionService.ListCollection.Lists[184].elementFields.Length; k++)
                 {
-                    if (MainWindow.eLC.Lists[184].elementFields[k] == "magic_damage")
+                    if (sessionService.ListCollection.Lists[184].elementFields[k] == "magic_damage")
                     {
-                        string magic_damage = MainWindow.eLC.GetValue(184, pos_item, k);
+                        string magic_damage = sessionService.ListCollection.GetValue(184, pos_item, k);
                         if (magic_damage != "0")
                         {
-                            line += "\n" + Extensions.GetLocalization(7005) + " +";
+                            line += "\n" + Extensions.GetLocalization(sessionService, 7005) + " +";
                             if (id_sub_type == "41061") line += Convert.ToInt32(Convert.ToSingle(magic_damage) * Convert.ToSingle(poker_adjust_1));
                             if (id_sub_type == "41062") line += Convert.ToInt32(Convert.ToSingle(magic_damage) * Convert.ToSingle(poker_adjust_2));
                             if (id_sub_type == "41063") line += Convert.ToInt32(Convert.ToSingle(magic_damage) * Convert.ToSingle(poker_adjust_3));
@@ -147,14 +147,14 @@ namespace sELedit
                         break;
                     }
                 }
-                for (int k = 0; k < MainWindow.eLC.Lists[184].elementFields.Length; k++)
+                for (int k = 0; k < sessionService.ListCollection.Lists[184].elementFields.Length; k++)
                 {
-                    if (MainWindow.eLC.Lists[184].elementFields[k] == "defence")
+                    if (sessionService.ListCollection.Lists[184].elementFields[k] == "defence")
                     {
-                        string defence = MainWindow.eLC.GetValue(184, pos_item, k);
+                        string defence = sessionService.ListCollection.GetValue(184, pos_item, k);
                         if (defence != "0")
                         {
-                            line += "\n" + Extensions.GetLocalization(7009) + " +";
+                            line += "\n" + Extensions.GetLocalization(sessionService, 7009) + " +";
                             if (id_sub_type == "41061") line += Convert.ToInt32(Convert.ToSingle(defence) * Convert.ToSingle(poker_adjust_1));
                             if (id_sub_type == "41062") line += Convert.ToInt32(Convert.ToSingle(defence) * Convert.ToSingle(poker_adjust_2));
                             if (id_sub_type == "41063") line += Convert.ToInt32(Convert.ToSingle(defence) * Convert.ToSingle(poker_adjust_3));
@@ -165,14 +165,14 @@ namespace sELedit
                         break;
                     }
                 }
-                for (int k = 0; k < MainWindow.eLC.Lists[184].elementFields.Length; k++)
+                for (int k = 0; k < sessionService.ListCollection.Lists[184].elementFields.Length; k++)
                 {
-                    if (MainWindow.eLC.Lists[184].elementFields[k] == "magic_defence_1")
+                    if (sessionService.ListCollection.Lists[184].elementFields[k] == "magic_defence_1")
                     {
-                        string magic_defence_1 = MainWindow.eLC.GetValue(184, pos_item, k);
+                        string magic_defence_1 = sessionService.ListCollection.GetValue(184, pos_item, k);
                         if (magic_defence_1 != "0")
                         {
-                            line += "\n" + Extensions.GetLocalization(7010) + " +";
+                            line += "\n" + Extensions.GetLocalization(sessionService, 7010) + " +";
                             if (id_sub_type == "41061") line += Convert.ToInt32(Convert.ToSingle(magic_defence_1) * Convert.ToSingle(poker_adjust_1));
                             if (id_sub_type == "41062") line += Convert.ToInt32(Convert.ToSingle(magic_defence_1) * Convert.ToSingle(poker_adjust_2));
                             if (id_sub_type == "41063") line += Convert.ToInt32(Convert.ToSingle(magic_defence_1) * Convert.ToSingle(poker_adjust_3));
@@ -183,14 +183,14 @@ namespace sELedit
                         break;
                     }
                 }
-                for (int k = 0; k < MainWindow.eLC.Lists[184].elementFields.Length; k++)
+                for (int k = 0; k < sessionService.ListCollection.Lists[184].elementFields.Length; k++)
                 {
-                    if (MainWindow.eLC.Lists[184].elementFields[k] == "magic_defence_2")
+                    if (sessionService.ListCollection.Lists[184].elementFields[k] == "magic_defence_2")
                     {
-                        string magic_defence_2 = MainWindow.eLC.GetValue(184, pos_item, k);
+                        string magic_defence_2 = sessionService.ListCollection.GetValue(184, pos_item, k);
                         if (magic_defence_2 != "0")
                         {
-                            line += "\n" + Extensions.GetLocalization(7011) + " +";
+                            line += "\n" + Extensions.GetLocalization(sessionService, 7011) + " +";
                             if (id_sub_type == "41061") line += Convert.ToInt32(Convert.ToSingle(magic_defence_2) * Convert.ToSingle(poker_adjust_1));
                             if (id_sub_type == "41062") line += Convert.ToInt32(Convert.ToSingle(magic_defence_2) * Convert.ToSingle(poker_adjust_2));
                             if (id_sub_type == "41063") line += Convert.ToInt32(Convert.ToSingle(magic_defence_2) * Convert.ToSingle(poker_adjust_3));
@@ -201,14 +201,14 @@ namespace sELedit
                         break;
                     }
                 }
-                for (int k = 0; k < MainWindow.eLC.Lists[184].elementFields.Length; k++)
+                for (int k = 0; k < sessionService.ListCollection.Lists[184].elementFields.Length; k++)
                 {
-                    if (MainWindow.eLC.Lists[184].elementFields[k] == "magic_defence_3")
+                    if (sessionService.ListCollection.Lists[184].elementFields[k] == "magic_defence_3")
                     {
-                        string magic_defence_3 = MainWindow.eLC.GetValue(184, pos_item, k);
+                        string magic_defence_3 = sessionService.ListCollection.GetValue(184, pos_item, k);
                         if (magic_defence_3 != "0")
                         {
-                            line += "\n" + Extensions.GetLocalization(7012) + " +";
+                            line += "\n" + Extensions.GetLocalization(sessionService, 7012) + " +";
                             if (id_sub_type == "41061") line += Convert.ToInt32(Convert.ToSingle(magic_defence_3) * Convert.ToSingle(poker_adjust_1));
                             if (id_sub_type == "41062") line += Convert.ToInt32(Convert.ToSingle(magic_defence_3) * Convert.ToSingle(poker_adjust_2));
                             if (id_sub_type == "41063") line += Convert.ToInt32(Convert.ToSingle(magic_defence_3) * Convert.ToSingle(poker_adjust_3));
@@ -219,14 +219,14 @@ namespace sELedit
                         break;
                     }
                 }
-                for (int k = 0; k < MainWindow.eLC.Lists[184].elementFields.Length; k++)
+                for (int k = 0; k < sessionService.ListCollection.Lists[184].elementFields.Length; k++)
                 {
-                    if (MainWindow.eLC.Lists[184].elementFields[k] == "magic_defence_4")
+                    if (sessionService.ListCollection.Lists[184].elementFields[k] == "magic_defence_4")
                     {
-                        string magic_defence_4 = MainWindow.eLC.GetValue(184, pos_item, k);
+                        string magic_defence_4 = sessionService.ListCollection.GetValue(184, pos_item, k);
                         if (magic_defence_4 != "0")
                         {
-                            line += "\n" + Extensions.GetLocalization(7013) + " +";
+                            line += "\n" + Extensions.GetLocalization(sessionService, 7013) + " +";
                             if (id_sub_type == "41061") line += Convert.ToInt32(Convert.ToSingle(magic_defence_4) * Convert.ToSingle(poker_adjust_1));
                             if (id_sub_type == "41062") line += Convert.ToInt32(Convert.ToSingle(magic_defence_4) * Convert.ToSingle(poker_adjust_2));
                             if (id_sub_type == "41063") line += Convert.ToInt32(Convert.ToSingle(magic_defence_4) * Convert.ToSingle(poker_adjust_3));
@@ -237,14 +237,14 @@ namespace sELedit
                         break;
                     }
                 }
-                for (int k = 0; k < MainWindow.eLC.Lists[184].elementFields.Length; k++)
+                for (int k = 0; k < sessionService.ListCollection.Lists[184].elementFields.Length; k++)
                 {
-                    if (MainWindow.eLC.Lists[184].elementFields[k] == "magic_defence_5")
+                    if (sessionService.ListCollection.Lists[184].elementFields[k] == "magic_defence_5")
                     {
-                        string magic_defence_5 = MainWindow.eLC.GetValue(184, pos_item, k);
+                        string magic_defence_5 = sessionService.ListCollection.GetValue(184, pos_item, k);
                         if (magic_defence_5 != "0")
                         {
-                            line += "\n" + Extensions.GetLocalization(7014) + " +";
+                            line += "\n" + Extensions.GetLocalization(sessionService, 7014) + " +";
                             if (id_sub_type == "41061") line += Convert.ToInt32(Convert.ToSingle(magic_defence_5) * Convert.ToSingle(poker_adjust_1));
                             if (id_sub_type == "41062") line += Convert.ToInt32(Convert.ToSingle(magic_defence_5) * Convert.ToSingle(poker_adjust_2));
                             if (id_sub_type == "41063") line += Convert.ToInt32(Convert.ToSingle(magic_defence_5) * Convert.ToSingle(poker_adjust_3));
@@ -255,14 +255,14 @@ namespace sELedit
                         break;
                     }
                 }
-                for (int k = 0; k < MainWindow.eLC.Lists[184].elementFields.Length; k++)
+                for (int k = 0; k < sessionService.ListCollection.Lists[184].elementFields.Length; k++)
                 {
-                    if (MainWindow.eLC.Lists[184].elementFields[k] == "vigour")
+                    if (sessionService.ListCollection.Lists[184].elementFields[k] == "vigour")
                     {
-                        string vigour = MainWindow.eLC.GetValue(184, pos_item, k);
+                        string vigour = sessionService.ListCollection.GetValue(184, pos_item, k);
                         if (vigour != "0")
                         {
-                            line += "\n" + Extensions.GetLocalization(7100) + " +";
+                            line += "\n" + Extensions.GetLocalization(sessionService, 7100) + " +";
                             if (id_sub_type == "41061") line += Convert.ToInt32(Convert.ToSingle(vigour) * Convert.ToSingle(poker_adjust_1));
                             if (id_sub_type == "41062") line += Convert.ToInt32(Convert.ToSingle(vigour) * Convert.ToSingle(poker_adjust_2));
                             if (id_sub_type == "41063") line += Convert.ToInt32(Convert.ToSingle(vigour) * Convert.ToSingle(poker_adjust_3));
@@ -275,94 +275,94 @@ namespace sELedit
                 }
                 for (int k = 1; k < 5; k++)
                 {
-                    for (int t = 0; t < MainWindow.eLC.Lists[184].elementFields.Length; t++)
+                    for (int t = 0; t < sessionService.ListCollection.Lists[184].elementFields.Length; t++)
                     {
-                        if (MainWindow.eLC.Lists[184].elementFields[t] == "addon_" + k)
+                        if (sessionService.ListCollection.Lists[184].elementFields[t] == "addon_" + k)
                         {
-                            string addon = MainWindow.eLC.GetValue(184, pos_item, t);
+                            string addon = sessionService.ListCollection.GetValue(184, pos_item, t);
                             if (addon != "0")
                             {
-                                line += "\n" + "^4286f4" + EQUIPMENT_ADDON.GetAddon(addon) + "^FFFFFF";
+                                line += "\n" + "^4286f4" + EQUIPMENT_ADDON.GetAddon(sessionService, addon) + "^FFFFFF";
                             }
                             break;
                         }
                     }
                 }
-                line += "\n" + Extensions.GetLocalization(7101) + " " + Extensions.GetLocalization(1120);
-                for (int k = 0; k < MainWindow.eLC.Lists[184].elementFields.Length; k++)
+                line += "\n" + Extensions.GetLocalization(sessionService, 7101) + " " + Extensions.GetLocalization(sessionService, 1120);
+                for (int k = 0; k < sessionService.ListCollection.Lists[184].elementFields.Length; k++)
                 {
-                    if (MainWindow.eLC.Lists[184].elementFields[k] == "require_level")
+                    if (sessionService.ListCollection.Lists[184].elementFields[k] == "require_level")
                     {
-                        string require_level = MainWindow.eLC.GetValue(184, pos_item, k);
+                        string require_level = sessionService.ListCollection.GetValue(184, pos_item, k);
                         if (require_level != "0")
                         {
-                            line += "\n" + String.Format(Extensions.GetLocalization(7018), require_level);
+                            line += "\n" + String.Format(Extensions.GetLocalization(sessionService, 7018), require_level);
                         }
                         break;
                     }
                 }
-                for (int k = 0; k < MainWindow.eLC.Lists[184].elementFields.Length; k++)
+                for (int k = 0; k < sessionService.ListCollection.Lists[184].elementFields.Length; k++)
                 {
-                    if (MainWindow.eLC.Lists[184].elementFields[k] == "require_control_point_1")
+                    if (sessionService.ListCollection.Lists[184].elementFields[k] == "require_control_point_1")
                     {
-                        string require_control_point_1 = MainWindow.eLC.GetValue(184, pos_item, k);
-                        line += "\n" + Extensions.GetLocalization(7102) + " " + require_control_point_1 + "~" + MainWindow.eLC.GetValue(184, pos_item, k + 1);
+                        string require_control_point_1 = sessionService.ListCollection.GetValue(184, pos_item, k);
+                        line += "\n" + Extensions.GetLocalization(sessionService, 7102) + " " + require_control_point_1 + "~" + sessionService.ListCollection.GetValue(184, pos_item, k + 1);
                         break;
                     }
                 }
-                for (int k = 0; k < MainWindow.eLC.Lists[184].elementFields.Length; k++)
+                for (int k = 0; k < sessionService.ListCollection.Lists[184].elementFields.Length; k++)
                 {
-                    if (MainWindow.eLC.Lists[184].elementFields[k] == "swallow_exp")
+                    if (sessionService.ListCollection.Lists[184].elementFields[k] == "swallow_exp")
                     {
-                        string swallow_exp = MainWindow.eLC.GetValue(184, pos_item, k);
+                        string swallow_exp = sessionService.ListCollection.GetValue(184, pos_item, k);
                         if (swallow_exp != "0")
                         {
-                            line += "\n" + Extensions.GetLocalization(7103) + " " + swallow_exp;
+                            line += "\n" + Extensions.GetLocalization(sessionService, 7103) + " " + swallow_exp;
                         }
                         break;
                     }
                 }
-                for (int k = 0; k < MainWindow.eLC.Lists[184].elementFields.Length; k++)
+                for (int k = 0; k < sessionService.ListCollection.Lists[184].elementFields.Length; k++)
                 {
-                    if (MainWindow.eLC.Lists[184].elementFields[k] == "price")
+                    if (sessionService.ListCollection.Lists[184].elementFields[k] == "price")
                     {
-                        string price = MainWindow.eLC.GetValue(184, pos_item, k);
+                        string price = sessionService.ListCollection.GetValue(184, pos_item, k);
                         if (price != "0")
                         {
-                            line += "\n" + Extensions.GetLocalization(7024) + " " + Convert.ToInt32(price).ToString("N0", CultureInfo.CreateSpecificCulture("zh-CN"));
+                            line += "\n" + Extensions.GetLocalization(sessionService, 7024) + " " + Convert.ToInt32(price).ToString("N0", CultureInfo.CreateSpecificCulture("zh-CN"));
                         }
                         break;
                     }
                 }
                 bool Suc = false;
-                for (int k = 0; k < MainWindow.eLC.Lists[181].elementValues.Length; k++)
+                for (int k = 0; k < sessionService.ListCollection.Lists[181].elementValues.Length; k++)
                 {
                     for (int a = 1; a < 7; a++)
                     {
-                        for (int t = 0; t < MainWindow.eLC.Lists[181].elementFields.Length; t++)
+                        for (int t = 0; t < sessionService.ListCollection.Lists[181].elementFields.Length; t++)
                         {
-                            if (MainWindow.eLC.Lists[181].elementFields[t] == "list_" + a)
+                            if (sessionService.ListCollection.Lists[181].elementFields[t] == "list_" + a)
                             {
-                                if (Convert.ToInt32(MainWindow.eLC.GetValue(181, k, t)) == Convert.ToInt32(MainWindow.eLC.GetValue(184, pos_item, 0)))
+                                if (Convert.ToInt32(sessionService.ListCollection.GetValue(181, k, t)) == Convert.ToInt32(sessionService.ListCollection.GetValue(184, pos_item, 0)))
                                 {
                                     Suc = true;
                                     string name = "";
                                     int max_equips = 0;
-                                    for (int n = 0; n < MainWindow.eLC.Lists[181].elementFields.Length; n++)
+                                    for (int n = 0; n < sessionService.ListCollection.Lists[181].elementFields.Length; n++)
                                     {
-                                        if (MainWindow.eLC.Lists[181].elementFields[n] == "Name")
+                                        if (sessionService.ListCollection.Lists[181].elementFields[n] == "Name")
                                         {
-                                            name = MainWindow.eLC.GetValue(181, k, n);
+                                            name = sessionService.ListCollection.GetValue(181, k, n);
                                             break;
                                         }
                                     }
                                     for (int f = 1; f < 7; f++)
                                     {
-                                        for (int n = 0; n < MainWindow.eLC.Lists[181].elementFields.Length; n++)
+                                        for (int n = 0; n < sessionService.ListCollection.Lists[181].elementFields.Length; n++)
                                         {
-                                            if (MainWindow.eLC.Lists[181].elementFields[n] == "list_" + f)
+                                            if (sessionService.ListCollection.Lists[181].elementFields[n] == "list_" + f)
                                             {
-                                                if (MainWindow.eLC.GetValue(181, k, n) != "0")
+                                                if (sessionService.ListCollection.GetValue(181, k, n) != "0")
                                                 {
                                                     max_equips = max_equips + 1;
                                                 }

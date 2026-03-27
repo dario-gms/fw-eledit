@@ -1,4 +1,4 @@
-﻿#if !(PORTABLE40 || PORTABLE || DOTNET)
+#if !(PORTABLE40 || PORTABLE || DOTNET)
 using System;
 using System.Diagnostics;
 using DiagnosticsTrace = System.Diagnostics.Trace;

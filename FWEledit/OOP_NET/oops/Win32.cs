@@ -1,4 +1,4 @@
-﻿using Microsoft.Win32;
+using Microsoft.Win32;
 using Shield.classes.oops.ntsshark;
 using System;
 

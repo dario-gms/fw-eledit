@@ -1,7 +1,7 @@
-﻿using System;
+using System;
 using System.Text;
 
-namespace sELedit
+namespace FWEledit
 {
 	public class talk_proc
 	{

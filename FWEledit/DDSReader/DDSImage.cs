@@ -1,9 +1,9 @@
 using System;
 using System.Drawing.Imaging;
 using System.IO;
-using sELedit.DDSReader.Utils;
+using FWEledit.DDSReader.Utils;
 
-namespace sELedit.DDSReader
+namespace FWEledit.DDSReader
 {
 	public class DDSImage : IDisposable
 	{

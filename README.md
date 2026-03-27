@@ -12,6 +12,16 @@ FWEledit is based on [sELedit++ by Wrechid](https://github.com/Wrechid/sELedit-)
 
 ---
 
+## What's New in v0.9.2
+
+- Full MVVM migration: UI logic and flows moved out of Forms into services/coordinators.
+- MainWindow trimmed: navigation, selection, tooltips, description, save, search, and actions split into dedicated services.
+- Injectable session: removed static `EditorSession`, everything now uses `SessionService`.
+- Secondary windows refactored: `ConfigWindow`, `RulesWindow`, `ReplaceWindow`, `ClassMaskWindow`, `FieldCompare`, `FieldReplaceWindow`, `JoinWindow`, `LoseQuestWindow`, `ReferencesWindow`, `About`, `IconPicker`.
+- Cleaner project structure: removed duplicate `.csproj` entries and standardized service/VM organization.
+
+---
+
 ## What's New in v0.9.1
 
 - Global search with auto-complete now scans **all lists** (with Enter-to-search).
@@ -156,6 +166,31 @@ On the next launch, **File > Load Last Folder** reopens the same game folder imm
 - **Values tab (right panel):** shows every field for the selected item as Name / Type / Value rows. Click a value cell to edit it. Changed fields turn blue; invalid entries turn red.
 - **Description tab (right panel):** shows the raw description text and a styled color-tag preview. Edit in the top box; the preview updates in real time.
 - **Inline picker button (`[...]`):** appears on `file_icon` and `file_model*` rows in the Values grid. Click to open the icon or model chooser for that field.
+
+---
+
+## Screenshots
+
+**Main window**
+![Main window](docs/images/main.png)
+
+**Search**
+![Search](docs/images/search.png)
+
+**Item description editor**
+![Item description](docs/images/item-description.png)
+
+**Icon picker**
+![Icon picker](docs/images/icon-picker.png)
+
+**Model selector**
+![Model selector](docs/images/model-selector.png)
+
+**Attribute selector**
+![Attribute selector](docs/images/attribute-selector.png)
+
+**Quality item change**
+![Quality item change](docs/images/quality-item-change.png)
 
 ---
 

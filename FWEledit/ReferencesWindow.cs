@@ -1,20 +1,12 @@
-﻿using System;
-using System.Collections.Generic;
-using System.ComponentModel;
-using System.Data;
-using System.Drawing;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using System.Windows.Forms;
 
-namespace sELedit
+namespace FWEledit
 {
 	public partial class ReferencesWindow : Form
 	{
-		public ReferencesWindow()
-		{
-			InitializeComponent();
-		}
+        private readonly ReferencesWindowViewModel viewModel;
+        private readonly ReferencesWindowCoordinatorService referencesWindowCoordinatorService = new ReferencesWindowCoordinatorService();
+
 	}
 }
+

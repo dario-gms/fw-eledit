@@ -1,4 +1,4 @@
-﻿using Newtonsoft.Json.Utilities;
+using Newtonsoft.Json.Utilities;
 
 namespace Newtonsoft.Json.Serialization
 {
