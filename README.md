@@ -18,6 +18,7 @@ FWEledit is based on [sELedit++ by Wrechid](https://github.com/Wrechid/sELedit-)
 - MainWindow trimmed: navigation, selection, tooltips, description, save, search, and actions split into dedicated services.
 - Injectable session: removed static `EditorSession`, everything now uses `SessionService`.
 - Secondary windows refactored: `ConfigWindow`, `RulesWindow`, `ReplaceWindow`, `ClassMaskWindow`, `FieldCompare`, `FieldReplaceWindow`, `JoinWindow`, `LoseQuestWindow`, `ReferencesWindow`, `About`, `IconPicker`.
+- sELedit naming cleanup: legacy `sELedit` identifiers and labels renamed to `FWEledit` across UI and code.
 - Cleaner project structure: removed duplicate `.csproj` entries and standardized service/VM organization.
 
 ---

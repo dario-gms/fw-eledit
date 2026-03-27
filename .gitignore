@@ -24,7 +24,7 @@ _build_test/
 _dist/
 .dotnet/
 _tmp_*
-list0_fw_dump_61567_61596.csv
+list0_fw_dump_*.csv
 
 # Exceptions - keep these compiled dependencies
 !FWEledit/lib/Ionic.Zlib.dll
