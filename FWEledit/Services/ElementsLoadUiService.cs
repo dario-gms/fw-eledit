@@ -78,6 +78,14 @@ namespace FWEledit
                             ? result.ErrorMessage
                             : "LOADING ERROR!");
                     }
+                    if (result != null && result.IsVersionUnsupported && navigationStateService != null)
+                    {
+                        navigationStateService.ResetOnStartup(navigationStateService.GetLastRunVersion());
+                    }
+                    if (progressBar != null)
+                    {
+                        progressBar.Value = 0;
+                    }
                     return false;
                 }
 

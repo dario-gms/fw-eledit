@@ -25,6 +25,7 @@ namespace FWEledit
                     NavigationTimerService = mainWindowNavigationTimerService,
                     ElementsImportExportService = elementsImportExportService,
                     ElementsLoadService = elementsLoadService,
+                    ElementsFileInfoService = elementsFileInfoService,
                     NavigationStateService = navigationStateService,
                     IdGenerationService = idGenerationService,
                     IconResolutionService = iconResolutionService,
