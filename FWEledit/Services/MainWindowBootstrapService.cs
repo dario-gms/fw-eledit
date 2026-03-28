@@ -13,6 +13,7 @@ namespace FWEledit
         public MainWindowNavigationTimerService NavigationTimerService { get; set; }
         public ElementsImportExportService ElementsImportExportService { get; set; }
         public ElementsLoadService ElementsLoadService { get; set; }
+        public ElementsFileInfoService ElementsFileInfoService { get; set; }
         public NavigationStateService NavigationStateService { get; set; }
         public IdGenerationService IdGenerationService { get; set; }
         public IconResolutionService IconResolutionService { get; set; }
@@ -57,6 +58,7 @@ namespace FWEledit
                 ? context.WorkflowSetupService.Build(
                     context.ElementsImportExportService,
                     context.ElementsLoadService,
+                    context.ElementsFileInfoService,
                     context.NavigationStateService,
                     context.IdGenerationService,
                     context.IconResolutionService)

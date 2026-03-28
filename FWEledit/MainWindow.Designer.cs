@@ -685,7 +685,7 @@ namespace FWEledit
             this.label_Version.Name = "label_Version";
             this.label_Version.Size = new System.Drawing.Size(173, 13);
             this.label_Version.TabIndex = 328;
-            this.label_Version.Text = "FWEledit v0.9.2";
+            this.label_Version.Text = "FWEledit v0.9.2.1";
             // 
             // dataGridView_elems
             // 
@@ -873,4 +873,5 @@ namespace FWEledit
         private System.Windows.Forms.ToolStripMenuItem createListWithCountsToolStripMenuItem;
     }
 }
+
 

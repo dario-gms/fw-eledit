@@ -276,6 +276,7 @@ namespace FWEledit
             MainWindowWorkflowSetupResult workflowSetup = mainWindowWorkflowSetupService.Build(
                 elementsImportExportService,
                 elementsLoadService,
+                elementsFileInfoService,
                 navigationStateService,
                 idGenerationService,
                 iconResolutionService);

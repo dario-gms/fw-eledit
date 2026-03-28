@@ -5,6 +5,7 @@ namespace FWEledit
         public MainWindowWorkflowSetupResult Build(
             ElementsImportExportService elementsImportExportService,
             ElementsLoadService elementsLoadService,
+            ElementsFileInfoService elementsFileInfoService,
             NavigationStateService navigationStateService,
             IdGenerationService idGenerationService,
             IconResolutionService iconResolutionService)
@@ -14,7 +15,10 @@ namespace FWEledit
                 ElementImportExportWorkflowService = new ElementImportExportWorkflowService(elementsImportExportService),
                 ElementsRulesExportWorkflowService = new ElementsRulesExportWorkflowService(elementsImportExportService),
                 ElementListMutationService = new ElementListMutationService(idGenerationService),
-                ElementsLoadWorkflowService = new ElementsLoadWorkflowService(elementsLoadService, navigationStateService),
+                ElementsLoadWorkflowService = new ElementsLoadWorkflowService(
+                    elementsLoadService,
+                    navigationStateService,
+                    elementsFileInfoService),
                 ListRowBuilderService = new ListRowBuilderService(iconResolutionService)
             };
         }

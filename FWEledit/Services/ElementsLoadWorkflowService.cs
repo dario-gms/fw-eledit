@@ -6,10 +6,15 @@ namespace FWEledit
 {
     public sealed class ElementsLoadWorkflowService
     {
+        private const short SupportedVersion = 608;
         private readonly ElementsLoadService loadService;
         private readonly NavigationStateService navigationStateService;
+        private readonly ElementsFileInfoService elementsFileInfoService;
 
-        public ElementsLoadWorkflowService(ElementsLoadService loadService, NavigationStateService navigationStateService)
+        public ElementsLoadWorkflowService(
+            ElementsLoadService loadService,
+            NavigationStateService navigationStateService,
+            ElementsFileInfoService elementsFileInfoService)
         {
             if (loadService == null)
             {
@@ -17,6 +22,7 @@ namespace FWEledit
             }
             this.loadService = loadService;
             this.navigationStateService = navigationStateService;
+            this.elementsFileInfoService = elementsFileInfoService;
         }
 
         public ElementsLoadResult LoadFromGameFolder(string gameFolderPath, ref ColorProgressBar.ColorProgressBar progressBar)
@@ -38,6 +44,27 @@ namespace FWEledit
             {
                 result.ErrorMessage = "Could not find elements.data inside the selected game folder.";
                 return result;
+            }
+
+            if (elementsFileInfoService != null)
+            {
+                ElementsFileInfo info = elementsFileInfoService.ReadFileInfo(elementsFile);
+                if (info == null || !info.Success)
+                {
+                    result.ErrorMessage = "Could not read elements.data header.";
+                    result.IsVersionUnsupported = true;
+                    result.ElementsPath = elementsFile;
+                    return result;
+                }
+                if (info != null && info.Success && info.Version != SupportedVersion)
+                {
+                    result.ErrorMessage =
+                        "Unsupported elements.data version (" + info.Version + ").\n\n" +
+                        "Only version " + SupportedVersion + " is compatible right now.";
+                    result.IsVersionUnsupported = true;
+                    result.ElementsPath = elementsFile;
+                    return result;
+                }
             }
 
             try
