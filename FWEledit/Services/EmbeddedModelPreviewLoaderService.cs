@@ -177,6 +177,7 @@ namespace FWEledit
                 error = "SkinModelPath not found in .ecm file.";
                 return false;
             }
+            string[] addiSkinPaths = ExtractRepeatedFieldValues(ecmText, "AddiSkinPath");
 
             string smdPackage;
             string relativeSmd;
@@ -224,11 +225,31 @@ namespace FWEledit
             string skiPackage;
             string relativeSki;
             byte[] skiBytes;
-            if (!TryReadSkiWithFallback(
+            List<string> skiReferenceCandidates = new List<string>(8);
+            if (!string.IsNullOrWhiteSpace(skiReference))
+            {
+                skiReferenceCandidates.Add(skiReference);
+            }
+            if (addiSkinPaths != null && addiSkinPaths.Length > 0)
+            {
+                for (int i = 0; i < addiSkinPaths.Length; i++)
+                {
+                    if (!string.IsNullOrWhiteSpace(addiSkinPaths[i]))
+                    {
+                        skiReferenceCandidates.Add(addiSkinPaths[i]);
+                    }
+                }
+            }
+            if (skiReferenceCandidates.Count == 0)
+            {
+                skiReferenceCandidates.Add(Path.ChangeExtension(relativeSmd, ".ski"));
+            }
+
+            if (!TryReadSkiWithFallbackCandidates(
                 assetManager,
                 smdPackage,
                 relativeSmd,
-                skiReference,
+                skiReferenceCandidates,
                 out skiPackage,
                 out relativeSki,
                 out skiBytes,
@@ -477,6 +498,68 @@ namespace FWEledit
                 error = "Resource file not found: " + mappedPath;
             }
 
+            return false;
+        }
+
+        private bool TryReadSkiWithFallbackCandidates(
+            AssetManager assetManager,
+            string smdPackage,
+            string relativeSmd,
+            List<string> skiReferences,
+            out string resolvedPackage,
+            out string resolvedRelative,
+            out byte[] skiBytes,
+            out string error)
+        {
+            resolvedPackage = smdPackage;
+            resolvedRelative = string.Empty;
+            skiBytes = null;
+            error = string.Empty;
+
+            if (skiReferences == null || skiReferences.Count == 0)
+            {
+                return TryReadSkiWithFallback(
+                    assetManager,
+                    smdPackage,
+                    relativeSmd,
+                    string.Empty,
+                    out resolvedPackage,
+                    out resolvedRelative,
+                    out skiBytes,
+                    out error);
+            }
+
+            string firstError = string.Empty;
+            for (int i = 0; i < skiReferences.Count; i++)
+            {
+                string reference = skiReferences[i];
+                if (string.IsNullOrWhiteSpace(reference))
+                {
+                    continue;
+                }
+
+                if (TryReadSkiWithFallback(
+                    assetManager,
+                    smdPackage,
+                    relativeSmd,
+                    reference,
+                    out resolvedPackage,
+                    out resolvedRelative,
+                    out skiBytes,
+                    out error))
+                {
+                    return true;
+                }
+
+                if (string.IsNullOrWhiteSpace(firstError) && !string.IsNullOrWhiteSpace(error))
+                {
+                    firstError = error;
+                }
+            }
+
+            error = string.IsNullOrWhiteSpace(firstError)
+                ? "Failed to resolve .ski path for preview."
+                : firstError;
             return false;
         }
 
@@ -794,6 +877,41 @@ namespace FWEledit
             }
 
             return false;
+        }
+
+        private static string[] ExtractRepeatedFieldValues(string text, string fieldName)
+        {
+            if (string.IsNullOrWhiteSpace(text) || string.IsNullOrWhiteSpace(fieldName))
+            {
+                return new string[0];
+            }
+
+            List<string> values = new List<string>(4);
+            string[] lines = text.Split(new string[] { "\r\n", "\n", "\r" }, StringSplitOptions.RemoveEmptyEntries);
+            string prefix = fieldName + ":";
+            for (int i = 0; i < lines.Length; i++)
+            {
+                string line = lines[i] ?? string.Empty;
+                if (!line.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                int colon = line.IndexOf(':');
+                if (colon < 0)
+                {
+                    continue;
+                }
+
+                string candidate = line.Substring(colon + 1).Trim().Trim('"');
+                candidate = NormalizeRelativePath(candidate);
+                if (!string.IsNullOrWhiteSpace(candidate))
+                {
+                    values.Add(candidate);
+                }
+            }
+
+            return values.ToArray();
         }
 
         private static int ParseIntFieldOrDefault(string text, string fieldName, int fallback)

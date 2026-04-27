@@ -164,9 +164,10 @@ namespace FWEledit
 
             int currentPathId = TryGetCurrentPathId(itemGrid, rowIndex, modelPickerService, pathIdResolutionService);
             int currentResolvedPathId = currentPathId;
+            string listName = listCollection.Lists[listIndex].listName ?? string.Empty;
             int resolvedCurrentPathId;
             string resolvedCurrentMappedPath;
-            if (TryResolveModelPathById(database, currentPathId, fieldName, modelPickerService, out resolvedCurrentPathId, out resolvedCurrentMappedPath, true)
+            if (TryResolveModelPathById(database, currentPathId, fieldName, listName, modelPickerService, out resolvedCurrentPathId, out resolvedCurrentMappedPath, true)
                 && resolvedCurrentPathId > 0)
             {
                 currentResolvedPathId = resolvedCurrentPathId;
@@ -387,6 +388,7 @@ namespace FWEledit
         public async void OpenModelPreviewForValueRow(
             AssetManager assetManager,
             CacheSave database,
+            eListCollection listCollection,
             DataGridView itemGrid,
             int listIndex,
             int rowIndex,
@@ -410,6 +412,11 @@ namespace FWEledit
             if (fieldClassifier == null || !fieldClassifier.IsModelFieldName(fieldName))
             {
                 return;
+            }
+            string listName = string.Empty;
+            if (listCollection != null && listIndex >= 0 && listIndex < listCollection.Lists.Length)
+            {
+                listName = listCollection.Lists[listIndex].listName ?? string.Empty;
             }
             if (modelPreviewService == null)
             {
@@ -444,6 +451,7 @@ namespace FWEledit
                         database,
                         pathId,
                         fieldName,
+                        listName,
                         modelPickerService,
                         out meshData,
                         out errorMessage);
@@ -544,6 +552,7 @@ namespace FWEledit
             CacheSave database,
             int pathId,
             string fieldName,
+            string listName,
             ModelPickerService modelPickerService,
             out int resolvedPathId,
             out string mappedPath,
@@ -556,7 +565,7 @@ namespace FWEledit
                 return false;
             }
 
-            return modelPickerService.TryResolveModelPathById(database, pathId, fieldName, out resolvedPathId, out mappedPath, allowNeighborOffsets);
+            return modelPickerService.TryResolveModelPathById(database, pathId, fieldName, listName, out resolvedPathId, out mappedPath, allowNeighborOffsets);
         }
     }
 }

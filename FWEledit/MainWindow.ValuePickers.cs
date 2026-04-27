@@ -94,6 +94,7 @@ namespace FWEledit
                 valueRowPickerUiService,
                 sessionService.AssetManager,
                 sessionService.Database,
+                sessionService.ListCollection,
                 dataGridView_item,
                 comboBox_lists.SelectedIndex,
                 rowIndex,
