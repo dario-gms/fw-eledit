@@ -1,12 +1,23 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 
 namespace FWEledit
 {
     public sealed class ValueRowPickerUiService
     {
+        private int previewLoadInProgress;
+
+        private sealed class ModelPreviewBuildResult
+        {
+            public bool Success { get; set; }
+            public string Error { get; set; }
+            public ModelPreviewMeshData MeshData { get; set; }
+        }
+
         public void UpdateInlineIconButton(
             InlineIconButtonService inlineIconButtonService,
             Button inlineButton,
@@ -373,7 +384,7 @@ namespace FWEledit
             }
         }
 
-        public void OpenModelPreviewForValueRow(
+        public async void OpenModelPreviewForValueRow(
             AssetManager assetManager,
             CacheSave database,
             DataGridView itemGrid,
@@ -383,6 +394,7 @@ namespace FWEledit
             PathIdResolutionService pathIdResolutionService,
             ModelPickerService modelPickerService,
             ModelPreviewService modelPreviewService,
+            Form owner,
             Action<string> showMessage)
         {
             if (assetManager == null || database == null || itemGrid == null || listIndex < 0)
@@ -399,15 +411,74 @@ namespace FWEledit
             {
                 return;
             }
+            if (modelPreviewService == null)
+            {
+                return;
+            }
 
             int pathId = TryGetCurrentPathId(itemGrid, rowIndex, modelPickerService, pathIdResolutionService);
-            string error;
-            if (modelPreviewService != null && !modelPreviewService.TryOpenPreview(assetManager, database, pathId, fieldName, modelPickerService, out error))
+            if (Interlocked.CompareExchange(ref previewLoadInProgress, 1, 0) != 0)
             {
-                if (!string.IsNullOrWhiteSpace(error) && showMessage != null)
+                if (showMessage != null)
                 {
-                    showMessage(error);
+                    showMessage("A model preview is already loading. Please wait.");
                 }
+                return;
+            }
+
+            bool restoreWaitCursor = owner != null && !owner.IsDisposed && owner.UseWaitCursor;
+            try
+            {
+                if (owner != null && !owner.IsDisposed)
+                {
+                    owner.UseWaitCursor = true;
+                }
+
+                ModelPreviewBuildResult result = await Task.Run(delegate
+                {
+                    ModelPreviewBuildResult buildResult = new ModelPreviewBuildResult();
+                    string errorMessage;
+                    ModelPreviewMeshData meshData;
+                    bool ok = modelPreviewService.TryBuildPreviewMeshData(
+                        assetManager,
+                        database,
+                        pathId,
+                        fieldName,
+                        modelPickerService,
+                        out meshData,
+                        out errorMessage);
+
+                    buildResult.Success = ok;
+                    buildResult.Error = errorMessage ?? string.Empty;
+                    buildResult.MeshData = meshData;
+                    return buildResult;
+                });
+
+                if (!result.Success)
+                {
+                    if (!string.IsNullOrWhiteSpace(result.Error) && showMessage != null)
+                    {
+                        showMessage(result.Error);
+                    }
+                    return;
+                }
+
+                modelPreviewService.ShowPreviewWindow(result.MeshData);
+            }
+            catch (Exception ex)
+            {
+                if (showMessage != null)
+                {
+                    showMessage("MODEL PREVIEW ERROR!\n" + ex.Message);
+                }
+            }
+            finally
+            {
+                if (owner != null && !owner.IsDisposed)
+                {
+                    owner.UseWaitCursor = restoreWaitCursor;
+                }
+                Interlocked.Exchange(ref previewLoadInProgress, 0);
             }
         }
 

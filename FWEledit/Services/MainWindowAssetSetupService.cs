@@ -14,7 +14,9 @@ namespace FWEledit
             FieldValueValidationService fieldValueValidationService)
         {
             AssetManager assetManager = new AssetManager(sessionService);
-            assetManager.load();
+            // Keep startup lightweight. Full asset extraction/loading is deferred
+            // to the game-folder load flow.
+            assetManager.load(false);
 
             AddonTypeOptionService addonTypeOptionService = new AddonTypeOptionService(addonTypeHintService);
             ModelPickerService modelPickerService = new ModelPickerService(

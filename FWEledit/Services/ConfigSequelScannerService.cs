@@ -142,39 +142,31 @@ namespace FWEledit
                         }
                         else
                         {
-                            if (false)
+                            if (i < siList.Length - 1)
                             {
-                                log += " ABORT (Error in sequel_scanner.txt)\r\n";
-                                goto ABORT;
-                            }
-                            else
-                            {
-                                if (i < siList.Length - 1)
+                                if (siList[i + 1].FirstElementID > -1)
                                 {
-                                    if (siList[i + 1].FirstElementID > -1)
-                                    {
-                                        log += " ABORT (mot implemented yet)\r\n";
-                                        goto ABORT;
-                                    }
-                                    else
-                                    {
-                                        log += " ABORT (Can't deep scan through multiple unknown lists)\r\n";
-                                        goto ABORT;
-                                    }
+                                    log += " ABORT (not implemented yet)\r\n";
+                                    goto ABORT;
                                 }
                                 else
                                 {
-                                    br.BaseStream.Position += (siList[i].ElementCount * siList[i].EntrySizePrior);
-                                    if (br.BaseStream.Length != br.BaseStream.Position)
-                                    {
-                                        log += " ABORT (Can't deep scan through next [non-existing] list)\r\n";
-                                        goto ABORT;
-                                    }
-                                    else
-                                    {
-                                        siList[i].EntrySizeEstimated = siList[i].EntrySizePrior;
-                                        log += " INHERITED: Using Entry Size from Configuration File (" + siList[i].EntrySizeEstimated + ")";
-                                    }
+                                    log += " ABORT (Can't deep scan through multiple unknown lists)\r\n";
+                                    goto ABORT;
+                                }
+                            }
+                            else
+                            {
+                                br.BaseStream.Position += (siList[i].ElementCount * siList[i].EntrySizePrior);
+                                if (br.BaseStream.Length != br.BaseStream.Position)
+                                {
+                                    log += " ABORT (Can't deep scan through next [non-existing] list)\r\n";
+                                    goto ABORT;
+                                }
+                                else
+                                {
+                                    siList[i].EntrySizeEstimated = siList[i].EntrySizePrior;
+                                    log += " INHERITED: Using Entry Size from Configuration File (" + siList[i].EntrySizeEstimated + ")";
                                 }
                             }
                         }

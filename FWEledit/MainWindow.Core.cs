@@ -226,6 +226,7 @@ namespace FWEledit
                 pathIdResolutionService,
                 modelPickerService,
                 modelPreviewService,
+                this,
                 message => MessageBox.Show(message));
         }
 
@@ -304,7 +305,7 @@ namespace FWEledit
                 assembly,
                 label_Version,
                 navigationStateService,
-                "0.9.3");
+                "0.9.3.1");
 
             MainWindowAssetSetupResult assetSetup = mainWindowAssetSetupService.Build(
                 addonTypeHintService,

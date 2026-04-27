@@ -291,14 +291,14 @@ namespace FWEledit
             string mapped = BuildMappedPath(safePackage, safeRelative);
             if (!string.IsNullOrWhiteSpace(mapped))
             {
-                string resolvedMapped = assetManager.ResolveResourcePath(mapped);
+                string resolvedMapped = assetManager.ResolveResourcePathNoExtract(mapped);
                 if (!string.IsNullOrWhiteSpace(resolvedMapped) && File.Exists(resolvedMapped))
                 {
                     return resolvedMapped;
                 }
             }
 
-            string resolvedRelative = assetManager.ResolveResourcePath(safeRelative);
+            string resolvedRelative = assetManager.ResolveResourcePathNoExtract(safeRelative);
             if (!string.IsNullOrWhiteSpace(resolvedRelative) && File.Exists(resolvedRelative))
             {
                 return resolvedRelative;
@@ -383,7 +383,7 @@ namespace FWEledit
             error = string.Empty;
 
             string mappedPath = BuildMappedPath(package, relativePath);
-            string absolute = assetManager.ResolveResourcePath(mappedPath);
+            string absolute = assetManager.ResolveResourcePathNoExtract(mappedPath);
             if (!string.IsNullOrWhiteSpace(absolute) && File.Exists(absolute))
             {
                 try
@@ -398,7 +398,7 @@ namespace FWEledit
                 }
             }
 
-            string absoluteRelative = assetManager.ResolveResourcePath(relativePath);
+            string absoluteRelative = assetManager.ResolveResourcePathNoExtract(relativePath);
             if (!string.IsNullOrWhiteSpace(absoluteRelative) && File.Exists(absoluteRelative))
             {
                 try
@@ -1367,9 +1367,11 @@ namespace FWEledit
 
             string skiDir = string.Empty;
             string skiParentDir = string.Empty;
+            string skiNameNoExt = string.Empty;
             try
             {
                 skiDir = Path.GetDirectoryName(skiAbsolute) ?? string.Empty;
+                skiNameNoExt = Path.GetFileNameWithoutExtension(skiAbsolute) ?? string.Empty;
                 if (!string.IsNullOrWhiteSpace(skiDir))
                 {
                     skiParentDir = Path.GetDirectoryName(skiDir) ?? string.Empty;
@@ -1379,6 +1381,7 @@ namespace FWEledit
             {
                 skiDir = string.Empty;
                 skiParentDir = string.Empty;
+                skiNameNoExt = string.Empty;
             }
 
             if (string.IsNullOrWhiteSpace(skiDir))
@@ -1419,11 +1422,19 @@ namespace FWEledit
                 {
                     AddUniqueAbsolutePathCandidate(absoluteCandidates, seen, Path.Combine(skiDir, "textures", fileName));
                     AddUniqueAbsolutePathCandidate(absoluteCandidates, seen, Path.Combine(skiDir, "texture", fileName));
+                    if (!string.IsNullOrWhiteSpace(skiNameNoExt))
+                    {
+                        AddUniqueAbsolutePathCandidate(absoluteCandidates, seen, Path.Combine(skiDir, "tex_" + skiNameNoExt, fileName));
+                    }
 
                     if (!string.IsNullOrWhiteSpace(skiParentDir))
                     {
                         AddUniqueAbsolutePathCandidate(absoluteCandidates, seen, Path.Combine(skiParentDir, "textures", fileName));
                         AddUniqueAbsolutePathCandidate(absoluteCandidates, seen, Path.Combine(skiParentDir, "texture", fileName));
+                        if (!string.IsNullOrWhiteSpace(skiNameNoExt))
+                        {
+                            AddUniqueAbsolutePathCandidate(absoluteCandidates, seen, Path.Combine(skiParentDir, "tex_" + skiNameNoExt, fileName));
+                        }
                     }
                 }
             }
@@ -1510,9 +1521,11 @@ namespace FWEledit
             string normalizedSki = NormalizeRelativePath(relativeSkiPath);
             string skiDir = string.Empty;
             string skiParentDir = string.Empty;
+            string skiNameNoExt = string.Empty;
             try
             {
                 skiDir = NormalizeRelativePath(Path.GetDirectoryName(normalizedSki) ?? string.Empty);
+                skiNameNoExt = NormalizeRelativePath(Path.GetFileNameWithoutExtension(normalizedSki) ?? string.Empty);
                 if (!string.IsNullOrWhiteSpace(skiDir))
                 {
                     skiParentDir = NormalizeRelativePath(Path.GetDirectoryName(skiDir) ?? string.Empty);
@@ -1522,6 +1535,7 @@ namespace FWEledit
             {
                 skiDir = string.Empty;
                 skiParentDir = string.Empty;
+                skiNameNoExt = string.Empty;
             }
 
             List<string> candidates = new List<string>(32);
@@ -1551,6 +1565,10 @@ namespace FWEledit
                 {
                     AddUniquePathCandidate(candidates, seen, "textures\\" + fileName);
                     AddUniquePathCandidate(candidates, seen, "texture\\" + fileName);
+                    if (!string.IsNullOrWhiteSpace(skiNameNoExt))
+                    {
+                        AddUniquePathCandidate(candidates, seen, "tex_" + skiNameNoExt + "\\" + fileName);
+                    }
                 }
 
                 if (!string.IsNullOrWhiteSpace(skiDir))
@@ -1560,6 +1578,10 @@ namespace FWEledit
                     {
                         AddUniquePathCandidate(candidates, seen, NormalizeRelativePath(skiDir + "\\textures\\" + fileName));
                         AddUniquePathCandidate(candidates, seen, NormalizeRelativePath(skiDir + "\\texture\\" + fileName));
+                        if (!string.IsNullOrWhiteSpace(skiNameNoExt))
+                        {
+                            AddUniquePathCandidate(candidates, seen, NormalizeRelativePath(skiDir + "\\tex_" + skiNameNoExt + "\\" + fileName));
+                        }
                     }
                 }
 
@@ -1567,6 +1589,10 @@ namespace FWEledit
                 {
                     AddUniquePathCandidate(candidates, seen, NormalizeRelativePath(skiParentDir + "\\textures\\" + fileName));
                     AddUniquePathCandidate(candidates, seen, NormalizeRelativePath(skiParentDir + "\\texture\\" + fileName));
+                    if (!string.IsNullOrWhiteSpace(skiNameNoExt))
+                    {
+                        AddUniquePathCandidate(candidates, seen, NormalizeRelativePath(skiParentDir + "\\tex_" + skiNameNoExt + "\\" + fileName));
+                    }
                 }
             }
 
