@@ -48,14 +48,109 @@ namespace FWEledit
             }
 
             string package;
-            string relativeEcm;
-            SplitPackagePath(mappedModelPath, out package, out relativeEcm);
-            if (string.IsNullOrWhiteSpace(package) || string.IsNullOrWhiteSpace(relativeEcm))
+            string relativeModelPath;
+            SplitPackagePath(mappedModelPath, out package, out relativeModelPath);
+            if (string.IsNullOrWhiteSpace(package) || string.IsNullOrWhiteSpace(relativeModelPath))
             {
                 error = "Invalid model path mapping: " + mappedModelPath;
                 return false;
             }
 
+            string modelExtension = (Path.GetExtension(relativeModelPath) ?? string.Empty).ToLowerInvariant();
+            if (string.Equals(modelExtension, ".ski", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!TryReadModelFile(assetManager, package, relativeModelPath, out byte[] directSkiBytes, out error))
+                {
+                    return false;
+                }
+
+                return TryBuildPreviewDataFromResolvedSki(
+                    assetManager,
+                    mappedModelPath,
+                    string.Empty,
+                    string.Empty,
+                    package,
+                    relativeModelPath,
+                    package,
+                    relativeModelPath,
+                    Path.ChangeExtension(relativeModelPath, ".bon"),
+                    package,
+                    relativeModelPath,
+                    directSkiBytes,
+                    5,
+                    6,
+                    0,
+                    unchecked((int)0xFFFFFFFF),
+                    0,
+                    new float[0],
+                    out previewData,
+                    out error);
+            }
+
+            if (string.Equals(modelExtension, ".smd", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!TryReadModelFile(assetManager, package, relativeModelPath, out byte[] smdBytesDirect, out error))
+                {
+                    return false;
+                }
+
+                string skiReferenceDirect;
+                if (!TryExtractReferencedFileFromSmd(smdBytesDirect, ".ski", out skiReferenceDirect))
+                {
+                    skiReferenceDirect = Path.ChangeExtension(relativeModelPath, ".ski");
+                    if (string.IsNullOrWhiteSpace(skiReferenceDirect))
+                    {
+                        skiReferenceDirect = string.Empty;
+                    }
+                }
+
+                string bonReferenceDirect;
+                if (!TryExtractReferencedFileFromSmd(smdBytesDirect, ".bon", out bonReferenceDirect))
+                {
+                    bonReferenceDirect = Path.ChangeExtension(relativeModelPath, ".bon");
+                    if (string.IsNullOrWhiteSpace(bonReferenceDirect))
+                    {
+                        bonReferenceDirect = string.Empty;
+                    }
+                }
+
+                if (!TryReadSkiWithFallback(
+                    assetManager,
+                    package,
+                    relativeModelPath,
+                    skiReferenceDirect,
+                    out string skiPackageDirect,
+                    out string relativeSkiDirect,
+                    out byte[] skiBytesDirect,
+                    out error))
+                {
+                    return false;
+                }
+
+                return TryBuildPreviewDataFromResolvedSki(
+                    assetManager,
+                    mappedModelPath,
+                    string.Empty,
+                    string.Empty,
+                    package,
+                    relativeModelPath,
+                    package,
+                    relativeModelPath,
+                    bonReferenceDirect,
+                    skiPackageDirect,
+                    relativeSkiDirect,
+                    skiBytesDirect,
+                    5,
+                    6,
+                    0,
+                    unchecked((int)0xFFFFFFFF),
+                    0,
+                    new float[0],
+                    out previewData,
+                    out error);
+            }
+
+            string relativeEcm = relativeModelPath;
             byte[] ecmBytes;
             if (!TryReadModelFile(assetManager, package, relativeEcm, out ecmBytes, out error))
             {
@@ -128,82 +223,41 @@ namespace FWEledit
 
             string skiPackage;
             string relativeSki;
-            ResolveReferencedPath(smdPackage, relativeSmd, skiReference, out skiPackage, out relativeSki);
-            if (string.IsNullOrWhiteSpace(relativeSki))
-            {
-                error = "Failed to resolve .ski path for preview.";
-                return false;
-            }
-
             byte[] skiBytes;
-            if (!TryReadModelFile(assetManager, skiPackage, relativeSki, out skiBytes, out error))
-            {
-                return false;
-            }
-
-            Dictionary<string, float[]> bindMatricesByBoneName = new Dictionary<string, float[]>(StringComparer.OrdinalIgnoreCase);
-            if (string.IsNullOrWhiteSpace(bonReference))
-            {
-                bonReference = Path.ChangeExtension(relativeSki, ".bon");
-            }
-            if (!string.IsNullOrWhiteSpace(bonReference))
-            {
-                string bonPackage;
-                string relativeBon;
-                ResolveReferencedPath(smdPackage, relativeSmd, bonReference, out bonPackage, out relativeBon);
-                if (!string.IsNullOrWhiteSpace(relativeBon)
-                    && TryReadModelFile(assetManager, bonPackage, relativeBon, out byte[] bonBytes, out string _))
-                {
-                    TryParseBonBindMatrices(bonBytes, out bindMatricesByBoneName);
-                }
-            }
-
-            Vector3f[] vertices;
-            Vector2f[] uvs;
-            int[] indices;
-            int[] triangleColors;
-            int[] triangleTextureIndices;
-            PreviewTextureData[] textures;
-            if (!TryParseSkiMesh(
+            if (!TryReadSkiWithFallback(
                 assetManager,
-                skiPackage,
-                relativeSki,
-                skiBytes,
-                bindMatricesByBoneName,
-                out vertices,
-                out uvs,
-                out indices,
-                out triangleColors,
-                out triangleTextureIndices,
-                out textures,
+                smdPackage,
+                relativeSmd,
+                skiReference,
+                out skiPackage,
+                out relativeSki,
+                out skiBytes,
                 out error))
             {
                 return false;
             }
 
-            previewData = new ModelPreviewMeshData
-            {
-                SourceMappedPath = mappedModelPath,
-                EcmPath = BuildMappedPath(package, relativeEcm),
-                EcmAbsolutePath = ResolveAbsolutePath(assetManager, package, relativeEcm),
-                SkinModelPath = BuildMappedPath(smdPackage, relativeSmd),
-                SkiPath = BuildMappedPath(skiPackage, relativeSki),
-                SkiAbsolutePath = ResolveAbsolutePath(assetManager, skiPackage, relativeSki),
-                Vertices = vertices,
-                UVs = uvs,
-                Indices = indices,
-                TriangleColors = triangleColors,
-                TriangleTextureIndices = triangleTextureIndices,
-                Textures = textures,
-                SrcBlend = srcBlend,
-                DestBlend = destBlend,
-                EmissiveColorArgb = emissiveColorArgb,
-                OrgColorArgb = orgColorArgb,
-                ShaderFloats = shaderFloats,
-                OuterNum = outerNum
-            };
-
-            return true;
+            return TryBuildPreviewDataFromResolvedSki(
+                assetManager,
+                mappedModelPath,
+                package,
+                relativeEcm,
+                smdPackage,
+                relativeSmd,
+                smdPackage,
+                relativeSmd,
+                bonReference,
+                skiPackage,
+                relativeSki,
+                skiBytes,
+                srcBlend,
+                destBlend,
+                emissiveColorArgb,
+                orgColorArgb,
+                outerNum,
+                shaderFloats,
+                out previewData,
+                out error);
         }
 
         private static void SplitPackagePath(string mappedPath, out string package, out string relative)
@@ -424,6 +478,254 @@ namespace FWEledit
             }
 
             return false;
+        }
+
+        private bool TryBuildPreviewDataFromResolvedSki(
+            AssetManager assetManager,
+            string sourceMappedPath,
+            string ecmPackage,
+            string relativeEcm,
+            string smdPackage,
+            string relativeSmd,
+            string bonBasePackage,
+            string bonBaseRelative,
+            string bonReference,
+            string skiPackage,
+            string relativeSki,
+            byte[] skiBytes,
+            int srcBlend,
+            int destBlend,
+            int emissiveColorArgb,
+            int orgColorArgb,
+            int outerNum,
+            float[] shaderFloats,
+            out ModelPreviewMeshData previewData,
+            out string error)
+        {
+            previewData = new ModelPreviewMeshData();
+            error = string.Empty;
+
+            Dictionary<string, float[]> bindMatricesByBoneName = new Dictionary<string, float[]>(StringComparer.OrdinalIgnoreCase);
+            if (string.IsNullOrWhiteSpace(bonReference))
+            {
+                bonReference = Path.ChangeExtension(relativeSki, ".bon");
+            }
+            if (!string.IsNullOrWhiteSpace(bonReference))
+            {
+                string bonPackage;
+                string relativeBon;
+                ResolveReferencedPath(bonBasePackage, bonBaseRelative, bonReference, out bonPackage, out relativeBon);
+                if (!string.IsNullOrWhiteSpace(relativeBon)
+                    && TryReadModelFile(assetManager, bonPackage, relativeBon, out byte[] bonBytes, out string _))
+                {
+                    TryParseBonBindMatrices(bonBytes, out bindMatricesByBoneName);
+                }
+            }
+
+            Vector3f[] vertices;
+            Vector2f[] uvs;
+            int[] indices;
+            int[] triangleColors;
+            int[] triangleTextureIndices;
+            PreviewTextureData[] textures;
+            if (!TryParseSkiMesh(
+                assetManager,
+                skiPackage,
+                relativeSki,
+                skiBytes,
+                bindMatricesByBoneName,
+                out vertices,
+                out uvs,
+                out indices,
+                out triangleColors,
+                out triangleTextureIndices,
+                out textures,
+                out error))
+            {
+                return false;
+            }
+
+            previewData = new ModelPreviewMeshData
+            {
+                SourceMappedPath = sourceMappedPath ?? string.Empty,
+                EcmPath = BuildMappedPath(ecmPackage, relativeEcm),
+                EcmAbsolutePath = ResolveAbsolutePath(assetManager, ecmPackage, relativeEcm),
+                SkinModelPath = BuildMappedPath(smdPackage, relativeSmd),
+                SkiPath = BuildMappedPath(skiPackage, relativeSki),
+                SkiAbsolutePath = ResolveAbsolutePath(assetManager, skiPackage, relativeSki),
+                Vertices = vertices,
+                UVs = uvs,
+                Indices = indices,
+                TriangleColors = triangleColors,
+                TriangleTextureIndices = triangleTextureIndices,
+                Textures = textures,
+                SrcBlend = srcBlend,
+                DestBlend = destBlend,
+                EmissiveColorArgb = emissiveColorArgb,
+                OrgColorArgb = orgColorArgb,
+                ShaderFloats = shaderFloats ?? new float[0],
+                OuterNum = outerNum
+            };
+
+            return true;
+        }
+
+        private bool TryReadSkiWithFallback(
+            AssetManager assetManager,
+            string smdPackage,
+            string relativeSmd,
+            string skiReference,
+            out string resolvedPackage,
+            out string resolvedRelative,
+            out byte[] skiBytes,
+            out string error)
+        {
+            resolvedPackage = smdPackage;
+            resolvedRelative = string.Empty;
+            skiBytes = null;
+            error = string.Empty;
+
+            string[] skiPathCandidates = BuildSkiPathCandidates(relativeSmd, skiReference);
+            if (skiPathCandidates == null || skiPathCandidates.Length == 0)
+            {
+                error = "Failed to resolve .ski path for preview.";
+                return false;
+            }
+
+            List<string> packageFallbacks = new List<string>(8);
+            HashSet<string> seenPackages = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            AddUniquePackage(packageFallbacks, seenPackages, smdPackage);
+            AddUniquePackage(packageFallbacks, seenPackages, "grasses");
+            AddUniquePackage(packageFallbacks, seenPackages, "models");
+            AddUniquePackage(packageFallbacks, seenPackages, "litmodels");
+            AddUniquePackage(packageFallbacks, seenPackages, "moxing");
+            AddUniquePackage(packageFallbacks, seenPackages, "surfaces");
+            AddUniquePackage(packageFallbacks, seenPackages, string.Empty);
+
+            string lastProbeError = string.Empty;
+            for (int i = 0; i < skiPathCandidates.Length; i++)
+            {
+                string candidate = skiPathCandidates[i];
+                if (string.IsNullOrWhiteSpace(candidate))
+                {
+                    continue;
+                }
+
+                string basePackage;
+                string baseRelative;
+                ResolveReferencedPath(smdPackage, relativeSmd, candidate, out basePackage, out baseRelative);
+                if (string.IsNullOrWhiteSpace(baseRelative))
+                {
+                    continue;
+                }
+
+                for (int p = 0; p < packageFallbacks.Count; p++)
+                {
+                    string probePackage = packageFallbacks[p];
+                    if (p == 0)
+                    {
+                        probePackage = basePackage;
+                    }
+
+                    if (TryReadModelFile(assetManager, probePackage, baseRelative, out skiBytes, out string probeError))
+                    {
+                        resolvedPackage = probePackage;
+                        resolvedRelative = baseRelative;
+                        return true;
+                    }
+
+                    if (string.IsNullOrWhiteSpace(lastProbeError) && !string.IsNullOrWhiteSpace(probeError))
+                    {
+                        lastProbeError = probeError;
+                    }
+                }
+            }
+
+            error = string.IsNullOrWhiteSpace(lastProbeError)
+                ? "Failed to resolve .ski path for preview."
+                : lastProbeError;
+            return false;
+        }
+
+        private static string[] BuildSkiPathCandidates(string relativeSmd, string skiReference)
+        {
+            List<string> candidates = new List<string>(12);
+            HashSet<string> seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            string normalizedSmd = NormalizeRelativePath(relativeSmd);
+            string normalizedRef = NormalizeRelativePath(skiReference);
+
+            AddUniquePathCandidate(candidates, seen, normalizedRef);
+
+            if (!string.IsNullOrWhiteSpace(normalizedRef))
+            {
+                try
+                {
+                    AddUniquePathCandidate(candidates, seen, Path.ChangeExtension(normalizedRef, ".ski"));
+
+                    string refName = NormalizeRelativePath(Path.GetFileName(normalizedRef) ?? string.Empty);
+                    if (!string.IsNullOrWhiteSpace(refName))
+                    {
+                        AddUniquePathCandidate(candidates, seen, refName);
+
+                        string smdDir = NormalizeRelativePath(Path.GetDirectoryName(normalizedSmd) ?? string.Empty);
+                        if (!string.IsNullOrWhiteSpace(smdDir))
+                        {
+                            AddUniquePathCandidate(candidates, seen, NormalizeRelativePath(smdDir + "\\" + refName));
+                        }
+                    }
+                }
+                catch
+                {
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(normalizedSmd))
+            {
+                try
+                {
+                    string fromSmdName = Path.ChangeExtension(normalizedSmd, ".ski");
+                    AddUniquePathCandidate(candidates, seen, fromSmdName);
+
+                    string smdDir = NormalizeRelativePath(Path.GetDirectoryName(normalizedSmd) ?? string.Empty);
+                    string smdSkiFile = NormalizeRelativePath(Path.GetFileName(fromSmdName) ?? string.Empty);
+                    if (!string.IsNullOrWhiteSpace(smdSkiFile))
+                    {
+                        AddUniquePathCandidate(candidates, seen, smdSkiFile);
+                        if (!string.IsNullOrWhiteSpace(smdDir))
+                        {
+                            AddUniquePathCandidate(candidates, seen, NormalizeRelativePath(smdDir + "\\" + smdSkiFile));
+                        }
+                    }
+                }
+                catch
+                {
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(normalizedSmd))
+            {
+                try
+                {
+                    string smdDir = NormalizeRelativePath(Path.GetDirectoryName(normalizedSmd) ?? string.Empty);
+                    string smdDirName = NormalizeRelativePath(Path.GetFileName(smdDir) ?? string.Empty);
+                    if (!string.IsNullOrWhiteSpace(smdDirName))
+                    {
+                        string dirNamedSki = smdDirName + ".ski";
+                        AddUniquePathCandidate(candidates, seen, dirNamedSki);
+
+                        if (!string.IsNullOrWhiteSpace(smdDir))
+                        {
+                            AddUniquePathCandidate(candidates, seen, NormalizeRelativePath(smdDir + "\\" + dirNamedSki));
+                        }
+                    }
+                }
+                catch
+                {
+                }
+            }
+
+            return candidates.ToArray();
         }
 
         private static bool TryDecodeText(byte[] bytes, out string text)
