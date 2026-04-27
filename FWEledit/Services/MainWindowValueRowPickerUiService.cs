@@ -143,6 +143,7 @@ namespace FWEledit
             PathIdResolutionService pathIdResolutionService,
             ModelPickerService modelPickerService,
             ModelPreviewService modelPreviewService,
+            Form owner,
             Action<string> showMessage)
         {
             if (valueRowPickerUiService == null)
@@ -160,6 +161,7 @@ namespace FWEledit
                 pathIdResolutionService,
                 modelPickerService,
                 modelPreviewService,
+                owner,
                 showMessage);
         }
 

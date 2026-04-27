@@ -712,6 +712,11 @@ namespace FWEledit
         }
         public bool load()
         {
+            return load(true);
+        }
+
+        public bool load(bool includeHeavyAssets)
+        {
             if (string.IsNullOrWhiteSpace(GameRootPath) || !Directory.Exists(GameRootPath))
             {
                 sessionService.Database = database;
@@ -719,7 +724,7 @@ namespace FWEledit
             }
             EnsureWorkspaceReady();
 
-            if (sourceBitmap == null)
+            if (includeHeavyAssets && sourceBitmap == null)
             {
                 // Ensure surfaces are extracted so iconset files are available on first load.
                 EnsureWorkspacePckPrepared("surfaces", true);
@@ -733,7 +738,7 @@ namespace FWEledit
                 database.pathById = LoadPathById();
             }
 
-            if (firstLoad)
+            if (includeHeavyAssets && firstLoad)
             {
                 LoadTheme();
                 Application.DoEvents();
@@ -879,10 +884,13 @@ namespace FWEledit
             return null;
         }
 
-        private string ResolveResourceFile(string relativePath)
+        private string ResolveResourceFile(string relativePath, bool ensureRequiredPackageExtracted)
         {
             string normalizedRelative = (relativePath ?? string.Empty).Replace('/', '\\').TrimStart('\\');
-            TryEnsureRequiredPckExtracted(normalizedRelative);
+            if (ensureRequiredPackageExtracted)
+            {
+                TryEnsureRequiredPckExtracted(normalizedRelative);
+            }
 
             List<string> roots = new List<string>();
             if (!string.IsNullOrWhiteSpace(WorkspaceRootPath) && Directory.Exists(WorkspaceRootPath))
@@ -916,6 +924,14 @@ namespace FWEledit
                 { }
             }
 
+            // No-extract callers (model preview hot path) should not trigger
+            // the expensive global index scan. They can fall back to direct
+            // PCK reads when an extracted file is not present.
+            if (!ensureRequiredPackageExtracted)
+            {
+                return string.Empty;
+            }
+
             string indexedCandidate = ResolveFromIndexedResources(relativePath);
             if (!string.IsNullOrEmpty(indexedCandidate))
             {
@@ -923,6 +939,11 @@ namespace FWEledit
             }
 
             return string.Empty;
+        }
+
+        private string ResolveResourceFile(string relativePath)
+        {
+            return ResolveResourceFile(relativePath, true);
         }
 
         private void EnsureResourceIndex()
@@ -1849,6 +1870,22 @@ namespace FWEledit
             try
             {
                 string resolved = ResolveResourceFile(relativePath);
+                if (!string.IsNullOrWhiteSpace(resolved) && File.Exists(resolved))
+                {
+                    return resolved;
+                }
+            }
+            catch
+            { }
+
+            return string.Empty;
+        }
+
+        public string ResolveResourcePathNoExtract(string relativePath)
+        {
+            try
+            {
+                string resolved = ResolveResourceFile(relativePath, false);
                 if (!string.IsNullOrWhiteSpace(resolved) && File.Exists(resolved))
                 {
                     return resolved;

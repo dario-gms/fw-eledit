@@ -101,6 +101,7 @@ namespace FWEledit
                 pathIdResolutionService,
                 modelPickerService,
                 modelPreviewService,
+                this,
                 message => MessageBox.Show(message));
         }
 
