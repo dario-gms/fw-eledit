@@ -70,7 +70,8 @@ namespace FWEledit
                 return false;
             }
             string normalized = fieldName.Trim();
-            return normalized.StartsWith("file_models_", StringComparison.OrdinalIgnoreCase);
+            return normalized.StartsWith("file_models_", StringComparison.OrdinalIgnoreCase)
+                || normalized.StartsWith("model_name_", StringComparison.OrdinalIgnoreCase);
         }
     }
 }
