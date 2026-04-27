@@ -136,6 +136,7 @@ namespace FWEledit
             ValueRowPickerUiService valueRowPickerUiService,
             AssetManager assetManager,
             CacheSave database,
+            eListCollection listCollection,
             DataGridView valuesGrid,
             int listIndex,
             int rowIndex,
@@ -154,6 +155,7 @@ namespace FWEledit
             valueRowPickerUiService.OpenModelPreviewForValueRow(
                 assetManager,
                 database,
+                listCollection,
                 valuesGrid,
                 listIndex,
                 rowIndex,

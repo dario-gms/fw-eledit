@@ -144,7 +144,8 @@ namespace FWEledit
 
                 if (modelPickerService != null && isModelFieldName != null && isModelFieldName(fieldName))
                 {
-                    fieldValue = modelPickerService.FormatModelPathIdDisplay(database, fieldValue, fieldName);
+                    string listName = listCollection.Lists[listIndex].listName ?? string.Empty;
+                    fieldValue = modelPickerService.FormatModelPathIdDisplay(database, fieldValue, fieldName, listName);
                 }
 
                 ValueRowDisplay row = new ValueRowDisplay

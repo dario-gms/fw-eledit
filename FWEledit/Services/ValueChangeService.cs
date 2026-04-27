@@ -141,7 +141,8 @@ namespace FWEledit
             result.DisplayValue = valueToSet;
             if (request.IsModelField)
             {
-                result.DisplayValue = modelPickerService.FormatModelPathIdDisplay(request.Database, valueToSet, request.FieldName);
+                string listName = request.ListCollection.Lists[request.ListIndex].listName ?? string.Empty;
+                result.DisplayValue = modelPickerService.FormatModelPathIdDisplay(request.Database, valueToSet, request.FieldName, listName);
             }
             else if (request.ListIndex == 0 && addonParamService.IsAddonParamField(request.FieldName))
             {

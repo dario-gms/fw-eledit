@@ -72,6 +72,7 @@ namespace FWEledit
 
             if (modelFields.Length > 0)
             {
+                string listName = listCollection.Lists[listIndex].listName ?? string.Empty;
                 for (int row = 0; row < listCollection.Lists[listIndex].elementValues.Length; row++)
                 {
                     int itemId = 0;
@@ -94,7 +95,7 @@ namespace FWEledit
                         string resolvedMappedPath;
                         string modelFieldName = listCollection.Lists[listIndex].elementFields[modelFields[mf]];
                         bool allowNeighborOffsets = fieldClassifier.IsModelFieldName(modelFieldName);
-                        if (TryResolveModelPathById(database, rawPathId, modelFieldName, out resolvedPathId, out resolvedMappedPath, allowNeighborOffsets) && resolvedPathId > 0)
+                        if (TryResolveModelPathById(database, rawPathId, modelFieldName, listName, out resolvedPathId, out resolvedMappedPath, allowNeighborOffsets) && resolvedPathId > 0)
                         {
                             pathId = resolvedPathId;
                         }
@@ -279,6 +280,11 @@ namespace FWEledit
 
         public string FormatModelPathIdDisplay(CacheSave database, string rawValue, string fieldName)
         {
+            return FormatModelPathIdDisplay(database, rawValue, fieldName, string.Empty);
+        }
+
+        public string FormatModelPathIdDisplay(CacheSave database, string rawValue, string fieldName, string listName)
+        {
             int pathId;
             if (!TryExtractPathId(rawValue, out pathId))
             {
@@ -287,7 +293,7 @@ namespace FWEledit
 
             int resolvedPathId;
             string mappedPath;
-            if (TryResolveModelPathById(database, pathId, fieldName, out resolvedPathId, out mappedPath, true))
+            if (TryResolveModelPathById(database, pathId, fieldName, listName, out resolvedPathId, out mappedPath, true))
             {
                 return pathId + " | " + mappedPath;
             }
@@ -297,10 +303,15 @@ namespace FWEledit
 
         public bool TryResolveModelPathById(CacheSave database, int pathId, out int resolvedPathId, out string mappedPath, bool allowNeighborOffsets)
         {
-            return TryResolveModelPathById(database, pathId, null, out resolvedPathId, out mappedPath, allowNeighborOffsets);
+            return TryResolveModelPathById(database, pathId, null, string.Empty, out resolvedPathId, out mappedPath, allowNeighborOffsets);
         }
 
         public bool TryResolveModelPathById(CacheSave database, int pathId, string fieldName, out int resolvedPathId, out string mappedPath, bool allowNeighborOffsets)
+        {
+            return TryResolveModelPathById(database, pathId, fieldName, string.Empty, out resolvedPathId, out mappedPath, allowNeighborOffsets);
+        }
+
+        public bool TryResolveModelPathById(CacheSave database, int pathId, string fieldName, string listName, out int resolvedPathId, out string mappedPath, bool allowNeighborOffsets)
         {
             resolvedPathId = 0;
             mappedPath = string.Empty;
@@ -310,7 +321,7 @@ namespace FWEledit
             }
 
             List<int> candidates = new List<int>();
-            if (fieldClassifier.IsShiftedModelFieldName(fieldName))
+            if (fieldClassifier.IsShiftedModelFieldName(fieldName, listName))
             {
                 candidates.Add(pathId + 1);
                 candidates.Add(pathId);

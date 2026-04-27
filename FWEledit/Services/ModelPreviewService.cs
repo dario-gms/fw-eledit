@@ -17,6 +17,7 @@ namespace FWEledit
             CacheSave database,
             int pathId,
             string fieldName,
+            string listName,
             ModelPickerService modelPickerService,
             out ModelPreviewMeshData meshData,
             out string errorMessage)
@@ -36,7 +37,7 @@ namespace FWEledit
 
             int resolvedPathId;
             string mappedPath;
-            if (!modelPickerService.TryResolveModelPathById(database, pathId, fieldName, out resolvedPathId, out mappedPath, true))
+            if (!modelPickerService.TryResolveModelPathById(database, pathId, fieldName, listName, out resolvedPathId, out mappedPath, true))
             {
                 errorMessage = "Model PathID not found in path.data:\n" + pathId;
                 return false;
@@ -79,6 +80,7 @@ namespace FWEledit
             CacheSave database,
             int pathId,
             string fieldName,
+            string listName,
             ModelPickerService modelPickerService,
             out string errorMessage)
         {
@@ -87,6 +89,7 @@ namespace FWEledit
                 database,
                 pathId,
                 fieldName,
+                listName,
                 modelPickerService,
                 out ModelPreviewMeshData meshData,
                 out errorMessage))

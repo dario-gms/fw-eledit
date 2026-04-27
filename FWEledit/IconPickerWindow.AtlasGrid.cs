@@ -22,6 +22,8 @@ namespace FWEledit
             private int selectedIndex = -1;
             private int hoverIndex = -1;
             private Func<IconEntryModel, string> tooltipFactory;
+            private int tooltipIndex = -2;
+            private string tooltipText = string.Empty;
 
             public event EventHandler SelectedIndexChanged;
             public event EventHandler ItemDoubleClick;
@@ -85,6 +87,7 @@ namespace FWEledit
                 cellW = iconW + 2;
                 cellH = iconH + 2;
                 RecalcLayout();
+                ResetTooltipState();
                 SelectedIndex = entries.Count > 0 ? 0 : -1;
                 Invalidate();
             }
@@ -93,6 +96,7 @@ namespace FWEledit
             {
                 entries = list ?? new List<IconEntryModel>();
                 RecalcLayout();
+                ResetTooltipState();
                 if (entries.Count == 0)
                 {
                     SelectedIndex = -1;
@@ -220,15 +224,25 @@ namespace FWEledit
                 }
                 if (idx < 0 || idx >= entries.Count || tooltipFactory == null)
                 {
-                    tip.SetToolTip(this, string.Empty);
+                    ClearTooltip();
                     return;
                 }
 
                 string text = tooltipFactory(entries[idx]);
-                if (!string.IsNullOrWhiteSpace(text))
+                if (string.IsNullOrWhiteSpace(text))
                 {
-                    tip.SetToolTip(this, text);
+                    ClearTooltip();
+                    return;
                 }
+
+                if (tooltipIndex == idx && string.Equals(tooltipText, text, StringComparison.Ordinal))
+                {
+                    return;
+                }
+
+                tooltipIndex = idx;
+                tooltipText = text;
+                tip.SetToolTip(this, text);
             }
 
             protected override void OnMouseLeave(EventArgs e)
@@ -240,6 +254,7 @@ namespace FWEledit
                     hoverIndex = -1;
                     InvalidateIndex(oldHover);
                 }
+                ClearTooltip();
             }
 
             protected override void OnMouseClick(MouseEventArgs e)
@@ -291,6 +306,25 @@ namespace FWEledit
                 {
                     Invalidate(rect);
                 }
+            }
+
+            private void ResetTooltipState()
+            {
+                tooltipIndex = -2;
+                tooltipText = string.Empty;
+                tip.SetToolTip(this, string.Empty);
+            }
+
+            private void ClearTooltip()
+            {
+                if (tooltipIndex == -1 && tooltipText.Length == 0)
+                {
+                    return;
+                }
+
+                tooltipIndex = -1;
+                tooltipText = string.Empty;
+                tip.SetToolTip(this, string.Empty);
             }
 
             private Rectangle GetCellRect(int idx)
