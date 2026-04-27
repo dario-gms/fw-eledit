@@ -17,7 +17,7 @@ namespace FWEledit.DDSReader
 		/// <returns>The Bitmap representation of the image.</returns>
 		public static Bitmap LoadImage(byte[] data, bool alpha = true, Utils.PixelFormat pixel = Utils.PixelFormat.UNKNOWN)
 		{
-			DDSImage im = new DDSImage(data, false, pixel);
+			DDSImage im = new DDSImage(data, alpha, pixel);
 			return im.BitmapImage;
 		}
 

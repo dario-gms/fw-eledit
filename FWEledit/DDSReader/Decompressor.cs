@@ -90,6 +90,7 @@ namespace FWEledit.DDSReader
 			colours[0].alpha = 0xFF;
 			colours[1].alpha = 0xFF;
 			colours[2].alpha = 0xFF;
+            bool useDxt1OneBitAlpha = (header.pixelformat.flags & Helper.DDPF_ALPHAPIXELS) == Helper.DDPF_ALPHAPIXELS;
 
 			fixed (byte* bytePtr = data)
 			{
@@ -108,7 +109,7 @@ namespace FWEledit.DDSReader
 							uint bitmask = ((uint*)temp)[1];
 							temp += 8;
 
-							if(colour0 > colour1)
+							if(colour0 > colour1 || !useDxt1OneBitAlpha)
 							{
 								// Four-color block: derive the other two colors.
 								// 00 = color_0, 01 = color_1, 10 = color_2, 11 = color_3
