@@ -75,13 +75,14 @@ namespace FWEledit
                 textBox_search,
                 textBox_search_TextChanged,
                 textBox_search_KeyDown);
+            dataGridView_item.CellMouseDown += dataGridView_item_CellMouseDown;
 
             Assembly assembly = Assembly.GetExecutingAssembly();
             mainWindowVersionUiService.InitializeVersion(
                 assembly,
                 label_Version,
                 navigationStateService,
-                "0.4.9");
+                "0.9.3");
 
             cpb2.Value = 0;
             colorTheme();

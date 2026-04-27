@@ -22,7 +22,7 @@
     <UpdateRequired>false</UpdateRequired>
     <MapFileExtensions>true</MapFileExtensions>
     <ApplicationRevision>0</ApplicationRevision>
-    <ApplicationVersion>0.9.2.1</ApplicationVersion>
+    <ApplicationVersion>0.9.3.0</ApplicationVersion>
     <IsWebBootstrapper>false</IsWebBootstrapper>
     <UseApplicationTrust>false</UseApplicationTrust>
     <BootstrapperEnabled>true</BootstrapperEnabled>
@@ -378,6 +378,8 @@
     <Compile Include="Models\FieldReplaceRequest.cs" />
     <Compile Include="Models\FieldReplaceResult.cs" />
     <Compile Include="Models\ModelPickerEntry.cs" />
+    <Compile Include="Models\ModelPreviewMeshData.cs" />
+    <Compile Include="Models\Vector3f.cs" />
     <Compile Include="Models\ModelPickerPackageCacheEntry.cs" />
     <Compile Include="Models\QualityOption.cs" />
     <Compile Include="Models\ReplaceParameters.cs" />
@@ -722,7 +724,9 @@
     <Compile Include="Services\ListItemHoverTooltipService.cs" />
     <Compile Include="Services\ListItemTooltipService.cs" />
     <Compile Include="Services\ItemTooltipUiService.cs" />
+    <Compile Include="Services\EmbeddedModelPreviewLoaderService.cs" />
     <Compile Include="Services\ModelPackageNotificationService.cs" />
+    <Compile Include="Services\PckEntryReaderService.cs" />
     <Compile Include="Services\ModelPreviewService.cs" />
     <Compile Include="Services\NpcExportService.cs" />
     <Compile Include="Services\OffsetUpdateService.cs" />
@@ -943,6 +947,9 @@
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="Views\ModelPickerWindow.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Views\ModelPreviewWindow.cs">
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="Views\QualityPickerWindow.cs">

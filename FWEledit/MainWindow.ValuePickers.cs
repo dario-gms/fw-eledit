@@ -1,4 +1,5 @@
 using System;
+using System.Drawing;
 using System.Windows.Forms;
 
 namespace FWEledit
@@ -144,6 +145,89 @@ namespace FWEledit
                 OpenModelPickerForValueRow,
                 UpdatePickIconButtonState,
                 message => MessageBox.Show(message));
+        }
+
+        private void dataGridView_item_CellMouseDown(object sender, DataGridViewCellMouseEventArgs e)
+        {
+            if (e == null || e.Button != MouseButtons.Right || e.RowIndex < 0 || dataGridView_item == null)
+            {
+                return;
+            }
+            if (e.RowIndex >= dataGridView_item.Rows.Count)
+            {
+                return;
+            }
+
+            if (e.ColumnIndex >= 0 && e.ColumnIndex < dataGridView_item.Columns.Count)
+            {
+                dataGridView_item.CurrentCell = dataGridView_item.Rows[e.RowIndex].Cells[e.ColumnIndex];
+            }
+            else if (dataGridView_item.Columns.Count > 2)
+            {
+                dataGridView_item.CurrentCell = dataGridView_item.Rows[e.RowIndex].Cells[2];
+            }
+
+            ShowValueRowContextMenu(e.RowIndex, dataGridView_item.PointToScreen(new Point(e.X, e.Y)));
+        }
+
+        private void ShowValueRowContextMenu(int rowIndex, Point screenLocation)
+        {
+            if (dataGridView_item == null || rowIndex < 0 || rowIndex >= dataGridView_item.Rows.Count)
+            {
+                return;
+            }
+
+            string fieldName = Convert.ToString(dataGridView_item.Rows[rowIndex].Cells[0].Value);
+            bool isModelField = itemFieldClassifierService != null && itemFieldClassifierService.IsModelFieldName(fieldName);
+            bool isIconField = itemFieldClassifierService != null && itemFieldClassifierService.IsIconFieldName(fieldName);
+            bool isAddonTypeField = itemFieldClassifierService != null
+                && sessionService != null
+                && sessionService.ListCollection != null
+                && itemFieldClassifierService.IsAddonTypeField(sessionService.ListCollection, comboBox_lists.SelectedIndex, fieldName);
+            bool isItemQualityField = itemFieldClassifierService != null && itemFieldClassifierService.IsItemQualityFieldName(fieldName);
+
+            ContextMenuStrip menu = new ContextMenuStrip();
+
+            if (isModelField)
+            {
+                menu.Items.Add("Choose Model...", null, (menuSender, args) => OpenModelPickerForValueRow(rowIndex));
+                menu.Items.Add("Preview 3D Model", null, (menuSender, args) => OpenModelPreviewForValueRow(rowIndex));
+            }
+
+            if (isIconField)
+            {
+                if (menu.Items.Count > 0)
+                {
+                    menu.Items.Add(new ToolStripSeparator());
+                }
+                menu.Items.Add("Choose Icon...", null, (menuSender, args) => OpenIconPickerForValueRow(rowIndex));
+            }
+
+            if (isAddonTypeField)
+            {
+                if (menu.Items.Count > 0)
+                {
+                    menu.Items.Add(new ToolStripSeparator());
+                }
+                menu.Items.Add("Choose Added Attribute Type...", null, (menuSender, args) => OpenAddonTypePickerForValueRow(rowIndex));
+            }
+
+            if (isItemQualityField)
+            {
+                if (menu.Items.Count > 0)
+                {
+                    menu.Items.Add(new ToolStripSeparator());
+                }
+                menu.Items.Add("Choose Item Quality...", null, (menuSender, args) => OpenItemQualityPickerForValueRow(rowIndex));
+            }
+
+            if (menu.Items.Count == 0)
+            {
+                menu.Dispose();
+                return;
+            }
+
+            menu.Show(screenLocation);
         }
 
     }

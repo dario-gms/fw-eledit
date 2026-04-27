@@ -12,6 +12,14 @@ FWEledit is based on [sELedit++ by Wrechid](https://github.com/Wrechid/sELedit-)
 
 ---
 
+## What's New in v0.9.3
+
+- Embedded model preview pipeline matured and documented end-to-end (`ECM`/`SMD`/`SKI` + texture resolution diagnostics).
+- Model preview renderer status/profile labels standardized in English.
+- Release metadata updated to `v0.9.3` across project versioning and UI defaults.
+
+---
+
 ## What's New in v0.9.2
 
 - Full MVVM migration: UI logic and flows moved out of Forms into services/coordinators.

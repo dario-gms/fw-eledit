@@ -1,12 +1,17 @@
 using System;
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.IO;
 
 namespace FWEledit
 {
     public sealed class ModelPreviewService
     {
+        private readonly PckEntryReaderService pckEntryReaderService = new PckEntryReaderService();
+        private readonly EmbeddedModelPreviewLoaderService embeddedPreviewLoaderService;
+
+        public ModelPreviewService()
+        {
+            embeddedPreviewLoaderService = new EmbeddedModelPreviewLoaderService(pckEntryReaderService);
+        }
+
         public bool TryOpenPreview(
             AssetManager assetManager,
             CacheSave database,
@@ -35,32 +40,21 @@ namespace FWEledit
                 return false;
             }
 
-            string fullPath = assetManager.ResolveResourcePath(mappedPath);
-            if (string.IsNullOrWhiteSpace(fullPath) || !File.Exists(fullPath))
-            {
-                errorMessage = "Model file not found.\nPathID: " + pathId + "\nMapped: " + mappedPath;
-                return false;
-            }
-
             try
             {
-                string viewerExe = FindExternalModelViewerExecutable(AssetManager.GameRootPath);
-                if (!string.IsNullOrWhiteSpace(viewerExe))
+                ModelPreviewMeshData meshData;
+                if (!embeddedPreviewLoaderService.TryLoadPreviewMesh(assetManager, mappedPath, out meshData, out errorMessage))
                 {
-                    Process.Start(new ProcessStartInfo
+                    if (string.IsNullOrWhiteSpace(errorMessage))
                     {
-                        FileName = viewerExe,
-                        Arguments = "\"" + fullPath + "\"",
-                        UseShellExecute = true
-                    });
-                    return true;
+                        errorMessage = "Model preview unavailable for this file.";
+                    }
+                    return false;
                 }
 
-                Process.Start(new ProcessStartInfo
-                {
-                    FileName = fullPath,
-                    UseShellExecute = true
-                });
+                ModelPreviewWindow window = new ModelPreviewWindow(meshData);
+                window.Show();
+                window.BringToFront();
                 return true;
             }
             catch (Exception ex)
@@ -68,33 +62,6 @@ namespace FWEledit
                 errorMessage = "MODEL PREVIEW ERROR!\n" + ex.Message;
                 return false;
             }
-        }
-
-        private static string FindExternalModelViewerExecutable(string gameRootPath)
-        {
-            List<string> candidates = new List<string>();
-            try
-            {
-                if (!string.IsNullOrWhiteSpace(gameRootPath))
-                {
-                    candidates.Add(Path.Combine(gameRootPath, "fELedit", "Elements Editor Pago", "SKIPreview_RAE.exe"));
-                    candidates.Add(Path.Combine(gameRootPath, "fELedit", "Elements Editor Pago", "Angelica Editor.exe"));
-                    candidates.Add(Path.Combine(gameRootPath, "fELedit", "Elements Editor Pago", "rae_api.exe"));
-                }
-            }
-            catch
-            {
-            }
-
-            for (int i = 0; i < candidates.Count; i++)
-            {
-                if (File.Exists(candidates[i]))
-                {
-                    return candidates[i];
-                }
-            }
-
-            return string.Empty;
         }
     }
 }
