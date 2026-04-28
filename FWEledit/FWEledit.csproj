@@ -22,7 +22,7 @@
     <UpdateRequired>false</UpdateRequired>
     <MapFileExtensions>true</MapFileExtensions>
     <ApplicationRevision>0</ApplicationRevision>
-    <ApplicationVersion>0.9.3.3</ApplicationVersion>
+    <ApplicationVersion>0.9.3.4</ApplicationVersion>
     <IsWebBootstrapper>false</IsWebBootstrapper>
     <UseApplicationTrust>false</UseApplicationTrust>
     <BootstrapperEnabled>true</BootstrapperEnabled>
@@ -78,8 +78,36 @@
     <Reference Include="colorprogressbar">
       <HintPath>.\colorprogressbar.dll</HintPath>
     </Reference>
+    <Reference Include="OpenTK">
+      <HintPath>.\lib\OpenTK.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="OpenTK.GLControl">
+      <HintPath>.\lib\OpenTK.GLControl.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
     <Reference Include="Ionic.Zlib">
       <HintPath>.\lib\Ionic.Zlib.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="SharpDX">
+      <HintPath>.\lib\SharpDX.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="SharpDX.Mathematics">
+      <HintPath>.\lib\SharpDX.Mathematics.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="SharpDX.DXGI">
+      <HintPath>.\lib\SharpDX.DXGI.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="SharpDX.Direct3D11">
+      <HintPath>.\lib\SharpDX.Direct3D11.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="SharpDX.D3DCompiler">
+      <HintPath>.\lib\SharpDX.D3DCompiler.dll</HintPath>
       <Private>true</Private>
     </Reference>
     <Reference Include="System" />
@@ -1085,5 +1113,6 @@
     </Content>
   </ItemGroup>
 </Project>
+
 
 

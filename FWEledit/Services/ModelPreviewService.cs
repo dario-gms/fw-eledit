@@ -6,6 +6,7 @@ namespace FWEledit
     {
         private readonly PckEntryReaderService pckEntryReaderService = new PckEntryReaderService();
         private readonly EmbeddedModelPreviewLoaderService embeddedPreviewLoaderService;
+        private ModelPreviewWindow activePreviewWindow;
 
         public ModelPreviewService()
         {
@@ -70,9 +71,46 @@ namespace FWEledit
                 return;
             }
 
+            if (activePreviewWindow != null && !activePreviewWindow.IsDisposed)
+            {
+                try
+                {
+                    activePreviewWindow.ReplaceMeshData(meshData);
+                }
+                catch
+                {
+                }
+
+                activePreviewWindow.BringToFront();
+                if (activePreviewWindow.WindowState == System.Windows.Forms.FormWindowState.Minimized)
+                {
+                    activePreviewWindow.WindowState = System.Windows.Forms.FormWindowState.Normal;
+                }
+                activePreviewWindow.Activate();
+                return;
+            }
+
             ModelPreviewWindow window = new ModelPreviewWindow(meshData);
+            activePreviewWindow = window;
+            window.FormClosed += (s, e) =>
+            {
+                if (ReferenceEquals(activePreviewWindow, window))
+                {
+                    activePreviewWindow = null;
+                }
+            };
             window.Show();
             window.BringToFront();
+            if (window.WindowState == System.Windows.Forms.FormWindowState.Minimized)
+            {
+                window.WindowState = System.Windows.Forms.FormWindowState.Normal;
+            }
+            window.Activate();
+        }
+
+        public bool IsPreviewWindowOpen()
+        {
+            return activePreviewWindow != null && !activePreviewWindow.IsDisposed;
         }
 
         public bool TryOpenPreview(

@@ -1,38 +1,36 @@
 # FWEledit Model Reader Documentation
 
-Complete technical documentation for the embedded 3D model preview reader.
+Technical documentation for the embedded 3D model preview pipeline (v0.9.3.4).
 
 ---
 
 ## 1. Scope
 
-This document only covers the model reader/preview pipeline used by:
+This document describes only the in-editor model preview flow:
 
-- `Values grid` -> right-click model field -> `Preview 3D Model`
+- `Values grid` -> model field -> context menu -> `Preview 3D Model`
 
 Out of scope:
 
 - icon picker internals
-- model picker catalog internals
-- `elements.data` save/write pipeline
-- external tools
+- save/write pipeline for `elements.data`
+- external viewers
 
 ---
 
-## 2. High-Level Architecture
+## 2. Architecture Overview
 
 Main flow:
 
-1. Resolve `PathID` from `path.data`.
-2. Read `.ecm` entity config.
-3. Resolve `SkinModelPath` to `.smd` or direct `.ski`.
-4. Resolve referenced `.ski` (mesh) and `.bon` (bind pose source).
-5. Parse `.ski` geometry/material/texture tables.
-6. Resolve and decode textures (DDS and common image formats) with multi-path fallback.
-7. Build `ModelPreviewMeshData`.
-8. Render in `Preview 3D Model` window (software rasterizer in current build).
+1. Resolve the model `PathID` from current value row.
+2. Resolve mapped model path via `path.data` (+ neighbor offsets when applicable).
+3. Load `.ecm` and resolve skin model references (`.smd` / `.ski` / `.bon`).
+4. Parse `.ski` geometry/material/texture tables.
+5. Resolve and decode textures (`.dds`, `.tga`, `.bmp`, `.png`, `.jpg`, `.jpeg`) with multi-path fallback.
+6. Build `ModelPreviewMeshData`.
+7. Render in `ModelPreviewWindow` (CPU software, OpenGL GPU, or DirectX11 GPU).
 
-Core files:
+Main code files:
 
 - `FWEledit/Services/ModelPreviewService.cs`
 - `FWEledit/Services/EmbeddedModelPreviewLoaderService.cs`
@@ -44,407 +42,259 @@ Core files:
 
 ## 3. UI Entry Points
 
-Preview is enabled only for fields classified as model fields:
+Model preview actions are available only for model-like fields (`file_model*`, `file_models*`, `model_name*`, and equivalent list-specific model fields recognized by classifier logic).
 
-- `file_model*`
-- `file_models*`
-- `model_name*`
+Entry chain:
 
-Call chain:
+1. `MainWindow.ValuePickers.cs` builds right-click context menu.
+2. `ValueRowPickerUiService.OpenModelPreviewForValueRow(...)` validates and loads asynchronously.
+3. `ModelPreviewService` builds mesh data and opens/reuses preview window.
 
-1. `MainWindow.ValuePickers.cs` adds `Preview 3D Model` in context menu.
-2. `ValueRowPickerUiService.OpenModelPreviewForValueRow(...)` validates field and resolves the current path ID.
-3. `ModelPreviewService.TryOpenPreview(...)` resolves mapped path and opens `ModelPreviewWindow`.
+### 3.1 Live Preview Refresh
 
-Common user-facing errors:
-
-- `Invalid model PathID.`
-- `Model PathID not found in path.data`
-- `Model preview unavailable for this file.`
-- `MODEL PREVIEW ERROR! ...`
+When preview window is open, changing selected row in values grid can auto-refresh the currently open preview window (no close/reopen), with concurrency guard to avoid overlapping loads.
 
 ---
 
-## 4. File Types and Roles
+## 4. Model File Types
 
 ### 4.1 ECM
 
-Entity configuration source. The reader uses:
+Used fields include:
 
 - `SkinModelPath`
-- `SrcBlend`
-- `DestBlend`
-- `EmissiveCol`
-- `OrgColor`
+- `SrcBlend`, `DestBlend`
+- `EmissiveCol`, `OrgColor`
 - `OuterNum`
-- repeated `Float:` values
+- shader float values (`Float:` entries)
 
-Text decode order:
-
-1. `GBK`
-2. `UTF-8`
-3. `Unicode`
+Decode attempts use multiple encodings (GBK/UTF-8/Unicode strategies).
 
 ### 4.2 SMD
 
-Descriptor that usually points to:
+Used as indirection for:
 
 - `.ski`
 - `.bon`
 
-Extraction strategy:
-
-1. length-prefixed string scan (GBK)
-2. regex scan in GBK/Unicode text
-3. raw byte scan for matching extensions
+Resolver supports binary/text extraction heuristics and fallback scanning.
 
 ### 4.3 SKI
 
-Mesh container with material and texture references.
-
-Expected header:
-
-- `MOXBIKSA`
+Expected header: `MOXBIKSA`
 
 Parsed data:
 
-- mesh counts by type
-- texture table
-- material blocks
+- mesh blocks (including per-mesh texture/material index)
 - vertex streams
 - UVs
 - triangle indices
-- texture index assignment per triangle
+- texture table
+- material color blocks
 
 ### 4.4 BON
 
-Bind matrices can be parsed and matched by bone name.
-
-Important current behavior:
-
-- BON skinning is intentionally not applied in final static preview composition to avoid severe distortion on many assets.
-
-### 4.5 Textures
-
-Supported extensions:
-
-- `.dds`
-- `.tga`
-- `.bmp`
-- `.png`
-- `.jpg`
-- `.jpeg`
-
-DDS decoding:
-
-- `FWEledit.DDSReader` -> ARGB bitmap pixels
+Bone data may be parsed for compatibility paths, but final static preview does not apply full runtime animation skinning.
 
 ---
 
-## 5. Path Resolution and Fallback Strategy
+## 5. Path Resolution and Package Fallback
 
-The loader always works with `package + relative path`.
+Loader resolution strategy is package-first + multi-fallback:
 
-Primary model packages:
+1. extracted package folders (`*.pck.files`)
+2. resolved resource root probes
+3. direct `.pck/.pkx` read through `PckEntryReaderService`
 
-- `models`
-- `litmodels`
-- `moxing`
+Texture probing includes:
 
-File read order (`TryReadModelFile`):
-
-1. extracted package root path (`*.pck.files`)
-2. generic resource resolver path
-3. direct package read from `.pck/.pkx` via `PckEntryReaderService`
-
-Texture path probing includes:
-
-- exact texture path from SKI
-- `textures\filename` and `texture\filename`
-- SKI directory neighbors
-- parent directory neighbors
-- package fallback list: preferred package, then `models`, `litmodels`, `moxing`, `surfaces`, `configs`
+- exact SKI texture path
+- `textures\` and `texture\` variants
+- SKI-neighbor and parent-neighbor folders
+- package fallback list (preferred package, then common model packages)
 - absolute-neighbor fallback around resolved SKI location
 
-This is designed to survive client layouts with inconsistent folder conventions.
+Unicode escape fragments (`#Uxxxx`) are decoded during normalization.
 
 ---
 
-## 6. SKI Parsing Details
+## 6. Texture Decode and Alpha Policy
 
-### 6.1 Validation
+Decoded texture data is stored as ARGB pixels in `PreviewTextureData`.
 
-- minimum file size
-- exact header check
-- non-zero mesh count
-- reject unsupported vertex stream types `2` and `3`
-- strict stream boundary checks with `TryEnsureRemaining(...)`
-- safety limits for extremely large meshes
+Current pipeline classifies texture alpha usage into:
 
-### 6.2 Geometry
+- `OPAQUE`
+- `CUTOUT`
+- `BLEND`
 
-Per mesh:
+### 6.1 Policy by Asset Family
 
-- read `texIndex` and `matIndex`
-- read vertices
-- read UV (`tu`, `tv`)
-- read triangle indices (`UInt16`)
+Loader applies conservative per-family policy to reduce classic FW issues (fully black regions or over-transparency):
 
-Axis transform currently applied:
+- `PreferOpaque` for families where alpha is frequently auxiliary/spec data (ex: many weapons)
+- `PreferCutout` for mount families with real cutout masks mixed with auxiliary alpha
+- default heuristics for other assets
 
-- `X` is flipped (`-X`)
-- `Y` remains up-axis
+### 6.2 Recovery Passes
 
-### 6.3 Materials and Base Color
+For selected cases, RGB recovery from auxiliary alpha is attempted to avoid pre-darkened output.
 
-Material block:
+### 6.3 Mount Texture Pair Repair
 
-- 16 floats
-- base color inferred from first 3 values
-
-Per-triangle base color:
-
-- stored in `TriangleColors`
-- falls back to neutral color when needed
-
-### 6.4 Texture Assignment
-
-Per-triangle texture index:
-
-- stored in `TriangleTextureIndices`
-- derived from mesh `texIndex`
-- used by rasterizer to keep submesh texture mapping correct
+Mount texture sets can run pair-repair heuristics so one partner texture can recover expected alpha behavior when pair metadata is inconsistent.
 
 ---
 
-## 7. Unicode Path Escape Support (`#Uxxxx`)
+## 7. ModelPreviewMeshData Contract
 
-Path normalization decodes escaped Unicode fragments:
+`ModelPreviewMeshData` contains:
 
-- `#U5de8#U4eba...` -> real Unicode characters
-
-This is required for many clients that encode CJK names in path strings.
-
----
-
-## 8. Preview Data Contract
-
-`ModelPreviewMeshData` includes:
-
-- source/mapped/absolute paths (ECM/SKI)
-- `Vertices`
-- `UVs`
-- `Indices`
+- resolved source paths (ECM/SKI)
+- `Vertices`, `UVs`, `Indices`
 - `TriangleColors`
 - `TriangleTextureIndices`
 - `Textures` (`PreviewTextureData[]`)
-- ECM render-related values (`SrcBlend`, `DestBlend`, `EmissiveColorArgb`, `OrgColorArgb`, `ShaderFloats`, `OuterNum`)
+- ECM render metadata (`SrcBlend`, `DestBlend`, emissive/org colors, shader floats, `OuterNum`)
 
-`PreviewTextureData` includes:
+`PreviewTextureData` includes (among others):
 
 - `Name`
 - `Width`, `Height`
 - `Pixels` (ARGB)
-- `AverageColorArgb`
 - `HasTransparency`
+- `UsesAlphaAsOpacity`
 
 ---
 
-## 9. Renderer Behavior (Current Build)
+## 8. Renderer Backends (v0.9.3.4)
 
-### 9.1 Backend UI vs Runtime Reality
+Available runtime modes:
 
-UI exposes:
+- `Software (CPU)`
+- `OpenGL (GPU)`
+- `DirectX11 (GPU)`
 
-- `Hardware` checkbox
-- backend combo: `DirectX 11`, `Vulkan`, `OpenGL`
+Notes:
 
-Current runtime:
+- backend selection is persisted in user settings
+- hardware on/off is persisted in user settings
+- backend can fallback to CPU when initialization fails, with reason shown in status line
+- Vulkan is not an active backend in current build
 
-- all profiles still render through software rasterization
-- backend selection changes quality/performance profile only
-- status text explicitly reports CPU fallback
+### 8.1 Rendering Order
 
-### 9.2 Rasterization Pipeline
+Both GPU and CPU paths separate drawing by alpha behavior to reduce artifacts:
 
-1. normalize model by bounds (`center`, `radius`)
-2. apply yaw/pitch camera rotation + perspective projection
-3. classify triangles into opaque/transparent buckets
-4. rasterize opaque first with depth buffer
-5. rasterize transparent triangles after sort
-6. optional wireframe overlay for visible top surfaces
-
-### 9.3 Lighting and Color Pipeline
-
-Per-fragment stages:
-
-1. `ApplyShade` (gamma-aware shading via sRGB/linear conversion)
-2. `ApplyEcmPostLighting` (specular/emissive/tint from ECM parameters)
-3. `ApplyColorGrade` (saturation/contrast/black-level tuning)
-
-Goal:
-
-- avoid washed output
-- better match in-game perceived contrast and warmth
-
-### 9.4 Texture Sampling and Transparency
-
-- UV wraps by fractional part
-- bilinear filtering enabled
-- near-zero alpha texels are discarded
-- `HasTransparency` inferred from pixel alpha distribution
+1. opaque pass
+2. cutout pass
+3. transparent pass (blended)
 
 ---
 
-## 10. Camera Controls
+## 9. Camera and View Behavior
 
-- Drag: rotate
+Camera controls:
+
+- drag: rotate
 - `Shift + drag`: fine rotate
-- Scroll: zoom
-- Double-click: reset view
-- `R`: reset
-- `Esc`: close
+- scroll: zoom
+- double-click: reset
+- `R`: reset view
+- `Esc`: close window
 
-Default view:
+Behavior changes in this version:
 
-- starts from front-facing angle with calibrated yaw/pitch
-- pitch clamped to prevent extreme flip behavior
+- camera state (yaw/pitch/zoom) is persisted across preview updates/openings
+- preview window is reused and mesh is replaced in-place when possible
 
 ---
 
-## 11. On-Screen Diagnostics
+## 10. Diagnostics On Screen
 
 Header:
 
-- `Vertices: X`
-- `Triangles: Y`
-- `Textures: loaded/total`
+- vertices / triangles / loaded textures
 
-Source section:
+Source block:
 
-- `ECM: ...`
-- `SKI: ...`
-- `TEX[i]: OK/MISS ...`
+- `ECM:` path
+- `SKI:` path
+- `TEX[i]: OK|MISS ... [OPAQUE|CUTOUT|BLEND]`
 - `TRI TEX[i]: count`
 
-Interpretation:
+This data helps identify whether issues come from:
 
-- `Textures: n/n` + `TEX[i]: OK` confirms load/decode success
-- `TRI TEX[i]` confirms triangle distribution by texture index
-- `MISS` points to path resolution or decode failures
-
----
-
-## 12. Dependencies
-
-Internal:
-
-- `AssetManager`
-- `PckEntryReaderService`
-- `DDSReader`
-
-External library used by package readers:
-
-- `Ionic.Zlib`
+- path resolution
+- decode failures
+- alpha classification mismatch
 
 ---
 
-## 13. Known Limitations
+## 11. Settings Keys
 
-1. "Hardware" mode is still CPU fallback in this build.
-2. SKI mesh vertex types `2/3` are not supported.
-3. BON skinning is intentionally disabled for final static preview composition.
-4. GFX/particle files (`.gfx`) are not rendered.
-5. Output is close to game appearance but not a full in-game shader clone.
+User settings currently used by preview:
+
+- `ModelPreviewUseHardware`
+- `ModelPreviewBackend`
+- `ModelPreviewCameraHasState`
+- `ModelPreviewCameraYaw`
+- `ModelPreviewCameraPitch`
+- `ModelPreviewCameraZoom`
 
 ---
 
-## 14. Troubleshooting
+## 12. Known Limitations
+
+1. Some Angelica materials still require deeper shader parity for perfect in-game match.
+2. A subset of mounts/pets/weapons can still show alpha/classification edge cases depending on atlas authoring.
+3. BON animation/runtime effects (`.gfx`, full animated material stack) are not fully reproduced.
+4. Visual parity is improved but not yet a 1:1 clone of game runtime renderer.
+
+---
+
+## 13. Troubleshooting Quick Guide
 
 ### `Model PathID not found in path.data`
 
-- verify `path.data` is loaded from the expected client
-- verify field value is a valid path ID
+- verify list field value is valid path id
+- verify correct client `path.data` is loaded
 
-### Model loads without textures
+### Model with missing textures (`TEX[i]: MISS`)
 
-- inspect `TEX[i]: MISS` lines
-- verify SKI texture names
-- verify folder layout (`textures`, `texture`, SKI neighbor folders)
-- verify file exists in extracted folders or package entry
+- verify texture file exists in package/extracted folders
+- verify SKI texture names and folder aliases (`texture`/`textures`)
 
-### Texture appears mapped incorrectly
+### Model too dark / too transparent / black patches
 
-- check `TRI TEX[i]` distribution
-- verify per-mesh `texIndex` parsing
-- verify vertex/index stream offsets and UV reads
+- check `TEX[i]` alpha mode labels
+- compare behavior between OpenGL and DirectX11 backends
+- check if asset family may require different alpha policy tuning
 
-### Colors too dark or washed
+### Live preview not updating
 
-- inspect `ApplyShade`, `ApplyEcmPostLighting`, `ApplyColorGrade`
-- inspect ECM `Float:` values and emissive/org color
-
-### Model appears distorted
-
-- verify supported SKI stream type
-- verify BON skinning was not re-enabled by mistake
+- open preview first from a model field
+- ensure selection is on a model field row
+- if window was closed, live mode is automatically disabled
 
 ---
 
-## 15. Regression Checklist
+## 14. Extension Targets
 
-Run before closing model-reader changes:
+Priority next steps:
 
-1. Open at least 3 different asset types (mount/creature/humanoid).
-2. Confirm `Textures: n/n`.
-3. Confirm expected `TEX[i]: OK` entries.
-4. Confirm non-zero `TRI TEX[i]` for main textures.
-5. Toggle wireframe on/off and verify stable output.
-6. Test rotate/zoom/reset behavior.
-7. Test Unicode paths and `#Uxxxx` decoding.
-8. Test both extracted-resource and direct-PCK fallback paths.
+1. Improve Angelica shader/material parity for remaining problematic alpha/spec assets.
+2. Optional support for additional SKI vertex stream variants where safe.
+3. Optional animation playback path compatible with FW assets.
+4. Add a dedicated debug overlay for per-triangle alpha/material classification.
 
 ---
 
-## 16. Extension Targets
+## 15. Code Index
 
-High-value next steps:
-
-1. Real GPU backends (DX11/Vulkan/OpenGL) while preserving current visual parity.
-2. Full runtime overlay/material blend integration.
-3. Optional static animation support from `.stck`.
-4. Optional support for additional SKI vertex stream types.
-5. Debug overlay mode for UV/material diagnostics.
-
----
-
-## 17. Code Reference Index
-
-Preview entry and orchestration:
-
-- `FWEledit/MainWindow.ValuePickers.cs`
-- `FWEledit/Services/ValueRowPickerUiService.cs`
-- `FWEledit/Services/ModelPreviewService.cs`
-
-Model load and parse:
-
-- `FWEledit/Services/EmbeddedModelPreviewLoaderService.cs`
-
-Data models:
-
-- `FWEledit/Models/ModelPreviewMeshData.cs`
-- `FWEledit/Models/Vector3f.cs`
-
-Renderer:
-
-- `FWEledit/Views/ModelPreviewWindow.cs`
-
-Package reader:
-
-- `FWEledit/Services/PckEntryReaderService.cs`
-
-DDS decoding:
-
-- `FWEledit/DDSReader/DDS.cs`
-- `FWEledit/DDSReader/DDSImage.cs`
-- `FWEledit/DDSReader/Decompressor.cs`
+- Preview entry/menu: `FWEledit/MainWindow.ValuePickers.cs`
+- Async open + live refresh: `FWEledit/Services/ValueRowPickerUiService.cs`
+- Window reuse and replacement: `FWEledit/Services/ModelPreviewService.cs`
+- Loader and alpha policy: `FWEledit/Services/EmbeddedModelPreviewLoaderService.cs`
+- Renderers (CPU/OpenGL/DirectX11): `FWEledit/Views/ModelPreviewWindow.cs`
+- Texture decode core: `FWEledit/DDSReader/*`

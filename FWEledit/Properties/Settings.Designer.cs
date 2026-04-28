@@ -86,5 +86,95 @@ namespace FWEledit.Properties
 				this["LastRunVersion"] = value;
 			}
 		}
+
+		[global::System.Configuration.UserScopedSettingAttribute()]
+		[global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+		[global::System.Configuration.DefaultSettingValueAttribute("True")]
+		public bool ModelPreviewUseHardware
+		{
+			get
+			{
+				return ((bool)(this["ModelPreviewUseHardware"]));
+			}
+			set
+			{
+				this["ModelPreviewUseHardware"] = value;
+			}
+		}
+
+		[global::System.Configuration.UserScopedSettingAttribute()]
+		[global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+		[global::System.Configuration.DefaultSettingValueAttribute("0")]
+		public int ModelPreviewBackend
+		{
+			get
+			{
+				return ((int)(this["ModelPreviewBackend"]));
+			}
+			set
+			{
+				this["ModelPreviewBackend"] = value;
+			}
+		}
+
+		[global::System.Configuration.UserScopedSettingAttribute()]
+		[global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+		[global::System.Configuration.DefaultSettingValueAttribute("False")]
+		public bool ModelPreviewCameraHasState
+		{
+			get
+			{
+				return ((bool)(this["ModelPreviewCameraHasState"]));
+			}
+			set
+			{
+				this["ModelPreviewCameraHasState"] = value;
+			}
+		}
+
+		[global::System.Configuration.UserScopedSettingAttribute()]
+		[global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+		[global::System.Configuration.DefaultSettingValueAttribute("0")]
+		public float ModelPreviewCameraYaw
+		{
+			get
+			{
+				return ((float)(this["ModelPreviewCameraYaw"]));
+			}
+			set
+			{
+				this["ModelPreviewCameraYaw"] = value;
+			}
+		}
+
+		[global::System.Configuration.UserScopedSettingAttribute()]
+		[global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+		[global::System.Configuration.DefaultSettingValueAttribute("0")]
+		public float ModelPreviewCameraPitch
+		{
+			get
+			{
+				return ((float)(this["ModelPreviewCameraPitch"]));
+			}
+			set
+			{
+				this["ModelPreviewCameraPitch"] = value;
+			}
+		}
+
+		[global::System.Configuration.UserScopedSettingAttribute()]
+		[global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+		[global::System.Configuration.DefaultSettingValueAttribute("1")]
+		public float ModelPreviewCameraZoom
+		{
+			get
+			{
+				return ((float)(this["ModelPreviewCameraZoom"]));
+			}
+			set
+			{
+				this["ModelPreviewCameraZoom"] = value;
+			}
+		}
 	}
 }

@@ -305,7 +305,7 @@ namespace FWEledit
                 assembly,
                 label_Version,
                 navigationStateService,
-                "0.9.3.3");
+                "0.9.3.4");
 
             MainWindowAssetSetupResult assetSetup = mainWindowAssetSetupService.Build(
                 addonTypeHintService,
@@ -550,4 +550,5 @@ namespace FWEledit
         }
     }
 }
+
 

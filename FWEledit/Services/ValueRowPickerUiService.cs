@@ -10,6 +10,30 @@ namespace FWEledit
     public sealed class ValueRowPickerUiService
     {
         private int previewLoadInProgress;
+        private bool liveModelPreviewEnabled;
+        private int lastPreviewPathId;
+        private int lastPreviewListIndex;
+        private int lastPreviewRowIndex;
+
+        public ValueRowPickerUiService()
+        {
+            lastPreviewPathId = 0;
+            lastPreviewListIndex = -1;
+            lastPreviewRowIndex = -1;
+        }
+
+        public bool IsLiveModelPreviewEnabled
+        {
+            get { return liveModelPreviewEnabled; }
+        }
+
+        public void DisableLiveModelPreview()
+        {
+            liveModelPreviewEnabled = false;
+            lastPreviewPathId = 0;
+            lastPreviewListIndex = -1;
+            lastPreviewRowIndex = -1;
+        }
 
         private sealed class ModelPreviewBuildResult
         {
@@ -397,7 +421,9 @@ namespace FWEledit
             ModelPickerService modelPickerService,
             ModelPreviewService modelPreviewService,
             Form owner,
-            Action<string> showMessage)
+            Action<string> showMessage,
+            bool enableLivePreview = true,
+            bool suppressBusyMessage = false)
         {
             if (assetManager == null || database == null || itemGrid == null || listIndex < 0)
             {
@@ -424,9 +450,20 @@ namespace FWEledit
             }
 
             int pathId = TryGetCurrentPathId(itemGrid, rowIndex, modelPickerService, pathIdResolutionService);
+            if (enableLivePreview
+                && modelPreviewService != null
+                && modelPreviewService.IsPreviewWindowOpen()
+                && liveModelPreviewEnabled
+                && pathId == lastPreviewPathId
+                && listIndex == lastPreviewListIndex
+                && rowIndex == lastPreviewRowIndex)
+            {
+                return;
+            }
+
             if (Interlocked.CompareExchange(ref previewLoadInProgress, 1, 0) != 0)
             {
-                if (showMessage != null)
+                if (!suppressBusyMessage && showMessage != null)
                 {
                     showMessage("A model preview is already loading. Please wait.");
                 }
@@ -472,6 +509,13 @@ namespace FWEledit
                 }
 
                 modelPreviewService.ShowPreviewWindow(result.MeshData);
+                if (enableLivePreview)
+                {
+                    liveModelPreviewEnabled = true;
+                    lastPreviewPathId = pathId;
+                    lastPreviewListIndex = listIndex;
+                    lastPreviewRowIndex = rowIndex;
+                }
             }
             catch (Exception ex)
             {

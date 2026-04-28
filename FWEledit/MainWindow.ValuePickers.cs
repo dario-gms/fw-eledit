@@ -106,6 +106,112 @@ namespace FWEledit
                 message => MessageBox.Show(message));
         }
 
+        private void dataGridView_item_CurrentCellChanged(object sender, EventArgs e)
+        {
+            RefreshLiveModelPreviewFromCurrentRow(false);
+        }
+
+        private void RefreshLiveModelPreviewFromCurrentRow(bool preferFirstModelField)
+        {
+            if (liveModelPreviewRefreshInProgress
+                || valueRowPickerUiService == null
+                || !valueRowPickerUiService.IsLiveModelPreviewEnabled
+                || modelPreviewService == null
+                || itemFieldClassifierService == null
+                || dataGridView_item == null
+                || comboBox_lists == null
+                || sessionService == null
+                || sessionService.AssetManager == null
+                || sessionService.Database == null
+                || sessionService.ListCollection == null)
+            {
+                return;
+            }
+
+            if (!modelPreviewService.IsPreviewWindowOpen())
+            {
+                valueRowPickerUiService.DisableLiveModelPreview();
+                return;
+            }
+
+            int rowIndex = -1;
+            if (!preferFirstModelField && dataGridView_item.CurrentCell != null)
+            {
+                rowIndex = dataGridView_item.CurrentCell.RowIndex;
+            }
+
+            if (!preferFirstModelField)
+            {
+                if (!IsModelFieldRow(rowIndex))
+                {
+                    return;
+                }
+            }
+            else if (!IsModelFieldRow(rowIndex))
+            {
+                rowIndex = FindFirstModelFieldRow();
+            }
+
+            if (rowIndex < 0 || rowIndex >= dataGridView_item.Rows.Count)
+            {
+                return;
+            }
+
+            liveModelPreviewRefreshInProgress = true;
+            try
+            {
+                valueRowPickerUiService.OpenModelPreviewForValueRow(
+                    sessionService.AssetManager,
+                    sessionService.Database,
+                    sessionService.ListCollection,
+                    dataGridView_item,
+                    comboBox_lists.SelectedIndex,
+                    rowIndex,
+                    itemFieldClassifierService,
+                    pathIdResolutionService,
+                    modelPickerService,
+                    modelPreviewService,
+                    this,
+                    message => MessageBox.Show(message),
+                    true,
+                    true);
+            }
+            finally
+            {
+                liveModelPreviewRefreshInProgress = false;
+            }
+        }
+
+        private bool IsModelFieldRow(int rowIndex)
+        {
+            if (rowIndex < 0 || dataGridView_item == null || rowIndex >= dataGridView_item.Rows.Count || itemFieldClassifierService == null)
+            {
+                return false;
+            }
+
+            string fieldName = Convert.ToString(dataGridView_item.Rows[rowIndex].Cells[0].Value);
+            return itemFieldClassifierService.IsModelFieldName(fieldName);
+        }
+
+        private int FindFirstModelFieldRow()
+        {
+            if (dataGridView_item == null || itemFieldClassifierService == null)
+            {
+                return -1;
+            }
+
+            for (int i = 0; i < dataGridView_item.Rows.Count; i++)
+            {
+                string fieldName = Convert.ToString(dataGridView_item.Rows[i].Cells[0].Value);
+                if (itemFieldClassifierService.IsModelFieldName(fieldName))
+                {
+                    return i;
+                }
+            }
+
+            return -1;
+        }
+
         private void UpdatePickIconButtonState()
         {
             mainWindowValuePickerCoordinatorService.UpdatePickIconButtonState(
@@ -169,7 +275,19 @@ namespace FWEledit
                 dataGridView_item.CurrentCell = dataGridView_item.Rows[e.RowIndex].Cells[2];
             }
 
-            ShowValueRowContextMenu(e.RowIndex, dataGridView_item.PointToScreen(new Point(e.X, e.Y)));
+            Point screenLocation;
+            if (e.ColumnIndex >= 0 && e.ColumnIndex < dataGridView_item.Columns.Count)
+            {
+                Rectangle cellRect = dataGridView_item.GetCellDisplayRectangle(e.ColumnIndex, e.RowIndex, true);
+                Point clientPoint = new Point(cellRect.Left + e.X, cellRect.Top + e.Y);
+                screenLocation = dataGridView_item.PointToScreen(clientPoint);
+            }
+            else
+            {
+                screenLocation = Cursor.Position;
+            }
+
+            ShowValueRowContextMenu(e.RowIndex, screenLocation);
         }
 
         private void ShowValueRowContextMenu(int rowIndex, Point screenLocation)

@@ -5,6 +5,7 @@ using System.Drawing.Imaging;
 using System.Globalization;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Reflection;
 using System.Text;
 using System.Text.RegularExpressions;
 using FWEledit.DDSReader;
@@ -14,6 +15,18 @@ namespace FWEledit
     public sealed class EmbeddedModelPreviewLoaderService
     {
         private readonly PckEntryReaderService pckEntryReaderService;
+        private static readonly object PfimBindingsSync = new object();
+        private static bool pfimBindingsInitialized;
+        private static MethodInfo pfimFromStreamMethod;
+        private static Type pfimImageType;
+        private static PropertyInfo pfimCompressedProperty;
+        private static MethodInfo pfimDecompressMethod;
+        private static PropertyInfo pfimWidthProperty;
+        private static PropertyInfo pfimHeightProperty;
+        private static PropertyInfo pfimStrideProperty;
+        private static PropertyInfo pfimBitsPerPixelProperty;
+        private static PropertyInfo pfimDataProperty;
+        private static MethodInfo pfimDisposeMethod;
         private static readonly float[] IdentitySkinMatrix = new float[]
         {
             1f, 0f, 0f, 0f,
@@ -1293,63 +1306,27 @@ namespace FWEledit
                 using (MemoryStream stream = new MemoryStream(bytes))
                 using (BinaryReader br = new BinaryReader(stream))
                 {
-                    string header = Encoding.ASCII.GetString(br.ReadBytes(8));
-                    if (!string.Equals(header, "MOXBIKSA", StringComparison.Ordinal))
+                    if (!TryReadSkiFileHeader(br, out SkiFileHeader header, out error))
                     {
-                        error = "Unsupported ski header: " + header;
                         return false;
                     }
 
-                    int skiType = br.ReadInt32();
-                    int[] meshCountByType = new int[4];
-                    meshCountByType[0] = br.ReadInt32();
-                    meshCountByType[1] = br.ReadInt32();
-                    meshCountByType[2] = br.ReadInt32();
-                    meshCountByType[3] = br.ReadInt32();
-
-                    int texCount = br.ReadInt32();
-                    int matCount = br.ReadInt32();
-                    int numBips = br.ReadInt32();
-                    br.ReadInt32(); // unknown_2
-                    br.ReadInt32(); // type_mask
-                    br.ReadBytes(60); // zero block
-
-                    int meshCount = 0;
-                    for (int i = 0; i < meshCountByType.Length; i++)
+                    if (header.Version >= 9)
                     {
-                        meshCount += Math.Max(0, meshCountByType[i]);
-                    }
-
-                    if (meshCount <= 0)
-                    {
-                        error = "No meshes found in .ski.";
-                        return false;
-                    }
-                    if (meshCountByType[2] > 0 || meshCountByType[3] > 0)
-                    {
-                        error = "Unsupported mesh vertex type in .ski (types 2/3).";
-                        return false;
-                    }
-
-                    string[] skiBoneNames = new string[0];
-                    if (skiType == 9)
-                    {
-                        skiBoneNames = new string[Math.Max(0, numBips)];
-                        for (int i = 0; i < numBips; i++)
+                        for (int i = 0; i < header.NumSkinBone; i++)
                         {
-                            if (!TryReadLengthPrefixedString(br, gbk, 4096, out string boneName))
+                            if (!TryReadLengthPrefixedString(br, gbk, 8192, out string _))
                             {
                                 error = "Invalid bone table in .ski.";
                                 return false;
                             }
-                            skiBoneNames[i] = boneName ?? string.Empty;
                         }
                     }
 
-                    string[] textureNames = new string[Math.Max(0, texCount)];
-                    for (int i = 0; i < texCount; i++)
+                    string[] textureNames = new string[Math.Max(0, header.NumTexture)];
+                    for (int i = 0; i < textureNames.Length; i++)
                     {
-                        if (!TryReadLengthPrefixedString(br, gbk, 4096, out string textureName))
+                        if (!TryReadLengthPrefixedString(br, gbk, 8192, out string textureName))
                         {
                             error = "Invalid texture table in .ski.";
                             return false;
@@ -1357,8 +1334,8 @@ namespace FWEledit
                         textureNames[i] = textureName ?? string.Empty;
                     }
 
-                    SkiMaterial[] materials = new SkiMaterial[Math.Max(0, matCount)];
-                    for (int i = 0; i < matCount; i++)
+                    SkiMaterial[] materials = new SkiMaterial[Math.Max(0, header.NumMaterial)];
+                    for (int i = 0; i < materials.Length; i++)
                     {
                         if (!TryReadMaterialBlock(br, out materials[i]))
                         {
@@ -1372,153 +1349,239 @@ namespace FWEledit
                         skiPackage,
                         relativeSkiPath,
                         textureNames);
-                    // NOTE:
-                    // Some FW assets include BON data that does not map cleanly to the static
-                    // preview geometry used by editor tools. Applying BON skinning here can
-                    // severely distort meshes (collapsed/exploded look). Keep static SKI pose.
-                    float[][] skinMatricesByBoneIndex = new float[0][];
 
                     List<Vector3f> allVertices = new List<Vector3f>(4096);
                     List<Vector2f> allUvs = new List<Vector2f>(4096);
                     List<int> allIndices = new List<int>(8192);
                     List<int> allTriangleColors = new List<int>(8192);
                     List<int> allTriangleTextureIndices = new List<int>(8192);
+                    string parseError = string.Empty;
 
-                    for (int currentVertexType = 0; currentVertexType <= 1; currentVertexType++)
+                    bool TryReadSkinMeshBlock()
                     {
-                        int typedMeshCount = Math.Max(0, meshCountByType[currentVertexType]);
-                        for (int meshIndex = 0; meshIndex < typedMeshCount; meshIndex++)
+                        if (!TryReadLengthPrefixedString(br, gbk, 4096, out _))
                         {
-                            if (!TryReadLengthPrefixedString(br, gbk, 4096, out _))
+                            parseError = "Invalid mesh name in .ski.";
+                            return false;
+                        }
+
+                        if (!TryEnsureRemaining(br, 16))
+                        {
+                            parseError = "Unexpected end of skin mesh metadata in .ski.";
+                            return false;
+                        }
+
+                        int texIndex = br.ReadInt32();
+                        int matIndex = br.ReadInt32();
+                        int vertexCount = br.ReadInt32();
+                        int indexCount = br.ReadInt32();
+
+                        if (vertexCount < 0 || indexCount < 0)
+                        {
+                            parseError = "Invalid skin mesh counts in .ski.";
+                            return false;
+                        }
+                        if (vertexCount == 0 || indexCount < 3)
+                        {
+                            return true;
+                        }
+                        if (vertexCount > 500000 || indexCount > 5000000)
+                        {
+                            parseError = "Skin mesh is too large for preview.";
+                            return false;
+                        }
+
+                        Color meshColor = ResolveMeshColor(texIndex, matIndex, materials, textureDataByIndex);
+                        int meshTextureIndex = ResolveMeshTextureIndex(texIndex, textureNames);
+
+                        long skinVertexBytes = (long)vertexCount * 48L;
+                        if (!TryEnsureRemaining(br, skinVertexBytes))
+                        {
+                            parseError = "Unexpected end of skin vertex data in .ski.";
+                            return false;
+                        }
+
+                        int baseVertex = allVertices.Count;
+                        for (int v = 0; v < vertexCount; v++)
+                        {
+                            float px = br.ReadSingle();
+                            float py = br.ReadSingle();
+                            float pz = br.ReadSingle();
+                            br.ReadSingle(); // weight 0
+                            br.ReadSingle(); // weight 1
+                            br.ReadSingle(); // weight 2
+                            br.ReadUInt32(); // packed matrix indices
+                            br.ReadSingle(); // normal x
+                            br.ReadSingle(); // normal y
+                            br.ReadSingle(); // normal z
+                            float tu = br.ReadSingle();
+                            float tv = br.ReadSingle();
+
+                            if (float.IsNaN(px) || float.IsNaN(py) || float.IsNaN(pz)
+                                || float.IsInfinity(px) || float.IsInfinity(py) || float.IsInfinity(pz))
                             {
-                                error = "Invalid mesh name in .ski.";
+                                parseError = "Invalid vertex data in .ski.";
                                 return false;
                             }
 
-                            if (!TryEnsureRemaining(br, 8))
-                            {
-                                error = "Unexpected end of mesh metadata in .ski.";
-                                return false;
-                            }
+                            allVertices.Add(new Vector3f(-px, py, pz));
+                            allUvs.Add(new Vector2f(tu, tv));
+                        }
 
-                            int texIndex = br.ReadInt32();
-                            int matIndex = br.ReadInt32();
-                            Color meshColor = ResolveMeshColor(texIndex, matIndex, materials, textureDataByIndex);
-                            int meshTextureIndex = ResolveMeshTextureIndex(texIndex, textureNames);
+                        long indexBytes = (long)indexCount * 2L;
+                        if (!TryEnsureRemaining(br, indexBytes))
+                        {
+                            parseError = "Unexpected end of skin index data in .ski.";
+                            return false;
+                        }
 
-                            if (currentVertexType == 1)
-                            {
-                                if (!TryEnsureRemaining(br, 4))
-                                {
-                                    error = "Unexpected end of extra mesh data in .ski.";
-                                    return false;
-                                }
-                                br.ReadBytes(4);
-                            }
+                        int[] rawIndices = new int[indexCount];
+                        for (int i = 0; i < indexCount; i++)
+                        {
+                            rawIndices[i] = br.ReadUInt16();
+                        }
 
-                            if (!TryEnsureRemaining(br, 8))
-                            {
-                                error = "Unexpected end of mesh counts in .ski.";
-                                return false;
-                            }
+                        int faceCount = indexCount / 3;
+                        for (int f = 0; f < faceCount; f++)
+                        {
+                            int i0 = baseVertex + rawIndices[(f * 3) + 0];
+                            int i1 = baseVertex + rawIndices[(f * 3) + 1];
+                            int i2 = baseVertex + rawIndices[(f * 3) + 2];
 
-                            uint vertexCount = br.ReadUInt32();
-                            uint faceVertsCount = br.ReadUInt32();
-                            if (vertexCount == 0 || faceVertsCount == 0 || faceVertsCount % 3 != 0)
+                            if (i0 < baseVertex || i1 < baseVertex || i2 < baseVertex)
                             {
                                 continue;
                             }
-                            if (vertexCount > 500000 || faceVertsCount > 5000000)
+                            if (i0 >= allVertices.Count || i1 >= allVertices.Count || i2 >= allVertices.Count)
                             {
-                                error = "Mesh is too large for preview.";
-                                return false;
+                                continue;
                             }
 
-                            int baseVertex = allVertices.Count;
+                            allIndices.Add(i0);
+                            allIndices.Add(i1);
+                            allIndices.Add(i2);
+                            allTriangleColors.Add(meshColor.ToArgb());
+                            allTriangleTextureIndices.Add(meshTextureIndex);
+                        }
 
-                            for (uint v = 0; v < vertexCount; v++)
+                        return true;
+                    }
+
+                    bool TryReadRigidMeshBlock()
+                    {
+                        if (!TryReadLengthPrefixedString(br, gbk, 4096, out _))
+                        {
+                            parseError = "Invalid rigid mesh name in .ski.";
+                            return false;
+                        }
+
+                        if (!TryEnsureRemaining(br, 20))
+                        {
+                            parseError = "Unexpected end of rigid mesh metadata in .ski.";
+                            return false;
+                        }
+
+                        br.ReadInt32(); // bone index
+                        int texIndex = br.ReadInt32();
+                        int matIndex = br.ReadInt32();
+                        int vertexCount = br.ReadInt32();
+                        int indexCount = br.ReadInt32();
+
+                        if (vertexCount < 0 || indexCount < 0)
+                        {
+                            parseError = "Invalid rigid mesh counts in .ski.";
+                            return false;
+                        }
+                        if (vertexCount == 0 || indexCount < 3)
+                        {
+                            return true;
+                        }
+                        if (vertexCount > 500000 || indexCount > 5000000)
+                        {
+                            parseError = "Rigid mesh is too large for preview.";
+                            return false;
+                        }
+
+                        Color meshColor = ResolveMeshColor(texIndex, matIndex, materials, textureDataByIndex);
+                        int meshTextureIndex = ResolveMeshTextureIndex(texIndex, textureNames);
+
+                        long rigidVertexBytes = (long)vertexCount * 32L;
+                        if (!TryEnsureRemaining(br, rigidVertexBytes))
+                        {
+                            parseError = "Unexpected end of rigid vertex data in .ski.";
+                            return false;
+                        }
+
+                        int baseVertex = allVertices.Count;
+                        for (int v = 0; v < vertexCount; v++)
+                        {
+                            float px = br.ReadSingle();
+                            float py = br.ReadSingle();
+                            float pz = br.ReadSingle();
+                            br.ReadSingle(); // normal x
+                            br.ReadSingle(); // normal y
+                            br.ReadSingle(); // normal z
+                            float tu = br.ReadSingle();
+                            float tv = br.ReadSingle();
+
+                            allVertices.Add(new Vector3f(-px, py, pz));
+                            allUvs.Add(new Vector2f(tu, tv));
+                        }
+
+                        long indexBytes = (long)indexCount * 2L;
+                        if (!TryEnsureRemaining(br, indexBytes))
+                        {
+                            parseError = "Unexpected end of rigid index data in .ski.";
+                            return false;
+                        }
+
+                        int[] rawIndices = new int[indexCount];
+                        for (int i = 0; i < indexCount; i++)
+                        {
+                            rawIndices[i] = br.ReadUInt16();
+                        }
+
+                        int faceCount = indexCount / 3;
+                        for (int f = 0; f < faceCount; f++)
+                        {
+                            int i0 = baseVertex + rawIndices[(f * 3) + 0];
+                            int i1 = baseVertex + rawIndices[(f * 3) + 1];
+                            int i2 = baseVertex + rawIndices[(f * 3) + 2];
+
+                            if (i0 < baseVertex || i1 < baseVertex || i2 < baseVertex)
                             {
-                                if (!TryEnsureRemaining(br, 12))
-                                {
-                                    error = "Unexpected end of vertex position data in .ski.";
-                                    return false;
-                                }
-
-                                float px = br.ReadSingle();
-                                float py = br.ReadSingle();
-                                float pz = br.ReadSingle();
-                                float weight0 = 0f;
-                                float weight1 = 0f;
-                                float weight2 = 0f;
-                                uint packedBoneIndices = 0;
-
-                                if (currentVertexType == 0)
-                                {
-                                    if (!TryEnsureRemaining(br, 16))
-                                    {
-                                        error = "Unexpected end of vertex weight data in .ski.";
-                                        return false;
-                                    }
-
-                                    weight0 = br.ReadSingle();
-                                    weight1 = br.ReadSingle();
-                                    weight2 = br.ReadSingle();
-                                    packedBoneIndices = br.ReadUInt32();
-                                }
-
-                                if (!TryEnsureRemaining(br, 20))
-                                {
-                                    error = "Unexpected end of vertex normal/uv data in .ski.";
-                                    return false;
-                                }
-
-                                br.ReadSingle();
-                                br.ReadSingle();
-                                br.ReadSingle();
-                                float tu = br.ReadSingle();
-                                float tv = br.ReadSingle();
-
-                                Vector3f transformed = new Vector3f(px, py, pz);
-                                if (currentVertexType == 0 && skinMatricesByBoneIndex != null && skinMatricesByBoneIndex.Length > 0)
-                                {
-                                    transformed = ApplyBoneSkinning(transformed, weight0, weight1, weight2, packedBoneIndices, skinMatricesByBoneIndex);
-                                }
-
-                                // Keep Y as up-axis (game-like orientation) so mounts/creatures
-                                // don't appear vertically "standing" in preview.
-                                allVertices.Add(new Vector3f(-transformed.X, transformed.Y, transformed.Z));
-                                allUvs.Add(new Vector2f(tu, tv));
+                                continue;
+                            }
+                            if (i0 >= allVertices.Count || i1 >= allVertices.Count || i2 >= allVertices.Count)
+                            {
+                                continue;
                             }
 
-                            uint faceCount = faceVertsCount / 3;
-                            long faceBytes = faceCount * 6L;
-                            if (!TryEnsureRemaining(br, faceBytes))
-                            {
-                                error = "Unexpected end of face data in .ski.";
-                                return false;
-                            }
+                            allIndices.Add(i0);
+                            allIndices.Add(i1);
+                            allIndices.Add(i2);
+                            allTriangleColors.Add(meshColor.ToArgb());
+                            allTriangleTextureIndices.Add(meshTextureIndex);
+                        }
 
-                            for (uint f = 0; f < faceCount; f++)
-                            {
-                                int i0 = baseVertex + br.ReadUInt16();
-                                int i1 = baseVertex + br.ReadUInt16();
-                                int i2 = baseVertex + br.ReadUInt16();
+                        return true;
+                    }
 
-                                if (i0 < baseVertex || i1 < baseVertex || i2 < baseVertex)
-                                {
-                                    continue;
-                                }
-                                if (i0 >= allVertices.Count || i1 >= allVertices.Count || i2 >= allVertices.Count)
-                                {
-                                    continue;
-                                }
+                    for (int i = 0; i < header.NumSkinMesh; i++)
+                    {
+                        if (!TryReadSkinMeshBlock())
+                        {
+                            error = parseError;
+                            return false;
+                        }
+                    }
 
-                                allIndices.Add(i0);
-                                allIndices.Add(i1);
-                                allIndices.Add(i2);
-                                allTriangleColors.Add(meshColor.ToArgb());
-                                allTriangleTextureIndices.Add(meshTextureIndex);
-                            }
+                    for (int i = 0; i < header.NumRigidMesh; i++)
+                    {
+                        if (!TryReadRigidMeshBlock())
+                        {
+                            error = parseError;
+                            return false;
                         }
                     }
 
@@ -1548,6 +1611,72 @@ namespace FWEledit
             }
         }
 
+        private static bool TryReadSkiFileHeader(BinaryReader br, out SkiFileHeader header, out string error)
+        {
+            header = new SkiFileHeader();
+            error = string.Empty;
+
+            if (br == null)
+            {
+                error = "Invalid .ski reader.";
+                return false;
+            }
+
+            if (!TryEnsureRemaining(br, 8))
+            {
+                error = "Invalid .ski header.";
+                return false;
+            }
+
+            string prefix = Encoding.ASCII.GetString(br.ReadBytes(4));
+            if (string.Equals(prefix, "MOXB", StringComparison.Ordinal))
+            {
+                string flags = Encoding.ASCII.GetString(br.ReadBytes(4));
+                if (!string.Equals(flags, "IKSA", StringComparison.Ordinal))
+                {
+                    error = "Unsupported .ski identity: " + flags;
+                    return false;
+                }
+            }
+            else if (string.Equals(prefix, "IKSA", StringComparison.Ordinal))
+            {
+                // No MOXB file marker, raw ASKI stream.
+            }
+            else
+            {
+                error = "Unsupported .ski magic: " + prefix;
+                return false;
+            }
+
+            if (!TryEnsureRemaining(br, 100))
+            {
+                error = "Truncated .ski header.";
+                return false;
+            }
+
+            header.Version = br.ReadInt32();
+            header.NumSkinMesh = Math.Max(0, br.ReadInt32());
+            header.NumRigidMesh = Math.Max(0, br.ReadInt32());
+            header.NumMorphSkinMesh = Math.Max(0, br.ReadInt32());
+            header.NumMorphRigidMesh = Math.Max(0, br.ReadInt32());
+            header.NumTexture = Math.Max(0, br.ReadInt32());
+            header.NumMaterial = Math.Max(0, br.ReadInt32());
+            header.NumSkinBone = Math.Max(0, br.ReadInt32());
+            header.MinWeight = br.ReadSingle();
+            header.NumSkeletonBone = Math.Max(0, br.ReadInt32());
+            header.NumSuppleMesh = Math.Max(0, br.ReadInt32());
+            header.NumMuscleMesh = Math.Max(0, br.ReadInt32());
+            br.ReadBytes(52);
+
+            if (header.Version <= 0 || header.Version > 64)
+            {
+                error = "Unsupported .ski version: " + header.Version;
+                return false;
+            }
+
+            return true;
+        }
+
         private static bool TryReadMaterialBlock(BinaryReader br, out SkiMaterial material)
         {
             material = new SkiMaterial();
@@ -1556,45 +1685,101 @@ namespace FWEledit
                 return false;
             }
 
-            if (!TrySkipZeroTerminatedString(br, 512))
+            if (!TryReadNullTerminatedString(br, 2048, out string name))
             {
                 return false;
             }
 
-            const int floatCount = 16;
-            if (!TryEnsureRemaining(br, (floatCount * 4) + 4 + 1))
+            // A3DMaterial::Load (binary):
+            // "MATERIAL: <name>\0" + Ambient + Diffuse + Emissive + Specular + Power + bool.
+            const int colorBytes = 16 * 4;
+            if (!TryEnsureRemaining(br, colorBytes + 4 + 1))
             {
                 return false;
             }
 
-            float[] values = new float[floatCount];
-            for (int i = 0; i < floatCount; i++)
-            {
-                values[i] = br.ReadSingle();
-            }
+            float ambientR = br.ReadSingle();
+            float ambientG = br.ReadSingle();
+            float ambientB = br.ReadSingle();
+            float ambientA = br.ReadSingle();
 
-            br.ReadSingle(); // scale param
-            br.ReadByte();   // is clothing
+            float diffuseR = br.ReadSingle();
+            float diffuseG = br.ReadSingle();
+            float diffuseB = br.ReadSingle();
+            float diffuseA = br.ReadSingle();
 
-            material.BaseColor = BuildMaterialBaseColor(values);
+            br.ReadSingle(); // emissive r
+            br.ReadSingle(); // emissive g
+            br.ReadSingle(); // emissive b
+            br.ReadSingle(); // emissive a
+
+            br.ReadSingle(); // specular r
+            br.ReadSingle(); // specular g
+            br.ReadSingle(); // specular b
+            br.ReadSingle(); // specular a
+
+            br.ReadSingle(); // power
+            byte twoSided = br.ReadByte();
+
+            material.Name = name ?? string.Empty;
+            material.BaseColor = BuildMaterialBaseColor(diffuseR, diffuseG, diffuseB, ambientR, ambientG, ambientB);
+            material.DiffuseAlpha = Clamp01(diffuseA);
+            material.IsTwoSided = twoSided != 0;
             return true;
         }
 
-        private static Color BuildMaterialBaseColor(float[] values)
+        private static bool TryReadNullTerminatedString(BinaryReader br, int maxLength, out string value)
         {
-            if (values == null || values.Length < 3)
+            value = string.Empty;
+            if (br == null || maxLength <= 0)
             {
-                return Color.FromArgb(255, 205, 205, 205);
+                return false;
             }
 
-            int r = FloatToByte(values[0]);
-            int g = FloatToByte(values[1]);
-            int b = FloatToByte(values[2]);
+            List<byte> buffer = new List<byte>(Math.Min(maxLength, 256));
+            for (int i = 0; i < maxLength; i++)
+            {
+                if (!TryEnsureRemaining(br, 1))
+                {
+                    return false;
+                }
+
+                byte b = br.ReadByte();
+                if (b == 0)
+                {
+                    value = Encoding.ASCII.GetString(buffer.ToArray());
+                    return true;
+                }
+
+                buffer.Add(b);
+            }
+
+            return false;
+        }
+
+        private static Color BuildMaterialBaseColor(
+            float diffuseR,
+            float diffuseG,
+            float diffuseB,
+            float ambientR,
+            float ambientG,
+            float ambientB)
+        {
+            int r = FloatToByte(diffuseR);
+            int g = FloatToByte(diffuseG);
+            int b = FloatToByte(diffuseB);
+
             if (r == 0 && g == 0 && b == 0)
             {
-                r = 200;
-                g = 200;
-                b = 200;
+                // Some files store weak diffuse and stronger ambient. Use ambient as fallback.
+                r = FloatToByte(ambientR);
+                g = FloatToByte(ambientG);
+                b = FloatToByte(ambientB);
+            }
+
+            if (r == 0 && g == 0 && b == 0)
+            {
+                return Color.FromArgb(255, 255, 255, 255);
             }
 
             return Color.FromArgb(255, r, g, b);
@@ -1625,6 +1810,8 @@ namespace FWEledit
                 return result;
             }
 
+            TextureAlphaPolicy alphaPolicy = ResolveTextureAlphaPolicy(relativeSkiPath);
+
             for (int i = 0; i < textureNames.Length; i++)
             {
                 string texture = textureNames[i] ?? string.Empty;
@@ -1634,13 +1821,142 @@ namespace FWEledit
                 }
 
                 PreviewTextureData textureData;
-                if (TryLoadTextureData(assetManager, skiPackage, relativeSkiPath, texture, out textureData))
+                if (TryLoadTextureData(assetManager, skiPackage, relativeSkiPath, texture, alphaPolicy, out textureData))
                 {
                     result[i] = textureData;
                 }
             }
 
+            if (IsMountRelativeSkiPath(relativeSkiPath))
+            {
+                RepairMountTextureSetInPlace(result);
+            }
+
             return result;
+        }
+
+        private static void RepairMountTextureSetInPlace(Dictionary<int, PreviewTextureData> textures)
+        {
+            if (textures == null || textures.Count < 2)
+            {
+                return;
+            }
+
+            List<int> keys = new List<int>(textures.Keys);
+            keys.Sort();
+            for (int k = 0; k < keys.Count; k++)
+            {
+                int key = keys[k];
+                if (!textures.TryGetValue(key, out PreviewTextureData primary)
+                    || primary == null
+                    || !primary.IsValid
+                    || primary.Pixels == null
+                    || primary.Pixels.Length == 0)
+                {
+                    continue;
+                }
+
+                PreviewTextureData partner = null;
+                for (int p = 0; p < keys.Count; p++)
+                {
+                    int otherKey = keys[p];
+                    if (otherKey == key)
+                    {
+                        continue;
+                    }
+
+                    if (textures.TryGetValue(otherKey, out PreviewTextureData other)
+                        && other != null
+                        && other.IsValid
+                        && other.Pixels != null
+                        && other.Pixels.Length == primary.Pixels.Length
+                        && other.Width == primary.Width
+                        && other.Height == primary.Height)
+                    {
+                        partner = other;
+                        break;
+                    }
+                }
+
+                if (partner == null)
+                {
+                    continue;
+                }
+
+                int[] dst = primary.Pixels;
+                int[] src = partner.Pixels;
+                bool changed = false;
+                for (int i = 0; i < dst.Length; i++)
+                {
+                    int d = dst[i];
+                    int da = (d >> 24) & 0xFF;
+                    int dr = (d >> 16) & 0xFF;
+                    int dg = (d >> 8) & 0xFF;
+                    int db = d & 0xFF;
+
+                    // Hidden black texels on mounts are often placeholders; recover from partner layer.
+                    if (da > 20 || (dr + dg + db) > 24)
+                    {
+                        continue;
+                    }
+
+                    int s = src[i];
+                    int sa = (s >> 24) & 0xFF;
+                    int sr = (s >> 16) & 0xFF;
+                    int sg = (s >> 8) & 0xFF;
+                    int sb = s & 0xFF;
+                    if (sa <= 8 || (sr + sg + sb) <= 24)
+                    {
+                        continue;
+                    }
+
+                    dst[i] = (da << 24) | (sr << 16) | (sg << 8) | sb;
+                    changed = true;
+                }
+
+                if (changed)
+                {
+                    primary.AverageColorArgb = ComputeAverageColorArgb(primary.Pixels);
+                }
+            }
+        }
+
+        private static TextureAlphaPolicy ResolveTextureAlphaPolicy(string relativeSkiPath)
+        {
+            string normalized = NormalizeRelativePath(relativeSkiPath);
+            if (string.IsNullOrWhiteSpace(normalized))
+            {
+                return TextureAlphaPolicy.Default;
+            }
+
+            string lower = normalized.ToLowerInvariant();
+            if (lower.Contains("weapons\\") || lower.Contains("\\weapons\\"))
+            {
+                return TextureAlphaPolicy.PreferOpaque;
+            }
+
+            if (IsMountRelativeSkiPath(lower))
+            {
+                // Mount atlases are mixed: some textures are true cutout, others use alpha as aux data.
+                // Prefer per-texture cutout detection for mounts.
+                return TextureAlphaPolicy.PreferCutout;
+            }
+
+            return TextureAlphaPolicy.Default;
+        }
+
+        private static bool IsMountRelativeSkiPath(string relativeSkiPath)
+        {
+            string normalized = NormalizeRelativePath(relativeSkiPath);
+            if (string.IsNullOrWhiteSpace(normalized))
+            {
+                return false;
+            }
+
+            string lower = normalized.ToLowerInvariant();
+            return lower.Contains("lms\\mounts\\")
+                || lower.Contains("\\mounts\\")
+                || lower.Contains("mount\\");
         }
 
         private Color ResolveMeshColor(
@@ -1655,27 +1971,7 @@ namespace FWEledit
                 materialColor = materials[materialIndex].BaseColor;
             }
 
-            Color textureColor = Color.White;
-            if (textureDataByIndex != null
-                && textureDataByIndex.TryGetValue(textureIndex, out PreviewTextureData found)
-                && found != null
-                && found.IsValid)
-            {
-                textureColor = Color.FromArgb(found.AverageColorArgb);
-            }
-
-            int r = (materialColor.R * textureColor.R) / 255;
-            int g = (materialColor.G * textureColor.G) / 255;
-            int b = (materialColor.B * textureColor.B) / 255;
-
-            if (r < 20 && g < 20 && b < 20)
-            {
-                r = 120;
-                g = 120;
-                b = 120;
-            }
-
-            return Color.FromArgb(255, r, g, b);
+            return Color.FromArgb(255, materialColor.R, materialColor.G, materialColor.B);
         }
 
         private static int ResolveMeshTextureIndex(
@@ -1738,6 +2034,7 @@ namespace FWEledit
             string skiPackage,
             string relativeSkiPath,
             string texturePath,
+            TextureAlphaPolicy alphaPolicy,
             out PreviewTextureData textureData)
         {
             textureData = null;
@@ -1754,7 +2051,7 @@ namespace FWEledit
                 }
 
                 if (TryReadTextureBytesWithPackageFallback(assetManager, texPackage, texRelative, out byte[] bytes, out string resolvedTexturePath)
-                    && TryDecodeTextureData(texRelative, bytes, out PreviewTextureData decoded))
+                    && TryDecodeTextureData(texRelative, bytes, alphaPolicy, out PreviewTextureData decoded))
                 {
                     decoded.Name = resolvedTexturePath;
                     textureData = decoded;
@@ -1762,7 +2059,7 @@ namespace FWEledit
                 }
             }
 
-            if (TryLoadTextureFromSkiAbsoluteNeighbors(assetManager, skiPackage, relativeSkiPath, texturePath, out textureData))
+            if (TryLoadTextureFromSkiAbsoluteNeighbors(assetManager, skiPackage, relativeSkiPath, texturePath, alphaPolicy, out textureData))
             {
                 return true;
             }
@@ -1775,6 +2072,7 @@ namespace FWEledit
             string skiPackage,
             string relativeSkiPath,
             string texturePath,
+            TextureAlphaPolicy alphaPolicy,
             out PreviewTextureData textureData)
         {
             textureData = null;
@@ -1870,7 +2168,7 @@ namespace FWEledit
                 try
                 {
                     byte[] bytes = File.ReadAllBytes(absolute);
-                    if (TryDecodeTextureData(absolute, bytes, out PreviewTextureData decoded))
+                    if (TryDecodeTextureData(absolute, bytes, alphaPolicy, out PreviewTextureData decoded))
                     {
                         decoded.Name = absolute;
                         textureData = decoded;
@@ -2089,6 +2387,7 @@ namespace FWEledit
         private static bool TryDecodeTextureData(
             string relativePath,
             byte[] bytes,
+            TextureAlphaPolicy alphaPolicy,
             out PreviewTextureData data)
         {
             data = null;
@@ -2103,7 +2402,10 @@ namespace FWEledit
                 string ext = Path.GetExtension(relativePath) ?? string.Empty;
                 if (string.Equals(ext, ".dds", StringComparison.OrdinalIgnoreCase))
                 {
-                    bitmap = DDS.LoadImage(bytes, true);
+                    if (!TryLoadDdsBitmapWithPfim(bytes, out bitmap))
+                    {
+                        bitmap = DDS.LoadImage(bytes, true);
+                    }
                 }
                 else
                 {
@@ -2121,7 +2423,8 @@ namespace FWEledit
 
                 using (bitmap)
                 {
-                    const int maxSize = 1024;
+                    // Keep source texture resolution (only downscale if extremely large).
+                    const int maxSize = 4096;
                     using (Bitmap prepared = PrepareTextureBitmap(bitmap, maxSize))
                     {
                         int[] pixels = ExtractArgbPixels(prepared);
@@ -2130,13 +2433,25 @@ namespace FWEledit
                             return false;
                         }
 
+                        TextureAlphaUsage alphaUsage = ComputeTextureAlphaUsage(relativePath, pixels, alphaPolicy);
+                        if (ShouldRecoverRgbFromAuxAlpha(pixels, alphaUsage, alphaPolicy))
+                        {
+                            RecoverRgbFromAuxAlphaInPlace(pixels);
+                        }
+
+                        if (alphaPolicy == TextureAlphaPolicy.PreferCutout)
+                        {
+                            FillHiddenTexelsFromNeighborsInPlace(prepared.Width, prepared.Height, pixels);
+                        }
+
                         data = new PreviewTextureData
                         {
                             Width = prepared.Width,
                             Height = prepared.Height,
                             Pixels = pixels,
                             AverageColorArgb = ComputeAverageColorArgb(pixels),
-                            HasTransparency = ComputeHasTransparency(pixels)
+                            UsesAlphaAsOpacity = alphaUsage != TextureAlphaUsage.Opaque,
+                            HasTransparency = alphaUsage == TextureAlphaUsage.Blend
                         };
                         return true;
                     }
@@ -2149,6 +2464,254 @@ namespace FWEledit
                     bitmap.Dispose();
                 }
                 return false;
+            }
+        }
+
+        private static bool TryLoadDdsBitmapWithPfim(byte[] bytes, out Bitmap bitmap)
+        {
+            bitmap = null;
+            if (bytes == null || bytes.Length == 0)
+            {
+                return false;
+            }
+
+            if (!EnsurePfimBindings())
+            {
+                return false;
+            }
+
+            object image = null;
+            MemoryStream stream = null;
+            try
+            {
+                stream = new MemoryStream(bytes, false);
+                image = pfimFromStreamMethod.Invoke(null, new object[] { stream });
+                if (image == null)
+                {
+                    return false;
+                }
+
+                if (pfimCompressedProperty != null && pfimDecompressMethod != null)
+                {
+                    bool compressed = false;
+                    object compressedValue = pfimCompressedProperty.GetValue(image, null);
+                    if (compressedValue is bool boolValue)
+                    {
+                        compressed = boolValue;
+                    }
+                    else if (compressedValue != null)
+                    {
+                        compressed = Convert.ToBoolean(compressedValue, CultureInfo.InvariantCulture);
+                    }
+
+                    if (compressed)
+                    {
+                        pfimDecompressMethod.Invoke(image, null);
+                    }
+                }
+
+                int width = Convert.ToInt32(pfimWidthProperty.GetValue(image, null), CultureInfo.InvariantCulture);
+                int height = Convert.ToInt32(pfimHeightProperty.GetValue(image, null), CultureInfo.InvariantCulture);
+                int stride = Convert.ToInt32(pfimStrideProperty.GetValue(image, null), CultureInfo.InvariantCulture);
+                int bitsPerPixel = Convert.ToInt32(pfimBitsPerPixelProperty.GetValue(image, null), CultureInfo.InvariantCulture);
+                byte[] data = pfimDataProperty.GetValue(image, null) as byte[];
+                if (width <= 0 || height <= 0 || stride <= 0 || data == null || data.Length == 0)
+                {
+                    return false;
+                }
+
+                PixelFormat sourceFormat = bitsPerPixel == 24
+                    ? PixelFormat.Format24bppRgb
+                    : PixelFormat.Format32bppArgb;
+
+                Bitmap decoded = new Bitmap(width, height, sourceFormat);
+                BitmapData decodedBits = decoded.LockBits(
+                    new Rectangle(0, 0, width, height),
+                    ImageLockMode.WriteOnly,
+                    sourceFormat);
+                try
+                {
+                    int dstStride = Math.Abs(decodedBits.Stride);
+                    int rowBytes = Math.Min(dstStride, stride);
+                    for (int y = 0; y < height; y++)
+                    {
+                        IntPtr dst = IntPtr.Add(decodedBits.Scan0, y * decodedBits.Stride);
+                        int srcOffset = y * stride;
+                        if (srcOffset < 0 || srcOffset >= data.Length)
+                        {
+                            break;
+                        }
+
+                        int copyBytes = Math.Min(rowBytes, data.Length - srcOffset);
+                        if (copyBytes <= 0)
+                        {
+                            break;
+                        }
+
+                        Marshal.Copy(data, srcOffset, dst, copyBytes);
+                    }
+                }
+                finally
+                {
+                    decoded.UnlockBits(decodedBits);
+                }
+
+                if (sourceFormat == PixelFormat.Format32bppArgb)
+                {
+                    bitmap = decoded;
+                    decoded = null;
+                }
+                else
+                {
+                    Bitmap argb = new Bitmap(width, height, PixelFormat.Format32bppArgb);
+                    using (Graphics g = Graphics.FromImage(argb))
+                    {
+                        g.DrawImageUnscaled(decoded, 0, 0);
+                    }
+                    decoded.Dispose();
+                    bitmap = argb;
+                }
+
+                return bitmap != null;
+            }
+            catch
+            {
+                if (bitmap != null)
+                {
+                    bitmap.Dispose();
+                    bitmap = null;
+                }
+                return false;
+            }
+            finally
+            {
+                if (image != null && pfimDisposeMethod != null)
+                {
+                    try
+                    {
+                        pfimDisposeMethod.Invoke(image, null);
+                    }
+                    catch
+                    {
+                    }
+                }
+
+                if (stream != null)
+                {
+                    stream.Dispose();
+                }
+            }
+        }
+
+        private static bool EnsurePfimBindings()
+        {
+            lock (PfimBindingsSync)
+            {
+                if (pfimBindingsInitialized)
+                {
+                    return pfimFromStreamMethod != null
+                        && pfimImageType != null
+                        && pfimWidthProperty != null
+                        && pfimHeightProperty != null
+                        && pfimStrideProperty != null
+                        && pfimBitsPerPixelProperty != null
+                        && pfimDataProperty != null;
+                }
+
+                pfimBindingsInitialized = true;
+                try
+                {
+                    string baseDir = AppDomain.CurrentDomain.BaseDirectory ?? string.Empty;
+                    string[] candidates = new string[]
+                    {
+                        Path.Combine(baseDir, "Pfim.dll"),
+                        Path.Combine(baseDir, "lib", "Pfim.dll"),
+                        Path.Combine(Environment.CurrentDirectory ?? string.Empty, "Pfim.dll")
+                    };
+
+                    string pfimPath = string.Empty;
+                    for (int i = 0; i < candidates.Length; i++)
+                    {
+                        if (!string.IsNullOrWhiteSpace(candidates[i]) && File.Exists(candidates[i]))
+                        {
+                            pfimPath = candidates[i];
+                            break;
+                        }
+                    }
+
+                    if (string.IsNullOrWhiteSpace(pfimPath))
+                    {
+                        return false;
+                    }
+
+                    Assembly assembly = Assembly.LoadFrom(pfimPath);
+                    if (assembly == null)
+                    {
+                        return false;
+                    }
+
+                    Type pfimageType = assembly.GetType("Pfim.Pfimage");
+                    Type iimageType = assembly.GetType("Pfim.IImage");
+                    if (pfimageType == null || iimageType == null)
+                    {
+                        return false;
+                    }
+
+                    MethodInfo fromStream = null;
+                    MethodInfo[] methods = pfimageType.GetMethods(BindingFlags.Public | BindingFlags.Static);
+                    for (int i = 0; i < methods.Length; i++)
+                    {
+                        MethodInfo method = methods[i];
+                        if (!string.Equals(method.Name, "FromStream", StringComparison.Ordinal))
+                        {
+                            continue;
+                        }
+
+                        ParameterInfo[] parameters = method.GetParameters();
+                        if (parameters.Length == 1 && typeof(Stream).IsAssignableFrom(parameters[0].ParameterType))
+                        {
+                            fromStream = method;
+                            break;
+                        }
+                    }
+
+                    if (fromStream == null)
+                    {
+                        return false;
+                    }
+
+                    pfimFromStreamMethod = fromStream;
+                    pfimImageType = iimageType;
+                    pfimCompressedProperty = iimageType.GetProperty("Compressed");
+                    pfimDecompressMethod = iimageType.GetMethod("Decompress", Type.EmptyTypes);
+                    pfimWidthProperty = iimageType.GetProperty("Width");
+                    pfimHeightProperty = iimageType.GetProperty("Height");
+                    pfimStrideProperty = iimageType.GetProperty("Stride");
+                    pfimBitsPerPixelProperty = iimageType.GetProperty("BitsPerPixel");
+                    pfimDataProperty = iimageType.GetProperty("Data");
+                    pfimDisposeMethod = iimageType.GetMethod("Dispose", Type.EmptyTypes);
+                }
+                catch
+                {
+                    pfimFromStreamMethod = null;
+                    pfimImageType = null;
+                    pfimCompressedProperty = null;
+                    pfimDecompressMethod = null;
+                    pfimWidthProperty = null;
+                    pfimHeightProperty = null;
+                    pfimStrideProperty = null;
+                    pfimBitsPerPixelProperty = null;
+                    pfimDataProperty = null;
+                    pfimDisposeMethod = null;
+                }
+
+                return pfimFromStreamMethod != null
+                    && pfimImageType != null
+                    && pfimWidthProperty != null
+                    && pfimHeightProperty != null
+                    && pfimStrideProperty != null
+                    && pfimBitsPerPixelProperty != null
+                    && pfimDataProperty != null;
             }
         }
 
@@ -2171,11 +2734,26 @@ namespace FWEledit
 
             int targetW = Math.Max(1, (int)Math.Round(srcW * scale));
             int targetH = Math.Max(1, (int)Math.Round(srcH * scale));
+            if (targetW == srcW && targetH == srcH)
+            {
+                // Keep original texel data; this matches the legacy model viewer behavior.
+                Bitmap copy = new Bitmap(srcW, srcH, PixelFormat.Format32bppArgb);
+                using (Graphics g = Graphics.FromImage(copy))
+                {
+                    g.Clear(Color.Transparent);
+                    g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.NearestNeighbor;
+                    g.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.Half;
+                    g.DrawImage(source, new Rectangle(0, 0, srcW, srcH));
+                }
+
+                return copy;
+            }
+
             Bitmap prepared = new Bitmap(targetW, targetH, PixelFormat.Format32bppArgb);
             using (Graphics g = Graphics.FromImage(prepared))
             {
                 g.Clear(Color.Transparent);
-                g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBilinear;
+                g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
                 g.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.HighQuality;
                 g.DrawImage(source, new Rectangle(0, 0, targetW, targetH));
             }
@@ -2254,51 +2832,388 @@ namespace FWEledit
                 (int)(b / count)).ToArgb();
         }
 
-        private static bool ComputeHasTransparency(int[] pixels)
+        private enum TextureAlphaUsage
+        {
+            Opaque = 0,
+            Cutout = 1,
+            Blend = 2
+        }
+
+        private static bool ShouldRecoverRgbFromAuxAlpha(
+            int[] pixels,
+            TextureAlphaUsage alphaUsage,
+            TextureAlphaPolicy alphaPolicy)
         {
             if (pixels == null || pixels.Length == 0)
             {
                 return false;
             }
 
-            // Treat textures with mostly binary alpha (0/255) as cutout/opaque for
-            // depth-stable rendering. Only mark as transparent when there is enough
-            // genuinely translucent coverage.
+            // Only recover when we intentionally render as opaque.
+            if (alphaUsage != TextureAlphaUsage.Opaque)
+            {
+                return false;
+            }
+
+            // Recovery is mainly needed on mount atlases where alpha stores aux data.
+            if (alphaPolicy != TextureAlphaPolicy.PreferCutout)
+            {
+                return false;
+            }
+
+            int total = pixels.Length;
+            int lowAlphaCount = 0;
+            int midAlphaCount = 0;
+            int highAlphaCount = 0;
+            for (int i = 0; i < pixels.Length; i++)
+            {
+                int a = (pixels[i] >> 24) & 0xFF;
+                if (a <= 64)
+                {
+                    lowAlphaCount++;
+                }
+                else if (a < 224)
+                {
+                    midAlphaCount++;
+                }
+                else
+                {
+                    highAlphaCount++;
+                }
+            }
+
+            float lowRatio = lowAlphaCount / (float)Math.Max(1, total);
+            float midRatio = midAlphaCount / (float)Math.Max(1, total);
+            float highRatio = highAlphaCount / (float)Math.Max(1, total);
+
+            // If there is substantial low/mid alpha coverage and few highly-opaque texels,
+            // RGB is usually pre-darkened by alpha and should be compensated.
+            return lowRatio >= 0.25f
+                && (lowRatio + midRatio) >= 0.55f
+                && highRatio <= 0.72f;
+        }
+
+        private static void RecoverRgbFromAuxAlphaInPlace(int[] pixels)
+        {
+            if (pixels == null || pixels.Length == 0)
+            {
+                return;
+            }
+
+            for (int i = 0; i < pixels.Length; i++)
+            {
+                int argb = pixels[i];
+                int a = (argb >> 24) & 0xFF;
+                if (a <= 0)
+                {
+                    continue;
+                }
+
+                int r = (argb >> 16) & 0xFF;
+                int g = (argb >> 8) & 0xFF;
+                int b = argb & 0xFF;
+
+                // Soft un-premultiply compensation, clamped to avoid blowout artifacts.
+                float denom = Math.Max(108f, a);
+                float scale = 255f / denom;
+                if (scale <= 1.0001f)
+                {
+                    continue;
+                }
+
+                if (scale > 2.35f)
+                {
+                    scale = 2.35f;
+                }
+
+                int rr = (int)(r * scale);
+                int gg = (int)(g * scale);
+                int bb = (int)(b * scale);
+                if (rr > 255) rr = 255;
+                if (gg > 255) gg = 255;
+                if (bb > 255) bb = 255;
+
+                pixels[i] = (a << 24) | (rr << 16) | (gg << 8) | bb;
+            }
+        }
+
+        private static TextureAlphaUsage ComputeTextureAlphaUsage(
+            string texturePath,
+            int[] pixels,
+            TextureAlphaPolicy alphaPolicy)
+        {
+            if (pixels == null || pixels.Length == 0)
+            {
+                return TextureAlphaUsage.Opaque;
+            }
+
+            int total = pixels.Length;
+            int fullyTransparentCount = 0;
+            int lowAlphaCount = 0;
+            int fullyOpaqueCount = 0;
             int translucentCount = 0;
-            int opaqueCount = 0;
-            int translucentThreshold = Math.Max(32, pixels.Length / 200); // ~0.5%
             for (int i = 0; i < pixels.Length; i++)
             {
                 int alpha = (pixels[i] >> 24) & 0xFF;
+                if (alpha <= 48)
+                {
+                    lowAlphaCount++;
+                }
+
                 if (alpha >= 248)
                 {
-                    opaqueCount++;
+                    fullyOpaqueCount++;
                     continue;
                 }
 
                 if (alpha <= 8)
                 {
+                    fullyTransparentCount++;
                     continue;
                 }
 
                 translucentCount++;
-                if (translucentCount >= translucentThreshold)
+            }
+
+            if (translucentCount <= 0)
+            {
+                return fullyTransparentCount > 0
+                    ? TextureAlphaUsage.Cutout
+                    : TextureAlphaUsage.Opaque;
+            }
+
+            float transparentRatio = fullyTransparentCount / (float)Math.Max(1, total);
+            float lowAlphaRatio = lowAlphaCount / (float)Math.Max(1, total);
+            float opaqueRatio = fullyOpaqueCount / (float)Math.Max(1, total);
+            float translucentRatio = translucentCount / (float)Math.Max(1, total);
+
+            if (alphaPolicy == TextureAlphaPolicy.PreferOpaque)
+            {
+                // Weapons are safer as opaque in FW data; alpha is commonly used as data channel.
+                return TextureAlphaUsage.Opaque;
+            }
+
+            if (alphaPolicy == TextureAlphaPolicy.PreferCutout)
+            {
+                // Mount assets are mixed:
+                // - some atlases store opacity cutout (manes/hair/feathers/cards),
+                // - others use alpha as auxiliary/spec data.
+                // Decide per texture instead of forcing one global mode.
+                return IsLikelyOpacityCutoutTextureForMount(pixels)
+                    ? TextureAlphaUsage.Cutout
+                    : TextureAlphaUsage.Opaque;
+            }
+
+            // Conservative policy:
+            // 1) Only use alpha as opacity for clearly cutout-like textures (mostly binary alpha).
+            // 2) Never auto-enable full blend from texture statistics (too many FW assets use alpha as data).
+            // This avoids ghosted / missing-body artifacts on weapons and mounts.
+
+            if (transparentRatio < 0.0035f && lowAlphaRatio < 0.03f)
+            {
+                return TextureAlphaUsage.Opaque;
+            }
+
+            // If alpha is broadly mid-range, it's usually data (spec/gloss), not opacity.
+            if (translucentRatio > 0.22f)
+            {
+                return TextureAlphaUsage.Opaque;
+            }
+
+            // If there are almost no strong opaque texels, avoid cutout classification.
+            if (opaqueRatio < 0.05f)
+            {
+                return TextureAlphaUsage.Opaque;
+            }
+
+            bool binaryLeaningAtlas = translucentRatio <= 0.35f && transparentRatio >= 0.10f && opaqueRatio >= 0.10f;
+            if (binaryLeaningAtlas)
+            {
+                return TextureAlphaUsage.Cutout;
+            }
+
+            bool mostlyBinaryAlpha = translucentRatio <= 0.12f;
+            bool hasMeaningfulCutoutCoverage = (transparentRatio >= 0.0035f || lowAlphaRatio >= 0.05f) && opaqueRatio >= 0.08f;
+            if (mostlyBinaryAlpha && hasMeaningfulCutoutCoverage)
+            {
+                return TextureAlphaUsage.Cutout;
+            }
+
+            return TextureAlphaUsage.Opaque;
+        }
+
+        private static bool IsLikelyOpacityCutoutTextureForMount(int[] pixels)
+        {
+            if (pixels == null || pixels.Length == 0)
+            {
+                return false;
+            }
+
+            int total = pixels.Length;
+            int lowAlphaCount = 0;
+            int highAlphaCount = 0;
+            int midAlphaCount = 0;
+            int lowAlphaDarkCount = 0;
+            for (int i = 0; i < pixels.Length; i++)
+            {
+                int argb = pixels[i];
+                int a = (argb >> 24) & 0xFF;
+                int r = (argb >> 16) & 0xFF;
+                int g = (argb >> 8) & 0xFF;
+                int b = argb & 0xFF;
+                int lum = (r + g + b) / 3;
+
+                if (a <= 8)
                 {
-                    return true;
+                    lowAlphaCount++;
+                    if (lum <= 30)
+                    {
+                        lowAlphaDarkCount++;
+                    }
+                }
+                else if (a >= 224)
+                {
+                    highAlphaCount++;
+                }
+                else
+                {
+                    midAlphaCount++;
                 }
             }
 
-            if (opaqueCount <= 0)
-            {
-                return translucentCount > 0;
-            }
+            float lowRatio = lowAlphaCount / (float)Math.Max(1, total);
+            float highRatio = highAlphaCount / (float)Math.Max(1, total);
+            float midRatio = midAlphaCount / (float)Math.Max(1, total);
+            float lowDarkRatio = lowAlphaDarkCount / (float)Math.Max(1, lowAlphaCount);
 
-            if (translucentCount >= (opaqueCount / 16)) // ~6.25%
+            // Mount textures are frequently authored as binary/near-binary masks, but hidden texels
+            // are not always dark (many use bright placeholder RGB). Keep this permissive.
+            bool binaryMaskLike = lowRatio >= 0.012f
+                && highRatio >= 0.12f
+                && midRatio <= 0.30f;
+            if (binaryMaskLike)
             {
                 return true;
             }
 
-            return false;
+            bool broadMaskLike = lowRatio >= 0.035f
+                && highRatio >= 0.10f
+                && midRatio <= 0.40f;
+            if (broadMaskLike)
+            {
+                return true;
+            }
+
+            // Keep an extra strict-dark gate as fallback for older atlases.
+            return lowRatio >= 0.015f
+                && highRatio >= 0.18f
+                && midRatio <= 0.30f
+                && lowDarkRatio >= 0.40f;
+        }
+
+        private static void FillHiddenTexelsFromNeighborsInPlace(int width, int height, int[] pixels)
+        {
+            if (pixels == null || pixels.Length == 0 || width <= 0 || height <= 0)
+            {
+                return;
+            }
+
+            int total = width * height;
+            if (pixels.Length < total)
+            {
+                return;
+            }
+
+            int[] snapshot = new int[total];
+            for (int pass = 0; pass < 8; pass++)
+            {
+                Buffer.BlockCopy(pixels, 0, snapshot, 0, total * sizeof(int));
+                bool changed = false;
+
+                for (int y = 0; y < height; y++)
+                {
+                    int row = y * width;
+                    for (int x = 0; x < width; x++)
+                    {
+                        int idx = row + x;
+                        int argb = snapshot[idx];
+                        int a = (argb >> 24) & 0xFF;
+                        int r = (argb >> 16) & 0xFF;
+                        int g = (argb >> 8) & 0xFF;
+                        int b = argb & 0xFF;
+
+                        // Fill only texels that are effectively hidden and very dark.
+                        if (a > 8 || (r + g + b) > 12)
+                        {
+                            continue;
+                        }
+
+                        int sumR = 0;
+                        int sumG = 0;
+                        int sumB = 0;
+                        int count = 0;
+                        for (int oy = -1; oy <= 1; oy++)
+                        {
+                            int ny = y + oy;
+                            if (ny < 0 || ny >= height)
+                            {
+                                continue;
+                            }
+
+                            int nrow = ny * width;
+                            for (int ox = -1; ox <= 1; ox++)
+                            {
+                                if (ox == 0 && oy == 0)
+                                {
+                                    continue;
+                                }
+
+                                int nx = x + ox;
+                                if (nx < 0 || nx >= width)
+                                {
+                                    continue;
+                                }
+
+                                int n = snapshot[nrow + nx];
+                                int na = (n >> 24) & 0xFF;
+                                if (na <= 24)
+                                {
+                                    continue;
+                                }
+
+                                int nr = (n >> 16) & 0xFF;
+                                int ng = (n >> 8) & 0xFF;
+                                int nb = n & 0xFF;
+                                if ((nr + ng + nb) <= 18)
+                                {
+                                    continue;
+                                }
+
+                                sumR += nr;
+                                sumG += ng;
+                                sumB += nb;
+                                count++;
+                            }
+                        }
+
+                        if (count <= 0)
+                        {
+                            continue;
+                        }
+
+                        int rr = sumR / count;
+                        int gg = sumG / count;
+                        int bb = sumB / count;
+                        pixels[idx] = (a << 24) | (rr << 16) | (gg << 8) | bb;
+                        changed = true;
+                    }
+                }
+
+                if (!changed)
+                {
+                    break;
+                }
+            }
         }
 
         private static bool TryParseBonBindMatrices(byte[] bonBytes, out Dictionary<string, float[]> bindMatricesByBoneName)
@@ -2504,7 +3419,7 @@ namespace FWEledit
         {
             color = Color.White;
             if (!TryReadModelFile(assetManager, package, relativePath, out byte[] bytes, out string _)
-                || !TryDecodeTextureData(relativePath, bytes, out PreviewTextureData texture)
+                || !TryDecodeTextureData(relativePath, bytes, TextureAlphaPolicy.Default, out PreviewTextureData texture)
                 || texture == null
                 || !texture.IsValid)
             {
@@ -2583,9 +3498,50 @@ namespace FWEledit
             return remaining >= requiredBytes;
         }
 
+        private static float Clamp01(float value)
+        {
+            if (value < 0f)
+            {
+                return 0f;
+            }
+
+            if (value > 1f)
+            {
+                return 1f;
+            }
+
+            return value;
+        }
+
+        private struct SkiFileHeader
+        {
+            public int Version;
+            public int NumSkinMesh;
+            public int NumRigidMesh;
+            public int NumMorphSkinMesh;
+            public int NumMorphRigidMesh;
+            public int NumTexture;
+            public int NumMaterial;
+            public int NumSkinBone;
+            public float MinWeight;
+            public int NumSkeletonBone;
+            public int NumSuppleMesh;
+            public int NumMuscleMesh;
+        }
+
         private struct SkiMaterial
         {
+            public string Name;
             public Color BaseColor;
+            public float DiffuseAlpha;
+            public bool IsTwoSided;
+        }
+
+        private enum TextureAlphaPolicy
+        {
+            Default = 0,
+            PreferCutout = 1,
+            PreferOpaque = 2
         }
     }
 }

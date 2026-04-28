@@ -24,6 +24,7 @@ namespace FWEledit
         private TabPage fwValuesTab;
         private Button fwInlinePickIconButton;
         private int fwInlinePickIconRowIndex = -1;
+        private bool liveModelPreviewRefreshInProgress;
         private TabControl fwEquipmentTabs;
         private TabPage fwEquipmentTabMain;
         private TabPage fwEquipmentTabRefine;

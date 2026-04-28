@@ -87,6 +87,8 @@ namespace FWEledit
                 UpdatePickIconButtonState,
                 PersistNavigationState,
                 value => viewModel.SuppressValuesUiRefresh = value);
+
+            RefreshLiveModelPreviewFromCurrentRow(true);
 		}
 
 
@@ -180,6 +182,8 @@ namespace FWEledit
                 message => MessageBox.Show(message),
                 LogError,
                 viewModel);
+
+            RefreshLiveModelPreviewFromCurrentRow(false);
         }
     }
 }
