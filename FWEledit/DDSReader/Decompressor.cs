@@ -91,6 +91,13 @@ namespace FWEledit.DDSReader
 			colours[1].alpha = 0xFF;
 			colours[2].alpha = 0xFF;
             bool useDxt1OneBitAlpha = (header.pixelformat.flags & Helper.DDPF_ALPHAPIXELS) == Helper.DDPF_ALPHAPIXELS;
+            if(!useDxt1OneBitAlpha)
+            {
+                // Some game DDS files store DXT1 cutout alpha without setting DDPF_ALPHAPIXELS.
+                // Detect three-color blocks that actually use selector 3 (transparent) and
+                // enable one-bit alpha path to avoid black opaque artifacts on cutout areas.
+                useDxt1OneBitAlpha = HasDxt1ImplicitOneBitAlpha(data);
+            }
 
 			fixed (byte* bytePtr = data)
 			{
@@ -166,6 +173,43 @@ namespace FWEledit.DDSReader
 
 			return rawData;
 		}
+
+        private static bool HasDxt1ImplicitOneBitAlpha(byte[] data)
+        {
+            if(data == null || data.Length < 8)
+            {
+                return false;
+            }
+
+            for(int offset = 0; offset + 7 < data.Length; offset += 8)
+            {
+                ushort colour0 = (ushort)(data[offset] | (data[offset + 1] << 8));
+                ushort colour1 = (ushort)(data[offset + 2] | (data[offset + 3] << 8));
+                if(colour0 > colour1)
+                {
+                    continue;
+                }
+
+                uint bitmask = (uint)(
+                    data[offset + 4]
+                    | (data[offset + 5] << 8)
+                    | (data[offset + 6] << 16)
+                    | (data[offset + 7] << 24));
+
+                // In 3-color mode, selector 3 means transparent.
+                for(int i = 0; i < 16; i++)
+                {
+                    if((bitmask & 0x03u) == 0x03u)
+                    {
+                        return true;
+                    }
+
+                    bitmask >>= 2;
+                }
+            }
+
+            return false;
+        }
 
 		private static byte[] DecompressDXT2(DDSStruct header, byte[] data, PixelFormat pixelFormat)
 		{

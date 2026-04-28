@@ -76,13 +76,14 @@ namespace FWEledit
                 textBox_search_TextChanged,
                 textBox_search_KeyDown);
             dataGridView_item.CellMouseDown += dataGridView_item_CellMouseDown;
+            dataGridView_item.CurrentCellChanged += dataGridView_item_CurrentCellChanged;
 
             Assembly assembly = Assembly.GetExecutingAssembly();
             mainWindowVersionUiService.InitializeVersion(
                 assembly,
                 label_Version,
                 navigationStateService,
-                "0.9.3.3");
+                "0.9.3.4");
 
             cpb2.Value = 0;
             colorTheme();
@@ -275,6 +276,7 @@ namespace FWEledit
 
     }
 }
+
 
 
 

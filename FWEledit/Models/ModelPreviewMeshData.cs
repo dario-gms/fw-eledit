@@ -19,6 +19,7 @@ namespace FWEledit
         public int Height { get; set; }
         public int[] Pixels { get; set; } = new int[0];
         public int AverageColorArgb { get; set; } = unchecked((int)0xFFFFFFFF);
+        public bool UsesAlphaAsOpacity { get; set; }
         public bool HasTransparency { get; set; }
 
         public bool IsValid

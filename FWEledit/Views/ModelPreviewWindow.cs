@@ -6,6 +6,11 @@ using System.Drawing.Imaging;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
+using FWEledit.Properties;
+using OpenTK;
+using OpenTK.Graphics.OpenGL;
+using D3D11 = SharpDX.Direct3D11;
+using DXGI = SharpDX.DXGI;
 
 namespace FWEledit
 {
@@ -14,21 +19,37 @@ namespace FWEledit
         private enum HardwareRenderBackend
         {
             DirectX11 = 0,
-            Vulkan = 1,
-            OpenGL = 2
+            OpenGL = 1
         }
 
-        private readonly ModelPreviewMeshData meshData;
-        private readonly ModelPreviewViewport viewport;
+        private struct ViewCameraState
+        {
+            public float Yaw;
+            public float Pitch;
+            public float Zoom;
+            public bool IsValid;
+        }
+
+        private ModelPreviewViewport cpuViewport;
+        private ModelPreviewDx11Viewport dx11Viewport;
+        private string dx11ViewportCreationError;
+        private ModelPreviewGpuViewport gpuViewport;
+        private string gpuViewportCreationError;
+        private readonly Panel viewportHost;
+        private Control activeViewport;
         private readonly CheckBox wireframeCheck;
         private readonly CheckBox hardwareCheck;
         private readonly ComboBox backendCombo;
         private readonly Label backendLabel;
         private readonly Label helpLabel;
+        private readonly Label summaryLabel;
+        private readonly Label sourceLabel;
+        private bool suppressRendererPreferenceSave;
+        private static ViewCameraState persistedCameraState;
+        private static bool cameraSettingsLoaded;
 
         public ModelPreviewWindow(ModelPreviewMeshData meshData)
         {
-            this.meshData = meshData;
             Text = "Preview 3D Model";
             StartPosition = FormStartPosition.CenterParent;
             MinimumSize = new Size(900, 620);
@@ -38,27 +59,66 @@ namespace FWEledit
             ForeColor = Color.Gainsboro;
             Font = new Font("Segoe UI", 9F, FontStyle.Regular, GraphicsUnit.Point, ((byte)(0)));
 
-            Label summary = new Label();
-            summary.Dock = DockStyle.Top;
-            summary.Height = 56;
-            summary.Padding = new Padding(10, 10, 10, 0);
-            summary.TextAlign = ContentAlignment.MiddleLeft;
-            summary.ForeColor = Color.Gainsboro;
-            summary.BackColor = Color.FromArgb(20, 20, 20);
-            summary.Text = BuildSummaryText(meshData);
+            summaryLabel = new Label();
+            summaryLabel.Dock = DockStyle.Top;
+            summaryLabel.Height = 56;
+            summaryLabel.Padding = new Padding(10, 10, 10, 0);
+            summaryLabel.TextAlign = ContentAlignment.MiddleLeft;
+            summaryLabel.ForeColor = Color.Gainsboro;
+            summaryLabel.BackColor = Color.FromArgb(20, 20, 20);
+            summaryLabel.Text = BuildSummaryText(meshData);
 
-            Label source = new Label();
-            source.Dock = DockStyle.Top;
-            source.Padding = new Padding(10, 4, 10, 8);
-            source.TextAlign = ContentAlignment.TopLeft;
-            source.ForeColor = Color.FromArgb(170, 170, 170);
-            source.BackColor = Color.FromArgb(20, 20, 20);
+            sourceLabel = new Label();
+            sourceLabel.Dock = DockStyle.Top;
+            sourceLabel.Padding = new Padding(10, 4, 10, 8);
+            sourceLabel.TextAlign = ContentAlignment.TopLeft;
+            sourceLabel.ForeColor = Color.FromArgb(170, 170, 170);
+            sourceLabel.BackColor = Color.FromArgb(20, 20, 20);
             string sourceText = BuildSourceText(meshData);
-            source.Text = sourceText;
-            source.Height = ComputeSourceLabelHeight(sourceText);
+            sourceLabel.Text = sourceText;
+            sourceLabel.Height = ComputeSourceLabelHeight(sourceText);
 
-            viewport = new ModelPreviewViewport(meshData);
-            viewport.Dock = DockStyle.Fill;
+            cpuViewport = new ModelPreviewViewport(meshData);
+            cpuViewport.Dock = DockStyle.Fill;
+            cpuViewport.Visible = false;
+
+            try
+            {
+                dx11Viewport = new ModelPreviewDx11Viewport(meshData);
+                dx11Viewport.Dock = DockStyle.Fill;
+                dx11Viewport.Visible = false;
+                dx11ViewportCreationError = string.Empty;
+            }
+            catch (Exception ex)
+            {
+                dx11Viewport = null;
+                dx11ViewportCreationError = ex.GetType().Name + ": " + ex.Message;
+            }
+
+            try
+            {
+                gpuViewport = new ModelPreviewGpuViewport(meshData);
+                gpuViewport.Dock = DockStyle.Fill;
+                gpuViewport.Visible = false;
+                gpuViewportCreationError = string.Empty;
+            }
+            catch (Exception ex)
+            {
+                gpuViewport = null;
+                gpuViewportCreationError = ex.GetType().Name + ": " + ex.Message;
+            }
+
+            viewportHost = new Panel();
+            viewportHost.Dock = DockStyle.Fill;
+            viewportHost.Controls.Add(cpuViewport);
+            if (dx11Viewport != null)
+            {
+                viewportHost.Controls.Add(dx11Viewport);
+            }
+            if (gpuViewport != null)
+            {
+                viewportHost.Controls.Add(gpuViewport);
+            }
 
             Panel footer = new Panel();
             footer.Dock = DockStyle.Bottom;
@@ -81,8 +141,8 @@ namespace FWEledit
             wireframeCheck.BackColor = footer.BackColor;
             wireframeCheck.CheckedChanged += (s, e) =>
             {
-                viewport.ShowWireframe = wireframeCheck.Checked;
-                viewport.Invalidate();
+                ApplyWireframeMode();
+                InvalidateActiveViewport();
             };
             footer.Controls.Add(wireframeCheck);
 
@@ -92,10 +152,9 @@ namespace FWEledit
             backendCombo.DropDownStyle = ComboBoxStyle.DropDownList;
             backendCombo.FlatStyle = FlatStyle.Flat;
             backendCombo.Items.Add("DirectX 11");
-            backendCombo.Items.Add("Vulkan");
             backendCombo.Items.Add("OpenGL");
             backendCombo.SelectedIndex = 0;
-            backendCombo.SelectedIndexChanged += (s, e) => ApplyRendererSettings();
+            backendCombo.SelectedIndexChanged += (s, e) => ApplyRendererSettings(true);
             footer.Controls.Add(backendCombo);
 
             backendLabel = new Label();
@@ -113,23 +172,35 @@ namespace FWEledit
             hardwareCheck.Text = "Hardware";
             hardwareCheck.ForeColor = Color.Gainsboro;
             hardwareCheck.BackColor = footer.BackColor;
-            hardwareCheck.CheckedChanged += (s, e) => ApplyRendererSettings();
+            hardwareCheck.CheckedChanged += (s, e) => ApplyRendererSettings(true);
             footer.Controls.Add(hardwareCheck);
 
             Button resetButton = new Button();
             resetButton.Dock = DockStyle.Right;
             resetButton.Width = 120;
             resetButton.Text = "Reset View";
-            resetButton.Click += (s, e) => viewport.ResetView();
+            resetButton.Click += (s, e) => ResetActiveViewport();
             footer.Controls.Add(resetButton);
 
-            Controls.Add(viewport);
+            Controls.Add(viewportHost);
             Controls.Add(footer);
-            Controls.Add(source);
-            Controls.Add(summary);
+            Controls.Add(sourceLabel);
+            Controls.Add(summaryLabel);
 
             KeyDown += OnWindowKeyDown;
-            ApplyRendererSettings();
+            FormClosing += (s, e) => SaveCameraSettings();
+            Shown += (s, e) =>
+            {
+                if (hardwareCheck != null && hardwareCheck.Checked)
+                {
+                    ApplyRendererSettings(false);
+                    BeginInvoke((Action)(() => ApplyRendererSettings(false)));
+                }
+            };
+            LoadRendererSettings();
+            LoadCameraSettings();
+            ApplyRendererSettings(false);
+            ApplyPersistedCameraIfAny();
         }
 
         private void OnWindowKeyDown(object sender, KeyEventArgs e)
@@ -140,7 +211,7 @@ namespace FWEledit
             }
             else if (e.KeyCode == Keys.R)
             {
-                viewport.ResetView();
+                ResetActiveViewport();
             }
         }
 
@@ -205,7 +276,26 @@ namespace FWEledit
                         name = "(path not resolved)";
                     }
 
-                    lines.Add("TEX[" + i + "]: " + (loaded ? "OK " : "MISS ") + name);
+                    string sizeLabel = string.Empty;
+                    if (texture != null && texture.Width > 0 && texture.Height > 0)
+                    {
+                        sizeLabel = " (" + texture.Width + "x" + texture.Height + ")";
+                    }
+
+                    string alphaMode = "OPAQUE";
+                    if (texture != null)
+                    {
+                        if (texture.HasTransparency)
+                        {
+                            alphaMode = "BLEND";
+                        }
+                        else if (texture.UsesAlphaAsOpacity)
+                        {
+                            alphaMode = "CUTOUT";
+                        }
+                    }
+
+                    lines.Add("TEX[" + i + "]: " + (loaded ? "OK " : "MISS ") + name + sizeLabel + " [" + alphaMode + "]");
                     shown++;
                 }
 
@@ -271,31 +361,2268 @@ namespace FWEledit
             return value;
         }
 
-        private void ApplyRendererSettings()
+        private static float ClampFloat(float value, float min, float max)
         {
-            HardwareRenderBackend backend;
-            switch (backendCombo.SelectedIndex)
+            if (value < min) { return min; }
+            if (value > max) { return max; }
+            return value;
+        }
+
+        private static float NormalizeAngle(float value)
+        {
+            const float twoPi = (float)(Math.PI * 2.0);
+            while (value > (float)Math.PI)
             {
-                case (int)HardwareRenderBackend.Vulkan:
-                    backend = HardwareRenderBackend.Vulkan;
-                    break;
-                case (int)HardwareRenderBackend.OpenGL:
-                    backend = HardwareRenderBackend.OpenGL;
-                    break;
-                default:
-                    backend = HardwareRenderBackend.DirectX11;
-                    break;
+                value -= twoPi;
+            }
+            while (value < (float)-Math.PI)
+            {
+                value += twoPi;
             }
 
-            viewport.UseHardwareRendering = hardwareCheck.Checked;
-            viewport.PreferredHardwareBackend = backend;
+            return value;
+        }
 
-            bool hardwareEnabled = hardwareCheck.Checked;
+        private static bool IsFinite(float value)
+        {
+            return !float.IsNaN(value) && !float.IsInfinity(value);
+        }
+
+        private static ViewCameraState NormalizeCameraState(ViewCameraState state)
+        {
+            if (!state.IsValid
+                || !IsFinite(state.Yaw)
+                || !IsFinite(state.Pitch)
+                || !IsFinite(state.Zoom))
+            {
+                return new ViewCameraState { IsValid = false };
+            }
+
+            return new ViewCameraState
+            {
+                Yaw = NormalizeAngle(state.Yaw),
+                Pitch = ClampFloat(state.Pitch, -1.35f, 1.35f),
+                Zoom = ClampFloat(state.Zoom, 0.22f, 4.5f),
+                IsValid = true
+            };
+        }
+
+        private void LoadRendererSettings()
+        {
+            bool savedUseHardware = true;
+            int savedBackendIndex = 0;
+            try
+            {
+                savedUseHardware = Settings.Default.ModelPreviewUseHardware;
+                savedBackendIndex = Settings.Default.ModelPreviewBackend;
+            }
+            catch
+            {
+                savedUseHardware = true;
+                savedBackendIndex = 0;
+            }
+
+            // Migrate old index mapping (0=DX11,1=Vulkan,2=OpenGL) to current (0=DX11,1=OpenGL).
+            if (savedBackendIndex >= 2)
+            {
+                savedBackendIndex = (int)HardwareRenderBackend.OpenGL;
+            }
+
+            savedBackendIndex = ClampInt(savedBackendIndex, 0, Math.Max(0, backendCombo.Items.Count - 1));
+
+            suppressRendererPreferenceSave = true;
+            try
+            {
+                hardwareCheck.Checked = savedUseHardware;
+                backendCombo.SelectedIndex = savedBackendIndex;
+            }
+            finally
+            {
+                suppressRendererPreferenceSave = false;
+            }
+        }
+
+        private void SaveRendererSettings()
+        {
+            if (suppressRendererPreferenceSave)
+            {
+                return;
+            }
+
+            try
+            {
+                Settings.Default.ModelPreviewUseHardware = hardwareCheck.Checked;
+                int selectedBackendIndex = backendCombo.SelectedIndex;
+                Settings.Default.ModelPreviewBackend = selectedBackendIndex >= 0 ? selectedBackendIndex : 0;
+                Settings.Default.Save();
+            }
+            catch
+            {
+                // Ignore persistence errors; preview should keep working even if settings can't be saved.
+            }
+        }
+
+        private void LoadCameraSettings()
+        {
+            if (cameraSettingsLoaded)
+            {
+                return;
+            }
+
+            cameraSettingsLoaded = true;
+            persistedCameraState = new ViewCameraState { IsValid = false };
+            try
+            {
+                if (!Settings.Default.ModelPreviewCameraHasState)
+                {
+                    return;
+                }
+
+                ViewCameraState loaded = new ViewCameraState
+                {
+                    Yaw = Settings.Default.ModelPreviewCameraYaw,
+                    Pitch = Settings.Default.ModelPreviewCameraPitch,
+                    Zoom = Settings.Default.ModelPreviewCameraZoom,
+                    IsValid = true
+                };
+
+                persistedCameraState = NormalizeCameraState(loaded);
+            }
+            catch
+            {
+                persistedCameraState = new ViewCameraState { IsValid = false };
+            }
+        }
+
+        private void ApplyPersistedCameraIfAny()
+        {
+            ViewCameraState state = NormalizeCameraState(persistedCameraState);
+            if (!state.IsValid)
+            {
+                return;
+            }
+
+            cpuViewport.SetCameraState(state);
+            if (dx11Viewport != null)
+            {
+                dx11Viewport.SetCameraState(state);
+            }
+            if (gpuViewport != null)
+            {
+                gpuViewport.SetCameraState(state);
+            }
+            ApplyCameraState(activeViewport, state);
+        }
+
+        private void SaveCameraSettings()
+        {
+            ViewCameraState state = CaptureCameraState(activeViewport);
+            if (!state.IsValid)
+            {
+                state = CaptureCameraState(cpuViewport);
+            }
+            if (!state.IsValid && gpuViewport != null)
+            {
+                state = CaptureCameraState(gpuViewport);
+            }
+            if (!state.IsValid && dx11Viewport != null)
+            {
+                state = CaptureCameraState(dx11Viewport);
+            }
+
+            state = NormalizeCameraState(state);
+            if (!state.IsValid)
+            {
+                return;
+            }
+
+            persistedCameraState = state;
+            try
+            {
+                Settings.Default.ModelPreviewCameraHasState = true;
+                Settings.Default.ModelPreviewCameraYaw = state.Yaw;
+                Settings.Default.ModelPreviewCameraPitch = state.Pitch;
+                Settings.Default.ModelPreviewCameraZoom = state.Zoom;
+                Settings.Default.Save();
+            }
+            catch
+            {
+                // Ignore camera persistence errors.
+            }
+        }
+
+        public void PersistCurrentCameraState()
+        {
+            SaveCameraSettings();
+        }
+
+        public void ReplaceMeshData(ModelPreviewMeshData meshData)
+        {
+            if (meshData == null || IsDisposed)
+            {
+                return;
+            }
+
+            if (InvokeRequired)
+            {
+                BeginInvoke((Action)(() => ReplaceMeshData(meshData)));
+                return;
+            }
+
+            ViewCameraState state = NormalizeCameraState(CaptureCameraState(activeViewport));
+            if (!state.IsValid)
+            {
+                state = NormalizeCameraState(persistedCameraState);
+            }
+
+            SuspendLayout();
+            try
+            {
+                UpdateHeaderForMesh(meshData);
+                RecreateViewports(meshData, state);
+            }
+            finally
+            {
+                ResumeLayout(true);
+            }
+        }
+
+        private void UpdateHeaderForMesh(ModelPreviewMeshData meshData)
+        {
+            if (summaryLabel != null)
+            {
+                summaryLabel.Text = BuildSummaryText(meshData);
+            }
+
+            if (sourceLabel != null)
+            {
+                string sourceText = BuildSourceText(meshData);
+                sourceLabel.Text = sourceText;
+                sourceLabel.Height = ComputeSourceLabelHeight(sourceText);
+            }
+        }
+
+        private void RecreateViewports(ModelPreviewMeshData meshData, ViewCameraState cameraState)
+        {
+            if (viewportHost == null)
+            {
+                return;
+            }
+
+            SafeDisposeViewport(ref cpuViewport);
+            SafeDisposeViewport(ref dx11Viewport);
+            SafeDisposeViewport(ref gpuViewport);
+
+            cpuViewport = new ModelPreviewViewport(meshData);
+            cpuViewport.Dock = DockStyle.Fill;
+            cpuViewport.Visible = false;
+
+            try
+            {
+                dx11Viewport = new ModelPreviewDx11Viewport(meshData);
+                dx11Viewport.Dock = DockStyle.Fill;
+                dx11Viewport.Visible = false;
+                dx11ViewportCreationError = string.Empty;
+            }
+            catch (Exception ex)
+            {
+                dx11Viewport = null;
+                dx11ViewportCreationError = ex.GetType().Name + ": " + ex.Message;
+            }
+
+            try
+            {
+                gpuViewport = new ModelPreviewGpuViewport(meshData);
+                gpuViewport.Dock = DockStyle.Fill;
+                gpuViewport.Visible = false;
+                gpuViewportCreationError = string.Empty;
+            }
+            catch (Exception ex)
+            {
+                gpuViewport = null;
+                gpuViewportCreationError = ex.GetType().Name + ": " + ex.Message;
+            }
+
+            viewportHost.Controls.Clear();
+            viewportHost.Controls.Add(cpuViewport);
+            if (dx11Viewport != null)
+            {
+                viewportHost.Controls.Add(dx11Viewport);
+            }
+            if (gpuViewport != null)
+            {
+                viewportHost.Controls.Add(gpuViewport);
+            }
+
+            activeViewport = null;
+            ApplyWireframeMode();
+            EnsureActiveViewport(hardwareCheck != null && hardwareCheck.Checked);
+
+            if (cameraState.IsValid)
+            {
+                cpuViewport.SetCameraState(cameraState);
+                if (dx11Viewport != null)
+                {
+                    dx11Viewport.SetCameraState(cameraState);
+                }
+                if (gpuViewport != null)
+                {
+                    gpuViewport.SetCameraState(cameraState);
+                }
+
+                ApplyCameraState(activeViewport, cameraState);
+            }
+            else
+            {
+                ApplyPersistedCameraIfAny();
+            }
+
+            helpLabel.Text = "Drag: rotate | Shift+drag: fine rotate | Scroll: zoom | Double-click: reset | "
+                + GetActiveRendererStatusText();
+            InvalidateActiveViewport();
+        }
+
+        private static void SafeDisposeViewport<TViewport>(ref TViewport viewport)
+            where TViewport : Control
+        {
+            if (viewport == null)
+            {
+                return;
+            }
+
+            try
+            {
+                viewport.Dispose();
+            }
+            catch
+            {
+            }
+
+            viewport = null;
+        }
+
+        private void ApplyRendererSettings(bool persistSettings)
+        {
+            HardwareRenderBackend backend = GetSelectedBackend();
+
+            bool useHardware = hardwareCheck.Checked;
+            cpuViewport.UseHardwareRendering = useHardware;
+            cpuViewport.PreferredHardwareBackend = backend;
+            if (gpuViewport != null)
+            {
+                gpuViewport.PreferredHardwareBackend = backend;
+            }
+            if (dx11Viewport != null)
+            {
+                dx11Viewport.PreferredHardwareBackend = backend;
+            }
+
+            ApplyWireframeMode();
+            EnsureActiveViewport(useHardware);
+
+            bool hardwareEnabled = useHardware;
             backendCombo.Enabled = hardwareEnabled;
             backendLabel.Enabled = hardwareEnabled;
             helpLabel.Text = "Drag: rotate | Shift+drag: fine rotate | Scroll: zoom | Double-click: reset | "
-                + viewport.GetRendererStatusText();
-            viewport.Invalidate();
+                + GetActiveRendererStatusText();
+            if (persistSettings)
+            {
+                SaveRendererSettings();
+            }
+
+            InvalidateActiveViewport();
+        }
+
+        private void ApplyWireframeMode()
+        {
+            bool showWireframe = wireframeCheck != null && wireframeCheck.Checked;
+            cpuViewport.ShowWireframe = showWireframe;
+            if (dx11Viewport != null)
+            {
+                dx11Viewport.ShowWireframe = showWireframe;
+            }
+            if (gpuViewport != null)
+            {
+                gpuViewport.ShowWireframe = showWireframe;
+            }
+        }
+
+        private void EnsureActiveViewport(bool useHardware)
+        {
+            if (useHardware)
+            {
+                HardwareRenderBackend selected = GetSelectedBackend();
+                if (selected == HardwareRenderBackend.DirectX11)
+                {
+                    if (TryActivateDx11Viewport())
+                    {
+                        return;
+                    }
+
+                    if (TryActivateOpenGlViewport())
+                    {
+                        return;
+                    }
+
+                    SetActiveViewport(cpuViewport);
+                    return;
+                }
+
+                if (selected == HardwareRenderBackend.OpenGL)
+                {
+                    if (TryActivateOpenGlViewport())
+                    {
+                        return;
+                    }
+
+                    if (TryActivateDx11Viewport())
+                    {
+                        return;
+                    }
+
+                    SetActiveViewport(cpuViewport);
+                    return;
+                }
+
+            }
+
+            SetActiveViewport(cpuViewport);
+        }
+
+        private bool TryActivateDx11Viewport()
+        {
+            if (dx11Viewport == null)
+            {
+                return false;
+            }
+
+            if (!IsHandleCreated || !Visible || !viewportHost.IsHandleCreated)
+            {
+                return false;
+            }
+
+            SetActiveViewport(dx11Viewport);
+            return dx11Viewport.TryEnsureGpuReady();
+        }
+
+        private bool TryActivateOpenGlViewport()
+        {
+            if (gpuViewport == null)
+            {
+                return false;
+            }
+
+            // Avoid early context initialization attempts before the form/control handles exist.
+            if (!IsHandleCreated || !Visible || !viewportHost.IsHandleCreated)
+            {
+                return false;
+            }
+
+            // Make GPU viewport active/visible before context init so native handle creation can succeed.
+            SetActiveViewport(gpuViewport);
+            return gpuViewport.TryEnsureGpuReady();
+        }
+
+        private HardwareRenderBackend GetSelectedBackend()
+        {
+            switch (backendCombo.SelectedIndex)
+            {
+                case (int)HardwareRenderBackend.OpenGL:
+                    return HardwareRenderBackend.OpenGL;
+                default:
+                    return HardwareRenderBackend.DirectX11;
+            }
+        }
+
+        private void SetActiveViewport(Control viewport)
+        {
+            if (viewport == null)
+            {
+                return;
+            }
+
+            if (activeViewport == viewport)
+            {
+                return;
+            }
+
+            ViewCameraState state = CaptureCameraState(activeViewport);
+
+            if (cpuViewport != null)
+            {
+                cpuViewport.Visible = ReferenceEquals(viewport, cpuViewport);
+            }
+
+            if (dx11Viewport != null)
+            {
+                dx11Viewport.Visible = ReferenceEquals(viewport, dx11Viewport);
+            }
+
+            if (gpuViewport != null)
+            {
+                gpuViewport.Visible = ReferenceEquals(viewport, gpuViewport);
+            }
+
+            activeViewport = viewport;
+            activeViewport.BringToFront();
+            ApplyCameraState(activeViewport, state);
+        }
+
+        private string GetActiveRendererStatusText()
+        {
+            if (ReferenceEquals(activeViewport, dx11Viewport))
+            {
+                return dx11Viewport != null
+                    ? dx11Viewport.GetRendererStatusText()
+                    : "Renderer: Software (CPU)";
+            }
+
+            if (ReferenceEquals(activeViewport, gpuViewport))
+            {
+                return gpuViewport != null
+                    ? gpuViewport.GetRendererStatusText()
+                    : "Renderer: Software (CPU)";
+            }
+
+            if (hardwareCheck != null && hardwareCheck.Checked)
+            {
+                HardwareRenderBackend selected = GetSelectedBackend();
+                string reason = GetSoftwareFallbackReason(selected);
+                return "Renderer: Software (CPU fallback - " + reason + ")";
+            }
+
+            return cpuViewport.GetRendererStatusText();
+        }
+
+        private string GetSoftwareFallbackReason(HardwareRenderBackend selectedBackend)
+        {
+            if (selectedBackend == HardwareRenderBackend.DirectX11)
+            {
+                string dxReason = GetDx11UnavailableReason();
+                string glReason = GetOpenGlUnavailableReason();
+                return "DirectX11 unavailable (" + dxReason + "); OpenGL unavailable (" + glReason + ")";
+            }
+
+            string openGlReason = GetOpenGlUnavailableReason();
+            string dx11Reason = GetDx11UnavailableReason();
+            return "OpenGL unavailable (" + openGlReason + "); DirectX11 unavailable (" + dx11Reason + ")";
+        }
+
+        private string GetDx11UnavailableReason()
+        {
+            if (dx11Viewport == null)
+            {
+                return string.IsNullOrWhiteSpace(dx11ViewportCreationError)
+                    ? "DirectX11 control unavailable"
+                    : dx11ViewportCreationError;
+            }
+
+            if (dx11Viewport.IsGpuReady)
+            {
+                return "ready";
+            }
+
+            string reason = dx11Viewport.GpuInitializationError;
+            if (string.IsNullOrWhiteSpace(reason))
+            {
+                reason = "DirectX11 initialization failed";
+            }
+
+            return reason;
+        }
+
+        private string GetOpenGlUnavailableReason()
+        {
+            if (gpuViewport == null)
+            {
+                return string.IsNullOrWhiteSpace(gpuViewportCreationError)
+                    ? "OpenGL control unavailable"
+                    : gpuViewportCreationError;
+            }
+
+            if (gpuViewport.IsGpuReady)
+            {
+                return "ready";
+            }
+
+            string reason = gpuViewport.GpuInitializationError;
+            if (string.IsNullOrWhiteSpace(reason))
+            {
+                reason = "OpenGL initialization failed";
+            }
+
+            return reason;
+        }
+
+        private void ResetActiveViewport()
+        {
+            if (dx11Viewport != null && ReferenceEquals(activeViewport, dx11Viewport))
+            {
+                dx11Viewport.ResetView();
+            }
+            else if (gpuViewport != null && ReferenceEquals(activeViewport, gpuViewport))
+            {
+                gpuViewport.ResetView();
+            }
+            else
+            {
+                cpuViewport.ResetView();
+            }
+        }
+
+        private void InvalidateActiveViewport()
+        {
+            if (activeViewport != null)
+            {
+                activeViewport.Invalidate();
+            }
+        }
+
+        private static ViewCameraState CaptureCameraState(Control viewport)
+        {
+            if (viewport == null)
+            {
+                return new ViewCameraState { IsValid = false };
+            }
+
+            ModelPreviewViewport cpu = viewport as ModelPreviewViewport;
+            if (cpu != null)
+            {
+                return cpu.GetCameraState();
+            }
+
+            ModelPreviewGpuViewport gpu = viewport as ModelPreviewGpuViewport;
+            if (gpu != null)
+            {
+                return gpu.GetCameraState();
+            }
+
+            ModelPreviewDx11Viewport dx11 = viewport as ModelPreviewDx11Viewport;
+            if (dx11 != null)
+            {
+                return dx11.GetCameraState();
+            }
+
+            return new ViewCameraState { IsValid = false };
+        }
+
+        private static void ApplyCameraState(Control viewport, ViewCameraState state)
+        {
+            if (viewport == null || !state.IsValid)
+            {
+                return;
+            }
+
+            ModelPreviewViewport cpu = viewport as ModelPreviewViewport;
+            if (cpu != null)
+            {
+                cpu.SetCameraState(state);
+                return;
+            }
+
+            ModelPreviewGpuViewport gpu = viewport as ModelPreviewGpuViewport;
+            if (gpu != null)
+            {
+                gpu.SetCameraState(state);
+                return;
+            }
+
+            ModelPreviewDx11Viewport dx11 = viewport as ModelPreviewDx11Viewport;
+            if (dx11 != null)
+            {
+                dx11.SetCameraState(state);
+            }
+        }
+
+        private sealed class ModelPreviewDx11Viewport : Control
+        {
+            private struct DrawSubset
+            {
+                public int StartIndex;
+                public int IndexCount;
+                public int TextureIndex;
+                public bool HasTexture;
+                public bool UsesAlphaAsOpacity;
+            }
+
+            [StructLayout(LayoutKind.Sequential)]
+            private struct DxVertex
+            {
+                public SharpDX.Vector3 Position;
+                public SharpDX.Vector3 Normal;
+                public SharpDX.Vector2 TexCoord;
+                public SharpDX.Vector4 Color;
+            }
+
+            [StructLayout(LayoutKind.Sequential)]
+            private struct PerDrawConstants
+            {
+                public SharpDX.Matrix WorldViewProjection;
+                public SharpDX.Matrix World;
+                public SharpDX.Vector4 LightDirection;
+                public SharpDX.Vector4 DrawFlags;
+            }
+
+            private readonly Vector3f[] vertices;
+            private readonly Vector2f[] uvs;
+            private readonly int[] indices;
+            private readonly int[] triangleColors;
+            private readonly int[] triangleTextureIndices;
+            private readonly PreviewTextureData[] textures;
+            private readonly Vector3f[] normals;
+            private readonly Vector3f center;
+            private readonly float radius;
+            private readonly float defaultYaw;
+            private readonly float defaultPitch;
+            private readonly List<DrawSubset> opaqueSubsets = new List<DrawSubset>();
+            private readonly List<DrawSubset> cutoutSubsets = new List<DrawSubset>();
+            private readonly List<DrawSubset> transparentSubsets = new List<DrawSubset>();
+            private readonly DxVertex[] renderVertices;
+            private readonly int[] renderIndices;
+
+            private float yaw;
+            private float pitch;
+            private float zoom;
+            private bool isDragging;
+            private System.Drawing.Point lastMouse;
+            private const float PitchLimit = 1.35f;
+
+            private bool dxResourcesInitialized;
+            private string gpuInitializationError = string.Empty;
+
+            private D3D11.Device device;
+            private DXGI.SwapChain swapChain;
+            private D3D11.DeviceContext deviceContext;
+            private D3D11.Texture2D depthStencilBuffer;
+            private D3D11.DepthStencilView depthStencilView;
+            private D3D11.RenderTargetView renderTargetView;
+            private D3D11.VertexShader vertexShader;
+            private D3D11.PixelShader pixelShader;
+            private D3D11.InputLayout inputLayout;
+            private D3D11.Buffer vertexBuffer;
+            private D3D11.Buffer indexBuffer;
+            private D3D11.Buffer constantBuffer;
+            private D3D11.SamplerState samplerState;
+            private D3D11.RasterizerState rasterStateSolid;
+            private D3D11.RasterizerState rasterStateWireframe;
+            private D3D11.BlendState blendStateOpaque;
+            private D3D11.BlendState blendStateAlpha;
+            private D3D11.DepthStencilState depthStateWrite;
+            private D3D11.DepthStencilState depthStateRead;
+            private D3D11.ShaderResourceView[] textureViews = new D3D11.ShaderResourceView[0];
+            private D3D11.Texture2D[] textureResources = new D3D11.Texture2D[0];
+
+            public bool ShowWireframe { get; set; }
+            public HardwareRenderBackend PreferredHardwareBackend { get; set; }
+            public bool IsGpuReady { get { return dxResourcesInitialized; } }
+            public string GpuInitializationError { get { return gpuInitializationError ?? string.Empty; } }
+
+            public ModelPreviewDx11Viewport(ModelPreviewMeshData meshData)
+            {
+                vertices = meshData != null && meshData.Vertices != null ? meshData.Vertices : new Vector3f[0];
+                uvs = meshData != null && meshData.UVs != null ? meshData.UVs : new Vector2f[0];
+                indices = meshData != null && meshData.Indices != null ? meshData.Indices : new int[0];
+                triangleColors = meshData != null && meshData.TriangleColors != null ? meshData.TriangleColors : new int[0];
+                triangleTextureIndices = meshData != null && meshData.TriangleTextureIndices != null ? meshData.TriangleTextureIndices : new int[0];
+                textures = meshData != null && meshData.Textures != null ? meshData.Textures : new PreviewTextureData[0];
+                normals = ModelPreviewViewport.ComputeVertexNormals(vertices, indices);
+                ModelPreviewViewport.ComputeBounds(vertices, out center, out radius);
+                BuildRenderData(out renderVertices, out renderIndices);
+
+                defaultYaw = 0f;
+                defaultPitch = 0f;
+                yaw = defaultYaw;
+                pitch = defaultPitch;
+                zoom = 1.0f;
+                PreferredHardwareBackend = HardwareRenderBackend.DirectX11;
+
+                SetStyle(ControlStyles.AllPaintingInWmPaint
+                    | ControlStyles.Opaque
+                    | ControlStyles.UserPaint
+                    | ControlStyles.ResizeRedraw, true);
+
+                BackColor = Color.FromArgb(206, 206, 206);
+                TabStop = false;
+
+                MouseDown += OnMouseDown;
+                MouseUp += OnMouseUp;
+                MouseMove += OnMouseMove;
+                MouseWheel += OnMouseWheel;
+                MouseDoubleClick += (s, e) => ResetView();
+            }
+
+            public bool TryEnsureGpuReady()
+            {
+                if (dxResourcesInitialized)
+                {
+                    return true;
+                }
+
+                try
+                {
+                    if (DesignMode)
+                    {
+                        gpuInitializationError = "Design mode";
+                        return false;
+                    }
+
+                    if (!IsHandleCreated || Handle == IntPtr.Zero)
+                    {
+                        gpuInitializationError = "DirectX11 pending control handle";
+                        return false;
+                    }
+
+                    InitializeDxResources();
+                    dxResourcesInitialized = true;
+                    gpuInitializationError = string.Empty;
+                }
+                catch (Exception ex)
+                {
+                    dxResourcesInitialized = false;
+                    gpuInitializationError = ex.GetType().Name + ": " + ex.Message;
+                    SafeDisposeDeviceResources();
+                }
+
+                return dxResourcesInitialized;
+            }
+
+            public string GetRendererStatusText()
+            {
+                if (!dxResourcesInitialized)
+                {
+                    string reason = string.IsNullOrWhiteSpace(gpuInitializationError)
+                        ? "DirectX11 not available"
+                        : gpuInitializationError;
+                    return "Renderer: Software (CPU fallback - " + reason + ")";
+                }
+
+                if (PreferredHardwareBackend == HardwareRenderBackend.OpenGL)
+                {
+                    return "Renderer: DirectX11 (GPU fallback for OpenGL)";
+                }
+
+                return "Renderer: DirectX11 (GPU)";
+            }
+
+            public void ResetView()
+            {
+                yaw = defaultYaw;
+                pitch = defaultPitch;
+                zoom = 1.0f;
+                Invalidate();
+            }
+
+            public ViewCameraState GetCameraState()
+            {
+                return new ViewCameraState
+                {
+                    Yaw = yaw,
+                    Pitch = pitch,
+                    Zoom = zoom,
+                    IsValid = true
+                };
+            }
+
+            public void SetCameraState(ViewCameraState state)
+            {
+                if (!state.IsValid)
+                {
+                    return;
+                }
+
+                yaw = state.Yaw;
+                pitch = Math.Max(-PitchLimit, Math.Min(PitchLimit, state.Pitch));
+                zoom = Math.Max(0.22f, Math.Min(4.5f, state.Zoom));
+                Invalidate();
+            }
+
+            protected override void OnPaintBackground(PaintEventArgs pevent)
+            {
+                // Scene clear handles background.
+            }
+
+            protected override void OnPaint(PaintEventArgs e)
+            {
+                if (!TryEnsureGpuReady())
+                {
+                    e.Graphics.Clear(Color.FromArgb(206, 206, 206));
+                    using (Brush brush = new SolidBrush(Color.FromArgb(80, 80, 80)))
+                    {
+                        e.Graphics.DrawString("DirectX11 init failed. Using CPU fallback.", Font, brush, new PointF(16f, 16f));
+                    }
+                    return;
+                }
+
+                RenderScene();
+            }
+
+            protected override void OnResize(EventArgs e)
+            {
+                base.OnResize(e);
+                if (!dxResourcesInitialized)
+                {
+                    return;
+                }
+
+                try
+                {
+                    ResizeSwapChainBuffers();
+                }
+                catch (Exception ex)
+                {
+                    gpuInitializationError = ex.GetType().Name + ": " + ex.Message;
+                    dxResourcesInitialized = false;
+                    SafeDisposeDeviceResources();
+                }
+            }
+
+            protected override void OnHandleDestroyed(EventArgs e)
+            {
+                SafeDisposeDeviceResources();
+                base.OnHandleDestroyed(e);
+            }
+
+            protected override void Dispose(bool disposing)
+            {
+                if (disposing)
+                {
+                    SafeDisposeDeviceResources();
+                }
+
+                base.Dispose(disposing);
+            }
+
+            private void InitializeDxResources()
+            {
+                SafeDisposeDeviceResources();
+
+                DXGI.SwapChainDescription swapChainDesc = new DXGI.SwapChainDescription();
+                swapChainDesc.BufferCount = 1;
+                swapChainDesc.Flags = DXGI.SwapChainFlags.None;
+                swapChainDesc.IsWindowed = true;
+                swapChainDesc.ModeDescription = new DXGI.ModeDescription(
+                    Math.Max(1, Width),
+                    Math.Max(1, Height),
+                    new DXGI.Rational(60, 1),
+                    DXGI.Format.B8G8R8A8_UNorm);
+                swapChainDesc.OutputHandle = Handle;
+                swapChainDesc.SampleDescription = new DXGI.SampleDescription(1, 0);
+                swapChainDesc.SwapEffect = DXGI.SwapEffect.Discard;
+                swapChainDesc.Usage = DXGI.Usage.RenderTargetOutput;
+
+                D3D11.Device.CreateWithSwapChain(
+                    SharpDX.Direct3D.DriverType.Hardware,
+                    D3D11.DeviceCreationFlags.BgraSupport,
+                    new[]
+                    {
+                        SharpDX.Direct3D.FeatureLevel.Level_11_1,
+                        SharpDX.Direct3D.FeatureLevel.Level_11_0,
+                        SharpDX.Direct3D.FeatureLevel.Level_10_1,
+                        SharpDX.Direct3D.FeatureLevel.Level_10_0
+                    },
+                    swapChainDesc,
+                    out device,
+                    out swapChain);
+
+                deviceContext = device.ImmediateContext;
+
+                using (DXGI.Factory factory = swapChain.GetParent<DXGI.Factory>())
+                {
+                    factory.MakeWindowAssociation(Handle, DXGI.WindowAssociationFlags.IgnoreAltEnter);
+                }
+
+                CreateRenderTargets();
+                CreateShaders();
+                CreatePipelineState();
+                CreateGeometryBuffers();
+                CreateTextureResources();
+            }
+
+            private void ResizeSwapChainBuffers()
+            {
+                if (swapChain == null || deviceContext == null)
+                {
+                    return;
+                }
+
+                deviceContext.OutputMerger.SetRenderTargets((D3D11.DepthStencilView)null, (D3D11.RenderTargetView)null);
+                SharpDX.Utilities.Dispose(ref renderTargetView);
+                SharpDX.Utilities.Dispose(ref depthStencilView);
+                SharpDX.Utilities.Dispose(ref depthStencilBuffer);
+
+                swapChain.ResizeBuffers(
+                    1,
+                    Math.Max(1, Width),
+                    Math.Max(1, Height),
+                    DXGI.Format.B8G8R8A8_UNorm,
+                    DXGI.SwapChainFlags.None);
+
+                CreateRenderTargets();
+            }
+
+            private void CreateRenderTargets()
+            {
+                using (D3D11.Texture2D backBuffer = D3D11.Texture2D.FromSwapChain<D3D11.Texture2D>(swapChain, 0))
+                {
+                    renderTargetView = new D3D11.RenderTargetView(device, backBuffer);
+                }
+
+                D3D11.Texture2DDescription depthDesc = new D3D11.Texture2DDescription();
+                depthDesc.Width = Math.Max(1, Width);
+                depthDesc.Height = Math.Max(1, Height);
+                depthDesc.ArraySize = 1;
+                depthDesc.MipLevels = 1;
+                depthDesc.Format = DXGI.Format.D24_UNorm_S8_UInt;
+                depthDesc.SampleDescription = new DXGI.SampleDescription(1, 0);
+                depthDesc.Usage = D3D11.ResourceUsage.Default;
+                depthDesc.BindFlags = D3D11.BindFlags.DepthStencil;
+                depthDesc.CpuAccessFlags = D3D11.CpuAccessFlags.None;
+                depthDesc.OptionFlags = D3D11.ResourceOptionFlags.None;
+
+                depthStencilBuffer = new D3D11.Texture2D(device, depthDesc);
+                depthStencilView = new D3D11.DepthStencilView(device, depthStencilBuffer);
+            }
+
+            private void CreateShaders()
+            {
+                const string shaderCode = @"
+cbuffer PerDraw : register(b0)
+{
+    matrix WorldViewProjection;
+    matrix World;
+    float4 LightDirection;
+    float4 DrawFlags;
+};
+
+struct VS_INPUT
+{
+    float3 Position : POSITION;
+    float3 Normal : NORMAL;
+    float2 TexCoord : TEXCOORD0;
+    float4 Color : COLOR0;
+};
+
+struct PS_INPUT
+{
+    float4 Position : SV_POSITION;
+    float3 Normal : TEXCOORD1;
+    float2 TexCoord : TEXCOORD0;
+    float4 Color : COLOR0;
+};
+
+PS_INPUT VSMain(VS_INPUT input)
+{
+    PS_INPUT output;
+    output.Position = mul(float4(input.Position, 1.0f), WorldViewProjection);
+    output.Normal = mul(float4(input.Normal, 0.0f), World).xyz;
+    output.TexCoord = input.TexCoord;
+    output.Color = input.Color;
+    return output;
+}
+
+Texture2D DiffuseTexture : register(t0);
+SamplerState DiffuseSampler : register(s0);
+
+float4 PSMain(PS_INPUT input) : SV_Target
+{
+    float useTexture = DrawFlags.x;
+    float alphaMin = DrawFlags.y;
+    float alphaMax = DrawFlags.z;
+    float useAlphaAsOpacity = DrawFlags.w;
+    float4 baseColor = input.Color;
+    if (useTexture > 0.5f)
+    {
+        baseColor = DiffuseTexture.Sample(DiffuseSampler, input.TexCoord);
+        if (useAlphaAsOpacity > 0.5f)
+        {
+            clip(baseColor.a - alphaMin);
+            clip(alphaMax - baseColor.a);
+        }
+        else
+        {
+            // Many FW textures use alpha for gloss/spec data, not opacity.
+            baseColor.a = 1.0f;
+        }
+    }
+    else if (useAlphaAsOpacity > 0.5f)
+    {
+        clip(baseColor.a - alphaMin);
+        clip(alphaMax - baseColor.a);
+    }
+
+    float3 n = normalize(input.Normal);
+    float3 l = normalize(-LightDirection.xyz);
+    float ndotl = saturate(abs(dot(n, l)));
+    float lighting = saturate(0.62f + (ndotl * 0.58f));
+    return float4(baseColor.rgb * lighting, baseColor.a);
+}";
+
+                using (SharpDX.D3DCompiler.ShaderBytecode vsBytecode = SharpDX.D3DCompiler.ShaderBytecode.Compile(shaderCode, "VSMain", "vs_4_0", SharpDX.D3DCompiler.ShaderFlags.OptimizationLevel3))
+                using (SharpDX.D3DCompiler.ShaderBytecode psBytecode = SharpDX.D3DCompiler.ShaderBytecode.Compile(shaderCode, "PSMain", "ps_4_0", SharpDX.D3DCompiler.ShaderFlags.OptimizationLevel3))
+                {
+                    vertexShader = new D3D11.VertexShader(device, vsBytecode);
+                    pixelShader = new D3D11.PixelShader(device, psBytecode);
+                    inputLayout = new D3D11.InputLayout(
+                        device,
+                        SharpDX.D3DCompiler.ShaderSignature.GetInputSignature(vsBytecode),
+                        new[]
+                        {
+                            new D3D11.InputElement("POSITION", 0, DXGI.Format.R32G32B32_Float, 0, 0),
+                            new D3D11.InputElement("NORMAL", 0, DXGI.Format.R32G32B32_Float, 12, 0),
+                            new D3D11.InputElement("TEXCOORD", 0, DXGI.Format.R32G32_Float, 24, 0),
+                            new D3D11.InputElement("COLOR", 0, DXGI.Format.R32G32B32A32_Float, 32, 0)
+                        });
+                }
+            }
+
+            private void CreatePipelineState()
+            {
+                D3D11.RasterizerStateDescription solidDesc = new D3D11.RasterizerStateDescription();
+                solidDesc.CullMode = D3D11.CullMode.None;
+                solidDesc.FillMode = D3D11.FillMode.Solid;
+                solidDesc.IsFrontCounterClockwise = false;
+                solidDesc.IsDepthClipEnabled = true;
+                rasterStateSolid = new D3D11.RasterizerState(device, solidDesc);
+
+                D3D11.RasterizerStateDescription wireDesc = new D3D11.RasterizerStateDescription();
+                wireDesc.CullMode = D3D11.CullMode.None;
+                wireDesc.FillMode = D3D11.FillMode.Wireframe;
+                wireDesc.IsFrontCounterClockwise = false;
+                wireDesc.IsDepthClipEnabled = true;
+                rasterStateWireframe = new D3D11.RasterizerState(device, wireDesc);
+
+                D3D11.BlendStateDescription blendOpaqueDesc = new D3D11.BlendStateDescription();
+                blendOpaqueDesc.AlphaToCoverageEnable = false;
+                blendOpaqueDesc.IndependentBlendEnable = false;
+                blendOpaqueDesc.RenderTarget[0].IsBlendEnabled = false;
+                blendOpaqueDesc.RenderTarget[0].RenderTargetWriteMask = D3D11.ColorWriteMaskFlags.All;
+                blendStateOpaque = new D3D11.BlendState(device, blendOpaqueDesc);
+
+                D3D11.BlendStateDescription blendAlphaDesc = new D3D11.BlendStateDescription();
+                blendAlphaDesc.AlphaToCoverageEnable = false;
+                blendAlphaDesc.IndependentBlendEnable = false;
+                blendAlphaDesc.RenderTarget[0].IsBlendEnabled = true;
+                blendAlphaDesc.RenderTarget[0].SourceBlend = D3D11.BlendOption.SourceAlpha;
+                blendAlphaDesc.RenderTarget[0].DestinationBlend = D3D11.BlendOption.InverseSourceAlpha;
+                blendAlphaDesc.RenderTarget[0].BlendOperation = D3D11.BlendOperation.Add;
+                blendAlphaDesc.RenderTarget[0].SourceAlphaBlend = D3D11.BlendOption.One;
+                blendAlphaDesc.RenderTarget[0].DestinationAlphaBlend = D3D11.BlendOption.InverseSourceAlpha;
+                blendAlphaDesc.RenderTarget[0].AlphaBlendOperation = D3D11.BlendOperation.Add;
+                blendAlphaDesc.RenderTarget[0].RenderTargetWriteMask = D3D11.ColorWriteMaskFlags.All;
+                blendStateAlpha = new D3D11.BlendState(device, blendAlphaDesc);
+
+                D3D11.DepthStencilStateDescription depthWriteDesc = new D3D11.DepthStencilStateDescription();
+                depthWriteDesc.IsDepthEnabled = true;
+                depthWriteDesc.DepthComparison = D3D11.Comparison.LessEqual;
+                depthWriteDesc.DepthWriteMask = D3D11.DepthWriteMask.All;
+                depthWriteDesc.IsStencilEnabled = false;
+                depthStateWrite = new D3D11.DepthStencilState(device, depthWriteDesc);
+
+                D3D11.DepthStencilStateDescription depthReadDesc = new D3D11.DepthStencilStateDescription();
+                depthReadDesc.IsDepthEnabled = true;
+                depthReadDesc.DepthComparison = D3D11.Comparison.LessEqual;
+                depthReadDesc.DepthWriteMask = D3D11.DepthWriteMask.Zero;
+                depthReadDesc.IsStencilEnabled = false;
+                depthStateRead = new D3D11.DepthStencilState(device, depthReadDesc);
+
+                D3D11.SamplerStateDescription samplerDesc = new D3D11.SamplerStateDescription();
+                samplerDesc.Filter = D3D11.Filter.Anisotropic;
+                samplerDesc.AddressU = D3D11.TextureAddressMode.Wrap;
+                samplerDesc.AddressV = D3D11.TextureAddressMode.Wrap;
+                samplerDesc.AddressW = D3D11.TextureAddressMode.Wrap;
+                samplerDesc.MipLodBias = 0f;
+                samplerDesc.MaximumAnisotropy = 8;
+                samplerDesc.ComparisonFunction = D3D11.Comparison.Never;
+                samplerDesc.MinimumLod = 0f;
+                samplerDesc.MaximumLod = float.MaxValue;
+                samplerState = new D3D11.SamplerState(device, samplerDesc);
+
+                constantBuffer = new D3D11.Buffer(
+                    device,
+                    SharpDX.Utilities.SizeOf<PerDrawConstants>(),
+                    D3D11.ResourceUsage.Default,
+                    D3D11.BindFlags.ConstantBuffer,
+                    D3D11.CpuAccessFlags.None,
+                    D3D11.ResourceOptionFlags.None,
+                    0);
+            }
+
+            private void CreateGeometryBuffers()
+            {
+                if (renderVertices == null || renderVertices.Length == 0 || renderIndices == null || renderIndices.Length == 0)
+                {
+                    return;
+                }
+
+                vertexBuffer = D3D11.Buffer.Create(device, D3D11.BindFlags.VertexBuffer, renderVertices);
+                indexBuffer = D3D11.Buffer.Create(device, D3D11.BindFlags.IndexBuffer, renderIndices);
+            }
+
+            private void CreateTextureResources()
+            {
+                if (textures == null || textures.Length == 0)
+                {
+                    textureViews = new D3D11.ShaderResourceView[0];
+                    textureResources = new D3D11.Texture2D[0];
+                    return;
+                }
+
+                textureViews = new D3D11.ShaderResourceView[textures.Length];
+                textureResources = new D3D11.Texture2D[textures.Length];
+                for (int i = 0; i < textures.Length; i++)
+                {
+                    PreviewTextureData texture = textures[i];
+                    if (texture == null || !texture.IsValid || texture.Pixels == null || texture.Pixels.Length == 0)
+                    {
+                        textureViews[i] = null;
+                        textureResources[i] = null;
+                        continue;
+                    }
+
+                    D3D11.Texture2DDescription desc = new D3D11.Texture2DDescription();
+                    desc.Width = texture.Width;
+                    desc.Height = texture.Height;
+                    desc.ArraySize = 1;
+                    desc.MipLevels = 1;
+                    desc.Format = DXGI.Format.B8G8R8A8_UNorm;
+                    desc.SampleDescription = new DXGI.SampleDescription(1, 0);
+                    desc.Usage = D3D11.ResourceUsage.Immutable;
+                    desc.BindFlags = D3D11.BindFlags.ShaderResource;
+                    desc.CpuAccessFlags = D3D11.CpuAccessFlags.None;
+                    desc.OptionFlags = D3D11.ResourceOptionFlags.None;
+
+                    SharpDX.DataStream dataStream = new SharpDX.DataStream(texture.Pixels.Length * sizeof(int), true, true);
+                    try
+                    {
+                        dataStream.WriteRange(texture.Pixels);
+                        dataStream.Position = 0;
+                        SharpDX.DataRectangle dataRect = new SharpDX.DataRectangle(dataStream.DataPointer, texture.Width * sizeof(int));
+                        D3D11.Texture2D texResource = new D3D11.Texture2D(device, desc, dataRect);
+                        textureResources[i] = texResource;
+                        textureViews[i] = new D3D11.ShaderResourceView(device, texResource);
+                    }
+                    finally
+                    {
+                        dataStream.Dispose();
+                    }
+                }
+            }
+
+            private void RenderScene()
+            {
+                if (deviceContext == null || swapChain == null || renderTargetView == null || depthStencilView == null)
+                {
+                    return;
+                }
+
+                int width = Math.Max(1, Width);
+                int height = Math.Max(1, Height);
+
+                deviceContext.Rasterizer.SetViewport(0f, 0f, width, height, 0f, 1f);
+                deviceContext.OutputMerger.SetRenderTargets(depthStencilView, renderTargetView);
+                deviceContext.ClearRenderTargetView(renderTargetView, new SharpDX.Mathematics.Interop.RawColor4(
+                    206f / 255f,
+                    206f / 255f,
+                    206f / 255f,
+                    1f));
+                deviceContext.ClearDepthStencilView(depthStencilView, D3D11.DepthStencilClearFlags.Depth, 1f, 0);
+
+                if (renderVertices == null || renderVertices.Length == 0
+                    || renderIndices == null || renderIndices.Length == 0
+                    || radius <= 0.0001f
+                    || vertexBuffer == null
+                    || indexBuffer == null)
+                {
+                    swapChain.Present(1, DXGI.PresentFlags.None);
+                    return;
+                }
+
+                float aspect = width / (float)Math.Max(1, height);
+                SharpDX.Matrix projection = SharpDX.Matrix.PerspectiveFovRH((float)(Math.PI / 4.0), aspect, 0.05f, 200.0f);
+                SharpDX.Matrix world = SharpDX.Matrix.Translation(-center.X, -center.Y, -center.Z)
+                    * SharpDX.Matrix.Scaling(1f / radius)
+                    * SharpDX.Matrix.RotationY(yaw)
+                    * SharpDX.Matrix.RotationX(pitch);
+                float cameraDistance = 3.2f / Math.Max(0.15f, zoom);
+                world *= SharpDX.Matrix.Translation(0f, 0f, -cameraDistance);
+                SharpDX.Matrix worldViewProjection = world * projection;
+
+                deviceContext.InputAssembler.InputLayout = inputLayout;
+                deviceContext.InputAssembler.PrimitiveTopology = SharpDX.Direct3D.PrimitiveTopology.TriangleList;
+                deviceContext.InputAssembler.SetVertexBuffers(0, new D3D11.VertexBufferBinding(vertexBuffer, SharpDX.Utilities.SizeOf<DxVertex>(), 0));
+                deviceContext.InputAssembler.SetIndexBuffer(indexBuffer, DXGI.Format.R32_UInt, 0);
+
+                deviceContext.VertexShader.Set(vertexShader);
+                deviceContext.VertexShader.SetConstantBuffer(0, constantBuffer);
+                deviceContext.PixelShader.Set(pixelShader);
+                deviceContext.PixelShader.SetConstantBuffer(0, constantBuffer);
+                deviceContext.PixelShader.SetSampler(0, samplerState);
+                deviceContext.Rasterizer.State = ShowWireframe ? rasterStateWireframe : rasterStateSolid;
+
+                const float alphaEpsilon = 0.0001f;
+                const float cutoutAlphaThreshold = 0.01f;
+                DrawSubsets(opaqueSubsets, world, worldViewProjection, false, 0.0f, 1.0f + alphaEpsilon);
+                DrawSubsets(cutoutSubsets, world, worldViewProjection, false, cutoutAlphaThreshold, 1.0f + alphaEpsilon);
+                DrawSubsets(transparentSubsets, world, worldViewProjection, false, 0.98f, 1.0f + alphaEpsilon);
+                DrawSubsets(transparentSubsets, world, worldViewProjection, true, 0.03f, 0.98f - alphaEpsilon);
+
+                swapChain.Present(1, DXGI.PresentFlags.None);
+            }
+
+            private void DrawSubsets(
+                List<DrawSubset> subsets,
+                SharpDX.Matrix world,
+                SharpDX.Matrix worldViewProjection,
+                bool alphaBlend,
+                float alphaMin,
+                float alphaMax)
+            {
+                if (subsets == null || subsets.Count == 0)
+                {
+                    return;
+                }
+
+                deviceContext.OutputMerger.SetBlendState(alphaBlend ? blendStateAlpha : blendStateOpaque);
+                deviceContext.OutputMerger.SetDepthStencilState(alphaBlend ? depthStateRead : depthStateWrite);
+
+                SharpDX.Vector4 lightDirection = new SharpDX.Vector4(0.35f, 0.45f, -0.82f, 0f);
+                for (int i = 0; i < subsets.Count; i++)
+                {
+                    DrawSubset subset = subsets[i];
+                    if (subset.IndexCount <= 0)
+                    {
+                        continue;
+                    }
+
+                    D3D11.ShaderResourceView textureView = null;
+                    if (subset.HasTexture && subset.TextureIndex >= 0 && subset.TextureIndex < textureViews.Length)
+                    {
+                        textureView = textureViews[subset.TextureIndex];
+                    }
+
+                    PerDrawConstants constants = new PerDrawConstants();
+                    constants.WorldViewProjection = SharpDX.Matrix.Transpose(worldViewProjection);
+                    constants.World = SharpDX.Matrix.Transpose(world);
+                    constants.LightDirection = lightDirection;
+                    constants.DrawFlags = new SharpDX.Vector4(
+                        textureView != null ? 1f : 0f,
+                        alphaMin,
+                        alphaMax,
+                        subset.UsesAlphaAsOpacity ? 1f : 0f);
+                    deviceContext.UpdateSubresource(ref constants, constantBuffer);
+
+                    deviceContext.PixelShader.SetShaderResource(0, textureView);
+                    deviceContext.DrawIndexed(subset.IndexCount, subset.StartIndex, 0);
+                }
+            }
+
+            private void BuildRenderData(out DxVertex[] outVertices, out int[] outIndices)
+            {
+                opaqueSubsets.Clear();
+                cutoutSubsets.Clear();
+                transparentSubsets.Clear();
+                if (vertices == null || indices == null || indices.Length < 3)
+                {
+                    outVertices = new DxVertex[0];
+                    outIndices = new int[0];
+                    return;
+                }
+
+                Dictionary<int, List<DxVertex>> opaqueBuckets = new Dictionary<int, List<DxVertex>>();
+                Dictionary<int, List<DxVertex>> cutoutBuckets = new Dictionary<int, List<DxVertex>>();
+                Dictionary<int, List<DxVertex>> transparentBuckets = new Dictionary<int, List<DxVertex>>();
+
+                int triangleCount = indices.Length / 3;
+                for (int tri = 0; tri < triangleCount; tri++)
+                {
+                    int baseIndex = tri * 3;
+                    int i0 = indices[baseIndex];
+                    int i1 = indices[baseIndex + 1];
+                    int i2 = indices[baseIndex + 2];
+                    if (i0 < 0 || i1 < 0 || i2 < 0
+                        || i0 >= vertices.Length || i1 >= vertices.Length || i2 >= vertices.Length)
+                    {
+                        continue;
+                    }
+
+                    int textureIndex = tri < triangleTextureIndices.Length ? triangleTextureIndices[tri] : -1;
+                    int colorArgb = tri < triangleColors.Length
+                        ? triangleColors[tri]
+                        : Color.FromArgb(255, 200, 210, 220).ToArgb();
+
+                    bool hasTexture = textureIndex >= 0
+                        && textureIndex < textures.Length
+                        && textures[textureIndex] != null
+                        && textures[textureIndex].IsValid;
+                    bool usesAlphaAsOpacity = hasTexture && textures[textureIndex].UsesAlphaAsOpacity;
+                    bool transparent = hasTexture
+                        ? textures[textureIndex].HasTransparency
+                        : ((colorArgb >> 24) & 0xFF) < 245;
+
+                    int bucketKey = hasTexture ? textureIndex : -1;
+                    Dictionary<int, List<DxVertex>> target;
+                    if (transparent)
+                    {
+                        target = transparentBuckets;
+                    }
+                    else if (usesAlphaAsOpacity)
+                    {
+                        target = cutoutBuckets;
+                    }
+                    else
+                    {
+                        target = opaqueBuckets;
+                    }
+                    if (!target.TryGetValue(bucketKey, out List<DxVertex> bucket))
+                    {
+                        bucket = new List<DxVertex>();
+                        target[bucketKey] = bucket;
+                    }
+
+                    SharpDX.Vector4 color;
+                    if (hasTexture)
+                    {
+                        color = new SharpDX.Vector4(1f, 1f, 1f, 1f);
+                    }
+                    else
+                    {
+                        Color c = Color.FromArgb(colorArgb);
+                        color = new SharpDX.Vector4(c.R / 255f, c.G / 255f, c.B / 255f, c.A / 255f);
+                    }
+
+                    AddVertex(bucket, i0, color);
+                    AddVertex(bucket, i1, color);
+                    AddVertex(bucket, i2, color);
+                }
+
+                List<DxVertex> flatVertices = new List<DxVertex>(Math.Max(32, indices.Length));
+                List<int> flatIndices = new List<int>(Math.Max(32, indices.Length));
+                AppendBuckets(opaqueBuckets, flatVertices, flatIndices, opaqueSubsets, false);
+                AppendBuckets(cutoutBuckets, flatVertices, flatIndices, cutoutSubsets, true);
+                AppendBuckets(transparentBuckets, flatVertices, flatIndices, transparentSubsets, true);
+
+                outVertices = flatVertices.ToArray();
+                outIndices = flatIndices.ToArray();
+            }
+
+            private void AddVertex(List<DxVertex> bucket, int sourceIndex, SharpDX.Vector4 color)
+            {
+                Vector3f v = vertices[sourceIndex];
+                Vector3f n = sourceIndex < normals.Length ? normals[sourceIndex] : new Vector3f(0f, 1f, 0f);
+                Vector2f uv = sourceIndex < uvs.Length ? uvs[sourceIndex] : new Vector2f(0f, 0f);
+                DxVertex vertex = new DxVertex();
+                vertex.Position = new SharpDX.Vector3(v.X, v.Y, v.Z);
+                vertex.Normal = new SharpDX.Vector3(n.X, n.Y, n.Z);
+                vertex.TexCoord = new SharpDX.Vector2(uv.X, uv.Y);
+                vertex.Color = color;
+                bucket.Add(vertex);
+            }
+
+            private static void AppendBuckets(
+                Dictionary<int, List<DxVertex>> buckets,
+                List<DxVertex> flatVertices,
+                List<int> flatIndices,
+                List<DrawSubset> targetSubsets,
+                bool usesAlphaAsOpacity)
+            {
+                if (buckets == null || buckets.Count == 0)
+                {
+                    return;
+                }
+
+                List<int> keys = new List<int>(buckets.Keys);
+                keys.Sort();
+                for (int k = 0; k < keys.Count; k++)
+                {
+                    int key = keys[k];
+                    List<DxVertex> bucket = buckets[key];
+                    if (bucket == null || bucket.Count == 0)
+                    {
+                        continue;
+                    }
+
+                    int baseVertex = flatVertices.Count;
+                    int startIndex = flatIndices.Count;
+                    for (int i = 0; i < bucket.Count; i++)
+                    {
+                        flatVertices.Add(bucket[i]);
+                        flatIndices.Add(baseVertex + i);
+                    }
+
+                    DrawSubset subset = new DrawSubset();
+                    subset.StartIndex = startIndex;
+                    subset.IndexCount = bucket.Count;
+                    subset.TextureIndex = key;
+                    subset.HasTexture = key >= 0;
+                    subset.UsesAlphaAsOpacity = usesAlphaAsOpacity && key >= 0;
+                    targetSubsets.Add(subset);
+                }
+            }
+
+            private void SafeDisposeDeviceResources()
+            {
+                if (deviceContext != null)
+                {
+                    try
+                    {
+                        deviceContext.ClearState();
+                        deviceContext.Flush();
+                    }
+                    catch
+                    {
+                    }
+                }
+
+                if (textureViews != null)
+                {
+                    for (int i = 0; i < textureViews.Length; i++)
+                    {
+                        SharpDX.Utilities.Dispose(ref textureViews[i]);
+                    }
+                }
+
+                if (textureResources != null)
+                {
+                    for (int i = 0; i < textureResources.Length; i++)
+                    {
+                        SharpDX.Utilities.Dispose(ref textureResources[i]);
+                    }
+                }
+
+                SharpDX.Utilities.Dispose(ref blendStateOpaque);
+                SharpDX.Utilities.Dispose(ref blendStateAlpha);
+                SharpDX.Utilities.Dispose(ref depthStateWrite);
+                SharpDX.Utilities.Dispose(ref depthStateRead);
+                SharpDX.Utilities.Dispose(ref rasterStateSolid);
+                SharpDX.Utilities.Dispose(ref rasterStateWireframe);
+                SharpDX.Utilities.Dispose(ref samplerState);
+                SharpDX.Utilities.Dispose(ref constantBuffer);
+                SharpDX.Utilities.Dispose(ref vertexBuffer);
+                SharpDX.Utilities.Dispose(ref indexBuffer);
+                SharpDX.Utilities.Dispose(ref inputLayout);
+                SharpDX.Utilities.Dispose(ref vertexShader);
+                SharpDX.Utilities.Dispose(ref pixelShader);
+                SharpDX.Utilities.Dispose(ref renderTargetView);
+                SharpDX.Utilities.Dispose(ref depthStencilView);
+                SharpDX.Utilities.Dispose(ref depthStencilBuffer);
+                SharpDX.Utilities.Dispose(ref deviceContext);
+                SharpDX.Utilities.Dispose(ref swapChain);
+                SharpDX.Utilities.Dispose(ref device);
+
+                textureViews = new D3D11.ShaderResourceView[0];
+                textureResources = new D3D11.Texture2D[0];
+                dxResourcesInitialized = false;
+            }
+
+            private void OnMouseDown(object sender, MouseEventArgs e)
+            {
+                if (e.Button != MouseButtons.Left)
+                {
+                    return;
+                }
+
+                isDragging = true;
+                lastMouse = e.Location;
+                Cursor = Cursors.SizeAll;
+                Focus();
+            }
+
+            private void OnMouseUp(object sender, MouseEventArgs e)
+            {
+                if (e.Button != MouseButtons.Left)
+                {
+                    return;
+                }
+
+                isDragging = false;
+                Cursor = Cursors.Default;
+            }
+
+            private void OnMouseMove(object sender, MouseEventArgs e)
+            {
+                if (!isDragging)
+                {
+                    return;
+                }
+
+                int dx = e.X - lastMouse.X;
+                int dy = e.Y - lastMouse.Y;
+                float sensitivity = (ModifierKeys & Keys.Shift) == Keys.Shift ? 0.0017f : 0.0036f;
+                yaw += dx * sensitivity;
+                pitch += dy * sensitivity;
+                pitch = Math.Max(-PitchLimit, Math.Min(PitchLimit, pitch));
+                lastMouse = e.Location;
+                Invalidate();
+            }
+
+            private void OnMouseWheel(object sender, MouseEventArgs e)
+            {
+                float factor = e.Delta > 0 ? 1.1f : (1f / 1.1f);
+                zoom *= factor;
+                zoom = Math.Max(0.22f, Math.Min(4.5f, zoom));
+                Invalidate();
+            }
+        }
+
+        private sealed class ModelPreviewGpuViewport : GLControl
+        {
+            private struct TriangleGpuItem
+            {
+                public int I0;
+                public int I1;
+                public int I2;
+                public int TextureIndex;
+                public int ColorArgb;
+                public bool UsesAlphaAsOpacity;
+                public bool Transparent;
+            }
+
+            private readonly Vector3f[] vertices;
+            private readonly Vector2f[] uvs;
+            private readonly int[] indices;
+            private readonly int[] triangleColors;
+            private readonly int[] triangleTextureIndices;
+            private readonly PreviewTextureData[] textures;
+            private readonly Vector3f[] normals;
+            private readonly Vector3f center;
+            private readonly float radius;
+            private readonly float defaultYaw;
+            private readonly float defaultPitch;
+            private readonly List<TriangleGpuItem> opaqueTriangles = new List<TriangleGpuItem>();
+            private readonly List<TriangleGpuItem> cutoutTriangles = new List<TriangleGpuItem>();
+            private readonly List<TriangleGpuItem> transparentTriangles = new List<TriangleGpuItem>();
+            private static readonly object toolkitInitSync = new object();
+            private static bool toolkitInitialized;
+            private const float PitchLimit = 1.35f;
+
+            private float yaw;
+            private float pitch;
+            private float zoom;
+            private bool isDragging;
+            private System.Drawing.Point lastMouse;
+            private bool glResourcesInitialized;
+            private string gpuInitializationError = string.Empty;
+            private int[] textureHandles = new int[0];
+
+            public bool ShowWireframe { get; set; }
+            public HardwareRenderBackend PreferredHardwareBackend { get; set; }
+            public bool IsGpuReady { get { return glResourcesInitialized; } }
+            public string GpuInitializationError { get { return gpuInitializationError ?? string.Empty; } }
+
+            public ModelPreviewGpuViewport(ModelPreviewMeshData meshData)
+                : base()
+            {
+                vertices = meshData != null && meshData.Vertices != null ? meshData.Vertices : new Vector3f[0];
+                uvs = meshData != null && meshData.UVs != null ? meshData.UVs : new Vector2f[0];
+                indices = meshData != null && meshData.Indices != null ? meshData.Indices : new int[0];
+                triangleColors = meshData != null && meshData.TriangleColors != null ? meshData.TriangleColors : new int[0];
+                triangleTextureIndices = meshData != null && meshData.TriangleTextureIndices != null ? meshData.TriangleTextureIndices : new int[0];
+                textures = meshData != null && meshData.Textures != null ? meshData.Textures : new PreviewTextureData[0];
+                normals = ModelPreviewViewport.ComputeVertexNormals(vertices, indices);
+                ModelPreviewViewport.ComputeBounds(vertices, out center, out radius);
+
+                defaultYaw = 0f;
+                defaultPitch = 0f;
+                yaw = defaultYaw;
+                pitch = defaultPitch;
+                zoom = 1.0f;
+                PreferredHardwareBackend = HardwareRenderBackend.DirectX11;
+
+                BackColor = Color.Black;
+                TabStop = false;
+
+                BuildTriangleLists();
+                MouseDown += OnMouseDown;
+                MouseUp += OnMouseUp;
+                MouseMove += OnMouseMove;
+                MouseWheel += OnMouseWheel;
+                MouseDoubleClick += (s, e) => ResetView();
+            }
+
+            public bool TryEnsureGpuReady()
+            {
+                if (glResourcesInitialized)
+                {
+                    return true;
+                }
+                string stage = "start";
+                try
+                {
+                    if (DesignMode)
+                    {
+                        gpuInitializationError = "Design mode";
+                        return false;
+                    }
+
+                    if (Parent == null || !Parent.IsHandleCreated)
+                    {
+                        gpuInitializationError = "OpenGL context pending parent handle";
+                        return false;
+                    }
+
+                    stage = "Toolkit.Init";
+                    EnsureToolkitInitialized();
+
+                    if (!IsHandleCreated || Handle == IntPtr.Zero)
+                    {
+                        stage = "CreateControl";
+                        if (!Visible)
+                        {
+                            Visible = true;
+                        }
+
+                        CreateControl();
+                        IntPtr nativeHandle = Handle; // Force native handle creation path.
+                    }
+
+                    if (!IsHandleCreated || Handle == IntPtr.Zero)
+                    {
+                        throw new InvalidOperationException("OpenGL control handle unavailable.");
+                    }
+
+                    stage = "MakeCurrent";
+                    MakeCurrent();
+                    if (!HasValidContext || Context == null)
+                    {
+                        throw new InvalidOperationException("OpenGL context is invalid after MakeCurrent.");
+                    }
+
+                    stage = "InitializeGlState";
+                    InitializeGlState();
+                    stage = "UploadTextures";
+                    UploadTextures();
+                    glResourcesInitialized = true;
+                    gpuInitializationError = string.Empty;
+                }
+                catch (Exception ex)
+                {
+                    glResourcesInitialized = false;
+                    gpuInitializationError = ex.GetType().Name + ": " + ex.Message + " [" + stage + "]";
+                }
+
+                return glResourcesInitialized;
+            }
+
+            private static void EnsureToolkitInitialized()
+            {
+                if (toolkitInitialized)
+                {
+                    return;
+                }
+
+                lock (toolkitInitSync)
+                {
+                    if (toolkitInitialized)
+                    {
+                        return;
+                    }
+
+                    Toolkit.Init();
+                    toolkitInitialized = true;
+                }
+            }
+
+            public string GetRendererStatusText()
+            {
+                if (!glResourcesInitialized)
+                {
+                    string reason = string.IsNullOrWhiteSpace(gpuInitializationError)
+                        ? "OpenGL not available"
+                        : gpuInitializationError;
+                    return "Renderer: Software (CPU fallback - " + reason + ")";
+                }
+
+                string profile;
+                switch (PreferredHardwareBackend)
+                {
+                    case HardwareRenderBackend.OpenGL:
+                        profile = "OpenGL profile";
+                        break;
+                    default:
+                        profile = "DirectX11 profile";
+                        break;
+                }
+
+                return "Renderer: OpenGL (GPU) - " + profile;
+            }
+
+            public void ResetView()
+            {
+                yaw = defaultYaw;
+                pitch = defaultPitch;
+                zoom = 1.0f;
+                Invalidate();
+            }
+
+            public ViewCameraState GetCameraState()
+            {
+                return new ViewCameraState
+                {
+                    Yaw = yaw,
+                    Pitch = pitch,
+                    Zoom = zoom,
+                    IsValid = true
+                };
+            }
+
+            public void SetCameraState(ViewCameraState state)
+            {
+                if (!state.IsValid)
+                {
+                    return;
+                }
+
+                yaw = state.Yaw;
+                pitch = Math.Max(-PitchLimit, Math.Min(PitchLimit, state.Pitch));
+                zoom = Math.Max(0.22f, Math.Min(4.5f, state.Zoom));
+                Invalidate();
+            }
+
+            protected override void OnHandleDestroyed(EventArgs e)
+            {
+                try
+                {
+                    ReleaseTextures();
+                }
+                catch
+                {
+                }
+
+                base.OnHandleDestroyed(e);
+            }
+
+            protected override void OnPaintBackground(PaintEventArgs pevent)
+            {
+                // Prevent default background flicker; scene clear handles it.
+            }
+
+            protected override void OnPaint(PaintEventArgs e)
+            {
+                if (!TryEnsureGpuReady())
+                {
+                    e.Graphics.Clear(Color.FromArgb(206, 206, 206));
+                    using (Brush brush = new SolidBrush(Color.FromArgb(80, 80, 80)))
+                    {
+                        e.Graphics.DrawString("GPU init failed. Using CPU fallback.", Font, brush, new PointF(16f, 16f));
+                    }
+                    return;
+                }
+
+                RenderScene();
+                SwapBuffers();
+            }
+
+            protected override void OnResize(EventArgs e)
+            {
+                base.OnResize(e);
+                if (glResourcesInitialized)
+                {
+                    MakeCurrent();
+                    GL.Viewport(0, 0, Math.Max(1, Width), Math.Max(1, Height));
+                }
+            }
+
+            private void InitializeGlState()
+            {
+                GL.ClearColor(Color.FromArgb(206, 206, 206));
+                GL.Enable(EnableCap.DepthTest);
+                GL.DepthFunc(DepthFunction.Lequal);
+                // Match CPU renderer behavior (two-sided rasterization). Some game meshes
+                // have mixed winding, and back-face culling creates "hollow" artifacts.
+                GL.Disable(EnableCap.CullFace);
+                GL.Disable(EnableCap.Lighting);
+                GL.Enable(EnableCap.Texture2D);
+                GL.Enable(EnableCap.Blend);
+                GL.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
+                GL.Enable(EnableCap.Normalize);
+                GL.ShadeModel(ShadingModel.Smooth);
+                GL.Viewport(0, 0, Math.Max(1, Width), Math.Max(1, Height));
+            }
+
+            private void UploadTextures()
+            {
+                PreviewTextureData[] activeTextures = GetActiveTextures();
+                if (activeTextures == null || activeTextures.Length == 0)
+                {
+                    textureHandles = new int[0];
+                    return;
+                }
+
+                textureHandles = new int[activeTextures.Length];
+                for (int i = 0; i < activeTextures.Length; i++)
+                {
+                    PreviewTextureData texture = activeTextures[i];
+                    if (texture == null || !texture.IsValid)
+                    {
+                        textureHandles[i] = 0;
+                        continue;
+                    }
+
+                    int handle;
+                    GL.GenTextures(1, out handle);
+                    textureHandles[i] = handle;
+                    GL.BindTexture(TextureTarget.Texture2D, handle);
+                    GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.LinearMipmapLinear);
+                    GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
+                    GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.Repeat);
+                    GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.Repeat);
+
+                    GCHandle handlePin = GCHandle.Alloc(texture.Pixels, GCHandleType.Pinned);
+                    try
+                    {
+                        GL.TexImage2D(
+                            TextureTarget.Texture2D,
+                            0,
+                            PixelInternalFormat.Rgba,
+                            texture.Width,
+                            texture.Height,
+                            0,
+                            OpenTK.Graphics.OpenGL.PixelFormat.Bgra,
+                            PixelType.UnsignedByte,
+                            handlePin.AddrOfPinnedObject());
+
+                        // Improve texture quality in preview when zooming/tilting.
+                        try
+                        {
+                            GL.GenerateMipmap(GenerateMipmapTarget.Texture2D);
+                        }
+                        catch
+                        {
+                            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Linear);
+                        }
+
+                        try
+                        {
+                            const GetPName maxAnisoEnum = (GetPName)0x84FF; // GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT
+                            const TextureParameterName anisoParamEnum = (TextureParameterName)0x84FE; // GL_TEXTURE_MAX_ANISOTROPY_EXT
+                            float[] maxAnisoValues = new float[1];
+                            GL.GetFloat(maxAnisoEnum, maxAnisoValues);
+                            float maxAniso = maxAnisoValues[0];
+                            if (maxAniso > 1f)
+                            {
+                                float desired = Math.Min(8f, maxAniso);
+                                GL.TexParameter(TextureTarget.Texture2D, anisoParamEnum, desired);
+                            }
+                        }
+                        catch
+                        {
+                            // Extension not available; linear/trilinear filtering already set.
+                        }
+                    }
+                    finally
+                    {
+                        handlePin.Free();
+                    }
+                }
+
+                GL.BindTexture(TextureTarget.Texture2D, 0);
+            }
+
+            private void ReleaseTextures()
+            {
+                if (textureHandles == null || textureHandles.Length == 0 || !glResourcesInitialized)
+                {
+                    return;
+                }
+
+                MakeCurrent();
+                for (int i = 0; i < textureHandles.Length; i++)
+                {
+                    int handle = textureHandles[i];
+                    if (handle != 0)
+                    {
+                        GL.DeleteTexture(handle);
+                        textureHandles[i] = 0;
+                    }
+                }
+            }
+
+            private void RenderScene()
+            {
+                int width = Math.Max(1, Width);
+                int height = Math.Max(1, Height);
+                GL.Viewport(0, 0, width, height);
+                GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
+
+                if (vertices.Length == 0 || indices.Length < 3 || radius <= 0.0001f)
+                {
+                    return;
+                }
+
+                float aspect = width / (float)Math.Max(1, height);
+                Matrix4 projection = Matrix4.CreatePerspectiveFieldOfView(
+                    (float)(Math.PI / 4.0),
+                    aspect,
+                    0.05f,
+                    200.0f);
+
+                Matrix4 model = Matrix4.Identity;
+                model *= Matrix4.CreateTranslation(-center.X, -center.Y, -center.Z);
+                model *= Matrix4.CreateScale(1f / radius);
+                model *= Matrix4.CreateRotationY(yaw);
+                model *= Matrix4.CreateRotationX(pitch);
+                float cameraDistance = 3.2f / Math.Max(0.15f, zoom);
+                model *= Matrix4.CreateTranslation(0f, 0f, -cameraDistance);
+
+                GL.MatrixMode(MatrixMode.Projection);
+                GL.LoadMatrix(ref projection);
+                GL.MatrixMode(MatrixMode.Modelview);
+                GL.LoadMatrix(ref model);
+
+                GL.PolygonMode(MaterialFace.FrontAndBack, PolygonMode.Fill);
+
+                // Pass 1: depth pre-pass for opaque fragments (including opaque parts of alpha textures).
+                GL.DepthMask(true);
+                GL.Disable(EnableCap.Blend);
+                GL.Disable(EnableCap.AlphaTest);
+                DrawTriangleList(opaqueTriangles, false, false);
+
+                const float cutoutAlphaThreshold = 0.01f;
+                GL.Enable(EnableCap.AlphaTest);
+                GL.AlphaFunc(AlphaFunction.Greater, cutoutAlphaThreshold);
+                DrawTriangleList(cutoutTriangles, false, false);
+                DrawTriangleList(transparentTriangles, false, false);
+
+                // Pass 2: blended fragments from alpha textures / transparent materials.
+                GL.DepthMask(false);
+                GL.Enable(EnableCap.Blend);
+                GL.AlphaFunc(AlphaFunction.Less, 0.98f);
+                DrawTriangleList(transparentTriangles, true, false);
+
+                GL.Disable(EnableCap.AlphaTest);
+                GL.DepthMask(true);
+                GL.Enable(EnableCap.Blend);
+
+                if (ShowWireframe)
+                {
+                    GL.Disable(EnableCap.Texture2D);
+                    GL.Color4(245f / 255f, 255f / 255f, 255f / 255f, 150f / 255f);
+                    GL.PolygonMode(MaterialFace.FrontAndBack, PolygonMode.Line);
+                    DrawTriangleList(opaqueTriangles, false, false);
+                    DrawTriangleList(cutoutTriangles, false, false);
+                    DrawTriangleList(transparentTriangles, false, false);
+                    GL.PolygonMode(MaterialFace.FrontAndBack, PolygonMode.Fill);
+                    GL.Enable(EnableCap.Texture2D);
+                }
+            }
+
+            private void DrawTriangleList(
+                List<TriangleGpuItem> triangles,
+                bool forceBlend,
+                bool useTriangleTransparency)
+            {
+                if (triangles == null || triangles.Count == 0)
+                {
+                    return;
+                }
+
+                int currentTexture = int.MinValue;
+                bool currentBlend = false;
+                bool currentTexturing = true;
+                for (int i = 0; i < triangles.Count; i++)
+                {
+                    TriangleGpuItem tri = triangles[i];
+                    int textureHandle = GetTextureHandle(tri.TextureIndex);
+                    bool hasTexture = textureHandle != 0;
+                    bool useBlend = forceBlend || (useTriangleTransparency && tri.Transparent);
+                    if (useBlend != currentBlend)
+                    {
+                        if (useBlend)
+                        {
+                            GL.Enable(EnableCap.Blend);
+                        }
+                        else
+                        {
+                            GL.Disable(EnableCap.Blend);
+                        }
+
+                        currentBlend = useBlend;
+                    }
+
+                    if (hasTexture != currentTexturing)
+                    {
+                        if (hasTexture)
+                        {
+                            GL.Enable(EnableCap.Texture2D);
+                        }
+                        else
+                        {
+                            GL.Disable(EnableCap.Texture2D);
+                            GL.BindTexture(TextureTarget.Texture2D, 0);
+                            currentTexture = int.MinValue;
+                        }
+
+                        currentTexturing = hasTexture;
+                    }
+
+                    if (hasTexture && textureHandle != currentTexture)
+                    {
+                        GL.BindTexture(TextureTarget.Texture2D, textureHandle);
+                        currentTexture = textureHandle;
+                    }
+
+                    Color triColor = hasTexture ? Color.FromArgb(255, 255, 255, 255) : Color.FromArgb(tri.ColorArgb);
+                    GL.Begin(PrimitiveType.Triangles);
+                    DrawVertex(tri.I0, triColor);
+                    DrawVertex(tri.I1, triColor);
+                    DrawVertex(tri.I2, triColor);
+                    GL.End();
+                }
+
+                GL.Enable(EnableCap.Texture2D);
+                GL.Enable(EnableCap.Blend);
+            }
+
+            private void DrawVertex(int index, Color color)
+            {
+                if (index < 0 || index >= vertices.Length)
+                {
+                    return;
+                }
+
+                Vector3f normal = index < normals.Length ? normals[index] : Vector3f.Zero;
+                Vector2f uv = index < uvs.Length ? uvs[index] : new Vector2f(0f, 0f);
+                Vector3f vertex = vertices[index];
+
+                GL.Color4(color.R / 255f, color.G / 255f, color.B / 255f, color.A / 255f);
+                GL.Normal3(normal.X, normal.Y, normal.Z);
+                GL.TexCoord2(uv.X, uv.Y);
+                GL.Vertex3(vertex.X, vertex.Y, vertex.Z);
+            }
+
+            private int GetTextureHandle(int textureIndex)
+            {
+                if (textureHandles == null || textureIndex < 0 || textureIndex >= textureHandles.Length)
+                {
+                    return 0;
+                }
+
+                return textureHandles[textureIndex];
+            }
+
+            private void BuildTriangleLists()
+            {
+                opaqueTriangles.Clear();
+                cutoutTriangles.Clear();
+                transparentTriangles.Clear();
+                if (indices == null || indices.Length < 3)
+                {
+                    return;
+                }
+
+                int triangleCount = indices.Length / 3;
+                for (int tri = 0; tri < triangleCount; tri++)
+                {
+                    int baseIndex = tri * 3;
+                    int i0 = indices[baseIndex];
+                    int i1 = indices[baseIndex + 1];
+                    int i2 = indices[baseIndex + 2];
+                    if (i0 < 0 || i1 < 0 || i2 < 0
+                        || i0 >= vertices.Length || i1 >= vertices.Length || i2 >= vertices.Length)
+                    {
+                        continue;
+                    }
+
+                    int textureIndex = tri < triangleTextureIndices.Length ? triangleTextureIndices[tri] : -1;
+                    int colorArgb = tri < triangleColors.Length
+                        ? triangleColors[tri]
+                        : Color.FromArgb(255, 200, 210, 220).ToArgb();
+
+                    bool hasTexture = textureIndex >= 0
+                        && textureIndex < textures.Length
+                        && textures[textureIndex] != null
+                        && textures[textureIndex].IsValid;
+                    bool usesAlphaAsOpacity = hasTexture && textures[textureIndex].UsesAlphaAsOpacity;
+
+                    bool transparent;
+                    if (hasTexture)
+                    {
+                        transparent = textures[textureIndex].HasTransparency;
+                    }
+                    else
+                    {
+                        transparent = ((colorArgb >> 24) & 0xFF) < 245;
+                    }
+
+                    TriangleGpuItem item = new TriangleGpuItem
+                    {
+                        I0 = i0,
+                        I1 = i1,
+                        I2 = i2,
+                        TextureIndex = textureIndex,
+                        ColorArgb = colorArgb,
+                        UsesAlphaAsOpacity = usesAlphaAsOpacity,
+                        Transparent = transparent
+                    };
+
+                    if (transparent)
+                    {
+                        transparentTriangles.Add(item);
+                    }
+                    else if (usesAlphaAsOpacity)
+                    {
+                        cutoutTriangles.Add(item);
+                    }
+                    else
+                    {
+                        opaqueTriangles.Add(item);
+                    }
+                }
+            }
+
+            private void OnMouseDown(object sender, MouseEventArgs e)
+            {
+                if (e.Button != MouseButtons.Left)
+                {
+                    return;
+                }
+
+                isDragging = true;
+                lastMouse = e.Location;
+                Cursor = Cursors.SizeAll;
+                Focus();
+            }
+
+            private void OnMouseUp(object sender, MouseEventArgs e)
+            {
+                if (e.Button != MouseButtons.Left)
+                {
+                    return;
+                }
+
+                isDragging = false;
+                Cursor = Cursors.Default;
+            }
+
+            private void OnMouseMove(object sender, MouseEventArgs e)
+            {
+                if (!isDragging)
+                {
+                    return;
+                }
+
+                int dx = e.X - lastMouse.X;
+                int dy = e.Y - lastMouse.Y;
+                float sensitivity = (ModifierKeys & Keys.Shift) == Keys.Shift ? 0.0017f : 0.0036f;
+                yaw += dx * sensitivity;
+                pitch += dy * sensitivity;
+                pitch = Math.Max(-PitchLimit, Math.Min(PitchLimit, pitch));
+                lastMouse = e.Location;
+                Invalidate();
+            }
+
+            private void OnMouseWheel(object sender, MouseEventArgs e)
+            {
+                float factor = e.Delta > 0 ? 1.1f : (1f / 1.1f);
+                zoom *= factor;
+                zoom = Math.Max(0.22f, Math.Min(4.5f, zoom));
+                Invalidate();
+            }
+
+            private PreviewTextureData[] GetActiveTextures()
+            {
+                return textures;
+            }
         }
 
         private sealed class ModelPreviewViewport : Control
@@ -324,7 +2651,7 @@ namespace FWEledit
             private float pitch;
             private float zoom;
             private bool isDragging;
-            private Point lastMouse;
+            private System.Drawing.Point lastMouse;
             private bool useHardwareRendering;
             private HardwareRenderBackend preferredHardwareBackend;
 
@@ -346,11 +2673,6 @@ namespace FWEledit
                 if (!useHardwareRendering)
                 {
                     return "Renderer: Software (CPU)";
-                }
-
-                if (preferredHardwareBackend == HardwareRenderBackend.Vulkan)
-                {
-                    return "Renderer: Vulkan (CPU fallback in this build)";
                 }
 
                 if (preferredHardwareBackend == HardwareRenderBackend.OpenGL)
@@ -377,7 +2699,6 @@ namespace FWEledit
                 overlayTextureIndex = FindAttachmentTextureIndex(textures);
                 baseNormals = ComputeVertexNormals(vertices, indices);
                 ComputeBounds(vertices, out center, out radius);
-                ComputeExtents(vertices, out float extentX, out float extentY, out float extentZ);
 
                 SetStyle(ControlStyles.AllPaintingInWmPaint
                     | ControlStyles.OptimizedDoubleBuffer
@@ -385,9 +2706,8 @@ namespace FWEledit
                     | ControlStyles.ResizeRedraw, true);
 
                 BackColor = Color.FromArgb(206, 206, 206);
-                // Start from the front-facing side (previously opened from the back).
-                defaultYaw = (float)(Math.PI + 0.45f);
-                defaultPitch = extentY > (Math.Max(extentX, extentZ) * 1.12f) ? -0.55f : 0.08f;
+                defaultYaw = 0f;
+                defaultPitch = 0f;
                 yaw = defaultYaw;
                 pitch = defaultPitch;
                 zoom = 1.0f;
@@ -407,6 +2727,30 @@ namespace FWEledit
                 yaw = defaultYaw;
                 pitch = defaultPitch;
                 zoom = 1.0f;
+                Invalidate();
+            }
+
+            public ViewCameraState GetCameraState()
+            {
+                return new ViewCameraState
+                {
+                    Yaw = yaw,
+                    Pitch = pitch,
+                    Zoom = zoom,
+                    IsValid = true
+                };
+            }
+
+            public void SetCameraState(ViewCameraState state)
+            {
+                if (!state.IsValid)
+                {
+                    return;
+                }
+
+                yaw = state.Yaw;
+                pitch = Math.Max(-PitchLimit, Math.Min(PitchLimit, state.Pitch));
+                zoom = Math.Max(0.22f, Math.Min(4.5f, state.Zoom));
                 Invalidate();
             }
 
@@ -818,8 +3162,6 @@ namespace FWEledit
 
                 switch (preferredHardwareBackend)
                 {
-                    case HardwareRenderBackend.Vulkan:
-                        return InterpolationMode.HighQualityBilinear;
                     case HardwareRenderBackend.OpenGL:
                         return InterpolationMode.Bilinear;
                     default:
@@ -836,8 +3178,6 @@ namespace FWEledit
 
                 switch (preferredHardwareBackend)
                 {
-                    case HardwareRenderBackend.Vulkan:
-                        return 1.08f;
                     case HardwareRenderBackend.OpenGL:
                         return 1.03f;
                     default:
@@ -862,32 +3202,26 @@ namespace FWEledit
                 int triCount = Math.Max(0, indices.Length / 3);
                 if (useHardwareRendering)
                 {
-                    // Backends are mapped to software render profiles in this build.
+                    int pixelCount = width * height;
                     switch (preferredHardwareBackend)
                     {
                         case HardwareRenderBackend.DirectX11:
-                            // DX11 profile: prioritize smooth interaction.
-                            if (triCount > 7000 || (width * height) > 1600000)
+                            // Prioritize full-resolution interaction and only downscale very heavy scenes.
+                            if (triCount > 24000 || pixelCount > 5200000)
                             {
-                                return 4;
+                                return 2;
                             }
-                            return 3;
-                        case HardwareRenderBackend.Vulkan:
-                            // Vulkan profile: prioritize image quality while dragging.
-                            if (triCount > 9000 || (width * height) > 2200000)
-                            {
-                                return 3;
-                            }
-                            return 2;
+
+                            return 1;
                         case HardwareRenderBackend.OpenGL:
-                            // OpenGL profile: balanced quality/performance.
-                            if (triCount > 8000 || (width * height) > 1900000)
+                            if (triCount > 26000 || pixelCount > 5600000)
                             {
-                                return 3;
+                                return 2;
                             }
-                            return 2;
+
+                            return 1;
                         default:
-                            return 2;
+                            return 1;
                     }
                 }
 
@@ -941,6 +3275,7 @@ namespace FWEledit
                 Vector2f uv2 = hasUv ? uvs[tri.I2] : new Vector2f(0f, 0f);
                 PreviewTextureData texture = null;
                 bool hasTexture = hasUv && TryGetTexture(tri.TextureIndex, out texture);
+                bool textureUsesAlphaAsOpacity = hasTexture && texture.UsesAlphaAsOpacity;
                 bool bilinearTextureSampling = UseBilinearTextureSampling();
 
                 for (int py = minY; py <= maxY; py++)
@@ -982,12 +3317,19 @@ namespace FWEledit
                             float v = ((w0 * uv0.Y * invD0) + (w1 * uv1.Y * invD1) + (w2 * uv2.Y * invD2)) / invDepth;
                             int textureArgb = SampleTextureArgb(texture, u, v, bilinearTextureSampling);
                             int textureAlpha = (textureArgb >> 24) & 0xFF;
-                            if (textureAlpha <= 2)
+                            if (textureUsesAlphaAsOpacity && textureAlpha <= 2)
                             {
                                 continue;
                             }
 
-                            colorArgb = textureArgb;
+                            if (textureUsesAlphaAsOpacity)
+                            {
+                                colorArgb = textureArgb;
+                            }
+                            else
+                            {
+                                colorArgb = unchecked((int)0xFF000000) | (textureArgb & 0x00FFFFFF);
+                            }
                         }
                         else
                         {
@@ -1042,12 +3384,13 @@ namespace FWEledit
             private bool TryGetTexture(int textureIndex, out PreviewTextureData texture)
             {
                 texture = null;
-                if (textureIndex < 0 || textureIndex >= textures.Length)
+                PreviewTextureData[] textureSet = GetActiveTextures();
+                if (textureSet == null || textureIndex < 0 || textureIndex >= textureSet.Length)
                 {
                     return false;
                 }
 
-                PreviewTextureData found = textures[textureIndex];
+                PreviewTextureData found = textureSet[textureIndex];
                 if (found == null || !found.IsValid)
                 {
                     return false;
@@ -1060,7 +3403,8 @@ namespace FWEledit
             private bool TryGetOverlayTexture(int baseTextureIndex, out PreviewTextureData texture)
             {
                 texture = null;
-                if (overlayTextureIndex < 0 || overlayTextureIndex >= textures.Length)
+                PreviewTextureData[] textureSet = GetActiveTextures();
+                if (textureSet == null || overlayTextureIndex < 0 || overlayTextureIndex >= textureSet.Length)
                 {
                     return false;
                 }
@@ -1069,7 +3413,7 @@ namespace FWEledit
                     return false;
                 }
 
-                PreviewTextureData found = textures[overlayTextureIndex];
+                PreviewTextureData found = textureSet[overlayTextureIndex];
                 if (found == null || !found.IsValid)
                 {
                     return false;
@@ -1163,9 +3507,9 @@ namespace FWEledit
 
             private static Bitmap CreateFrameBitmap(int width, int height, int[] colorBuffer)
             {
-                Bitmap bitmap = new Bitmap(width, height, PixelFormat.Format32bppArgb);
+                Bitmap bitmap = new Bitmap(width, height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
                 Rectangle rect = new Rectangle(0, 0, width, height);
-                BitmapData data = bitmap.LockBits(rect, ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
+                BitmapData data = bitmap.LockBits(rect, ImageLockMode.WriteOnly, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
                 try
                 {
                     int strideInts = data.Stride / 4;
@@ -1409,27 +3753,27 @@ namespace FWEledit
                 float g = ((argb >> 8) & 0xFF) / 255f;
                 float b = (argb & 0xFF) / 255f;
 
-                // Slight darkening to recover deeper blacks and avoid washed look.
-                r = (float)Math.Pow(Clamp(r, 0f, 1f), 1.05f);
-                g = (float)Math.Pow(Clamp(g, 0f, 1f), 1.05f);
-                b = (float)Math.Pow(Clamp(b, 0f, 1f), 1.05f);
+                // Keep a neutral gamma to preserve detail in dark regions.
+                r = (float)Math.Pow(Clamp(r, 0f, 1f), 0.98f);
+                g = (float)Math.Pow(Clamp(g, 0f, 1f), 0.98f);
+                b = (float)Math.Pow(Clamp(b, 0f, 1f), 0.98f);
 
                 float luma = (0.2126f * r) + (0.7152f * g) + (0.0722f * b);
-                const float saturation = 1.20f;
+                const float saturation = 1.12f;
                 r = luma + ((r - luma) * saturation);
                 g = luma + ((g - luma) * saturation);
                 b = luma + ((b - luma) * saturation);
 
-                const float contrast = 1.15f;
+                const float contrast = 1.06f;
                 r = ((r - 0.5f) * contrast) + 0.5f;
                 g = ((g - 0.5f) * contrast) + 0.5f;
                 b = ((b - 0.5f) * contrast) + 0.5f;
 
-                // Gentle black-point compression for stronger deep tones.
-                const float blackLift = 0.018f;
-                r = Clamp((r - blackLift) / (1f - blackLift), 0f, 1f);
-                g = Clamp((g - blackLift) / (1f - blackLift), 0f, 1f);
-                b = Clamp((b - blackLift) / (1f - blackLift), 0f, 1f);
+                // Small shadow lift to avoid crushed blacks in preview-only shading.
+                const float shadowLift = 0.022f;
+                r = Clamp(r + shadowLift, 0f, 1f);
+                g = Clamp(g + shadowLift, 0f, 1f);
+                b = Clamp(b + shadowLift, 0f, 1f);
 
                 int ri = Clamp((int)(Clamp(r, 0f, 1f) * 255f), 0, 255);
                 int gi = Clamp((int)(Clamp(g, 0f, 1f) * 255f), 0, 255);
@@ -1575,7 +3919,12 @@ namespace FWEledit
                 Invalidate();
             }
 
-            private static void ComputeBounds(Vector3f[] input, out Vector3f center, out float radius)
+            private PreviewTextureData[] GetActiveTextures()
+            {
+                return textures;
+            }
+
+            internal static void ComputeBounds(Vector3f[] input, out Vector3f center, out float radius)
             {
                 center = Vector3f.Zero;
                 radius = 1f;
@@ -1606,7 +3955,7 @@ namespace FWEledit
                 radius = Math.Max(0.0001f, Math.Max(size.X, Math.Max(size.Y, size.Z)) * 0.5f);
             }
 
-            private static void ComputeExtents(Vector3f[] input, out float extentX, out float extentY, out float extentZ)
+            internal static void ComputeExtents(Vector3f[] input, out float extentX, out float extentY, out float extentZ)
             {
                 extentX = 1f;
                 extentY = 1f;
@@ -1634,7 +3983,7 @@ namespace FWEledit
                 extentZ = Math.Max(0.0001f, max.Z - min.Z);
             }
 
-            private static Vector3f[] ComputeVertexNormals(Vector3f[] inputVertices, int[] inputIndices)
+            internal static Vector3f[] ComputeVertexNormals(Vector3f[] inputVertices, int[] inputIndices)
             {
                 if (inputVertices == null || inputVertices.Length == 0)
                 {
@@ -1708,3 +4057,4 @@ namespace FWEledit
         }
     }
 }
+
