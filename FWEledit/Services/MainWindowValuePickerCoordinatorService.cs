@@ -18,6 +18,7 @@ namespace FWEledit
             ModelPackageNotificationService packageNotificationService,
             DialogService dialogService,
             PathIdResolutionService pathIdResolutionService,
+            AssetManager assetManager,
             IWin32Window owner)
         {
             if (mainWindowValueRowPickerUiService == null || sessionService == null)
@@ -38,6 +39,7 @@ namespace FWEledit
                 packageNotificationService,
                 dialogService,
                 pathIdResolutionService,
+                assetManager,
                 owner);
         }
 

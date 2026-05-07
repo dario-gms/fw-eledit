@@ -4,6 +4,8 @@ using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 
 namespace FWEledit
@@ -15,17 +17,31 @@ namespace FWEledit
         private readonly ComboBox folderFilter;
         private readonly TextBox searchBox;
         private readonly CheckBox onlyUnusedCheck;
+        private readonly CheckBox onlyGfxCheck;
         private readonly Button exportCsvButton;
+        private readonly Button previewButton;
         private readonly DataGridView grid;
         private readonly Label statusLabel;
         private readonly System.Windows.Forms.Timer filterTimer;
+        private readonly System.Windows.Forms.Timer autoPreviewTimer;
+        private readonly AssetManager previewAssetManager;
+        private readonly ModelPreviewService modelPreviewService;
+        private bool previewWindowOpened;
+        private int previewLoadInProgress;
+        private int previewPendingAuto;
+        private int lastPreviewPathId;
+        private int previewSelectionVersion;
         private bool isInitializing;
         public int SelectedPathId { get; private set; }
+        public string SelectedMappedPath { get; private set; }
 
         public ModelPickerWindow(List<ModelPickerEntry> entries, int currentPathId)
         {
             allEntries = entries ?? new List<ModelPickerEntry>();
             SelectedPathId = currentPathId;
+            SelectedMappedPath = string.Empty;
+            previewAssetManager = new AssetManager();
+            modelPreviewService = new ModelPreviewService();
             isInitializing = true;
 
             Text = "Choice Model";
@@ -79,11 +95,20 @@ namespace FWEledit
             onlyUnusedCheck.CheckedChanged += (s, e) => ScheduleFilterApply();
             top.Controls.Add(onlyUnusedCheck);
 
+            onlyGfxCheck = new CheckBox();
+            onlyGfxCheck.Text = "Only .gfx";
+            onlyGfxCheck.AutoSize = true;
+            onlyGfxCheck.Left = onlyUnusedCheck.Right + 12;
+            onlyGfxCheck.Top = 10;
+            onlyGfxCheck.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            onlyGfxCheck.CheckedChanged += (s, e) => ScheduleFilterApply();
+            top.Controls.Add(onlyGfxCheck);
+
             exportCsvButton = new Button();
             exportCsvButton.Text = "Export CSV";
             exportCsvButton.AutoSize = true;
             exportCsvButton.Height = 24;
-            exportCsvButton.Left = onlyUnusedCheck.Right + 12;
+            exportCsvButton.Left = onlyGfxCheck.Right + 12;
             exportCsvButton.Top = 8;
             exportCsvButton.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             exportCsvButton.Click += (s, e) => ExportCsv();
@@ -110,12 +135,21 @@ namespace FWEledit
             grid.EnableHeadersVisualStyles = false;
             grid.RowTemplate.Height = 24;
             grid.DoubleClick += (s, e) => ConfirmSelection();
+            grid.SelectionChanged += (s, e) => ScheduleAutoPreview();
             grid.KeyDown += (s, e) =>
             {
                 if (e.KeyCode == Keys.Enter)
                 {
                     e.Handled = true;
                     ConfirmSelection();
+                    return;
+                }
+
+                if (e.KeyCode == Keys.Space)
+                {
+                    e.Handled = true;
+                    e.SuppressKeyPress = true;
+                    PreviewSelectionAsync(true);
                 }
             };
 
@@ -152,6 +186,13 @@ namespace FWEledit
             cancelButton.Click += (s, e) => { DialogResult = DialogResult.Cancel; Close(); };
             bottom.Controls.Add(cancelButton);
 
+            previewButton = new Button();
+            previewButton.Text = "Preview [Space]";
+            previewButton.Dock = DockStyle.Right;
+            previewButton.Width = 150;
+            previewButton.Click += (s, e) => PreviewSelectionAsync(true);
+            bottom.Controls.Add(previewButton);
+
             Button okButton = new Button();
             okButton.Text = "OK [Enter]";
             okButton.Dock = DockStyle.Right;
@@ -169,6 +210,14 @@ namespace FWEledit
             {
                 filterTimer.Stop();
                 ApplyFilter();
+            };
+
+            autoPreviewTimer = new System.Windows.Forms.Timer();
+            autoPreviewTimer.Interval = 280;
+            autoPreviewTimer.Tick += (s, e) =>
+            {
+                autoPreviewTimer.Stop();
+                PreviewSelectionAsync(false);
             };
 
             BuildPackageFilter();
@@ -316,6 +365,7 @@ namespace FWEledit
                     usesText,
                     e.PathId.ToString()
                 );
+                grid.Rows[rowIndex].Tag = e;
 
                 if (e.Uses <= 0)
                 {
@@ -325,10 +375,21 @@ namespace FWEledit
                 {
                     grid.Rows[rowIndex].Cells[5].Style.ForeColor = Color.Cyan;
                 }
+
+                if (e.PathId <= 0)
+                {
+                    grid.Rows[rowIndex].Cells[6].Style.ForeColor = Color.Orange;
+                }
             }
             grid.ResumeLayout();
 
             statusLabel.Text = filtered.Count.ToString() + " entries";
+            if (grid.Rows.Count > 0 && grid.CurrentCell == null)
+            {
+                grid.CurrentCell = grid.Rows[0].Cells[0];
+                grid.Rows[0].Selected = true;
+            }
+            ScheduleAutoPreview();
         }
 
         private List<ModelPickerEntry> GetFilteredEntries()
@@ -341,12 +402,17 @@ namespace FWEledit
             string folder = Convert.ToString(folderFilter.SelectedItem);
             string term = (searchBox.Text ?? string.Empty).Trim().ToLowerInvariant();
             bool keepOnlyUnused = onlyUnusedCheck.Checked;
+            bool onlyGfx = onlyGfxCheck.Checked;
 
             IEnumerable<ModelPickerEntry> query = allEntries;
             query = query.Where(x => string.Equals(x.Package, package, StringComparison.OrdinalIgnoreCase));
             if (!string.IsNullOrWhiteSpace(folder))
             {
                 query = query.Where(x => string.Equals(ExtractTopFolder(x.RelativePath, package), folder, StringComparison.OrdinalIgnoreCase));
+            }
+            if (onlyGfx)
+            {
+                query = query.Where(x => string.Equals(Path.GetExtension(x.RelativePath ?? string.Empty), ".gfx", StringComparison.OrdinalIgnoreCase));
             }
             if (keepOnlyUnused)
             {
@@ -500,14 +566,234 @@ namespace FWEledit
             {
                 return;
             }
-            int pathId;
-            if (!int.TryParse(Convert.ToString(grid.CurrentRow.Cells[6].Value), out pathId) || pathId <= 0)
+
+            ModelPickerEntry selected = grid.CurrentRow.Tag as ModelPickerEntry;
+            if (selected == null)
             {
                 return;
             }
+
+            int pathId;
+            if (!int.TryParse(Convert.ToString(grid.CurrentRow.Cells[6].Value), out pathId))
+            {
+                pathId = 0;
+            }
+
+            string mappedPath = selected.MappedPath;
+            if (string.IsNullOrWhiteSpace(mappedPath))
+            {
+                mappedPath = BuildMappedPath(selected.Package, selected.RelativePath);
+            }
+
+            if (pathId <= 0 && string.IsNullOrWhiteSpace(mappedPath))
+            {
+                MessageBox.Show(
+                    "This entry has no valid PathID or mapped path, so it cannot be applied to the field.",
+                    "Choice Model",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+                return;
+            }
+
             SelectedPathId = pathId;
+            SelectedMappedPath = mappedPath ?? string.Empty;
             DialogResult = DialogResult.OK;
             Close();
+        }
+
+        private async void PreviewSelectionAsync()
+        {
+            PreviewSelectionAsync(true);
+        }
+
+        private void ScheduleAutoPreview()
+        {
+            if (isInitializing)
+            {
+                return;
+            }
+            if (grid == null || grid.CurrentRow == null)
+            {
+                return;
+            }
+
+            autoPreviewTimer.Stop();
+            autoPreviewTimer.Start();
+        }
+
+        private async void PreviewSelectionAsync(bool force)
+        {
+            if (grid.CurrentRow == null || modelPreviewService == null || previewAssetManager == null)
+            {
+                return;
+            }
+            if (!force && !previewWindowOpened)
+            {
+                return;
+            }
+
+            if (Interlocked.CompareExchange(ref previewLoadInProgress, 1, 0) != 0)
+            {
+                if (!force)
+                {
+                    Interlocked.Exchange(ref previewPendingAuto, 1);
+                }
+                return;
+            }
+
+            int requestVersion = Interlocked.Increment(ref previewSelectionVersion);
+            try
+            {
+                UseWaitCursor = false;
+                Cursor.Current = Cursors.Default;
+                Control focusedBeforeUpdate = FindFocusedDescendant(this);
+                if (!(grid.CurrentRow.Tag is ModelPickerEntry selected) || selected == null)
+                {
+                    return;
+                }
+                if (!force && selected.PathId > 0 && selected.PathId == lastPreviewPathId)
+                {
+                    return;
+                }
+
+                string mappedPath = selected.MappedPath;
+                if (string.IsNullOrWhiteSpace(mappedPath))
+                {
+                    mappedPath = BuildMappedPath(selected.Package, selected.RelativePath);
+                }
+                if (string.IsNullOrWhiteSpace(mappedPath))
+                {
+                    MessageBox.Show("Invalid model path.", "Choice Model", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
+
+                ModelPreviewMeshData meshData = null;
+                string error = string.Empty;
+                bool ok = await Task.Run(delegate
+                {
+                    return modelPreviewService.TryBuildPreviewMeshDataFromMappedPath(
+                        previewAssetManager,
+                        mappedPath,
+                        out meshData,
+                        out error);
+                });
+
+                if (requestVersion != previewSelectionVersion)
+                {
+                    return;
+                }
+
+                if (!ok)
+                {
+                    if (!string.IsNullOrWhiteSpace(error))
+                    {
+                        MessageBox.Show(error, "Choice Model", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    }
+                    return;
+                }
+
+                if (force)
+                {
+                    modelPreviewService.ShowPreviewWindow(meshData, true, Handle);
+                    previewWindowOpened = true;
+                }
+                else
+                {
+                    if (!modelPreviewService.TryUpdateOpenPreviewWindow(meshData))
+                    {
+                        previewWindowOpened = false;
+                        return;
+                    }
+                }
+                if (selected.PathId > 0)
+                {
+                    lastPreviewPathId = selected.PathId;
+                }
+
+                if (!IsDisposed && IsHandleCreated && Visible)
+                {
+                    BeginInvoke((Action)delegate
+                    {
+                        if (IsDisposed || !Visible)
+                        {
+                            return;
+                        }
+
+                        if (focusedBeforeUpdate != null
+                            && !focusedBeforeUpdate.IsDisposed
+                            && focusedBeforeUpdate.CanFocus)
+                        {
+                            focusedBeforeUpdate.Focus();
+                        }
+                        else if (grid != null && grid.CanFocus)
+                        {
+                            grid.Focus();
+                        }
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("MODEL PREVIEW ERROR!\n" + ex.Message, "Choice Model", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                UseWaitCursor = false;
+                Cursor.Current = Cursors.Default;
+                Interlocked.Exchange(ref previewLoadInProgress, 0);
+                if (Interlocked.Exchange(ref previewPendingAuto, 0) == 1)
+                {
+                    ScheduleAutoPreview();
+                }
+            }
+        }
+
+        private static Control FindFocusedDescendant(Control root)
+        {
+            if (root == null)
+            {
+                return null;
+            }
+
+            if (root.Focused)
+            {
+                return root;
+            }
+
+            Control container = root;
+            while (container != null)
+            {
+                ContainerControl cc = container as ContainerControl;
+                if (cc == null || cc.ActiveControl == null)
+                {
+                    break;
+                }
+
+                Control active = cc.ActiveControl;
+                if (active.Focused)
+                {
+                    return active;
+                }
+
+                container = active;
+            }
+
+            return root.ContainsFocus ? root : null;
+        }
+
+        private static string BuildMappedPath(string package, string relativePath)
+        {
+            string safePackage = (package ?? string.Empty).Trim();
+            string safeRelative = (relativePath ?? string.Empty).Replace('/', '\\').Trim().TrimStart('\\');
+            if (string.IsNullOrWhiteSpace(safeRelative))
+            {
+                return string.Empty;
+            }
+            if (string.IsNullOrWhiteSpace(safePackage))
+            {
+                return safeRelative;
+            }
+            return safePackage + "\\" + safeRelative;
         }
     }
 }

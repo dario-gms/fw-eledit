@@ -63,7 +63,7 @@ namespace FWEledit
                 return string.Empty;
             }
 
-            int[] candidates = new int[] { pathId + 1, pathId, pathId - 1 };
+            int[] candidates = new int[] { pathId, pathId + 1, pathId - 1 };
             for (int i = 0; i < candidates.Length; i++)
             {
                 int candidate = candidates[i];

@@ -27,6 +27,7 @@ namespace FWEledit
         private static PropertyInfo pfimBitsPerPixelProperty;
         private static PropertyInfo pfimDataProperty;
         private static MethodInfo pfimDisposeMethod;
+        private const int MaxGfxReferenceDepth = 6;
         private static readonly float[] IdentitySkinMatrix = new float[]
         {
             1f, 0f, 0f, 0f,
@@ -96,6 +97,7 @@ namespace FWEledit
                     unchecked((int)0xFFFFFFFF),
                     0,
                     new float[0],
+                    new string[0],
                     out previewData,
                     out error);
             }
@@ -159,6 +161,7 @@ namespace FWEledit
                     unchecked((int)0xFFFFFFFF),
                     0,
                     new float[0],
+                    new string[0],
                     out previewData,
                     out error);
             }
@@ -187,6 +190,27 @@ namespace FWEledit
             string skinModelPath;
             if (!TryExtractFieldValue(ecmText, "SkinModelPath", out skinModelPath))
             {
+                if (string.Equals(modelExtension, ".gfx", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (TryBuildPreviewDataFromGfxReferences(
+                        assetManager,
+                        mappedModelPath,
+                        package,
+                        relativeEcm,
+                        ecmText,
+                        ecmBytes,
+                        out previewData,
+                        out error))
+                    {
+                        return true;
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(error))
+                    {
+                        return false;
+                    }
+                }
+
                 error = "SkinModelPath not found in .ecm file.";
                 return false;
             }
@@ -271,7 +295,7 @@ namespace FWEledit
                 return false;
             }
 
-            return TryBuildPreviewDataFromResolvedSki(
+            if (!TryBuildPreviewDataFromResolvedSki(
                 assetManager,
                 mappedModelPath,
                 package,
@@ -290,8 +314,34 @@ namespace FWEledit
                 orgColorArgb,
                 outerNum,
                 shaderFloats,
-                out previewData,
-                out error);
+                addiSkinPaths,
+                out ModelPreviewMeshData basePreview,
+                out error))
+            {
+                return false;
+            }
+
+            previewData = basePreview;
+
+            if (ShouldTryEcmEffectMerge(basePreview))
+            {
+                if (TryBuildPreviewDataFromEcmEffectReferences(
+                        assetManager,
+                        mappedModelPath,
+                        package,
+                        relativeEcm,
+                        ecmText,
+                        ecmBytes,
+                        basePreview,
+                        out ModelPreviewMeshData enhancedPreview,
+                        out string _))
+                {
+                    previewData = enhancedPreview;
+                }
+            }
+
+            error = string.Empty;
+            return true;
         }
 
         private static void SplitPackagePath(string mappedPath, out string package, out string relative)
@@ -470,48 +520,167 @@ namespace FWEledit
             bytes = null;
             error = string.Empty;
 
-            string mappedPath = BuildMappedPath(package, relativePath);
-            string absolute = assetManager.ResolveResourcePathNoExtract(mappedPath);
-            if (!string.IsNullOrWhiteSpace(absolute) && File.Exists(absolute))
+            string normalizedRelative = NormalizeRelativePath(relativePath);
+            if (string.IsNullOrWhiteSpace(normalizedRelative))
             {
-                try
+                error = "Invalid package entry path.";
+                return false;
+            }
+
+            List<KeyValuePair<string, string>> readTargets = BuildPckReadTargets(package, normalizedRelative);
+            string firstError = string.Empty;
+            for (int i = 0; i < readTargets.Count; i++)
+            {
+                string probePackage = readTargets[i].Key ?? string.Empty;
+                string probeRelative = readTargets[i].Value ?? string.Empty;
+                if (string.IsNullOrWhiteSpace(probePackage) || string.IsNullOrWhiteSpace(probeRelative))
                 {
-                    bytes = File.ReadAllBytes(absolute);
+                    continue;
+                }
+
+                if (pckEntryReaderService.TryReadFile(probePackage, probeRelative, out bytes, out error))
+                {
                     return true;
                 }
-                catch (Exception ex)
+
+                if (string.IsNullOrWhiteSpace(firstError) && !string.IsNullOrWhiteSpace(error))
                 {
-                    error = "Failed to read resource file: " + ex.Message;
-                    return false;
+                    firstError = error;
                 }
             }
 
-            string absoluteRelative = assetManager.ResolveResourcePathNoExtract(relativePath);
-            if (!string.IsNullOrWhiteSpace(absoluteRelative) && File.Exists(absoluteRelative))
-            {
-                try
-                {
-                    bytes = File.ReadAllBytes(absoluteRelative);
-                    return true;
-                }
-                catch (Exception ex)
-                {
-                    error = "Failed to read resource file: " + ex.Message;
-                    return false;
-                }
-            }
-
-            if (pckEntryReaderService.TryReadFile(package, relativePath, out bytes, out error))
-            {
-                return true;
-            }
-
-            if (string.IsNullOrWhiteSpace(error))
-            {
-                error = "Resource file not found: " + mappedPath;
-            }
-
+            error = string.IsNullOrWhiteSpace(firstError)
+                ? "Entry not found."
+                : firstError;
             return false;
+        }
+
+        private static List<KeyValuePair<string, string>> BuildPckReadTargets(string preferredPackage, string relativePath)
+        {
+            List<KeyValuePair<string, string>> targets = new List<KeyValuePair<string, string>>(32);
+            HashSet<string> seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            string normalizedRelative = NormalizeRelativePath(relativePath);
+            if (string.IsNullOrWhiteSpace(normalizedRelative))
+            {
+                return targets;
+            }
+
+            string splitPackage = string.Empty;
+            string splitRelative = string.Empty;
+            if (!ModelPickerService.TrySplitModelPackagePath(normalizedRelative, out splitPackage, out splitRelative))
+            {
+                splitPackage = string.Empty;
+                splitRelative = normalizedRelative;
+            }
+
+            List<string> packageCandidates = new List<string>(10);
+            HashSet<string> seenPackages = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            AddUniquePackage(packageCandidates, seenPackages, preferredPackage);
+            AddUniquePackage(packageCandidates, seenPackages, splitPackage);
+            AddUniquePackage(packageCandidates, seenPackages, "models");
+            AddUniquePackage(packageCandidates, seenPackages, "gfx");
+            AddUniquePackage(packageCandidates, seenPackages, "configs");
+            AddUniquePackage(packageCandidates, seenPackages, "grasses");
+            AddUniquePackage(packageCandidates, seenPackages, "litmodels");
+            AddUniquePackage(packageCandidates, seenPackages, "moxing");
+            AddUniquePackage(packageCandidates, seenPackages, "surfaces");
+            AddUniquePackage(packageCandidates, seenPackages, string.Empty);
+
+            List<string> relativeCandidates = new List<string>(8);
+            HashSet<string> seenRelatives = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            AddUniquePathCandidate(relativeCandidates, seenRelatives, normalizedRelative);
+            AddUniquePathCandidate(relativeCandidates, seenRelatives, splitRelative);
+
+            bool hasConfigsPrefix = normalizedRelative.StartsWith("configs\\", StringComparison.OrdinalIgnoreCase);
+            bool hasGfxPrefix = normalizedRelative.StartsWith("gfx\\", StringComparison.OrdinalIgnoreCase);
+            if (hasConfigsPrefix)
+            {
+                AddUniquePathCandidate(relativeCandidates, seenRelatives, NormalizeRelativePath(normalizedRelative.Substring("configs\\".Length)));
+            }
+            if (hasGfxPrefix)
+            {
+                AddUniquePathCandidate(relativeCandidates, seenRelatives, NormalizeRelativePath(normalizedRelative.Substring("gfx\\".Length)));
+            }
+
+            // Some gfx descriptors reference "folder\\file.smd", while the actual PCK entry
+            // is stored as "models\\folder\\file.smd" (inside gfx.pck). Probe prefixed forms too.
+            int baseRelativeCount = relativeCandidates.Count;
+            for (int i = 0; i < baseRelativeCount; i++)
+            {
+                string rel = NormalizeRelativePath(relativeCandidates[i]);
+                if (string.IsNullOrWhiteSpace(rel))
+                {
+                    continue;
+                }
+
+                if (!rel.StartsWith("models\\", StringComparison.OrdinalIgnoreCase))
+                {
+                    AddUniquePathCandidate(relativeCandidates, seenRelatives, "models\\" + rel);
+                }
+                if (!rel.StartsWith("gfx\\", StringComparison.OrdinalIgnoreCase))
+                {
+                    AddUniquePathCandidate(relativeCandidates, seenRelatives, "gfx\\" + rel);
+                }
+                if (!rel.StartsWith("configs\\", StringComparison.OrdinalIgnoreCase))
+                {
+                    AddUniquePathCandidate(relativeCandidates, seenRelatives, "configs\\" + rel);
+                }
+            }
+
+            for (int p = 0; p < packageCandidates.Count; p++)
+            {
+                string pkg = (packageCandidates[p] ?? string.Empty).Trim();
+                if (string.IsNullOrWhiteSpace(pkg))
+                {
+                    continue;
+                }
+
+                for (int r = 0; r < relativeCandidates.Count; r++)
+                {
+                    string rel = NormalizeRelativePath(relativeCandidates[r]);
+                    if (string.IsNullOrWhiteSpace(rel))
+                    {
+                        continue;
+                    }
+
+                    AddReadTarget(targets, seen, pkg, rel);
+
+                    string pkgPrefix = pkg + "\\";
+                    if (rel.StartsWith(pkgPrefix, StringComparison.OrdinalIgnoreCase))
+                    {
+                        AddReadTarget(targets, seen, pkg, NormalizeRelativePath(rel.Substring(pkgPrefix.Length)));
+                    }
+                }
+            }
+
+            return targets;
+        }
+
+        private static void AddReadTarget(
+            List<KeyValuePair<string, string>> targets,
+            HashSet<string> seen,
+            string package,
+            string relativePath)
+        {
+            if (targets == null || seen == null)
+            {
+                return;
+            }
+
+            string normalizedPackage = (package ?? string.Empty).Trim();
+            string normalizedRelative = NormalizeRelativePath(relativePath);
+            if (string.IsNullOrWhiteSpace(normalizedPackage) || string.IsNullOrWhiteSpace(normalizedRelative))
+            {
+                return;
+            }
+
+            string key = (normalizedPackage + "|" + normalizedRelative).ToLowerInvariant();
+            if (!seen.Add(key))
+            {
+                return;
+            }
+
+            targets.Add(new KeyValuePair<string, string>(normalizedPackage, normalizedRelative));
         }
 
         private bool TryReadSkiWithFallbackCandidates(
@@ -595,13 +764,25 @@ namespace FWEledit
             int orgColorArgb,
             int outerNum,
             float[] shaderFloats,
+            string[] additionalSkiReferences,
             out ModelPreviewMeshData previewData,
             out string error)
         {
             previewData = new ModelPreviewMeshData();
             error = string.Empty;
+            string textureContextRelativePath = relativeEcm;
+            if (string.IsNullOrWhiteSpace(textureContextRelativePath))
+            {
+                SplitPackagePath(sourceMappedPath, out string _, out string sourceRelativePath);
+                textureContextRelativePath = sourceRelativePath;
+            }
+            if (string.IsNullOrWhiteSpace(textureContextRelativePath))
+            {
+                textureContextRelativePath = relativeSmd;
+            }
 
             Dictionary<string, float[]> bindMatricesByBoneName = new Dictionary<string, float[]>(StringComparer.OrdinalIgnoreCase);
+            float[][] bindMatricesBySkeletonBoneIndex = new float[0][];
             if (string.IsNullOrWhiteSpace(bonReference))
             {
                 bonReference = Path.ChangeExtension(relativeSki, ".bon");
@@ -614,7 +795,7 @@ namespace FWEledit
                 if (!string.IsNullOrWhiteSpace(relativeBon)
                     && TryReadModelFile(assetManager, bonPackage, relativeBon, out byte[] bonBytes, out string _))
                 {
-                    TryParseBonBindMatrices(bonBytes, out bindMatricesByBoneName);
+                    TryParseBonBindMatrices(bonBytes, out bindMatricesByBoneName, out bindMatricesBySkeletonBoneIndex);
                 }
             }
 
@@ -628,8 +809,10 @@ namespace FWEledit
                 assetManager,
                 skiPackage,
                 relativeSki,
+                textureContextRelativePath,
                 skiBytes,
                 bindMatricesByBoneName,
+                bindMatricesBySkeletonBoneIndex,
                 out vertices,
                 out uvs,
                 out indices,
@@ -641,6 +824,101 @@ namespace FWEledit
                 return false;
             }
 
+            List<Vector3f> mergedVertices = new List<Vector3f>(vertices.Length + 2048);
+            List<Vector2f> mergedUvs = new List<Vector2f>(uvs.Length + 2048);
+            List<int> mergedIndices = new List<int>(indices.Length + 4096);
+            List<int> mergedTriangleColors = new List<int>(triangleColors.Length + 4096);
+            List<int> mergedTriangleTextureIndices = new List<int>(triangleTextureIndices.Length + 4096);
+            List<PreviewTextureData> mergedTextures = new List<PreviewTextureData>((textures == null ? 0 : textures.Length) + 8);
+
+            AppendParsedMeshSegment(
+                mergedVertices,
+                mergedUvs,
+                mergedIndices,
+                mergedTriangleColors,
+                mergedTriangleTextureIndices,
+                mergedTextures,
+                vertices,
+                uvs,
+                indices,
+                triangleColors,
+                triangleTextureIndices,
+                textures);
+
+            if (additionalSkiReferences != null && additionalSkiReferences.Length > 0)
+            {
+                string primarySkiMappedPath = NormalizeRelativePath(BuildMappedPath(skiPackage, relativeSki));
+                HashSet<string> seenSkiPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                if (!string.IsNullOrWhiteSpace(primarySkiMappedPath))
+                {
+                    seenSkiPaths.Add(primarySkiMappedPath);
+                }
+
+                for (int i = 0; i < additionalSkiReferences.Length; i++)
+                {
+                    string addiRef = additionalSkiReferences[i];
+                    if (string.IsNullOrWhiteSpace(addiRef))
+                    {
+                        continue;
+                    }
+
+                    if (!TryReadSkiWithFallback(
+                        assetManager,
+                        smdPackage,
+                        relativeSmd,
+                        addiRef,
+                        out string addiPackage,
+                        out string addiRelative,
+                        out byte[] addiBytes,
+                        out string _))
+                    {
+                        continue;
+                    }
+
+                    string addiMappedPath = NormalizeRelativePath(BuildMappedPath(addiPackage, addiRelative));
+                    if (!string.IsNullOrWhiteSpace(addiMappedPath) && !seenSkiPaths.Add(addiMappedPath))
+                    {
+                        continue;
+                    }
+
+                    if (!TryParseSkiMesh(
+                        assetManager,
+                        addiPackage,
+                        addiRelative,
+                        textureContextRelativePath,
+                        addiBytes,
+                        bindMatricesByBoneName,
+                        bindMatricesBySkeletonBoneIndex,
+                        out Vector3f[] addiVertices,
+                        out Vector2f[] addiUvs,
+                        out int[] addiIndices,
+                        out int[] addiTriangleColors,
+                        out int[] addiTriangleTextureIndices,
+                        out PreviewTextureData[] addiTextures,
+                        out string _))
+                    {
+                        continue;
+                    }
+
+                    AppendParsedMeshSegment(
+                        mergedVertices,
+                        mergedUvs,
+                        mergedIndices,
+                        mergedTriangleColors,
+                        mergedTriangleTextureIndices,
+                        mergedTextures,
+                        addiVertices,
+                        addiUvs,
+                        addiIndices,
+                        addiTriangleColors,
+                        addiTriangleTextureIndices,
+                        addiTextures);
+                }
+            }
+
+            int[] finalTriangleColors = mergedTriangleColors.ToArray();
+            ApplyOrgColorTintToTriangleColorsInPlace(finalTriangleColors, orgColorArgb);
+
             previewData = new ModelPreviewMeshData
             {
                 SourceMappedPath = sourceMappedPath ?? string.Empty,
@@ -649,12 +927,12 @@ namespace FWEledit
                 SkinModelPath = BuildMappedPath(smdPackage, relativeSmd),
                 SkiPath = BuildMappedPath(skiPackage, relativeSki),
                 SkiAbsolutePath = ResolveAbsolutePath(assetManager, skiPackage, relativeSki),
-                Vertices = vertices,
-                UVs = uvs,
-                Indices = indices,
-                TriangleColors = triangleColors,
-                TriangleTextureIndices = triangleTextureIndices,
-                Textures = textures,
+                Vertices = mergedVertices.ToArray(),
+                UVs = mergedUvs.ToArray(),
+                Indices = mergedIndices.ToArray(),
+                TriangleColors = finalTriangleColors,
+                TriangleTextureIndices = mergedTriangleTextureIndices.ToArray(),
+                Textures = mergedTextures.ToArray(),
                 SrcBlend = srcBlend,
                 DestBlend = destBlend,
                 EmissiveColorArgb = emissiveColorArgb,
@@ -663,6 +941,238 @@ namespace FWEledit
                 OuterNum = outerNum
             };
 
+            return true;
+        }
+
+        private static void AppendParsedMeshSegment(
+            List<Vector3f> mergedVertices,
+            List<Vector2f> mergedUvs,
+            List<int> mergedIndices,
+            List<int> mergedTriangleColors,
+            List<int> mergedTriangleTextureIndices,
+            List<PreviewTextureData> mergedTextures,
+            Vector3f[] vertices,
+            Vector2f[] uvs,
+            int[] indices,
+            int[] triangleColors,
+            int[] triangleTextureIndices,
+            PreviewTextureData[] textures)
+        {
+            if (mergedVertices == null
+                || mergedUvs == null
+                || mergedIndices == null
+                || mergedTriangleColors == null
+                || mergedTriangleTextureIndices == null
+                || mergedTextures == null)
+            {
+                return;
+            }
+
+            Vector3f[] safeVertices = vertices ?? new Vector3f[0];
+            Vector2f[] safeUvs = uvs ?? new Vector2f[0];
+            int[] safeIndices = indices ?? new int[0];
+            int[] safeTriangleColors = triangleColors ?? new int[0];
+            int[] safeTriangleTextureIndices = triangleTextureIndices ?? new int[0];
+            PreviewTextureData[] safeTextures = textures ?? new PreviewTextureData[0];
+
+            int vertexBase = mergedVertices.Count;
+            int textureBase = mergedTextures.Count;
+            int triangleCount = safeIndices.Length / 3;
+
+            mergedVertices.AddRange(safeVertices);
+            if (safeUvs.Length == safeVertices.Length)
+            {
+                mergedUvs.AddRange(safeUvs);
+            }
+            else
+            {
+                for (int v = 0; v < safeVertices.Length; v++)
+                {
+                    mergedUvs.Add(new Vector2f(0f, 0f));
+                }
+            }
+
+            for (int i = 0; i < safeIndices.Length; i++)
+            {
+                mergedIndices.Add(vertexBase + safeIndices[i]);
+            }
+
+            for (int t = 0; t < triangleCount; t++)
+            {
+                int color = unchecked((int)0xFFFFFFFF);
+                if (t < safeTriangleColors.Length)
+                {
+                    color = safeTriangleColors[t];
+                }
+                mergedTriangleColors.Add(color);
+
+                int textureIndex = -1;
+                if (t < safeTriangleTextureIndices.Length)
+                {
+                    textureIndex = safeTriangleTextureIndices[t];
+                }
+
+                if (textureIndex >= 0)
+                {
+                    textureIndex += textureBase;
+                }
+                mergedTriangleTextureIndices.Add(textureIndex);
+            }
+
+            mergedTextures.AddRange(safeTextures);
+        }
+
+        private bool TryBuildPreviewDataFromEcmEffectReferences(
+            AssetManager assetManager,
+            string sourceMappedPath,
+            string ecmPackage,
+            string relativeEcm,
+            string ecmText,
+            byte[] ecmBytes,
+            ModelPreviewMeshData basePreview,
+            out ModelPreviewMeshData previewData,
+            out string error)
+        {
+            previewData = basePreview ?? new ModelPreviewMeshData();
+            error = string.Empty;
+
+            if (assetManager == null || basePreview == null)
+            {
+                return false;
+            }
+
+            List<string> references = ExtractModelReferenceCandidatesFromGfx(ecmText, ecmBytes);
+            if (references == null || references.Count == 0)
+            {
+                return false;
+            }
+
+            HashSet<string> visitedGfx = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            string normalizedSource = NormalizeRelativePath(sourceMappedPath);
+            if (!string.IsNullOrWhiteSpace(normalizedSource))
+            {
+                visitedGfx.Add(normalizedSource);
+            }
+
+            HashSet<string> mergedKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            string baseKey = BuildPreviewMergeKey(basePreview);
+            if (!string.IsNullOrWhiteSpace(baseKey))
+            {
+                mergedKeys.Add(baseKey);
+            }
+
+            List<Vector3f> mergedVertices = new List<Vector3f>(basePreview.VertexCount + 4096);
+            List<Vector2f> mergedUvs = new List<Vector2f>((basePreview.UVs == null ? 0 : basePreview.UVs.Length) + 4096);
+            List<int> mergedIndices = new List<int>(basePreview.Indices == null ? 4096 : basePreview.Indices.Length + 8192);
+            List<int> mergedTriangleColors = new List<int>(basePreview.TriangleColors == null ? 4096 : basePreview.TriangleColors.Length + 8192);
+            List<int> mergedTriangleTextureIndices = new List<int>(basePreview.TriangleTextureIndices == null ? 4096 : basePreview.TriangleTextureIndices.Length + 8192);
+            List<PreviewTextureData> mergedTextures = new List<PreviewTextureData>((basePreview.Textures == null ? 0 : basePreview.Textures.Length) + 16);
+            AppendParsedMeshSegment(
+                mergedVertices,
+                mergedUvs,
+                mergedIndices,
+                mergedTriangleColors,
+                mergedTriangleTextureIndices,
+                mergedTextures,
+                basePreview.Vertices,
+                basePreview.UVs,
+                basePreview.Indices,
+                basePreview.TriangleColors,
+                basePreview.TriangleTextureIndices,
+                basePreview.Textures);
+
+            int mergedAdditional = 0;
+            string firstError = string.Empty;
+            ModelPreviewMeshData firstResolved = null;
+            for (int i = 0; i < references.Count; i++)
+            {
+                string reference = references[i];
+                if (string.IsNullOrWhiteSpace(reference))
+                {
+                    continue;
+                }
+
+                if (!TryBuildPreviewFromReferencedPath(
+                    assetManager,
+                    sourceMappedPath,
+                    ecmPackage,
+                    relativeEcm,
+                    reference,
+                    visitedGfx,
+                    0,
+                    out ModelPreviewMeshData resolvedData,
+                    out string resolveError))
+                {
+                    if (string.IsNullOrWhiteSpace(firstError) && !string.IsNullOrWhiteSpace(resolveError))
+                    {
+                        firstError = resolveError;
+                    }
+                    continue;
+                }
+
+                if (resolvedData == null || resolvedData.VertexCount <= 0 || resolvedData.TriangleCount <= 0)
+                {
+                    continue;
+                }
+
+                string key = BuildPreviewMergeKey(resolvedData);
+                if (!mergedKeys.Add(key))
+                {
+                    continue;
+                }
+
+                if (firstResolved == null)
+                {
+                    firstResolved = resolvedData;
+                }
+
+                AppendParsedMeshSegment(
+                    mergedVertices,
+                    mergedUvs,
+                    mergedIndices,
+                    mergedTriangleColors,
+                    mergedTriangleTextureIndices,
+                    mergedTextures,
+                    resolvedData.Vertices,
+                    resolvedData.UVs,
+                    resolvedData.Indices,
+                    resolvedData.TriangleColors,
+                    resolvedData.TriangleTextureIndices,
+                    resolvedData.Textures);
+                mergedAdditional++;
+            }
+
+            if (mergedAdditional <= 0 || mergedVertices.Count <= basePreview.VertexCount || mergedIndices.Count < 3)
+            {
+                if (!string.IsNullOrWhiteSpace(firstError))
+                {
+                    error = firstError;
+                }
+                return false;
+            }
+
+            ModelPreviewMeshData template = firstResolved ?? basePreview;
+            previewData = new ModelPreviewMeshData
+            {
+                SourceMappedPath = basePreview.SourceMappedPath ?? sourceMappedPath ?? string.Empty,
+                EcmPath = basePreview.EcmPath ?? string.Empty,
+                EcmAbsolutePath = basePreview.EcmAbsolutePath ?? string.Empty,
+                SkinModelPath = template.SkinModelPath ?? basePreview.SkinModelPath ?? string.Empty,
+                SkiPath = template.SkiPath ?? basePreview.SkiPath ?? string.Empty,
+                SkiAbsolutePath = template.SkiAbsolutePath ?? basePreview.SkiAbsolutePath ?? string.Empty,
+                Vertices = mergedVertices.ToArray(),
+                UVs = mergedUvs.ToArray(),
+                Indices = mergedIndices.ToArray(),
+                TriangleColors = mergedTriangleColors.ToArray(),
+                TriangleTextureIndices = mergedTriangleTextureIndices.ToArray(),
+                Textures = mergedTextures.ToArray(),
+                SrcBlend = template.SrcBlend,
+                DestBlend = template.DestBlend,
+                EmissiveColorArgb = template.EmissiveColorArgb,
+                OrgColorArgb = template.OrgColorArgb,
+                ShaderFloats = template.ShaderFloats ?? new float[0],
+                OuterNum = template.OuterNum
+            };
             return true;
         }
 
@@ -822,6 +1332,660 @@ namespace FWEledit
             }
 
             return candidates.ToArray();
+        }
+
+        private bool TryBuildPreviewDataFromGfxReferences(
+            AssetManager assetManager,
+            string sourceMappedPath,
+            string gfxPackage,
+            string relativeGfx,
+            string gfxText,
+            byte[] gfxBytes,
+            out ModelPreviewMeshData previewData,
+            out string error)
+        {
+            previewData = new ModelPreviewMeshData();
+            error = string.Empty;
+
+            List<string> candidates = ExtractModelReferenceCandidatesFromGfx(gfxText, gfxBytes);
+            if (candidates.Count == 0)
+            {
+                error = "No model reference found in .gfx file.";
+                return false;
+            }
+
+            HashSet<string> visitedGfx = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            string normalizedSourcePath = NormalizeRelativePath(sourceMappedPath);
+            if (!string.IsNullOrWhiteSpace(normalizedSourcePath))
+            {
+                visitedGfx.Add(normalizedSourcePath);
+            }
+
+            string firstError = string.Empty;
+            int mergedModelCount = 0;
+            HashSet<string> mergedKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            List<Vector3f> mergedVertices = new List<Vector3f>(4096);
+            List<Vector2f> mergedUvs = new List<Vector2f>(4096);
+            List<int> mergedIndices = new List<int>(8192);
+            List<int> mergedTriangleColors = new List<int>(8192);
+            List<int> mergedTriangleTextureIndices = new List<int>(8192);
+            List<PreviewTextureData> mergedTextures = new List<PreviewTextureData>(16);
+            ModelPreviewMeshData firstResolved = null;
+            for (int i = 0; i < candidates.Count; i++)
+            {
+                if (TryBuildPreviewFromReferencedPath(
+                    assetManager,
+                    sourceMappedPath,
+                    gfxPackage,
+                    relativeGfx,
+                    candidates[i],
+                    visitedGfx,
+                    0,
+                    out ModelPreviewMeshData resolvedData,
+                    out error))
+                {
+                    string mergeKey = BuildPreviewMergeKey(resolvedData);
+                    if (!mergedKeys.Add(mergeKey))
+                    {
+                        continue;
+                    }
+
+                    if (firstResolved == null)
+                    {
+                        firstResolved = resolvedData;
+                    }
+
+                    AppendParsedMeshSegment(
+                        mergedVertices,
+                        mergedUvs,
+                        mergedIndices,
+                        mergedTriangleColors,
+                        mergedTriangleTextureIndices,
+                        mergedTextures,
+                        resolvedData.Vertices,
+                        resolvedData.UVs,
+                        resolvedData.Indices,
+                        resolvedData.TriangleColors,
+                        resolvedData.TriangleTextureIndices,
+                        resolvedData.Textures);
+                    mergedModelCount++;
+                    continue;
+                }
+
+                if (string.IsNullOrWhiteSpace(firstError) && !string.IsNullOrWhiteSpace(error))
+                {
+                    firstError = error;
+                }
+            }
+
+            if (mergedModelCount > 0 && firstResolved != null && mergedVertices.Count > 0 && mergedIndices.Count >= 3)
+            {
+                previewData = new ModelPreviewMeshData
+                {
+                    SourceMappedPath = sourceMappedPath ?? string.Empty,
+                    EcmPath = firstResolved.EcmPath ?? string.Empty,
+                    EcmAbsolutePath = firstResolved.EcmAbsolutePath ?? string.Empty,
+                    SkinModelPath = firstResolved.SkinModelPath ?? string.Empty,
+                    SkiPath = firstResolved.SkiPath ?? string.Empty,
+                    SkiAbsolutePath = firstResolved.SkiAbsolutePath ?? string.Empty,
+                    Vertices = mergedVertices.ToArray(),
+                    UVs = mergedUvs.ToArray(),
+                    Indices = mergedIndices.ToArray(),
+                    TriangleColors = mergedTriangleColors.ToArray(),
+                    TriangleTextureIndices = mergedTriangleTextureIndices.ToArray(),
+                    Textures = mergedTextures.ToArray(),
+                    SrcBlend = firstResolved.SrcBlend,
+                    DestBlend = firstResolved.DestBlend,
+                    EmissiveColorArgb = firstResolved.EmissiveColorArgb,
+                    OrgColorArgb = firstResolved.OrgColorArgb,
+                    ShaderFloats = firstResolved.ShaderFloats ?? new float[0],
+                    OuterNum = firstResolved.OuterNum
+                };
+                return true;
+            }
+
+            error = string.IsNullOrWhiteSpace(firstError)
+                ? "Failed to resolve a previewable model from .gfx file."
+                : firstError;
+            return false;
+        }
+
+        private bool TryBuildPreviewFromReferencedPath(
+            AssetManager assetManager,
+            string sourceMappedPath,
+            string basePackage,
+            string baseRelativeFile,
+            string referencePath,
+            HashSet<string> visitedGfx,
+            int depth,
+            out ModelPreviewMeshData previewData,
+            out string error)
+        {
+            previewData = new ModelPreviewMeshData();
+            error = string.Empty;
+
+            string normalizedReference = NormalizeRelativePath(referencePath);
+            if (string.IsNullOrWhiteSpace(normalizedReference))
+            {
+                error = "Invalid model reference in .gfx file.";
+                return false;
+            }
+            if (depth > MaxGfxReferenceDepth)
+            {
+                error = "Reached maximum .gfx reference depth while resolving preview model.";
+                return false;
+            }
+
+            List<string> probes = new List<string>(4);
+            string ext = (Path.GetExtension(normalizedReference) ?? string.Empty).ToLowerInvariant();
+            if (string.IsNullOrWhiteSpace(ext))
+            {
+                probes.Add(normalizedReference + ".ecm");
+                probes.Add(normalizedReference + ".smd");
+                probes.Add(normalizedReference + ".ski");
+                probes.Add(normalizedReference + ".gfx");
+                probes.Add(normalizedReference + ".att");
+                probes.Add(normalizedReference + ".sgc");
+            }
+            probes.Add(normalizedReference);
+
+            bool fromGfxSpace = string.Equals(basePackage, "gfx", StringComparison.OrdinalIgnoreCase)
+                || NormalizeRelativePath(sourceMappedPath).StartsWith("gfx\\", StringComparison.OrdinalIgnoreCase);
+            if (fromGfxSpace)
+            {
+                int baseProbeCount = probes.Count;
+                for (int i = 0; i < baseProbeCount; i++)
+                {
+                    string candidate = NormalizeRelativePath(probes[i]);
+                    if (string.IsNullOrWhiteSpace(candidate))
+                    {
+                        continue;
+                    }
+                    if (candidate.StartsWith("models\\", StringComparison.OrdinalIgnoreCase)
+                        || candidate.StartsWith("gfx\\", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    probes.Add("models\\" + candidate);
+                }
+            }
+
+            string normalizedSource = NormalizeRelativePath(sourceMappedPath);
+            string firstError = string.Empty;
+            for (int i = 0; i < probes.Count; i++)
+            {
+                string probe = probes[i];
+                if (string.IsNullOrWhiteSpace(probe))
+                {
+                    continue;
+                }
+
+                ResolveReferencedPath(basePackage, baseRelativeFile, probe, out string targetPackage, out string targetRelative);
+                if (string.IsNullOrWhiteSpace(targetRelative))
+                {
+                    continue;
+                }
+
+                string targetExt = (Path.GetExtension(targetRelative) ?? string.Empty).ToLowerInvariant();
+                List<KeyValuePair<string, string>> targetLocations = BuildReferenceTargetCandidates(targetPackage, targetRelative);
+                for (int t = 0; t < targetLocations.Count; t++)
+                {
+                    string probePackage = targetLocations[t].Key ?? string.Empty;
+                    string probeRelative = targetLocations[t].Value ?? string.Empty;
+                    if (string.IsNullOrWhiteSpace(probeRelative))
+                    {
+                        continue;
+                    }
+
+                    string mappedTarget = BuildMappedPath(probePackage, probeRelative);
+                    if (string.IsNullOrWhiteSpace(mappedTarget))
+                    {
+                        continue;
+                    }
+
+                    string normalizedTarget = NormalizeRelativePath(mappedTarget);
+                    if (!string.IsNullOrWhiteSpace(normalizedSource)
+                        && string.Equals(normalizedTarget, normalizedSource, StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    if (IsEffectDescriptorExtension(targetExt))
+                    {
+                        if (visitedGfx != null && !visitedGfx.Add(normalizedTarget))
+                        {
+                            continue;
+                        }
+
+                        if (!TryReadModelFile(assetManager, probePackage, probeRelative, out byte[] gfxBytes, out string readError))
+                        {
+                            if (string.IsNullOrWhiteSpace(firstError) && !string.IsNullOrWhiteSpace(readError))
+                            {
+                                firstError = readError;
+                            }
+                            continue;
+                        }
+
+                        if (!TryDecodeText(gfxBytes, out string gfxText))
+                        {
+                            if (string.IsNullOrWhiteSpace(firstError))
+                            {
+                                firstError = "Failed to decode referenced .gfx file: " + mappedTarget;
+                            }
+                            continue;
+                        }
+
+                        List<string> nestedReferences = ExtractModelReferenceCandidatesFromGfx(gfxText, gfxBytes);
+                        if (nestedReferences.Count == 0)
+                        {
+                            continue;
+                        }
+
+                        int nestedMergedCount = 0;
+                        HashSet<string> nestedMergedKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                        List<Vector3f> nestedMergedVertices = new List<Vector3f>(4096);
+                        List<Vector2f> nestedMergedUvs = new List<Vector2f>(4096);
+                        List<int> nestedMergedIndices = new List<int>(8192);
+                        List<int> nestedMergedTriangleColors = new List<int>(8192);
+                        List<int> nestedMergedTriangleTextureIndices = new List<int>(8192);
+                        List<PreviewTextureData> nestedMergedTextures = new List<PreviewTextureData>(16);
+                        ModelPreviewMeshData firstNestedResolved = null;
+                        for (int n = 0; n < nestedReferences.Count; n++)
+                        {
+                            if (TryBuildPreviewFromReferencedPath(
+                                assetManager,
+                                sourceMappedPath,
+                                probePackage,
+                                probeRelative,
+                                nestedReferences[n],
+                                visitedGfx,
+                                depth + 1,
+                                out ModelPreviewMeshData nestedResolvedData,
+                                out error))
+                            {
+                                string nestedMergeKey = BuildPreviewMergeKey(nestedResolvedData);
+                                if (!nestedMergedKeys.Add(nestedMergeKey))
+                                {
+                                    continue;
+                                }
+
+                                if (firstNestedResolved == null)
+                                {
+                                    firstNestedResolved = nestedResolvedData;
+                                }
+
+                                AppendParsedMeshSegment(
+                                    nestedMergedVertices,
+                                    nestedMergedUvs,
+                                    nestedMergedIndices,
+                                    nestedMergedTriangleColors,
+                                    nestedMergedTriangleTextureIndices,
+                                    nestedMergedTextures,
+                                    nestedResolvedData.Vertices,
+                                    nestedResolvedData.UVs,
+                                    nestedResolvedData.Indices,
+                                    nestedResolvedData.TriangleColors,
+                                    nestedResolvedData.TriangleTextureIndices,
+                                    nestedResolvedData.Textures);
+                                nestedMergedCount++;
+                                continue;
+                            }
+
+                            if (string.IsNullOrWhiteSpace(firstError) && !string.IsNullOrWhiteSpace(error))
+                            {
+                                firstError = error;
+                            }
+                        }
+
+                        if (nestedMergedCount > 0
+                            && firstNestedResolved != null
+                            && nestedMergedVertices.Count > 0
+                            && nestedMergedIndices.Count >= 3)
+                        {
+                            previewData = new ModelPreviewMeshData
+                            {
+                                SourceMappedPath = sourceMappedPath ?? string.Empty,
+                                EcmPath = firstNestedResolved.EcmPath ?? string.Empty,
+                                EcmAbsolutePath = firstNestedResolved.EcmAbsolutePath ?? string.Empty,
+                                SkinModelPath = firstNestedResolved.SkinModelPath ?? string.Empty,
+                                SkiPath = firstNestedResolved.SkiPath ?? string.Empty,
+                                SkiAbsolutePath = firstNestedResolved.SkiAbsolutePath ?? string.Empty,
+                                Vertices = nestedMergedVertices.ToArray(),
+                                UVs = nestedMergedUvs.ToArray(),
+                                Indices = nestedMergedIndices.ToArray(),
+                                TriangleColors = nestedMergedTriangleColors.ToArray(),
+                                TriangleTextureIndices = nestedMergedTriangleTextureIndices.ToArray(),
+                                Textures = nestedMergedTextures.ToArray(),
+                                SrcBlend = firstNestedResolved.SrcBlend,
+                                DestBlend = firstNestedResolved.DestBlend,
+                                EmissiveColorArgb = firstNestedResolved.EmissiveColorArgb,
+                                OrgColorArgb = firstNestedResolved.OrgColorArgb,
+                                ShaderFloats = firstNestedResolved.ShaderFloats ?? new float[0],
+                                OuterNum = firstNestedResolved.OuterNum
+                            };
+                            return true;
+                        }
+
+                        continue;
+                    }
+
+                    if (TryLoadPreviewMesh(assetManager, mappedTarget, out previewData, out error))
+                    {
+                        return true;
+                    }
+
+                    // Some FX chains point to intermediate text descriptors with non-standard
+                    // extensions; try parsing them recursively before failing.
+                    if (visitedGfx != null && !visitedGfx.Add(normalizedTarget))
+                    {
+                        continue;
+                    }
+
+                    if (TryReadModelFile(assetManager, probePackage, probeRelative, out byte[] nestedBytes, out string nestedReadError)
+                        && TryDecodeText(nestedBytes, out string nestedText))
+                    {
+                        List<string> nestedReferences = ExtractModelReferenceCandidatesFromGfx(nestedText, nestedBytes);
+                        int nestedMergedCount = 0;
+                        HashSet<string> nestedMergedKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                        List<Vector3f> nestedMergedVertices = new List<Vector3f>(4096);
+                        List<Vector2f> nestedMergedUvs = new List<Vector2f>(4096);
+                        List<int> nestedMergedIndices = new List<int>(8192);
+                        List<int> nestedMergedTriangleColors = new List<int>(8192);
+                        List<int> nestedMergedTriangleTextureIndices = new List<int>(8192);
+                        List<PreviewTextureData> nestedMergedTextures = new List<PreviewTextureData>(16);
+                        ModelPreviewMeshData firstNestedResolved = null;
+                        for (int n = 0; n < nestedReferences.Count; n++)
+                        {
+                            if (TryBuildPreviewFromReferencedPath(
+                                assetManager,
+                                sourceMappedPath,
+                                probePackage,
+                                probeRelative,
+                                nestedReferences[n],
+                                visitedGfx,
+                                depth + 1,
+                                out ModelPreviewMeshData nestedResolvedData,
+                                out error))
+                            {
+                                string nestedMergeKey = BuildPreviewMergeKey(nestedResolvedData);
+                                if (!nestedMergedKeys.Add(nestedMergeKey))
+                                {
+                                    continue;
+                                }
+
+                                if (firstNestedResolved == null)
+                                {
+                                    firstNestedResolved = nestedResolvedData;
+                                }
+
+                                AppendParsedMeshSegment(
+                                    nestedMergedVertices,
+                                    nestedMergedUvs,
+                                    nestedMergedIndices,
+                                    nestedMergedTriangleColors,
+                                    nestedMergedTriangleTextureIndices,
+                                    nestedMergedTextures,
+                                    nestedResolvedData.Vertices,
+                                    nestedResolvedData.UVs,
+                                    nestedResolvedData.Indices,
+                                    nestedResolvedData.TriangleColors,
+                                    nestedResolvedData.TriangleTextureIndices,
+                                    nestedResolvedData.Textures);
+                                nestedMergedCount++;
+                                continue;
+                            }
+
+                            if (string.IsNullOrWhiteSpace(firstError) && !string.IsNullOrWhiteSpace(error))
+                            {
+                                firstError = error;
+                            }
+                        }
+
+                        if (nestedMergedCount > 0
+                            && firstNestedResolved != null
+                            && nestedMergedVertices.Count > 0
+                            && nestedMergedIndices.Count >= 3)
+                        {
+                            previewData = new ModelPreviewMeshData
+                            {
+                                SourceMappedPath = sourceMappedPath ?? string.Empty,
+                                EcmPath = firstNestedResolved.EcmPath ?? string.Empty,
+                                EcmAbsolutePath = firstNestedResolved.EcmAbsolutePath ?? string.Empty,
+                                SkinModelPath = firstNestedResolved.SkinModelPath ?? string.Empty,
+                                SkiPath = firstNestedResolved.SkiPath ?? string.Empty,
+                                SkiAbsolutePath = firstNestedResolved.SkiAbsolutePath ?? string.Empty,
+                                Vertices = nestedMergedVertices.ToArray(),
+                                UVs = nestedMergedUvs.ToArray(),
+                                Indices = nestedMergedIndices.ToArray(),
+                                TriangleColors = nestedMergedTriangleColors.ToArray(),
+                                TriangleTextureIndices = nestedMergedTriangleTextureIndices.ToArray(),
+                                Textures = nestedMergedTextures.ToArray(),
+                                SrcBlend = firstNestedResolved.SrcBlend,
+                                DestBlend = firstNestedResolved.DestBlend,
+                                EmissiveColorArgb = firstNestedResolved.EmissiveColorArgb,
+                                OrgColorArgb = firstNestedResolved.OrgColorArgb,
+                                ShaderFloats = firstNestedResolved.ShaderFloats ?? new float[0],
+                                OuterNum = firstNestedResolved.OuterNum
+                            };
+                            return true;
+                        }
+                    }
+                    else if (string.IsNullOrWhiteSpace(firstError) && !string.IsNullOrWhiteSpace(nestedReadError))
+                    {
+                        firstError = nestedReadError;
+                    }
+
+                    if (string.IsNullOrWhiteSpace(firstError) && !string.IsNullOrWhiteSpace(error))
+                    {
+                        firstError = error;
+                    }
+                }
+            }
+
+            error = string.IsNullOrWhiteSpace(firstError)
+                ? "Failed to resolve referenced preview model from .gfx file."
+                : firstError;
+            return false;
+        }
+
+        private static List<KeyValuePair<string, string>> BuildReferenceTargetCandidates(string package, string relativePath)
+        {
+            List<KeyValuePair<string, string>> candidates = new List<KeyValuePair<string, string>>(6);
+            HashSet<string> seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            AddTargetCandidate(candidates, seen, package, relativePath);
+            string normalizedRelative = NormalizeRelativePath(relativePath);
+            if (string.IsNullOrWhiteSpace(normalizedRelative))
+            {
+                return candidates;
+            }
+
+            bool looksLikeConfigPrefixed = normalizedRelative.StartsWith("configs\\", StringComparison.OrdinalIgnoreCase);
+            string withoutConfigsPrefix = looksLikeConfigPrefixed
+                ? NormalizeRelativePath(normalizedRelative.Substring("configs\\".Length))
+                : normalizedRelative;
+
+            if (string.Equals(package, "configs", StringComparison.OrdinalIgnoreCase) || looksLikeConfigPrefixed)
+            {
+                AddTargetCandidate(candidates, seen, "gfx", withoutConfigsPrefix);
+                AddTargetCandidate(candidates, seen, "gfx", normalizedRelative);
+            }
+
+            if (string.Equals(package, "gfx", StringComparison.OrdinalIgnoreCase))
+            {
+                AddTargetCandidate(candidates, seen, "configs", withoutConfigsPrefix);
+                AddTargetCandidate(candidates, seen, "configs", normalizedRelative);
+            }
+
+            AddTargetCandidate(candidates, seen, string.Empty, withoutConfigsPrefix);
+            AddTargetCandidate(candidates, seen, string.Empty, normalizedRelative);
+            return candidates;
+        }
+
+        private static void AddTargetCandidate(
+            List<KeyValuePair<string, string>> candidates,
+            HashSet<string> seen,
+            string package,
+            string relativePath)
+        {
+            if (candidates == null || seen == null)
+            {
+                return;
+            }
+
+            string normalizedRelative = NormalizeRelativePath(relativePath);
+            if (string.IsNullOrWhiteSpace(normalizedRelative))
+            {
+                return;
+            }
+
+            string normalizedPackage = (package ?? string.Empty).Trim();
+            string key = (normalizedPackage + "|" + normalizedRelative).ToLowerInvariant();
+            if (!seen.Add(key))
+            {
+                return;
+            }
+
+            candidates.Add(new KeyValuePair<string, string>(normalizedPackage, normalizedRelative));
+        }
+
+        private static string BuildPreviewMergeKey(ModelPreviewMeshData previewData)
+        {
+            if (previewData == null)
+            {
+                return "null";
+            }
+
+            string primary = NormalizeRelativePath(previewData.SkiPath);
+            if (!string.IsNullOrWhiteSpace(primary))
+            {
+                return "ski|" + primary.ToLowerInvariant();
+            }
+
+            string fallback = NormalizeRelativePath(previewData.SkinModelPath);
+            if (!string.IsNullOrWhiteSpace(fallback))
+            {
+                return "skin|" + fallback.ToLowerInvariant();
+            }
+
+            return "mesh|" + previewData.VertexCount.ToString(CultureInfo.InvariantCulture)
+                + "|" + previewData.TriangleCount.ToString(CultureInfo.InvariantCulture);
+        }
+
+        private static bool ShouldTryEcmEffectMerge(ModelPreviewMeshData basePreview)
+        {
+            if (basePreview == null)
+            {
+                return false;
+            }
+
+            int triCount = basePreview.TriangleCount;
+            int vertCount = basePreview.VertexCount;
+            int texCount = basePreview.Textures == null ? 0 : basePreview.Textures.Length;
+
+            if (triCount <= 0 || vertCount <= 0)
+            {
+                return true;
+            }
+
+            // Placeholder / proxy meshes (like 2-triangle planes) should try effect-chain merge.
+            if (triCount <= 64 || vertCount <= 128)
+            {
+                return true;
+            }
+
+            // Small and low-texture previews are likely incomplete skin placeholders.
+            if (triCount <= 512 && texCount <= 2)
+            {
+                return true;
+            }
+
+            return false;
+        }
+
+        private static List<string> ExtractModelReferenceCandidatesFromGfx(string text, byte[] bytes)
+        {
+            List<string> candidates = new List<string>(16);
+            HashSet<string> seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            string[] directFields = new string[]
+            {
+                "SkinModelPath",
+                "ModelPath",
+                "ModelFile",
+                "FileModel",
+                "FilePath",
+                "EcmPath",
+                "SmdPath",
+                "SkiPath",
+                "FxFilePath",
+                "GfxPath",
+                "GfxFile",
+                "AttPath",
+                "AttFile",
+                "SgcPath",
+                "SgcFile",
+                "Path"
+            };
+
+            for (int i = 0; i < directFields.Length; i++)
+            {
+                string fieldName = directFields[i];
+                if (TryExtractFieldValue(text, fieldName, out string fieldPath))
+                {
+                    AddUniquePathCandidate(candidates, seen, fieldPath);
+                }
+
+                string[] repeated = ExtractRepeatedFieldValues(text, fieldName);
+                for (int r = 0; r < repeated.Length; r++)
+                {
+                    AddUniquePathCandidate(candidates, seen, repeated[r]);
+                }
+            }
+
+            string[] extensions = new string[] { ".ecm", ".smd", ".ski", ".gfx", ".att", ".sgc" };
+            for (int i = 0; i < extensions.Length; i++)
+            {
+                string ext = extensions[i];
+                if (!string.IsNullOrWhiteSpace(text))
+                {
+                    try
+                    {
+                        MatchCollection matches = Regex.Matches(
+                            text,
+                            @"([^\0\r\n\t:]+" + Regex.Escape(ext) + ")",
+                            RegexOptions.IgnoreCase);
+                        for (int m = 0; m < matches.Count; m++)
+                        {
+                            string raw = matches[m].Groups[1].Value;
+                            AddUniquePathCandidate(candidates, seen, NormalizeRelativePath(raw));
+                        }
+                    }
+                    catch
+                    {
+                    }
+                }
+
+                if (TryExtractPathByRawByteScan(bytes, ext, out string rawPath))
+                {
+                    AddUniquePathCandidate(candidates, seen, rawPath);
+                }
+            }
+
+            return candidates;
+        }
+
+        private static bool IsEffectDescriptorExtension(string extension)
+        {
+            if (string.IsNullOrWhiteSpace(extension))
+            {
+                return false;
+            }
+
+            return string.Equals(extension, ".gfx", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(extension, ".att", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(extension, ".sgc", StringComparison.OrdinalIgnoreCase);
         }
 
         private static bool TryDecodeText(byte[] bytes, out string text)
@@ -1275,8 +2439,10 @@ namespace FWEledit
             AssetManager assetManager,
             string skiPackage,
             string relativeSkiPath,
+            string textureContextRelativePath,
             byte[] bytes,
             Dictionary<string, float[]> bindMatricesByBoneName,
+            float[][] bindMatricesBySkeletonBoneIndex,
             out Vector3f[] vertices,
             out Vector2f[] uvs,
             out int[] indices,
@@ -1311,15 +2477,18 @@ namespace FWEledit
                         return false;
                     }
 
+                    string[] skiBoneNames = new string[Math.Max(0, header.NumSkinBone)];
                     if (header.Version >= 9)
                     {
-                        for (int i = 0; i < header.NumSkinBone; i++)
+                        for (int i = 0; i < skiBoneNames.Length; i++)
                         {
-                            if (!TryReadLengthPrefixedString(br, gbk, 8192, out string _))
+                            if (!TryReadLengthPrefixedString(br, gbk, 8192, out string boneName))
                             {
                                 error = "Invalid bone table in .ski.";
                                 return false;
                             }
+
+                            skiBoneNames[i] = boneName ?? string.Empty;
                         }
                     }
 
@@ -1348,7 +2517,9 @@ namespace FWEledit
                         assetManager,
                         skiPackage,
                         relativeSkiPath,
+                        textureContextRelativePath,
                         textureNames);
+                    float[][] skinMatricesByBoneIndex = BuildSkinMatricesByBoneIndex(skiBoneNames, bindMatricesByBoneName);
 
                     List<Vector3f> allVertices = new List<Vector3f>(4096);
                     List<Vector2f> allUvs = new List<Vector2f>(4096);
@@ -1481,7 +2652,7 @@ namespace FWEledit
                             return false;
                         }
 
-                        br.ReadInt32(); // bone index
+                        int boneIndex = br.ReadInt32();
                         int texIndex = br.ReadInt32();
                         int matIndex = br.ReadInt32();
                         int vertexCount = br.ReadInt32();
@@ -1524,7 +2695,30 @@ namespace FWEledit
                             float tu = br.ReadSingle();
                             float tv = br.ReadSingle();
 
-                            allVertices.Add(new Vector3f(-px, py, pz));
+                            Vector3f sourcePoint = new Vector3f(px, py, pz);
+                            float[] rigidMatrix = null;
+                            if (boneIndex >= 0
+                                && bindMatricesBySkeletonBoneIndex != null
+                                && boneIndex < bindMatricesBySkeletonBoneIndex.Length
+                                && bindMatricesBySkeletonBoneIndex[boneIndex] != null
+                                && bindMatricesBySkeletonBoneIndex[boneIndex].Length >= 16)
+                            {
+                                rigidMatrix = bindMatricesBySkeletonBoneIndex[boneIndex];
+                            }
+                            else if (boneIndex >= 0
+                                && boneIndex < skinMatricesByBoneIndex.Length
+                                && skinMatricesByBoneIndex[boneIndex] != null
+                                && skinMatricesByBoneIndex[boneIndex].Length >= 16)
+                            {
+                                rigidMatrix = skinMatricesByBoneIndex[boneIndex];
+                            }
+
+                            if (rigidMatrix != null && rigidMatrix.Length >= 16)
+                            {
+                                sourcePoint = TransformPointRowVector(sourcePoint, rigidMatrix);
+                            }
+
+                            allVertices.Add(new Vector3f(-sourcePoint.X, sourcePoint.Y, sourcePoint.Z));
                             allUvs.Add(new Vector2f(tu, tv));
                         }
 
@@ -1785,6 +2979,38 @@ namespace FWEledit
             return Color.FromArgb(255, r, g, b);
         }
 
+        private static void ApplyOrgColorTintToTriangleColorsInPlace(int[] triangleColors, int orgColorArgb)
+        {
+            if (triangleColors == null || triangleColors.Length == 0)
+            {
+                return;
+            }
+
+            int tintR = (orgColorArgb >> 16) & 0xFF;
+            int tintG = (orgColorArgb >> 8) & 0xFF;
+            int tintB = orgColorArgb & 0xFF;
+            int tintA = (orgColorArgb >> 24) & 0xFF;
+            if (tintR == 255 && tintG == 255 && tintB == 255 && tintA == 255)
+            {
+                return;
+            }
+
+            for (int i = 0; i < triangleColors.Length; i++)
+            {
+                int src = triangleColors[i];
+                int sa = (src >> 24) & 0xFF;
+                int sr = (src >> 16) & 0xFF;
+                int sg = (src >> 8) & 0xFF;
+                int sb = src & 0xFF;
+
+                int da = (sa * tintA) / 255;
+                int dr = (sr * tintR) / 255;
+                int dg = (sg * tintG) / 255;
+                int db = (sb * tintB) / 255;
+                triangleColors[i] = (da << 24) | (dr << 16) | (dg << 8) | db;
+            }
+        }
+
         private static int FloatToByte(float value)
         {
             if (float.IsNaN(value) || float.IsInfinity(value))
@@ -1802,6 +3028,7 @@ namespace FWEledit
             AssetManager assetManager,
             string skiPackage,
             string relativeSkiPath,
+            string textureContextRelativePath,
             string[] textureNames)
         {
             Dictionary<int, PreviewTextureData> result = new Dictionary<int, PreviewTextureData>();
@@ -1821,7 +3048,7 @@ namespace FWEledit
                 }
 
                 PreviewTextureData textureData;
-                if (TryLoadTextureData(assetManager, skiPackage, relativeSkiPath, texture, alphaPolicy, out textureData))
+                if (TryLoadTextureData(assetManager, skiPackage, relativeSkiPath, textureContextRelativePath, texture, alphaPolicy, out textureData))
                 {
                     result[i] = textureData;
                 }
@@ -1856,6 +3083,13 @@ namespace FWEledit
                     continue;
                 }
 
+                bool primaryCutout = primary.UsesAlphaAsOpacity;
+                bool primaryOpaqueAux = !primaryCutout && ShouldFillHiddenTexelsForOpaqueAuxAlpha(primary.Pixels);
+                if (!primaryCutout && !primaryOpaqueAux)
+                {
+                    continue;
+                }
+
                 PreviewTextureData partner = null;
                 for (int p = 0; p < keys.Count; p++)
                 {
@@ -1873,6 +3107,11 @@ namespace FWEledit
                         && other.Width == primary.Width
                         && other.Height == primary.Height)
                     {
+                        if (primaryCutout && !other.UsesAlphaAsOpacity)
+                        {
+                            continue;
+                        }
+
                         partner = other;
                         break;
                     }
@@ -1935,11 +3174,20 @@ namespace FWEledit
                 return TextureAlphaPolicy.PreferOpaque;
             }
 
+            if (lower.Contains("wings\\")
+                || lower.Contains("\\wings\\")
+                || lower.Contains("wing\\")
+                || lower.Contains("\\wing\\")
+                || lower.Contains("翅膀"))
+            {
+                return TextureAlphaPolicy.PreferCutout;
+            }
+
             if (IsMountRelativeSkiPath(lower))
             {
-                // Mount atlases are mixed: some textures are true cutout, others use alpha as aux data.
-                // Prefer per-texture cutout detection for mounts.
-                return TextureAlphaPolicy.PreferCutout;
+                // Mount atlases in FW frequently encode auxiliary data in alpha.
+                // Keep them opaque and apply dedicated RGB recovery/fill steps.
+                return TextureAlphaPolicy.PreferMountOpaque;
             }
 
             return TextureAlphaPolicy.Default;
@@ -1956,7 +3204,9 @@ namespace FWEledit
             string lower = normalized.ToLowerInvariant();
             return lower.Contains("lms\\mounts\\")
                 || lower.Contains("\\mounts\\")
-                || lower.Contains("mount\\");
+                || lower.Contains("mount\\")
+                || normalized.Contains("骑宠")
+                || normalized.Contains("坐骑");
         }
 
         private Color ResolveMeshColor(
@@ -2033,13 +3283,14 @@ namespace FWEledit
             AssetManager assetManager,
             string skiPackage,
             string relativeSkiPath,
+            string textureContextRelativePath,
             string texturePath,
             TextureAlphaPolicy alphaPolicy,
             out PreviewTextureData textureData)
         {
             textureData = null;
 
-            string[] candidates = BuildTexturePathCandidates(relativeSkiPath, texturePath);
+            string[] candidates = BuildTexturePathCandidates(relativeSkiPath, textureContextRelativePath, texturePath);
             for (int i = 0; i < candidates.Length; i++)
             {
                 string texPackage;
@@ -2228,7 +3479,7 @@ namespace FWEledit
             packages.Add(normalized);
         }
 
-        private static string[] BuildTexturePathCandidates(string relativeSkiPath, string texturePath)
+        private static string[] BuildTexturePathCandidates(string relativeSkiPath, string textureContextRelativePath, string texturePath)
         {
             string[] fileCandidates = BuildTextureFileCandidates(texturePath);
             if (fileCandidates.Length == 0)
@@ -2256,6 +3507,16 @@ namespace FWEledit
                 skiNameNoExt = string.Empty;
             }
 
+            string contextDir = string.Empty;
+            try
+            {
+                contextDir = NormalizeRelativePath(Path.GetDirectoryName(NormalizeRelativePath(textureContextRelativePath)) ?? string.Empty);
+            }
+            catch
+            {
+                contextDir = string.Empty;
+            }
+
             List<string> candidates = new List<string>(32);
             HashSet<string> seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
@@ -2281,6 +3542,17 @@ namespace FWEledit
 
                 if (!string.IsNullOrWhiteSpace(fileName))
                 {
+                    if (!string.IsNullOrWhiteSpace(contextDir))
+                    {
+                        AddUniquePathCandidate(candidates, seen, NormalizeRelativePath(contextDir + "\\" + candidate));
+                        AddUniquePathCandidate(candidates, seen, NormalizeRelativePath(contextDir + "\\textures\\" + fileName));
+                        AddUniquePathCandidate(candidates, seen, NormalizeRelativePath(contextDir + "\\texture\\" + fileName));
+                        if (!string.IsNullOrWhiteSpace(skiNameNoExt))
+                        {
+                            AddUniquePathCandidate(candidates, seen, NormalizeRelativePath(contextDir + "\\tex_" + skiNameNoExt + "\\" + fileName));
+                        }
+                    }
+
                     AddUniquePathCandidate(candidates, seen, "textures\\" + fileName);
                     AddUniquePathCandidate(candidates, seen, "texture\\" + fileName);
                     if (!string.IsNullOrWhiteSpace(skiNameNoExt))
@@ -2319,7 +3591,7 @@ namespace FWEledit
 
         private static void AddUniquePathCandidate(List<string> candidates, HashSet<string> seen, string value)
         {
-            string normalized = NormalizeRelativePath(value);
+            string normalized = NormalizeRelativePath(NormalizeExtractedPathCandidate(value));
             if (string.IsNullOrWhiteSpace(normalized))
             {
                 return;
@@ -2331,6 +3603,48 @@ namespace FWEledit
 
             seen.Add(normalized);
             candidates.Add(normalized);
+        }
+
+        private static string NormalizeExtractedPathCandidate(string value)
+        {
+            string candidate = (value ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(candidate))
+            {
+                return string.Empty;
+            }
+
+            candidate = candidate.Trim('"', '\'').Trim();
+            if (string.IsNullOrWhiteSpace(candidate))
+            {
+                return string.Empty;
+            }
+
+            // Common descriptors may leak as "ModelPath: xxx.smd" or "GfxPath：xxx.gfx".
+            int separatorIndex = -1;
+            char[] separators = new char[] { ':', '：', '=' };
+            for (int i = 0; i < separators.Length; i++)
+            {
+                int idx = candidate.IndexOf(separators[i]);
+                if (idx > 0 && (separatorIndex < 0 || idx < separatorIndex))
+                {
+                    separatorIndex = idx;
+                }
+            }
+
+            if (separatorIndex > 0 && separatorIndex < candidate.Length - 1)
+            {
+                string left = candidate.Substring(0, separatorIndex).Trim();
+                string right = candidate.Substring(separatorIndex + 1).Trim().Trim('"', '\'').Trim();
+                if (!string.IsNullOrWhiteSpace(right)
+                    && left.IndexOf('\\') < 0
+                    && left.IndexOf('/') < 0
+                    && left.IndexOf('.') < 0)
+                {
+                    candidate = right;
+                }
+            }
+
+            return candidate;
         }
 
         private static void AddUniqueAbsolutePathCandidate(List<string> candidates, HashSet<string> seen, string value)
@@ -2434,14 +3748,42 @@ namespace FWEledit
                         }
 
                         TextureAlphaUsage alphaUsage = ComputeTextureAlphaUsage(relativePath, pixels, alphaPolicy);
-                        if (ShouldRecoverRgbFromAuxAlpha(pixels, alphaUsage, alphaPolicy))
+                        if (alphaPolicy == TextureAlphaPolicy.PreferMountOpaque)
                         {
-                            RecoverRgbFromAuxAlphaInPlace(pixels);
-                        }
+                            if (alphaUsage == TextureAlphaUsage.Cutout)
+                            {
+                                FillHiddenTexelsFromNeighborsInPlace(prepared.Width, prepared.Height, pixels);
+                            }
+                            else
+                            {
+                                if (ShouldRecoverRgbFromAuxAlpha(pixels, TextureAlphaUsage.Opaque, alphaPolicy))
+                                {
+                                    RecoverRgbFromAuxAlphaInPlace(
+                                        pixels,
+                                        alphaPolicy == TextureAlphaPolicy.PreferMountOpaque);
+                                }
 
-                        if (alphaPolicy == TextureAlphaPolicy.PreferCutout)
+                                // Mount atlases often store auxiliary/spec data in alpha.
+                                // Promote hidden texels and force opaque alpha for stable preview parity.
+                                FillHiddenTexelsFromNeighborsInPlace(prepared.Width, prepared.Height, pixels);
+                                ForceOpaqueAlphaInPlace(pixels);
+                                alphaUsage = TextureAlphaUsage.Opaque;
+                            }
+                        }
+                        else
                         {
-                            FillHiddenTexelsFromNeighborsInPlace(prepared.Width, prepared.Height, pixels);
+                            if (ShouldRecoverRgbFromAuxAlpha(pixels, alphaUsage, alphaPolicy))
+                            {
+                                RecoverRgbFromAuxAlphaInPlace(
+                                    pixels,
+                                    alphaPolicy == TextureAlphaPolicy.PreferMountOpaque);
+                            }
+
+                            if (alphaPolicy == TextureAlphaPolicy.PreferCutout
+                                && (alphaUsage == TextureAlphaUsage.Cutout || ShouldFillHiddenTexelsForOpaqueAuxAlpha(pixels)))
+                            {
+                                FillHiddenTexelsFromNeighborsInPlace(prepared.Width, prepared.Height, pixels);
+                            }
                         }
 
                         data = new PreviewTextureData
@@ -2856,7 +4198,8 @@ namespace FWEledit
             }
 
             // Recovery is mainly needed on mount atlases where alpha stores aux data.
-            if (alphaPolicy != TextureAlphaPolicy.PreferCutout)
+            if (alphaPolicy != TextureAlphaPolicy.PreferCutout
+                && alphaPolicy != TextureAlphaPolicy.PreferMountOpaque)
             {
                 return false;
             }
@@ -2865,12 +4208,22 @@ namespace FWEledit
             int lowAlphaCount = 0;
             int midAlphaCount = 0;
             int highAlphaCount = 0;
+            int lowAlphaDarkCount = 0;
             for (int i = 0; i < pixels.Length; i++)
             {
-                int a = (pixels[i] >> 24) & 0xFF;
+                int argb = pixels[i];
+                int a = (argb >> 24) & 0xFF;
                 if (a <= 64)
                 {
                     lowAlphaCount++;
+                    int r = (argb >> 16) & 0xFF;
+                    int g = (argb >> 8) & 0xFF;
+                    int b = argb & 0xFF;
+                    int lum = (r + g + b) / 3;
+                    if (lum <= 24)
+                    {
+                        lowAlphaDarkCount++;
+                    }
                 }
                 else if (a < 224)
                 {
@@ -2885,15 +4238,29 @@ namespace FWEledit
             float lowRatio = lowAlphaCount / (float)Math.Max(1, total);
             float midRatio = midAlphaCount / (float)Math.Max(1, total);
             float highRatio = highAlphaCount / (float)Math.Max(1, total);
+            float lowDarkRatio = lowAlphaDarkCount / (float)Math.Max(1, lowAlphaCount);
 
-            // If there is substantial low/mid alpha coverage and few highly-opaque texels,
-            // RGB is usually pre-darkened by alpha and should be compensated.
-            return lowRatio >= 0.25f
+            // Normal aux-alpha recovery case: enough high-alpha anchors and clearly-dark low-alpha region.
+            bool anchoredAuxAlpha = lowRatio >= 0.25f
                 && (lowRatio + midRatio) >= 0.55f
-                && highRatio <= 0.72f;
+                && highRatio >= 0.10f
+                && highRatio <= 0.72f
+                && lowDarkRatio >= 0.55f;
+            if (anchoredAuxAlpha)
+            {
+                return true;
+            }
+
+            // Some mount atlases have almost no near-255 alpha, but still carry darkened RGB in low alpha.
+            // Allow a softer recovery path to avoid black body patches without forcing opacity cutout.
+            bool sparseHighAuxAlpha = lowRatio >= 0.20f
+                && midRatio >= 0.35f
+                && highRatio <= 0.02f
+                && lowDarkRatio >= 0.90f;
+            return sparseHighAuxAlpha;
         }
 
-        private static void RecoverRgbFromAuxAlphaInPlace(int[] pixels)
+        private static void RecoverRgbFromAuxAlphaInPlace(int[] pixels, bool aggressive)
         {
             if (pixels == null || pixels.Length == 0)
             {
@@ -2913,17 +4280,24 @@ namespace FWEledit
                 int g = (argb >> 8) & 0xFF;
                 int b = argb & 0xFF;
 
-                // Soft un-premultiply compensation, clamped to avoid blowout artifacts.
-                float denom = Math.Max(108f, a);
+                // Un-premultiply compensation:
+                // - default: conservative to avoid over-bright artifacts on non-mount assets
+                // - aggressive: mounts often store heavily darkened aux-alpha RGB
+                float denom = Math.Max(aggressive ? 36f : 108f, a);
                 float scale = 255f / denom;
                 if (scale <= 1.0001f)
                 {
                     continue;
                 }
 
-                if (scale > 2.35f)
+                float maxScale = aggressive ? 4.10f : 1.85f;
+                if (aggressive && a <= 24)
                 {
-                    scale = 2.35f;
+                    maxScale = 6.00f;
+                }
+                if (scale > maxScale)
+                {
+                    scale = maxScale;
                 }
 
                 int rr = (int)(r * scale);
@@ -2934,6 +4308,58 @@ namespace FWEledit
                 if (bb > 255) bb = 255;
 
                 pixels[i] = (a << 24) | (rr << 16) | (gg << 8) | bb;
+            }
+        }
+
+        private static bool ShouldFillHiddenTexelsForOpaqueAuxAlpha(int[] pixels)
+        {
+            if (pixels == null || pixels.Length == 0)
+            {
+                return false;
+            }
+
+            int total = pixels.Length;
+            int lowAlphaCount = 0;
+            int lowDarkCount = 0;
+            for (int i = 0; i < pixels.Length; i++)
+            {
+                int argb = pixels[i];
+                int a = (argb >> 24) & 0xFF;
+                if (a > 12)
+                {
+                    continue;
+                }
+
+                lowAlphaCount++;
+                int r = (argb >> 16) & 0xFF;
+                int g = (argb >> 8) & 0xFF;
+                int b = argb & 0xFF;
+                if ((r + g + b) <= 36)
+                {
+                    lowDarkCount++;
+                }
+            }
+
+            if (lowAlphaCount <= 0)
+            {
+                return false;
+            }
+
+            float lowAlphaRatio = lowAlphaCount / (float)Math.Max(1, total);
+            float lowDarkRatio = lowDarkCount / (float)Math.Max(1, lowAlphaCount);
+            return lowAlphaRatio >= 0.10f && lowDarkRatio >= 0.75f;
+        }
+
+        private static void ForceOpaqueAlphaInPlace(int[] pixels)
+        {
+            if (pixels == null || pixels.Length == 0)
+            {
+                return;
+            }
+
+            for (int i = 0; i < pixels.Length; i++)
+            {
+                pixels[i] |= unchecked((int)0xFF000000);
             }
         }
 
@@ -2991,6 +4417,13 @@ namespace FWEledit
             {
                 // Weapons are safer as opaque in FW data; alpha is commonly used as data channel.
                 return TextureAlphaUsage.Opaque;
+            }
+
+            if (alphaPolicy == TextureAlphaPolicy.PreferMountOpaque)
+            {
+                return IsLikelyOpacityCutoutTextureForMount(pixels)
+                    ? TextureAlphaUsage.Cutout
+                    : TextureAlphaUsage.Opaque;
             }
 
             if (alphaPolicy == TextureAlphaPolicy.PreferCutout)
@@ -3216,67 +4649,101 @@ namespace FWEledit
             }
         }
 
-        private static bool TryParseBonBindMatrices(byte[] bonBytes, out Dictionary<string, float[]> bindMatricesByBoneName)
+        private static bool TryParseBonBindMatrices(
+            byte[] bonBytes,
+            out Dictionary<string, float[]> bindMatricesByBoneName,
+            out float[][] bindMatricesBySkeletonBoneIndex)
         {
             bindMatricesByBoneName = new Dictionary<string, float[]>(StringComparer.OrdinalIgnoreCase);
+            bindMatricesBySkeletonBoneIndex = new float[0][];
             if (bonBytes == null || bonBytes.Length < 200)
             {
                 return false;
             }
 
             Encoding gbk = Encoding.GetEncoding("GBK");
-            const int minEntryTail = 16 + 128;
-            for (int offset = 0; offset <= bonBytes.Length - (4 + 1 + minEntryTail); offset++)
+            try
             {
-                int nameLength = BitConverter.ToInt32(bonBytes, offset);
-                if (nameLength <= 0 || nameLength >= 64)
+                using (MemoryStream stream = new MemoryStream(bonBytes))
+                using (BinaryReader br = new BinaryReader(stream))
                 {
-                    continue;
-                }
+                    // A3DSKELETONFILEHEADER (pack(1))
+                    // dwFlags, dwVersion, iNumBone, iNumJoint, iNumHook, iAnimStart, iAnimEnd, iAnimFPS, reserved[64]
+                    if (!TryEnsureRemaining(br, 8 + (7 * 4) + 64))
+                    {
+                        return false;
+                    }
 
-                int nameOffset = offset + 4;
-                if (nameOffset + nameLength + minEntryTail > bonBytes.Length)
-                {
-                    continue;
-                }
+                    uint flags = br.ReadUInt32();
+                    uint version = br.ReadUInt32();
+                    int numBones = br.ReadInt32();
+                    br.ReadInt32(); // num joints
+                    br.ReadInt32(); // num hooks
+                    br.ReadInt32(); // anim start
+                    br.ReadInt32(); // anim end
+                    br.ReadInt32(); // anim fps
+                    br.ReadBytes(64); // reserved
 
-                string boneName;
-                try
-                {
-                    boneName = gbk.GetString(bonBytes, nameOffset, nameLength).Trim('\0');
-                }
-                catch
-                {
-                    continue;
-                }
+                    if (flags != 0x41534B45u || version > 6u || numBones <= 0 || numBones > 4096)
+                    {
+                        return false;
+                    }
 
-                if (!IsLikelyBoneName(boneName))
-                {
-                    continue;
-                }
+                    List<float[]> orderedMatrices = new List<float[]>(numBones);
+                    for (int i = 0; i < numBones; i++)
+                    {
+                        if (!TryReadLengthPrefixedString(br, gbk, 8192, out string boneName))
+                        {
+                            return false;
+                        }
 
-                int infoOffset = nameOffset + nameLength;
-                int childCount = BitConverter.ToInt32(bonBytes, infoOffset + 12);
-                if (childCount < 0 || childCount > 512)
-                {
-                    continue;
-                }
+                        // A3DBone::BONEDATA (pack(1))
+                        if (!TryEnsureRemaining(br, 1 + (3 * 4) + (16 * 4) + (16 * 4)))
+                        {
+                            return false;
+                        }
 
-                int nextOffset = infoOffset + 16 + 128 + (childCount * 4);
-                if (nextOffset > bonBytes.Length)
-                {
-                    continue;
-                }
+                        br.ReadByte();      // byFlags
+                        br.ReadInt32();     // iParent
+                        br.ReadInt32();     // iFirstJoint
+                        int childCount = br.ReadInt32(); // iNumChild
+                        if (childCount < 0 || childCount > 2048)
+                        {
+                            return false;
+                        }
 
-                float[] bindMatrix = new float[16];
-                Buffer.BlockCopy(bonBytes, infoOffset + 16, bindMatrix, 0, 16 * sizeof(float));
-                if (!bindMatricesByBoneName.ContainsKey(boneName))
-                {
-                    bindMatricesByBoneName[boneName] = bindMatrix;
+                        br.ReadBytes(16 * 4); // matRelative
+                        float[] bindMatrix = new float[16];
+                        for (int m = 0; m < 16; m++)
+                        {
+                            bindMatrix[m] = br.ReadSingle(); // matBoneInit
+                        }
+
+                        if (!string.IsNullOrWhiteSpace(boneName) && !bindMatricesByBoneName.ContainsKey(boneName))
+                        {
+                            bindMatricesByBoneName[boneName] = bindMatrix;
+                        }
+
+                        orderedMatrices.Add(bindMatrix);
+
+                        long childBytes = (long)childCount * 4L;
+                        if (!TryEnsureRemaining(br, childBytes))
+                        {
+                            return false;
+                        }
+                        br.ReadBytes((int)childBytes); // children indices
+                    }
+
+                    bindMatricesBySkeletonBoneIndex = orderedMatrices.ToArray();
+                    return bindMatricesByBoneName.Count > 0 || bindMatricesBySkeletonBoneIndex.Length > 0;
                 }
             }
-
-            return bindMatricesByBoneName.Count > 0;
+            catch
+            {
+                bindMatricesByBoneName = new Dictionary<string, float[]>(StringComparer.OrdinalIgnoreCase);
+                bindMatricesBySkeletonBoneIndex = new float[0][];
+                return false;
+            }
         }
 
         private static bool IsLikelyBoneName(string value)
@@ -3541,7 +5008,8 @@ namespace FWEledit
         {
             Default = 0,
             PreferCutout = 1,
-            PreferOpaque = 2
+            PreferOpaque = 2,
+            PreferMountOpaque = 3
         }
     }
 }

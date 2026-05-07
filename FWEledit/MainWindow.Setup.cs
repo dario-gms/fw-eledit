@@ -83,7 +83,7 @@ namespace FWEledit
                 assembly,
                 label_Version,
                 navigationStateService,
-                "0.9.3.4");
+                "0.9.4");
 
             cpb2.Value = 0;
             colorTheme();
@@ -276,6 +276,7 @@ namespace FWEledit
 
     }
 }
+
 
 
 

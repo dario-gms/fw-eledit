@@ -5,12 +5,20 @@ namespace FWEledit
 {
     public sealed class ModelPickerCacheService
     {
+        private sealed class PickerEntriesCacheEntry
+        {
+            public string Signature { get; set; }
+            public List<ModelPickerEntry> Entries { get; set; }
+        }
+
         private readonly Dictionary<int, string> modelPackageByPathIdCache = new Dictionary<int, string>();
         private string modelPackageCacheSignature = string.Empty;
         private readonly Dictionary<string, ModelPickerPackageCacheEntry> modelPickerPackageCache
             = new Dictionary<string, ModelPickerPackageCacheEntry>(StringComparer.OrdinalIgnoreCase);
         private readonly HashSet<string> modelPickerMissingExtractNotified
             = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<int, PickerEntriesCacheEntry> modelPickerEntriesCache
+            = new Dictionary<int, PickerEntriesCacheEntry>();
 
         public void EnsurePackageCacheSignature(string signature)
         {
@@ -85,6 +93,51 @@ namespace FWEledit
             }
             modelPickerMissingExtractNotified.Add(package);
             return true;
+        }
+
+        public bool TryGetPickerEntries(int listIndex, string signature, out List<ModelPickerEntry> entries)
+        {
+            entries = null;
+            if (listIndex < 0 || string.IsNullOrWhiteSpace(signature))
+            {
+                return false;
+            }
+
+            if (modelPickerEntriesCache.TryGetValue(listIndex, out PickerEntriesCacheEntry cached)
+                && cached != null
+                && string.Equals(cached.Signature, signature, StringComparison.Ordinal))
+            {
+                entries = cached.Entries != null
+                    ? new List<ModelPickerEntry>(cached.Entries)
+                    : new List<ModelPickerEntry>();
+                return true;
+            }
+
+            return false;
+        }
+
+        public void SetPickerEntries(int listIndex, string signature, List<ModelPickerEntry> entries)
+        {
+            if (listIndex < 0 || string.IsNullOrWhiteSpace(signature))
+            {
+                return;
+            }
+
+            modelPickerEntriesCache[listIndex] = new PickerEntriesCacheEntry
+            {
+                Signature = signature,
+                Entries = entries != null ? new List<ModelPickerEntry>(entries) : new List<ModelPickerEntry>()
+            };
+        }
+
+        public void InvalidatePickerEntries(int listIndex)
+        {
+            if (listIndex < 0)
+            {
+                return;
+            }
+
+            modelPickerEntriesCache.Remove(listIndex);
         }
     }
 }

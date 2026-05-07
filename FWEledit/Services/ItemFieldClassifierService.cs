@@ -67,7 +67,24 @@ namespace FWEledit
             {
                 return true;
             }
-            return fieldName.Trim().StartsWith("gfx_file", StringComparison.OrdinalIgnoreCase);
+            return IsGfxFieldName(fieldName);
+        }
+
+        public bool IsGfxFieldName(string fieldName)
+        {
+            if (string.IsNullOrWhiteSpace(fieldName))
+            {
+                return false;
+            }
+
+            string normalized = fieldName.Trim();
+            if (normalized.StartsWith("gfx_file", StringComparison.OrdinalIgnoreCase)
+                || normalized.StartsWith("file_gfx", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            return normalized.EndsWith("_gfx_file", StringComparison.OrdinalIgnoreCase);
         }
 
         public bool IsShiftedModelFieldName(string fieldName)
@@ -77,8 +94,15 @@ namespace FWEledit
                 return false;
             }
             string normalized = fieldName.Trim();
-            return normalized.StartsWith("file_models_", StringComparison.OrdinalIgnoreCase)
-                || normalized.StartsWith("model_name_", StringComparison.OrdinalIgnoreCase)
+            if (normalized.StartsWith("models_", StringComparison.OrdinalIgnoreCase)
+                && normalized.IndexOf("_file_model_", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                // Equipment slot fields (models_X_file_model_*) are direct PathID mappings.
+                return false;
+            }
+            // "file_models_X" fields are usually direct PathID mappings.
+            // Treating them as shifted (+1) can reorder model slots.
+            return normalized.StartsWith("model_name_", StringComparison.OrdinalIgnoreCase)
                 || normalized.IndexOf("_file_model_", StringComparison.OrdinalIgnoreCase) >= 0
                 || normalized.StartsWith("file_to_shown_", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(normalized, "file_default_weapon", StringComparison.OrdinalIgnoreCase)

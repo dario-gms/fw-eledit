@@ -133,12 +133,19 @@ namespace FWEledit
                     int uses = 0;
                     int itemId = 0;
                     string itemName = string.Empty;
+                    string mappedPath = BuildMappedPath(package, relativePath);
                     Bitmap icon = Properties.Resources.NoIcon;
                     if (pathId > 0)
                     {
                         usesByPathId.TryGetValue(pathId, out uses);
                         sampleItemIdByPathId.TryGetValue(pathId, out itemId);
                         sampleItemNameByPathId.TryGetValue(pathId, out itemName);
+                        string mappedFromPathId;
+                        if (database.pathById.TryGetValue(pathId, out mappedFromPathId) && !string.IsNullOrWhiteSpace(mappedFromPathId))
+                        {
+                            mappedPath = mappedFromPathId;
+                        }
+
                         string iconKey;
                         if (sampleIconKeyByPathId.TryGetValue(pathId, out iconKey)
                             && !string.IsNullOrWhiteSpace(iconKey)
@@ -162,6 +169,7 @@ namespace FWEledit
                         PathId = pathId,
                         Package = package,
                         RelativePath = relativePath,
+                        MappedPath = mappedPath,
                         Icon = icon,
                         ItemId = itemId,
                         ItemName = itemName,
@@ -323,6 +331,7 @@ namespace FWEledit
             List<int> candidates = new List<int>();
             if (fieldClassifier.IsShiftedModelFieldName(fieldName, listName))
             {
+                // Some legacy model fields store a shifted PathID reference (+1).
                 candidates.Add(pathId + 1);
                 candidates.Add(pathId);
                 candidates.Add(pathId - 1);
@@ -343,6 +352,35 @@ namespace FWEledit
                 while (candidates.Count > 1)
                 {
                     candidates.RemoveAt(candidates.Count - 1);
+                }
+            }
+
+            bool requireModelLikePath = fieldClassifier.IsModelFieldName(fieldName) || fieldClassifier.IsGfxFieldName(fieldName);
+            if (requireModelLikePath)
+            {
+                for (int i = 0; i < candidates.Count; i++)
+                {
+                    int candidate = candidates[i];
+                    string mapped;
+                    if (!database.pathById.TryGetValue(candidate, out mapped) || string.IsNullOrWhiteSpace(mapped))
+                    {
+                        continue;
+                    }
+
+                    if (!LooksLikeModelMappedPath(mapped))
+                    {
+                        continue;
+                    }
+
+                    string ext = Path.GetExtension(mapped);
+                    if (!IsModelFieldExtensionAllowed(ext))
+                    {
+                        continue;
+                    }
+
+                    resolvedPathId = candidate;
+                    mappedPath = mapped;
+                    return true;
                 }
             }
 
@@ -579,15 +617,7 @@ namespace FWEledit
 
         public static bool IsModelPickerExtensionAllowed(string package, string extension)
         {
-            if (string.IsNullOrWhiteSpace(extension))
-            {
-                return false;
-            }
-            if (string.Equals(extension, ".ecm", StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-            return false;
+            return IsModelFieldExtensionAllowed(extension);
         }
 
         public static void AddPathLookupKey(Dictionary<string, List<int>> lookup, string key, int pathId)
@@ -636,6 +666,32 @@ namespace FWEledit
             }
 
             return false;
+        }
+
+        private static string BuildMappedPath(string package, string relativePath)
+        {
+            string safePackage = (package ?? string.Empty).Trim();
+            string safeRelative = (relativePath ?? string.Empty).Replace('/', '\\').Trim().TrimStart('\\');
+            if (string.IsNullOrWhiteSpace(safeRelative))
+            {
+                return string.Empty;
+            }
+            if (string.IsNullOrWhiteSpace(safePackage))
+            {
+                return safeRelative;
+            }
+            return safePackage + "\\" + safeRelative;
+        }
+
+        private static bool IsModelFieldExtensionAllowed(string extension)
+        {
+            if (string.IsNullOrWhiteSpace(extension))
+            {
+                return false;
+            }
+            return string.Equals(extension, ".ecm", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(extension, ".gfx", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(extension, ".ski", StringComparison.OrdinalIgnoreCase);
         }
     }
 }
