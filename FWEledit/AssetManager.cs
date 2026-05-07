@@ -43,6 +43,7 @@ namespace FWEledit
         private bool triedExtractMoxingPck = false;
         private HashSet<string> dirtyPackages = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private bool pathDataDirty = false;
+        private readonly SortedList<int, string> pendingPathDataEntries = new SortedList<int, string>();
 
         public static object anydata;
 
@@ -82,6 +83,7 @@ namespace FWEledit
                     triedExtractMoxingPck = false;
                     dirtyPackages.Clear();
                     pathDataDirty = false;
+                    pendingPathDataEntries.Clear();
                 }
             }
             catch
@@ -314,7 +316,16 @@ namespace FWEledit
                 bool copyNeeded = !File.Exists(workspacePathData);
                 if (!copyNeeded)
                 {
-                    copyNeeded = File.GetLastWriteTimeUtc(gamePathData) > File.GetLastWriteTimeUtc(workspacePathData);
+                    // If workspace differs from game path.data (for example after manual backup restore),
+                    // resync to avoid carrying stale/corrupted mappings across sessions.
+                    if (!pathDataDirty && pendingPathDataEntries.Count == 0)
+                    {
+                        copyNeeded = !AreFilesBinaryEqual(gamePathData, workspacePathData);
+                    }
+                    else
+                    {
+                        copyNeeded = File.GetLastWriteTimeUtc(gamePathData) > File.GetLastWriteTimeUtc(workspacePathData);
+                    }
                 }
                 if (copyNeeded)
                 {
@@ -637,6 +648,12 @@ namespace FWEledit
                 }
 
                 EnsureWorkspaceReady();
+                if (!TryPersistPendingPathDataEntries(out string pendingPathError))
+                {
+                    summary = "Failed to update path.data: " + pendingPathError;
+                    return false;
+                }
+
                 string workspaceResources = GetWorkspaceResourcesRoot();
                 string gameResources = Path.Combine(GameRootPath, "resources");
 
@@ -802,7 +819,7 @@ namespace FWEledit
                 using (FileStream fs = File.OpenRead(pathDataFile))
                 using (BinaryReader br = new BinaryReader(fs, enc))
                 {
-                    if (br.BaseStream.Length < 12)
+                    if (br.BaseStream.Length < 8)
                     {
                         return result;
                     }
@@ -814,7 +831,6 @@ namespace FWEledit
                     }
 
                     int count = br.ReadInt32();
-                    br.ReadInt32(); // version/reserved
 
                     for (int i = 0; i < count; i++)
                     {
@@ -823,19 +839,14 @@ namespace FWEledit
                             break;
                         }
 
+                        int id = br.ReadInt32();
                         int len = br.ReadInt32();
-                        if (len < 0 || len > 8192 || br.BaseStream.Position + len + 4 > br.BaseStream.Length)
+                        if (id < 0 || len < 0 || len > 8192 || br.BaseStream.Position + len > br.BaseStream.Length)
                         {
                             break;
                         }
 
                         byte[] pathBytes = br.ReadBytes(len);
-                        int id = br.ReadInt32();
-                        if (id < 0)
-                        {
-                            continue;
-                        }
-
                         string mappedPath = enc.GetString(pathBytes).Replace('/', '\\');
                         if (!result.ContainsKey(id))
                         {
@@ -848,6 +859,597 @@ namespace FWEledit
             { }
 
             return result;
+        }
+
+        public bool TryUpsertWorkspacePathDataEntry(int pathId, string mappedPath, out string error)
+        {
+            error = string.Empty;
+            if (pathId <= 0)
+            {
+                error = "Invalid PathID.";
+                return false;
+            }
+
+            string canonicalPath = (mappedPath ?? string.Empty).Replace('/', '\\').Trim().TrimStart('\\');
+            string normalizedPath = NormalizePathDataLookupKey(canonicalPath);
+            if (string.IsNullOrWhiteSpace(canonicalPath) || string.IsNullOrWhiteSpace(normalizedPath))
+            {
+                error = "Invalid mapped path.";
+                return false;
+            }
+
+            try
+            {
+                EnsureWorkspaceReady();
+                string workspacePathData = GetWorkspacePathDataFile();
+                if (string.IsNullOrWhiteSpace(workspacePathData))
+                {
+                    error = "Workspace path.data unavailable.";
+                    return false;
+                }
+
+                string workspaceDir = Path.GetDirectoryName(workspacePathData) ?? string.Empty;
+                if (!string.IsNullOrWhiteSpace(workspaceDir))
+                {
+                    Directory.CreateDirectory(workspaceDir);
+                }
+
+                SortedList<int, string> entries = new SortedList<int, string>();
+                try
+                {
+                    entries = LoadPathById();
+                    if (entries == null)
+                    {
+                        entries = new SortedList<int, string>();
+                    }
+                }
+                catch
+                {
+                    entries = new SortedList<int, string>();
+                }
+
+                if (entries.ContainsKey(pathId))
+                {
+                    string existingPath = entries[pathId] ?? string.Empty;
+                    string existingNormalized = NormalizePathDataLookupKey(existingPath);
+                    if (!string.Equals(existingNormalized, normalizedPath, StringComparison.OrdinalIgnoreCase))
+                    {
+                        error = "PathID already mapped to another path:\n"
+                            + pathId.ToString()
+                            + " => "
+                            + existingPath;
+                        return false;
+                    }
+                }
+                else
+                {
+                    entries.Add(pathId, canonicalPath);
+                }
+
+                byte[] workspaceOriginal = null;
+                bool workspaceExisted = File.Exists(workspacePathData);
+                if (workspaceExisted)
+                {
+                    workspaceOriginal = File.ReadAllBytes(workspacePathData);
+                }
+
+                string gamePathData = string.Empty;
+                byte[] gameOriginal = null;
+                bool gameExisted = false;
+                if (!string.IsNullOrWhiteSpace(GameRootPath))
+                {
+                    gamePathData = Path.Combine(GameRootPath, "data", "path.data");
+                    gameExisted = File.Exists(gamePathData);
+                    if (gameExisted)
+                    {
+                        gameOriginal = File.ReadAllBytes(gamePathData);
+                    }
+                }
+
+                if (!TryWritePathByIdFile(workspacePathData, entries, out string writeWorkspaceError))
+                {
+                    error = writeWorkspaceError;
+                    return false;
+                }
+
+                if (!string.IsNullOrWhiteSpace(gamePathData))
+                {
+                    if (!TryWritePathByIdFile(gamePathData, entries, out string writeGameError))
+                    {
+                        TryRestorePathDataFile(workspacePathData, workspaceExisted, workspaceOriginal);
+                        error = string.IsNullOrWhiteSpace(writeGameError)
+                            ? "Failed to write game path.data."
+                            : "Failed to write game path.data:\n" + writeGameError;
+                        return false;
+                    }
+                }
+
+                // Compatibility sync: some external editors still read
+                // fELedit/resources/data/path.data instead of data/path.data.
+                TryWriteLegacyFelEditPathData(entries);
+
+                MarkWorkspaceFileChanged(workspacePathData);
+                pathDataDirty = false;
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = ex.Message;
+                return false;
+            }
+        }
+
+        public bool QueuePathDataEntry(int pathId, string mappedPath, out string error)
+        {
+            error = string.Empty;
+            if (pathId <= 0)
+            {
+                error = "Invalid PathID.";
+                return false;
+            }
+
+            string canonicalPath = (mappedPath ?? string.Empty).Replace('/', '\\').Trim().TrimStart('\\');
+            string normalizedPath = NormalizePathDataLookupKey(canonicalPath);
+            if (string.IsNullOrWhiteSpace(canonicalPath) || string.IsNullOrWhiteSpace(normalizedPath))
+            {
+                error = "Invalid mapped path.";
+                return false;
+            }
+
+            try
+            {
+                if (database.pathById != null && database.pathById.ContainsKey(pathId))
+                {
+                    string existingPath = database.pathById[pathId] ?? string.Empty;
+                    string existingNormalized = NormalizePathDataLookupKey(existingPath);
+                    if (!string.Equals(existingNormalized, normalizedPath, StringComparison.OrdinalIgnoreCase))
+                    {
+                        error = "PathID already mapped to another path:\n"
+                            + pathId.ToString()
+                            + " => "
+                            + existingPath;
+                        return false;
+                    }
+                }
+
+                if (pendingPathDataEntries.ContainsKey(pathId))
+                {
+                    string pendingPath = pendingPathDataEntries[pathId] ?? string.Empty;
+                    string pendingNormalized = NormalizePathDataLookupKey(pendingPath);
+                    if (!string.Equals(pendingNormalized, normalizedPath, StringComparison.OrdinalIgnoreCase))
+                    {
+                        error = "Pending PathID already mapped to another path:\n"
+                            + pathId.ToString()
+                            + " => "
+                            + pendingPath;
+                        return false;
+                    }
+
+                    pendingPathDataEntries[pathId] = canonicalPath;
+                }
+                else
+                {
+                    pendingPathDataEntries.Add(pathId, canonicalPath);
+                }
+
+                pathDataDirty = true;
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = ex.Message;
+                return false;
+            }
+        }
+
+        public bool TryFindPathIdByMappedPath(string mappedPath, out int pathId)
+        {
+            pathId = 0;
+            string normalizedPath = NormalizePathDataLookupKey(mappedPath);
+            if (string.IsNullOrWhiteSpace(normalizedPath))
+            {
+                return false;
+            }
+
+            try
+            {
+                SortedList<int, string> entries = LoadPathById();
+                if (entries == null || entries.Count == 0)
+                {
+                    return false;
+                }
+
+                for (int i = 0; i < entries.Count; i++)
+                {
+                    int id = entries.Keys[i];
+                    string value = entries.Values[i] ?? string.Empty;
+                    string normalizedValue = NormalizePathDataLookupKey(value);
+                    if (string.Equals(normalizedValue, normalizedPath, StringComparison.OrdinalIgnoreCase))
+                    {
+                        pathId = id;
+                        return pathId > 0;
+                    }
+                }
+            }
+            catch
+            { }
+
+            return false;
+        }
+
+        public int GetMaxPathId()
+        {
+            try
+            {
+                SortedList<int, string> entries = LoadPathById();
+                if (entries != null && entries.Count > 0)
+                {
+                    return entries.Keys[entries.Count - 1];
+                }
+            }
+            catch
+            { }
+
+            return 0;
+        }
+
+        private bool TryPersistPendingPathDataEntries(out string error)
+        {
+            error = string.Empty;
+            if (pendingPathDataEntries.Count == 0)
+            {
+                return true;
+            }
+
+            try
+            {
+                EnsureWorkspaceReady();
+                string workspacePathData = GetWorkspacePathDataFile();
+                if (string.IsNullOrWhiteSpace(workspacePathData))
+                {
+                    error = "Workspace path.data unavailable.";
+                    return false;
+                }
+
+                string workspaceDir = Path.GetDirectoryName(workspacePathData) ?? string.Empty;
+                if (!string.IsNullOrWhiteSpace(workspaceDir))
+                {
+                    Directory.CreateDirectory(workspaceDir);
+                }
+
+                if (!TryLoadPathDataRawEntries(workspacePathData, out List<PathDataRawEntry> rawEntries, out SortedList<int, string> decodedEntries, out string readError))
+                {
+                    error = string.IsNullOrWhiteSpace(readError) ? "Failed to read workspace path.data." : readError;
+                    return false;
+                }
+
+                bool changed = false;
+                Encoding enc = Encoding.GetEncoding("GBK");
+                for (int i = 0; i < pendingPathDataEntries.Count; i++)
+                {
+                    int pathId = pendingPathDataEntries.Keys[i];
+                    string pendingPath = (pendingPathDataEntries.Values[i] ?? string.Empty).Replace('/', '\\').Trim().TrimStart('\\');
+                    string pendingNormalized = NormalizePathDataLookupKey(pendingPath);
+                    if (string.IsNullOrWhiteSpace(pendingNormalized))
+                    {
+                        continue;
+                    }
+
+                    if (decodedEntries.ContainsKey(pathId))
+                    {
+                        string existingPath = decodedEntries[pathId] ?? string.Empty;
+                        string existingNormalized = NormalizePathDataLookupKey(existingPath);
+                        if (!string.Equals(existingNormalized, pendingNormalized, StringComparison.OrdinalIgnoreCase))
+                        {
+                            error = "PathID already mapped to another path:\n"
+                                + pathId.ToString()
+                                + " => "
+                                + existingPath;
+                            return false;
+                        }
+                    }
+                    else
+                    {
+                        rawEntries.Add(new PathDataRawEntry
+                        {
+                            Id = pathId,
+                            PathBytes = enc.GetBytes(pendingPath),
+                            DecodedPath = pendingPath
+                        });
+                        decodedEntries.Add(pathId, pendingPath);
+                        changed = true;
+                    }
+                }
+
+                if (changed && !TryWritePathDataRawEntries(workspacePathData, rawEntries, out string writeError))
+                {
+                    error = string.IsNullOrWhiteSpace(writeError) ? "Failed to write workspace path.data." : writeError;
+                    return false;
+                }
+
+                database.pathById = decodedEntries;
+                pendingPathDataEntries.Clear();
+                MarkWorkspaceFileChanged(workspacePathData);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = ex.Message;
+                return false;
+            }
+        }
+
+        private static string NormalizePathDataLookupKey(string mappedPath)
+        {
+            string normalized = (mappedPath ?? string.Empty).Replace('/', '\\').Trim().TrimStart('\\');
+            return normalized;
+        }
+
+        private void TryWriteLegacyFelEditPathData(SortedList<int, string> entries)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(GameRootPath))
+                {
+                    return;
+                }
+
+                string legacyPathData = Path.Combine(GameRootPath, "fELedit", "resources", "data", "path.data");
+                string legacyDir = Path.GetDirectoryName(legacyPathData) ?? string.Empty;
+                if (string.IsNullOrWhiteSpace(legacyDir))
+                {
+                    return;
+                }
+
+                if (!Directory.Exists(legacyDir) && !File.Exists(legacyPathData))
+                {
+                    return;
+                }
+
+                Directory.CreateDirectory(legacyDir);
+                TryWritePathByIdFile(legacyPathData, entries, out string _);
+            }
+            catch
+            { }
+        }
+
+        private static bool AreFilesBinaryEqual(string firstPath, string secondPath)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(firstPath) || string.IsNullOrWhiteSpace(secondPath))
+                {
+                    return false;
+                }
+                if (!File.Exists(firstPath) || !File.Exists(secondPath))
+                {
+                    return false;
+                }
+
+                FileInfo firstInfo = new FileInfo(firstPath);
+                FileInfo secondInfo = new FileInfo(secondPath);
+                if (firstInfo.Length != secondInfo.Length)
+                {
+                    return false;
+                }
+
+                const int BufferSize = 1024 * 128;
+                byte[] firstBuffer = new byte[BufferSize];
+                byte[] secondBuffer = new byte[BufferSize];
+                using (FileStream first = File.OpenRead(firstPath))
+                using (FileStream second = File.OpenRead(secondPath))
+                {
+                    while (true)
+                    {
+                        int readFirst = first.Read(firstBuffer, 0, firstBuffer.Length);
+                        int readSecond = second.Read(secondBuffer, 0, secondBuffer.Length);
+                        if (readFirst != readSecond)
+                        {
+                            return false;
+                        }
+                        if (readFirst == 0)
+                        {
+                            return true;
+                        }
+                        for (int i = 0; i < readFirst; i++)
+                        {
+                            if (firstBuffer[i] != secondBuffer[i])
+                            {
+                                return false;
+                            }
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static void TryRestorePathDataFile(string pathDataFile, bool existed, byte[] originalBytes)
+        {
+            try
+            {
+                if (existed)
+                {
+                    if (originalBytes != null)
+                    {
+                        File.WriteAllBytes(pathDataFile, originalBytes);
+                    }
+                    return;
+                }
+
+                if (File.Exists(pathDataFile))
+                {
+                    File.Delete(pathDataFile);
+                }
+            }
+            catch
+            { }
+        }
+
+        private static bool TryWritePathByIdFile(string pathDataFile, SortedList<int, string> entries, out string error)
+        {
+            error = string.Empty;
+            if (string.IsNullOrWhiteSpace(pathDataFile))
+            {
+                error = "Invalid output path for path.data.";
+                return false;
+            }
+
+            try
+            {
+                Encoding enc = Encoding.GetEncoding("GBK");
+                using (FileStream fs = new FileStream(pathDataFile, FileMode.Create, FileAccess.Write, FileShare.None))
+                using (BinaryWriter bw = new BinaryWriter(fs, enc))
+                {
+                    bw.Write(Encoding.ASCII.GetBytes("DIMP"));
+                    int count = entries == null ? 0 : entries.Count;
+                    bw.Write(count);
+
+                    if (entries != null)
+                    {
+                        for (int i = 0; i < entries.Count; i++)
+                        {
+                            int id = entries.Keys[i];
+                            string mappedPath = (entries.Values[i] ?? string.Empty).Replace('/', '\\');
+                            byte[] bytes = enc.GetBytes(mappedPath);
+                            bw.Write(id);
+                            bw.Write(bytes.Length);
+                            bw.Write(bytes);
+                        }
+                    }
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = ex.Message;
+                return false;
+            }
+        }
+
+        private sealed class PathDataRawEntry
+        {
+            public int Id;
+            public byte[] PathBytes;
+            public string DecodedPath;
+        }
+
+        private static bool TryLoadPathDataRawEntries(
+            string pathDataFile,
+            out List<PathDataRawEntry> rawEntries,
+            out SortedList<int, string> decodedEntries,
+            out string error)
+        {
+            rawEntries = new List<PathDataRawEntry>();
+            decodedEntries = new SortedList<int, string>();
+            error = string.Empty;
+
+            if (string.IsNullOrWhiteSpace(pathDataFile) || !File.Exists(pathDataFile))
+            {
+                return true;
+            }
+
+            try
+            {
+                Encoding enc = Encoding.GetEncoding("GBK");
+                using (FileStream fs = File.OpenRead(pathDataFile))
+                using (BinaryReader br = new BinaryReader(fs, enc))
+                {
+                    if (br.BaseStream.Length < 8)
+                    {
+                        return true;
+                    }
+
+                    string magic = Encoding.ASCII.GetString(br.ReadBytes(4));
+                    if (!string.Equals(magic, "DIMP", StringComparison.Ordinal))
+                    {
+                        error = "Invalid path.data header.";
+                        return false;
+                    }
+
+                    int count = br.ReadInt32();
+                    for (int i = 0; i < count; i++)
+                    {
+                        if (br.BaseStream.Position + 8 > br.BaseStream.Length)
+                        {
+                            break;
+                        }
+
+                        int id = br.ReadInt32();
+                        int len = br.ReadInt32();
+                        if (id < 0 || len < 0 || br.BaseStream.Position + len > br.BaseStream.Length)
+                        {
+                            error = "Invalid path.data entry payload.";
+                            return false;
+                        }
+
+                        byte[] bytes = br.ReadBytes(len);
+                        string mappedPath = enc.GetString(bytes).Replace('/', '\\');
+                        rawEntries.Add(new PathDataRawEntry
+                        {
+                            Id = id,
+                            PathBytes = bytes,
+                            DecodedPath = mappedPath
+                        });
+
+                        if (!decodedEntries.ContainsKey(id))
+                        {
+                            decodedEntries.Add(id, mappedPath);
+                        }
+                    }
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = ex.Message;
+                return false;
+            }
+        }
+
+        private static bool TryWritePathDataRawEntries(string pathDataFile, List<PathDataRawEntry> rawEntries, out string error)
+        {
+            error = string.Empty;
+            if (string.IsNullOrWhiteSpace(pathDataFile))
+            {
+                error = "Invalid output path for path.data.";
+                return false;
+            }
+
+            try
+            {
+                using (FileStream fs = new FileStream(pathDataFile, FileMode.Create, FileAccess.Write, FileShare.None))
+                using (BinaryWriter bw = new BinaryWriter(fs, Encoding.ASCII))
+                {
+                    bw.Write(Encoding.ASCII.GetBytes("DIMP"));
+                    int count = rawEntries == null ? 0 : rawEntries.Count;
+                    bw.Write(count);
+
+                    if (rawEntries != null)
+                    {
+                        for (int i = 0; i < rawEntries.Count; i++)
+                        {
+                            PathDataRawEntry entry = rawEntries[i];
+                            byte[] bytes = entry != null && entry.PathBytes != null ? entry.PathBytes : new byte[0];
+                            bw.Write(entry == null ? 0 : entry.Id);
+                            bw.Write(bytes.Length);
+                            bw.Write(bytes);
+                        }
+                    }
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = ex.Message;
+                return false;
+            }
         }
 
         private string NormalizeIconKey(string value)
@@ -897,6 +1499,7 @@ namespace FWEledit
             {
                 roots.Add(Path.Combine(WorkspaceRootPath, "resources", "surfaces.pck.files"));
                 roots.Add(Path.Combine(WorkspaceRootPath, "resources", "configs.pck.files"));
+                roots.Add(Path.Combine(WorkspaceRootPath, "resources", "gfx.pck.files"));
                 roots.Add(Path.Combine(WorkspaceRootPath, "resources", "models.pck.files"));
                 roots.Add(Path.Combine(WorkspaceRootPath, "resources", "litmodels.pck.files"));
                 roots.Add(Path.Combine(WorkspaceRootPath, "resources", "moxing.pck.files"));
@@ -905,6 +1508,7 @@ namespace FWEledit
             {
                 roots.Add(Path.Combine(GameRootPath, "resources", "surfaces.pck.files"));
                 roots.Add(Path.Combine(GameRootPath, "resources", "configs.pck.files"));
+                roots.Add(Path.Combine(GameRootPath, "resources", "gfx.pck.files"));
                 roots.Add(Path.Combine(GameRootPath, "resources", "models.pck.files"));
                 roots.Add(Path.Combine(GameRootPath, "resources", "litmodels.pck.files"));
                 roots.Add(Path.Combine(GameRootPath, "resources", "moxing.pck.files"));
@@ -962,11 +1566,13 @@ namespace FWEledit
             {
                 Path.Combine(WorkspaceRootPath ?? string.Empty, "resources", "surfaces.pck.files"),
                 Path.Combine(WorkspaceRootPath ?? string.Empty, "resources", "configs.pck.files"),
+                Path.Combine(WorkspaceRootPath ?? string.Empty, "resources", "gfx.pck.files"),
                 Path.Combine(WorkspaceRootPath ?? string.Empty, "resources", "models.pck.files"),
                 Path.Combine(WorkspaceRootPath ?? string.Empty, "resources", "litmodels.pck.files"),
                 Path.Combine(WorkspaceRootPath ?? string.Empty, "resources", "moxing.pck.files"),
                 Path.Combine(GameRootPath, "resources", "surfaces.pck.files"),
                 Path.Combine(GameRootPath, "resources", "configs.pck.files"),
+                Path.Combine(GameRootPath, "resources", "gfx.pck.files"),
                 Path.Combine(GameRootPath, "resources", "models.pck.files"),
                 Path.Combine(GameRootPath, "resources", "litmodels.pck.files"),
                 Path.Combine(GameRootPath, "resources", "moxing.pck.files")

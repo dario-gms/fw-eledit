@@ -169,6 +169,7 @@ namespace FWEledit
             ModelPackageNotificationService modelPackageNotificationService,
             DialogService dialogService,
             PathIdResolutionService pathIdResolutionService,
+            AssetManager assetManager,
             IWin32Window owner)
         {
             if (listCollection == null || database == null || itemGrid == null || listIndex < 0)
@@ -215,7 +216,24 @@ namespace FWEledit
                 }
 
                 int selectedPathId = picker.SelectedPathId;
-                if (selectedPathId <= 0 || selectedPathId == currentPathId)
+                if (selectedPathId <= 0)
+                {
+                    if (!TryCreatePathIdForSelectedModel(
+                        database,
+                        assetManager,
+                        picker.SelectedMappedPath,
+                        out selectedPathId,
+                        out string createError))
+                    {
+                        if (!string.IsNullOrWhiteSpace(createError))
+                        {
+                            MessageBox.Show(createError, "Choice Model", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        }
+                        return;
+                    }
+                }
+
+                if (selectedPathId == currentPathId)
                 {
                     return;
                 }
@@ -226,7 +244,145 @@ namespace FWEledit
                 }
 
                 itemGrid.Rows[rowIndex].Cells[2].Value = selectedPathId.ToString();
+                modelPickerCacheService?.InvalidatePickerEntries(listIndex);
             }
+        }
+
+        private static bool TryCreatePathIdForSelectedModel(
+            CacheSave database,
+            AssetManager assetManager,
+            string mappedPath,
+            out int createdPathId,
+            out string error)
+        {
+            createdPathId = 0;
+            error = string.Empty;
+
+            if (database == null)
+            {
+                error = "Database unavailable.";
+                return false;
+            }
+
+            string normalizedMappedPath = ModelPickerService.NormalizeModelPathLookupKey(mappedPath);
+            if (string.IsNullOrWhiteSpace(normalizedMappedPath))
+            {
+                error = "Invalid model path.";
+                return false;
+            }
+
+            if (database.pathById == null)
+            {
+                database.pathById = new System.Collections.Generic.SortedList<int, string>();
+            }
+
+            foreach (System.Collections.Generic.KeyValuePair<int, string> kv in database.pathById)
+            {
+                if (string.Equals(
+                        ModelPickerService.NormalizeModelPathLookupKey(kv.Value),
+                        normalizedMappedPath,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    createdPathId = kv.Key;
+                    return createdPathId > 0;
+                }
+            }
+
+            int newPathId = FindCompatibleNewPathId(database.pathById, assetManager);
+            if (newPathId <= 0)
+            {
+                error = "Failed to allocate a new PathID.";
+                return false;
+            }
+
+            string canonicalMappedPath = (mappedPath ?? string.Empty).Replace('/', '\\').Trim().TrimStart('\\');
+            if (string.IsNullOrWhiteSpace(canonicalMappedPath))
+            {
+                error = "Invalid model path.";
+                return false;
+            }
+
+            if (assetManager == null)
+            {
+                error = "Asset manager unavailable.";
+                return false;
+            }
+
+            int existingPersistedPathId;
+            if (assetManager.TryFindPathIdByMappedPath(canonicalMappedPath, out existingPersistedPathId) && existingPersistedPathId > 0)
+            {
+                createdPathId = existingPersistedPathId;
+                if (!database.pathById.ContainsKey(existingPersistedPathId))
+                {
+                    database.pathById[existingPersistedPathId] = canonicalMappedPath;
+                }
+                return true;
+            }
+
+            int attempts = 0;
+            while (attempts < 200000 && newPathId > 0)
+            {
+                attempts++;
+                if (database.pathById.ContainsKey(newPathId))
+                {
+                    newPathId++;
+                    continue;
+                }
+
+                database.pathById.Add(newPathId, canonicalMappedPath);
+                createdPathId = newPathId;
+
+                if (assetManager.QueuePathDataEntry(newPathId, canonicalMappedPath, out string queueError))
+                {
+                    return true;
+                }
+
+                database.pathById.Remove(newPathId);
+                createdPathId = 0;
+
+                if (!string.IsNullOrWhiteSpace(queueError)
+                    && queueError.StartsWith("PathID already mapped to another path:", StringComparison.OrdinalIgnoreCase))
+                {
+                    newPathId++;
+                    continue;
+                }
+
+                error = string.IsNullOrWhiteSpace(queueError)
+                    ? "Failed to queue PathID for path.data save."
+                    : "Failed to queue PathID for path.data save:\n" + queueError;
+                return false;
+            }
+
+            error = "Failed to allocate a collision-free PathID.";
+            return false;
+        }
+
+        private static int FindCompatibleNewPathId(System.Collections.Generic.SortedList<int, string> pathById, AssetManager assetManager)
+        {
+            int maxInDatabase = 0;
+            if (pathById != null && pathById.Count > 0)
+            {
+                maxInDatabase = pathById.Keys[pathById.Count - 1];
+            }
+
+            int maxInPathData = 0;
+            if (assetManager != null)
+            {
+                maxInPathData = assetManager.GetMaxPathId();
+            }
+
+            int candidate = Math.Max(maxInDatabase, maxInPathData) + 1;
+            if (candidate <= 0)
+            {
+                candidate = 1;
+            }
+
+            while (pathById != null && pathById.ContainsKey(candidate))
+            {
+                candidate++;
+            }
+
+            return candidate;
         }
 
         public void OpenAddonTypePickerForValueRow(
@@ -435,7 +591,7 @@ namespace FWEledit
             }
 
             string fieldName = Convert.ToString(itemGrid.Rows[rowIndex].Cells[0].Value);
-            if (fieldClassifier == null || !fieldClassifier.IsModelFieldName(fieldName))
+            if (fieldClassifier == null || !fieldClassifier.IsModelUsageFieldName(fieldName))
             {
                 return;
             }
@@ -549,7 +705,14 @@ namespace FWEledit
                 return new List<ModelPickerEntry>();
             }
 
-            return modelPickerService.BuildModelPickerEntries(
+            string cacheSignature = BuildPickerEntriesCacheSignature(listCollection, database, listIndex);
+            if (modelPickerCacheService != null
+                && modelPickerCacheService.TryGetPickerEntries(listIndex, cacheSignature, out List<ModelPickerEntry> cachedEntries))
+            {
+                return cachedEntries;
+            }
+
+            List<ModelPickerEntry> builtEntries = modelPickerService.BuildModelPickerEntries(
                 listCollection,
                 database,
                 listIndex,
@@ -570,6 +733,62 @@ namespace FWEledit
                             owner);
                     }
                 });
+
+            modelPickerCacheService?.SetPickerEntries(listIndex, cacheSignature, builtEntries);
+            return builtEntries;
+        }
+
+        private static string BuildPickerEntriesCacheSignature(
+            eListCollection listCollection,
+            CacheSave database,
+            int listIndex)
+        {
+            try
+            {
+                int rows = 0;
+                int fields = 0;
+                string listName = string.Empty;
+                if (listCollection != null
+                    && listIndex >= 0
+                    && listIndex < listCollection.Lists.Length
+                    && listCollection.Lists[listIndex] != null)
+                {
+                    rows = listCollection.Lists[listIndex].elementValues != null
+                        ? listCollection.Lists[listIndex].elementValues.Length
+                        : 0;
+                    fields = listCollection.Lists[listIndex].elementFields != null
+                        ? listCollection.Lists[listIndex].elementFields.Length
+                        : 0;
+                    listName = listCollection.Lists[listIndex].listName ?? string.Empty;
+                }
+
+                int pathCount = database?.pathById?.Count ?? 0;
+                int minPath = 0;
+                int maxPath = 0;
+                if (database?.pathById != null && database.pathById.Count > 0)
+                {
+                    minPath = database.pathById.Keys[0];
+                    maxPath = database.pathById.Keys[database.pathById.Count - 1];
+                }
+
+                return listIndex.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                    + "|"
+                    + rows.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                    + "|"
+                    + fields.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                    + "|"
+                    + pathCount.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                    + "|"
+                    + minPath.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                    + "|"
+                    + maxPath.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                    + "|"
+                    + listName;
+            }
+            catch
+            {
+                return listIndex.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            }
         }
 
         private static int TryGetCurrentPathId(

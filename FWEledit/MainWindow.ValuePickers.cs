@@ -37,6 +37,7 @@ namespace FWEledit
                 modelPackageNotificationService,
                 dialogService,
                 pathIdResolutionService,
+                sessionService.AssetManager,
                 this);
         }
 
@@ -190,7 +191,7 @@ namespace FWEledit
             }
 
             string fieldName = Convert.ToString(dataGridView_item.Rows[rowIndex].Cells[0].Value);
-            return itemFieldClassifierService.IsModelFieldName(fieldName);
+            return itemFieldClassifierService.IsModelUsageFieldName(fieldName);
         }
 
         private int FindFirstModelFieldRow()
@@ -203,7 +204,7 @@ namespace FWEledit
             for (int i = 0; i < dataGridView_item.Rows.Count; i++)
             {
                 string fieldName = Convert.ToString(dataGridView_item.Rows[i].Cells[0].Value);
-                if (itemFieldClassifierService.IsModelFieldName(fieldName))
+                if (itemFieldClassifierService.IsModelUsageFieldName(fieldName))
                 {
                     return i;
                 }
@@ -299,6 +300,7 @@ namespace FWEledit
 
             string fieldName = Convert.ToString(dataGridView_item.Rows[rowIndex].Cells[0].Value);
             bool isModelField = itemFieldClassifierService != null && itemFieldClassifierService.IsModelFieldName(fieldName);
+            bool isModelPreviewField = itemFieldClassifierService != null && itemFieldClassifierService.IsModelUsageFieldName(fieldName);
             bool isIconField = itemFieldClassifierService != null && itemFieldClassifierService.IsIconFieldName(fieldName);
             bool isAddonTypeField = itemFieldClassifierService != null
                 && sessionService != null
@@ -311,6 +313,10 @@ namespace FWEledit
             if (isModelField)
             {
                 menu.Items.Add("Choose Model...", null, (menuSender, args) => OpenModelPickerForValueRow(rowIndex));
+            }
+
+            if (isModelPreviewField)
+            {
                 menu.Items.Add("Preview 3D Model", null, (menuSender, args) => OpenModelPreviewForValueRow(rowIndex));
             }
 

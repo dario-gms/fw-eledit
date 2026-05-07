@@ -16,6 +16,17 @@ namespace FWEledit
 {
     public class ModelPreviewWindow : Form
     {
+        private const int WS_EX_NOACTIVATE = 0x08000000;
+        private const int WM_MOUSEACTIVATE = 0x0021;
+        private const int MA_NOACTIVATE = 3;
+        private const int WM_ACTIVATE = 0x0006;
+        private const int WA_INACTIVE = 0;
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr SetActiveWindow(IntPtr hWnd);
+
+        private readonly bool showWithoutActivation;
+        private IntPtr nonActivatingOwnerHandle;
         private enum HardwareRenderBackend
         {
             DirectX11 = 0,
@@ -38,18 +49,23 @@ namespace FWEledit
         private readonly Panel viewportHost;
         private Control activeViewport;
         private readonly CheckBox wireframeCheck;
+        private readonly CheckBox animationCheck;
         private readonly CheckBox hardwareCheck;
         private readonly ComboBox backendCombo;
         private readonly Label backendLabel;
         private readonly Label helpLabel;
         private readonly Label summaryLabel;
         private readonly Label sourceLabel;
+        private readonly Timer animationTimer;
+        private DateTime lastAnimationTickUtc;
         private bool suppressRendererPreferenceSave;
         private static ViewCameraState persistedCameraState;
         private static bool cameraSettingsLoaded;
 
-        public ModelPreviewWindow(ModelPreviewMeshData meshData)
+        public ModelPreviewWindow(ModelPreviewMeshData meshData, bool showWithoutActivation, IntPtr nonActivatingOwnerHandle)
         {
+            this.showWithoutActivation = showWithoutActivation;
+            this.nonActivatingOwnerHandle = nonActivatingOwnerHandle;
             Text = "Preview 3D Model";
             StartPosition = FormStartPosition.CenterParent;
             MinimumSize = new Size(900, 620);
@@ -132,6 +148,22 @@ namespace FWEledit
             helpLabel.ForeColor = Color.FromArgb(190, 190, 190);
             footer.Controls.Add(helpLabel);
 
+            animationCheck = new CheckBox();
+            animationCheck.Dock = DockStyle.Right;
+            animationCheck.Width = 128;
+            animationCheck.Checked = false;
+            animationCheck.Text = "Auto Orbit";
+            animationCheck.ForeColor = Color.Gainsboro;
+            animationCheck.BackColor = footer.BackColor;
+            animationCheck.CheckedChanged += (s, e) =>
+            {
+                ApplyAnimationMode();
+                UpdateAnimationTimerState();
+                UpdateHelpLabel();
+                InvalidateActiveViewport();
+            };
+            footer.Controls.Add(animationCheck);
+
             wireframeCheck = new CheckBox();
             wireframeCheck.Dock = DockStyle.Right;
             wireframeCheck.Width = 90;
@@ -182,13 +214,26 @@ namespace FWEledit
             resetButton.Click += (s, e) => ResetActiveViewport();
             footer.Controls.Add(resetButton);
 
+            animationTimer = new Timer();
+            animationTimer.Interval = 33;
+            animationTimer.Tick += OnAnimationTimerTick;
+            lastAnimationTickUtc = DateTime.UtcNow;
+
             Controls.Add(viewportHost);
             Controls.Add(footer);
             Controls.Add(sourceLabel);
             Controls.Add(summaryLabel);
 
             KeyDown += OnWindowKeyDown;
-            FormClosing += (s, e) => SaveCameraSettings();
+            FormClosing += (s, e) =>
+            {
+                SaveCameraSettings();
+                if (animationTimer != null)
+                {
+                    animationTimer.Stop();
+                    animationTimer.Dispose();
+                }
+            };
             Shown += (s, e) =>
             {
                 if (hardwareCheck != null && hardwareCheck.Checked)
@@ -196,11 +241,78 @@ namespace FWEledit
                     ApplyRendererSettings(false);
                     BeginInvoke((Action)(() => ApplyRendererSettings(false)));
                 }
+
+                UpdateAnimationTimerState();
             };
             LoadRendererSettings();
             LoadCameraSettings();
             ApplyRendererSettings(false);
             ApplyPersistedCameraIfAny();
+        }
+
+        public ModelPreviewWindow(ModelPreviewMeshData meshData)
+            : this(meshData, false, IntPtr.Zero)
+        {
+        }
+
+        public void SetNonActivatingOwnerHandle(IntPtr ownerHandle)
+        {
+            nonActivatingOwnerHandle = ownerHandle;
+        }
+
+        public bool IsNonActivatingWindow
+        {
+            get { return showWithoutActivation; }
+        }
+
+        protected override bool ShowWithoutActivation
+        {
+            get { return showWithoutActivation; }
+        }
+
+        protected override CreateParams CreateParams
+        {
+            get
+            {
+                CreateParams cp = base.CreateParams;
+                if (showWithoutActivation)
+                {
+                    cp.ExStyle |= WS_EX_NOACTIVATE;
+                }
+                return cp;
+            }
+        }
+
+        protected override void WndProc(ref Message m)
+        {
+            if (showWithoutActivation && m.Msg == WM_ACTIVATE)
+            {
+                int activateState = m.WParam.ToInt32() & 0xFFFF;
+                if (activateState != WA_INACTIVE)
+                {
+                    if (nonActivatingOwnerHandle != IntPtr.Zero)
+                    {
+                        BeginInvoke((Action)delegate
+                        {
+                            try
+                            {
+                                SetActiveWindow(nonActivatingOwnerHandle);
+                            }
+                            catch
+                            {
+                            }
+                        });
+                    }
+                }
+            }
+
+            if (showWithoutActivation && m.Msg == WM_MOUSEACTIVATE)
+            {
+                m.Result = (IntPtr)MA_NOACTIVATE;
+                return;
+            }
+
+            base.WndProc(ref m);
         }
 
         private void OnWindowKeyDown(object sender, KeyEventArgs e)
@@ -579,7 +691,21 @@ namespace FWEledit
             try
             {
                 UpdateHeaderForMesh(meshData);
-                RecreateViewports(meshData, state);
+                if (cpuViewport != null)
+                {
+                    cpuViewport.UpdateMeshData(meshData);
+                }
+                if (dx11Viewport != null)
+                {
+                    dx11Viewport.UpdateMeshData(meshData);
+                }
+                if (gpuViewport != null)
+                {
+                    gpuViewport.UpdateMeshData(meshData);
+                }
+                ApplyCameraState(activeViewport, state);
+                UpdateHelpLabel();
+                InvalidateActiveViewport();
             }
             finally
             {
@@ -656,6 +782,7 @@ namespace FWEledit
 
             activeViewport = null;
             ApplyWireframeMode();
+            ApplyAnimationMode();
             EnsureActiveViewport(hardwareCheck != null && hardwareCheck.Checked);
 
             if (cameraState.IsValid)
@@ -677,8 +804,7 @@ namespace FWEledit
                 ApplyPersistedCameraIfAny();
             }
 
-            helpLabel.Text = "Drag: rotate | Shift+drag: fine rotate | Scroll: zoom | Double-click: reset | "
-                + GetActiveRendererStatusText();
+            UpdateHelpLabel();
             InvalidateActiveViewport();
         }
 
@@ -718,19 +844,109 @@ namespace FWEledit
             }
 
             ApplyWireframeMode();
+            ApplyAnimationMode();
             EnsureActiveViewport(useHardware);
 
             bool hardwareEnabled = useHardware;
             backendCombo.Enabled = hardwareEnabled;
             backendLabel.Enabled = hardwareEnabled;
-            helpLabel.Text = "Drag: rotate | Shift+drag: fine rotate | Scroll: zoom | Double-click: reset | "
-                + GetActiveRendererStatusText();
+            UpdateHelpLabel();
             if (persistSettings)
             {
                 SaveRendererSettings();
             }
 
             InvalidateActiveViewport();
+        }
+
+        private void ApplyAnimationMode()
+        {
+            bool enabled = animationCheck != null && animationCheck.Checked;
+            if (cpuViewport != null)
+            {
+                cpuViewport.ExperimentalAnimationEnabled = enabled;
+            }
+            if (dx11Viewport != null)
+            {
+                dx11Viewport.ExperimentalAnimationEnabled = enabled;
+            }
+            if (gpuViewport != null)
+            {
+                gpuViewport.ExperimentalAnimationEnabled = enabled;
+            }
+        }
+
+        private void UpdateAnimationTimerState()
+        {
+            if (animationTimer == null)
+            {
+                return;
+            }
+
+            bool shouldRun = animationCheck != null
+                && animationCheck.Checked
+                && !IsDisposed;
+            if (shouldRun)
+            {
+                lastAnimationTickUtc = DateTime.UtcNow;
+                animationTimer.Start();
+                return;
+            }
+
+            animationTimer.Stop();
+        }
+
+        private void OnAnimationTimerTick(object sender, EventArgs e)
+        {
+            if (IsDisposed || animationCheck == null || !animationCheck.Checked)
+            {
+                return;
+            }
+
+            DateTime nowUtc = DateTime.UtcNow;
+            float deltaSeconds = (float)(nowUtc - lastAnimationTickUtc).TotalSeconds;
+            if (deltaSeconds <= 0f)
+            {
+                return;
+            }
+
+            if (deltaSeconds > 0.2f)
+            {
+                deltaSeconds = 0.2f;
+            }
+
+            lastAnimationTickUtc = nowUtc;
+            if (cpuViewport != null)
+            {
+                cpuViewport.AdvanceAnimation(deltaSeconds);
+            }
+            if (dx11Viewport != null)
+            {
+                dx11Viewport.AdvanceAnimation(deltaSeconds);
+            }
+            if (gpuViewport != null)
+            {
+                gpuViewport.AdvanceAnimation(deltaSeconds);
+            }
+
+            InvalidateActiveViewport();
+        }
+
+        private void UpdateHelpLabel()
+        {
+            if (helpLabel == null)
+            {
+                return;
+            }
+
+            string text = "Drag: rotate | Shift+drag: fine rotate | Scroll: zoom | Double-click: reset | "
+                + GetActiveRendererStatusText();
+            if (animationCheck != null && animationCheck.Checked)
+            {
+                text += " | Auto orbit";
+            }
+
+            helpLabel.Text = text;
         }
 
         private void ApplyWireframeMode()
@@ -970,6 +1186,22 @@ namespace FWEledit
             }
         }
 
+        public void ResetViewForCurrentMesh()
+        {
+            if (IsDisposed)
+            {
+                return;
+            }
+
+            if (InvokeRequired)
+            {
+                BeginInvoke((Action)ResetViewForCurrentMesh);
+                return;
+            }
+
+            ResetActiveViewport();
+        }
+
         private void InvalidateActiveViewport()
         {
             if (activeViewport != null)
@@ -1063,26 +1295,27 @@ namespace FWEledit
                 public SharpDX.Vector4 DrawFlags;
             }
 
-            private readonly Vector3f[] vertices;
-            private readonly Vector2f[] uvs;
-            private readonly int[] indices;
-            private readonly int[] triangleColors;
-            private readonly int[] triangleTextureIndices;
-            private readonly PreviewTextureData[] textures;
-            private readonly Vector3f[] normals;
-            private readonly Vector3f center;
-            private readonly float radius;
-            private readonly float defaultYaw;
-            private readonly float defaultPitch;
+            private Vector3f[] vertices;
+            private Vector2f[] uvs;
+            private int[] indices;
+            private int[] triangleColors;
+            private int[] triangleTextureIndices;
+            private PreviewTextureData[] textures;
+            private Vector3f[] normals;
+            private Vector3f center;
+            private float radius;
+            private float defaultYaw;
+            private float defaultPitch;
             private readonly List<DrawSubset> opaqueSubsets = new List<DrawSubset>();
             private readonly List<DrawSubset> cutoutSubsets = new List<DrawSubset>();
             private readonly List<DrawSubset> transparentSubsets = new List<DrawSubset>();
-            private readonly DxVertex[] renderVertices;
-            private readonly int[] renderIndices;
+            private DxVertex[] renderVertices;
+            private int[] renderIndices;
 
             private float yaw;
             private float pitch;
             private float zoom;
+            private bool experimentalAnimationEnabled;
             private bool isDragging;
             private System.Drawing.Point lastMouse;
             private const float PitchLimit = 1.35f;
@@ -1116,25 +1349,21 @@ namespace FWEledit
             public HardwareRenderBackend PreferredHardwareBackend { get; set; }
             public bool IsGpuReady { get { return dxResourcesInitialized; } }
             public string GpuInitializationError { get { return gpuInitializationError ?? string.Empty; } }
+            public bool ExperimentalAnimationEnabled
+            {
+                get { return experimentalAnimationEnabled; }
+                set { experimentalAnimationEnabled = value; }
+            }
 
             public ModelPreviewDx11Viewport(ModelPreviewMeshData meshData)
             {
-                vertices = meshData != null && meshData.Vertices != null ? meshData.Vertices : new Vector3f[0];
-                uvs = meshData != null && meshData.UVs != null ? meshData.UVs : new Vector2f[0];
-                indices = meshData != null && meshData.Indices != null ? meshData.Indices : new int[0];
-                triangleColors = meshData != null && meshData.TriangleColors != null ? meshData.TriangleColors : new int[0];
-                triangleTextureIndices = meshData != null && meshData.TriangleTextureIndices != null ? meshData.TriangleTextureIndices : new int[0];
-                textures = meshData != null && meshData.Textures != null ? meshData.Textures : new PreviewTextureData[0];
-                normals = ModelPreviewViewport.ComputeVertexNormals(vertices, indices);
-                ModelPreviewViewport.ComputeBounds(vertices, out center, out radius);
-                BuildRenderData(out renderVertices, out renderIndices);
-
                 defaultYaw = 0f;
                 defaultPitch = 0f;
                 yaw = defaultYaw;
                 pitch = defaultPitch;
                 zoom = 1.0f;
                 PreferredHardwareBackend = HardwareRenderBackend.DirectX11;
+                UpdateMeshSources(meshData);
 
                 SetStyle(ControlStyles.AllPaintingInWmPaint
                     | ControlStyles.Opaque
@@ -1149,6 +1378,44 @@ namespace FWEledit
                 MouseMove += OnMouseMove;
                 MouseWheel += OnMouseWheel;
                 MouseDoubleClick += (s, e) => ResetView();
+            }
+
+            public void UpdateMeshData(ModelPreviewMeshData meshData)
+            {
+                if (IsDisposed)
+                {
+                    return;
+                }
+
+                if (InvokeRequired)
+                {
+                    BeginInvoke((Action)(() => UpdateMeshData(meshData)));
+                    return;
+                }
+
+                ViewCameraState currentState = GetCameraState();
+                UpdateMeshSources(meshData);
+                SetCameraState(currentState);
+
+                if (dxResourcesInitialized)
+                {
+                    SafeDisposeDeviceResources();
+                }
+
+                Invalidate();
+            }
+
+            private void UpdateMeshSources(ModelPreviewMeshData meshData)
+            {
+                vertices = meshData != null && meshData.Vertices != null ? meshData.Vertices : new Vector3f[0];
+                uvs = meshData != null && meshData.UVs != null ? meshData.UVs : new Vector2f[0];
+                indices = meshData != null && meshData.Indices != null ? meshData.Indices : new int[0];
+                triangleColors = meshData != null && meshData.TriangleColors != null ? meshData.TriangleColors : new int[0];
+                triangleTextureIndices = meshData != null && meshData.TriangleTextureIndices != null ? meshData.TriangleTextureIndices : new int[0];
+                textures = meshData != null && meshData.Textures != null ? meshData.Textures : new PreviewTextureData[0];
+                normals = ModelPreviewViewport.ComputeVertexNormals(vertices, indices);
+                ModelPreviewViewport.ComputeBounds(vertices, out center, out radius);
+                BuildRenderData(out renderVertices, out renderIndices);
             }
 
             public bool TryEnsureGpuReady()
@@ -1234,6 +1501,16 @@ namespace FWEledit
                 pitch = Math.Max(-PitchLimit, Math.Min(PitchLimit, state.Pitch));
                 zoom = Math.Max(0.22f, Math.Min(4.5f, state.Zoom));
                 Invalidate();
+            }
+
+            public void AdvanceAnimation(float deltaSeconds)
+            {
+                if (!experimentalAnimationEnabled || deltaSeconds <= 0f)
+                {
+                    return;
+                }
+
+                yaw = NormalizeAngle(yaw + (deltaSeconds * 0.9f));
             }
 
             protected override void OnPaintBackground(PaintEventArgs pevent)
@@ -1432,17 +1709,18 @@ float4 PSMain(PS_INPUT input) : SV_Target
     float4 baseColor = input.Color;
     if (useTexture > 0.5f)
     {
-        baseColor = DiffuseTexture.Sample(DiffuseSampler, input.TexCoord);
+        float4 texColor = DiffuseTexture.Sample(DiffuseSampler, input.TexCoord);
         if (useAlphaAsOpacity > 0.5f)
         {
-            clip(baseColor.a - alphaMin);
-            clip(alphaMax - baseColor.a);
+            clip(texColor.a - alphaMin);
+            clip(alphaMax - texColor.a);
         }
         else
         {
             // Many FW textures use alpha for gloss/spec data, not opacity.
-            baseColor.a = 1.0f;
+            texColor.a = 1.0f;
         }
+        baseColor = texColor * input.Color;
     }
     else if (useAlphaAsOpacity > 0.5f)
     {
@@ -1977,17 +2255,17 @@ float4 PSMain(PS_INPUT input) : SV_Target
                 public bool Transparent;
             }
 
-            private readonly Vector3f[] vertices;
-            private readonly Vector2f[] uvs;
-            private readonly int[] indices;
-            private readonly int[] triangleColors;
-            private readonly int[] triangleTextureIndices;
-            private readonly PreviewTextureData[] textures;
-            private readonly Vector3f[] normals;
-            private readonly Vector3f center;
-            private readonly float radius;
-            private readonly float defaultYaw;
-            private readonly float defaultPitch;
+            private Vector3f[] vertices;
+            private Vector2f[] uvs;
+            private int[] indices;
+            private int[] triangleColors;
+            private int[] triangleTextureIndices;
+            private PreviewTextureData[] textures;
+            private Vector3f[] normals;
+            private Vector3f center;
+            private float radius;
+            private float defaultYaw;
+            private float defaultPitch;
             private readonly List<TriangleGpuItem> opaqueTriangles = new List<TriangleGpuItem>();
             private readonly List<TriangleGpuItem> cutoutTriangles = new List<TriangleGpuItem>();
             private readonly List<TriangleGpuItem> transparentTriangles = new List<TriangleGpuItem>();
@@ -1998,6 +2276,7 @@ float4 PSMain(PS_INPUT input) : SV_Target
             private float yaw;
             private float pitch;
             private float zoom;
+            private bool experimentalAnimationEnabled;
             private bool isDragging;
             private System.Drawing.Point lastMouse;
             private bool glResourcesInitialized;
@@ -2008,9 +2287,68 @@ float4 PSMain(PS_INPUT input) : SV_Target
             public HardwareRenderBackend PreferredHardwareBackend { get; set; }
             public bool IsGpuReady { get { return glResourcesInitialized; } }
             public string GpuInitializationError { get { return gpuInitializationError ?? string.Empty; } }
+            public bool ExperimentalAnimationEnabled
+            {
+                get { return experimentalAnimationEnabled; }
+                set { experimentalAnimationEnabled = value; }
+            }
 
             public ModelPreviewGpuViewport(ModelPreviewMeshData meshData)
                 : base()
+            {
+                defaultYaw = 0f;
+                defaultPitch = 0f;
+                yaw = defaultYaw;
+                pitch = defaultPitch;
+                zoom = 1.0f;
+                PreferredHardwareBackend = HardwareRenderBackend.DirectX11;
+                UpdateMeshSources(meshData);
+
+                BackColor = Color.Black;
+                TabStop = false;
+
+                MouseDown += OnMouseDown;
+                MouseUp += OnMouseUp;
+                MouseMove += OnMouseMove;
+                MouseWheel += OnMouseWheel;
+                MouseDoubleClick += (s, e) => ResetView();
+            }
+
+            public void UpdateMeshData(ModelPreviewMeshData meshData)
+            {
+                if (IsDisposed)
+                {
+                    return;
+                }
+
+                if (InvokeRequired)
+                {
+                    BeginInvoke((Action)(() => UpdateMeshData(meshData)));
+                    return;
+                }
+
+                ViewCameraState currentState = GetCameraState();
+                UpdateMeshSources(meshData);
+                SetCameraState(currentState);
+
+                if (glResourcesInitialized)
+                {
+                    try
+                    {
+                        MakeCurrent();
+                        ReleaseTextures();
+                        UploadTextures();
+                    }
+                    catch
+                    {
+                        glResourcesInitialized = false;
+                    }
+                }
+
+                Invalidate();
+            }
+
+            private void UpdateMeshSources(ModelPreviewMeshData meshData)
             {
                 vertices = meshData != null && meshData.Vertices != null ? meshData.Vertices : new Vector3f[0];
                 uvs = meshData != null && meshData.UVs != null ? meshData.UVs : new Vector2f[0];
@@ -2020,23 +2358,7 @@ float4 PSMain(PS_INPUT input) : SV_Target
                 textures = meshData != null && meshData.Textures != null ? meshData.Textures : new PreviewTextureData[0];
                 normals = ModelPreviewViewport.ComputeVertexNormals(vertices, indices);
                 ModelPreviewViewport.ComputeBounds(vertices, out center, out radius);
-
-                defaultYaw = 0f;
-                defaultPitch = 0f;
-                yaw = defaultYaw;
-                pitch = defaultPitch;
-                zoom = 1.0f;
-                PreferredHardwareBackend = HardwareRenderBackend.DirectX11;
-
-                BackColor = Color.Black;
-                TabStop = false;
-
                 BuildTriangleLists();
-                MouseDown += OnMouseDown;
-                MouseUp += OnMouseUp;
-                MouseMove += OnMouseMove;
-                MouseWheel += OnMouseWheel;
-                MouseDoubleClick += (s, e) => ResetView();
             }
 
             public bool TryEnsureGpuReady()
@@ -2176,6 +2498,16 @@ float4 PSMain(PS_INPUT input) : SV_Target
                 pitch = Math.Max(-PitchLimit, Math.Min(PitchLimit, state.Pitch));
                 zoom = Math.Max(0.22f, Math.Min(4.5f, state.Zoom));
                 Invalidate();
+            }
+
+            public void AdvanceAnimation(float deltaSeconds)
+            {
+                if (!experimentalAnimationEnabled || deltaSeconds <= 0f)
+                {
+                    return;
+                }
+
+                yaw = NormalizeAngle(yaw + (deltaSeconds * 0.9f));
             }
 
             protected override void OnHandleDestroyed(EventArgs e)
@@ -2627,35 +2959,41 @@ float4 PSMain(PS_INPUT input) : SV_Target
 
         private sealed class ModelPreviewViewport : Control
         {
-            private readonly Vector3f[] vertices;
-            private readonly Vector2f[] uvs;
-            private readonly int[] indices;
-            private readonly int[] triangleColors;
-            private readonly int[] triangleTextureIndices;
-            private readonly PreviewTextureData[] textures;
-            private readonly int ecmSrcBlend;
-            private readonly int ecmDestBlend;
-            private readonly int ecmEmissiveColorArgb;
-            private readonly int ecmOrgColorArgb;
-            private readonly float[] ecmShaderFloats;
-            private readonly int overlayTextureIndex;
-            private readonly Vector3f[] baseNormals;
-            private readonly Vector3f center;
-            private readonly float radius;
+            private Vector3f[] vertices;
+            private Vector2f[] uvs;
+            private int[] indices;
+            private int[] triangleColors;
+            private int[] triangleTextureIndices;
+            private PreviewTextureData[] textures;
+            private int ecmSrcBlend;
+            private int ecmDestBlend;
+            private int ecmEmissiveColorArgb;
+            private int ecmOrgColorArgb;
+            private float[] ecmShaderFloats;
+            private int overlayTextureIndex;
+            private Vector3f[] baseNormals;
+            private Vector3f center;
+            private float radius;
             private const float RotationSensitivity = 0.0036f;
             private const float PitchLimit = 1.35f;
-            private readonly float defaultYaw;
-            private readonly float defaultPitch;
+            private float defaultYaw;
+            private float defaultPitch;
 
             private float yaw;
             private float pitch;
             private float zoom;
+            private bool experimentalAnimationEnabled;
             private bool isDragging;
             private System.Drawing.Point lastMouse;
             private bool useHardwareRendering;
             private HardwareRenderBackend preferredHardwareBackend;
 
             public bool ShowWireframe { get; set; }
+            public bool ExperimentalAnimationEnabled
+            {
+                get { return experimentalAnimationEnabled; }
+                set { experimentalAnimationEnabled = value; }
+            }
             public bool UseHardwareRendering
             {
                 get { return useHardwareRendering; }
@@ -2685,21 +3023,6 @@ float4 PSMain(PS_INPUT input) : SV_Target
 
             public ModelPreviewViewport(ModelPreviewMeshData meshData)
             {
-                vertices = meshData != null && meshData.Vertices != null ? meshData.Vertices : new Vector3f[0];
-                uvs = meshData != null && meshData.UVs != null ? meshData.UVs : new Vector2f[0];
-                indices = meshData != null && meshData.Indices != null ? meshData.Indices : new int[0];
-                triangleColors = meshData != null && meshData.TriangleColors != null ? meshData.TriangleColors : new int[0];
-                triangleTextureIndices = meshData != null && meshData.TriangleTextureIndices != null ? meshData.TriangleTextureIndices : new int[0];
-                textures = meshData != null && meshData.Textures != null ? meshData.Textures : new PreviewTextureData[0];
-                ecmSrcBlend = meshData != null ? meshData.SrcBlend : 5;
-                ecmDestBlend = meshData != null ? meshData.DestBlend : 6;
-                ecmEmissiveColorArgb = meshData != null ? meshData.EmissiveColorArgb : 0;
-                ecmOrgColorArgb = meshData != null ? meshData.OrgColorArgb : unchecked((int)0xFFFFFFFF);
-                ecmShaderFloats = meshData != null && meshData.ShaderFloats != null ? meshData.ShaderFloats : new float[0];
-                overlayTextureIndex = FindAttachmentTextureIndex(textures);
-                baseNormals = ComputeVertexNormals(vertices, indices);
-                ComputeBounds(vertices, out center, out radius);
-
                 SetStyle(ControlStyles.AllPaintingInWmPaint
                     | ControlStyles.OptimizedDoubleBuffer
                     | ControlStyles.UserPaint
@@ -2714,12 +3037,50 @@ float4 PSMain(PS_INPUT input) : SV_Target
                 useHardwareRendering = false;
                 preferredHardwareBackend = HardwareRenderBackend.DirectX11;
                 ShowWireframe = false;
+                UpdateMeshSources(meshData);
 
                 MouseDown += OnMouseDown;
                 MouseUp += OnMouseUp;
                 MouseMove += OnMouseMove;
                 MouseWheel += OnMouseWheel;
                 MouseDoubleClick += (s, e) => ResetView();
+            }
+
+            public void UpdateMeshData(ModelPreviewMeshData meshData)
+            {
+                if (IsDisposed)
+                {
+                    return;
+                }
+
+                if (InvokeRequired)
+                {
+                    BeginInvoke((Action)(() => UpdateMeshData(meshData)));
+                    return;
+                }
+
+                ViewCameraState currentState = GetCameraState();
+                UpdateMeshSources(meshData);
+                SetCameraState(currentState);
+                Invalidate();
+            }
+
+            private void UpdateMeshSources(ModelPreviewMeshData meshData)
+            {
+                vertices = meshData != null && meshData.Vertices != null ? meshData.Vertices : new Vector3f[0];
+                uvs = meshData != null && meshData.UVs != null ? meshData.UVs : new Vector2f[0];
+                indices = meshData != null && meshData.Indices != null ? meshData.Indices : new int[0];
+                triangleColors = meshData != null && meshData.TriangleColors != null ? meshData.TriangleColors : new int[0];
+                triangleTextureIndices = meshData != null && meshData.TriangleTextureIndices != null ? meshData.TriangleTextureIndices : new int[0];
+                textures = meshData != null && meshData.Textures != null ? meshData.Textures : new PreviewTextureData[0];
+                ecmSrcBlend = meshData != null ? meshData.SrcBlend : 5;
+                ecmDestBlend = meshData != null ? meshData.DestBlend : 6;
+                ecmEmissiveColorArgb = meshData != null ? meshData.EmissiveColorArgb : 0;
+                ecmOrgColorArgb = meshData != null ? meshData.OrgColorArgb : unchecked((int)0xFFFFFFFF);
+                ecmShaderFloats = meshData != null && meshData.ShaderFloats != null ? meshData.ShaderFloats : new float[0];
+                overlayTextureIndex = FindAttachmentTextureIndex(textures);
+                baseNormals = ComputeVertexNormals(vertices, indices);
+                ComputeBounds(vertices, out center, out radius);
             }
 
             public void ResetView()
@@ -2752,6 +3113,16 @@ float4 PSMain(PS_INPUT input) : SV_Target
                 pitch = Math.Max(-PitchLimit, Math.Min(PitchLimit, state.Pitch));
                 zoom = Math.Max(0.22f, Math.Min(4.5f, state.Zoom));
                 Invalidate();
+            }
+
+            public void AdvanceAnimation(float deltaSeconds)
+            {
+                if (!experimentalAnimationEnabled || deltaSeconds <= 0f)
+                {
+                    return;
+                }
+
+                yaw = NormalizeAngle(yaw + (deltaSeconds * 0.9f));
             }
 
             protected override void OnPaint(PaintEventArgs e)
@@ -3330,6 +3701,8 @@ float4 PSMain(PS_INPUT input) : SV_Target
                             {
                                 colorArgb = unchecked((int)0xFF000000) | (textureArgb & 0x00FFFFFF);
                             }
+
+                            colorArgb = MultiplyArgb(colorArgb, tri.BaseColorArgb);
                         }
                         else
                         {
@@ -3798,6 +4171,25 @@ float4 PSMain(PS_INPUT input) : SV_Target
                 int og = Clamp((int)(lg + ((rg - lg) * a)), 0, 255);
                 int ob = Clamp((int)(lb + ((rb - lb) * a)), 0, 255);
                 return (oa << 24) | (or << 16) | (og << 8) | ob;
+            }
+
+            private static int MultiplyArgb(int leftArgb, int rightArgb)
+            {
+                int la = (leftArgb >> 24) & 0xFF;
+                int lr = (leftArgb >> 16) & 0xFF;
+                int lg = (leftArgb >> 8) & 0xFF;
+                int lb = leftArgb & 0xFF;
+
+                int ra = (rightArgb >> 24) & 0xFF;
+                int rr = (rightArgb >> 16) & 0xFF;
+                int rg = (rightArgb >> 8) & 0xFF;
+                int rb = rightArgb & 0xFF;
+
+                int a = (la * ra) / 255;
+                int r = (lr * rr) / 255;
+                int g = (lg * rg) / 255;
+                int b = (lb * rb) / 255;
+                return (a << 24) | (r << 16) | (g << 8) | b;
             }
 
             private static int MakeOpaque(int argb)

@@ -8,6 +8,7 @@ namespace FWEledit
         public int PathId { get; set; }
         public string Package { get; set; }
         public string RelativePath { get; set; }
+        public string MappedPath { get; set; }
         public Bitmap Icon { get; set; }
         public int ItemId { get; set; }
         public string ItemName { get; set; }
