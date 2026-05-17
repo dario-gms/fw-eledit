@@ -35,11 +35,46 @@ namespace FWEledit
             Action<string> missingPackageNotifier)
         {
             List<ModelPickerEntry> entries = new List<ModelPickerEntry>();
+            int nextIndex = 1;
+            for (int p = 0; p < ModelPickerCatalog.PackageOrder.Length; p++)
+            {
+                string package = ModelPickerCatalog.PackageOrder[p];
+                List<ModelPickerEntry> packageEntries = BuildModelPickerEntriesForPackage(
+                    listCollection,
+                    database,
+                    listIndex,
+                    package,
+                    iconLoader,
+                    missingPackageNotifier);
+
+                for (int i = 0; i < packageEntries.Count; i++)
+                {
+                    packageEntries[i].Index = nextIndex++;
+                    entries.Add(packageEntries[i]);
+                }
+            }
+
+            return entries;
+        }
+
+        public List<ModelPickerEntry> BuildModelPickerEntriesForPackage(
+            eListCollection listCollection,
+            CacheSave database,
+            int listIndex,
+            string package,
+            Func<string, Bitmap> iconLoader,
+            Action<string> missingPackageNotifier)
+        {
+            List<ModelPickerEntry> entries = new List<ModelPickerEntry>();
             if (database == null || database.pathById == null || database.pathById.Count == 0)
             {
                 return entries;
             }
             if (listCollection == null || listIndex < 0 || listIndex >= listCollection.Lists.Length)
+            {
+                return entries;
+            }
+            if (string.IsNullOrWhiteSpace(package))
             {
                 return entries;
             }
@@ -68,7 +103,6 @@ namespace FWEledit
             Dictionary<int, int> sampleItemIdByPathId = new Dictionary<int, int>();
             Dictionary<int, string> sampleItemNameByPathId = new Dictionary<int, string>();
             Dictionary<int, string> sampleIconKeyByPathId = new Dictionary<int, string>();
-            Dictionary<string, Bitmap> iconCache = new Dictionary<string, Bitmap>(StringComparer.OrdinalIgnoreCase);
 
             if (modelFields.Length > 0)
             {
@@ -122,60 +156,51 @@ namespace FWEledit
 
             Dictionary<string, List<int>> pathIdsByNormalizedPath = BuildModelPathIdLookup(database);
             int idx = 1;
-            for (int p = 0; p < ModelPickerCatalog.PackageOrder.Length; p++)
+            List<string> packageFiles = EnumerateModelPickerPackageFiles(package, missingPackageNotifier);
+            for (int i = 0; i < packageFiles.Count; i++)
             {
-                string package = ModelPickerCatalog.PackageOrder[p];
-                List<string> packageFiles = EnumerateModelPickerPackageFiles(package, missingPackageNotifier);
-                for (int i = 0; i < packageFiles.Count; i++)
+                string relativePath = packageFiles[i];
+                int pathId = ResolveModelEntryPathId(package, relativePath, pathIdsByNormalizedPath, usesByPathId);
+                int uses = 0;
+                int itemId = 0;
+                string itemName = string.Empty;
+                string iconKey = string.Empty;
+                string mappedPath = BuildMappedPath(package, relativePath);
+                Bitmap icon = Properties.Resources.NoIcon;
+                if (pathId > 0)
                 {
-                    string relativePath = packageFiles[i];
-                    int pathId = ResolveModelEntryPathId(package, relativePath, pathIdsByNormalizedPath, usesByPathId);
-                    int uses = 0;
-                    int itemId = 0;
-                    string itemName = string.Empty;
-                    string mappedPath = BuildMappedPath(package, relativePath);
-                    Bitmap icon = Properties.Resources.NoIcon;
-                    if (pathId > 0)
+                    usesByPathId.TryGetValue(pathId, out uses);
+                    sampleItemIdByPathId.TryGetValue(pathId, out itemId);
+                    sampleItemNameByPathId.TryGetValue(pathId, out itemName);
+                    string mappedFromPathId;
+                    if (database.pathById.TryGetValue(pathId, out mappedFromPathId) && !string.IsNullOrWhiteSpace(mappedFromPathId))
                     {
-                        usesByPathId.TryGetValue(pathId, out uses);
-                        sampleItemIdByPathId.TryGetValue(pathId, out itemId);
-                        sampleItemNameByPathId.TryGetValue(pathId, out itemName);
-                        string mappedFromPathId;
-                        if (database.pathById.TryGetValue(pathId, out mappedFromPathId) && !string.IsNullOrWhiteSpace(mappedFromPathId))
-                        {
-                            mappedPath = mappedFromPathId;
-                        }
-
-                        string iconKey;
-                        if (sampleIconKeyByPathId.TryGetValue(pathId, out iconKey)
-                            && !string.IsNullOrWhiteSpace(iconKey)
-                            && database != null
-                            && database.sourceBitmap != null
-                            && database.ContainsKey(iconKey))
-                        {
-                            Bitmap cachedIcon;
-                            if (!iconCache.TryGetValue(iconKey, out cachedIcon))
-                            {
-                                cachedIcon = iconLoader != null ? iconLoader(iconKey) : database.images(iconKey);
-                                iconCache[iconKey] = cachedIcon;
-                            }
-                            icon = cachedIcon ?? Properties.Resources.NoIcon;
-                        }
+                        mappedPath = mappedFromPathId;
                     }
 
-                    entries.Add(new ModelPickerEntry
+                    if (sampleIconKeyByPathId.TryGetValue(pathId, out iconKey)
+                        && !string.IsNullOrWhiteSpace(iconKey)
+                        && database != null
+                        && database.sourceBitmap != null
+                        && database.ContainsKey(iconKey))
                     {
-                        Index = idx++,
-                        PathId = pathId,
-                        Package = package,
-                        RelativePath = relativePath,
-                        MappedPath = mappedPath,
-                        Icon = icon,
-                        ItemId = itemId,
-                        ItemName = itemName,
-                        Uses = uses
-                    });
+                        icon = null;
+                    }
                 }
+
+                entries.Add(new ModelPickerEntry
+                {
+                    Index = idx++,
+                    PathId = pathId,
+                    Package = package,
+                    RelativePath = relativePath,
+                    MappedPath = mappedPath,
+                    Icon = icon,
+                    IconKey = iconKey,
+                    ItemId = itemId,
+                    ItemName = itemName,
+                    Uses = uses
+                });
             }
 
             return entries;

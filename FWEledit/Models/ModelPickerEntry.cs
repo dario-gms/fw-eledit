@@ -10,6 +10,7 @@ namespace FWEledit
         public string RelativePath { get; set; }
         public string MappedPath { get; set; }
         public Bitmap Icon { get; set; }
+        public string IconKey { get; set; }
         public int ItemId { get; set; }
         public string ItemName { get; set; }
         public int Uses { get; set; }

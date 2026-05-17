@@ -5,20 +5,14 @@ namespace FWEledit
 {
     public sealed class ModelPickerCacheService
     {
-        private sealed class PickerEntriesCacheEntry
-        {
-            public string Signature { get; set; }
-            public List<ModelPickerEntry> Entries { get; set; }
-        }
-
         private readonly Dictionary<int, string> modelPackageByPathIdCache = new Dictionary<int, string>();
         private string modelPackageCacheSignature = string.Empty;
         private readonly Dictionary<string, ModelPickerPackageCacheEntry> modelPickerPackageCache
             = new Dictionary<string, ModelPickerPackageCacheEntry>(StringComparer.OrdinalIgnoreCase);
         private readonly HashSet<string> modelPickerMissingExtractNotified
             = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        private readonly Dictionary<int, PickerEntriesCacheEntry> modelPickerEntriesCache
-            = new Dictionary<int, PickerEntriesCacheEntry>();
+        private readonly Dictionary<int, Dictionary<string, List<ModelPickerEntry>>> modelPickerEntriesCache
+            = new Dictionary<int, Dictionary<string, List<ModelPickerEntry>>>();
 
         public void EnsurePackageCacheSignature(string signature)
         {
@@ -103,12 +97,12 @@ namespace FWEledit
                 return false;
             }
 
-            if (modelPickerEntriesCache.TryGetValue(listIndex, out PickerEntriesCacheEntry cached)
-                && cached != null
-                && string.Equals(cached.Signature, signature, StringComparison.Ordinal))
+            if (modelPickerEntriesCache.TryGetValue(listIndex, out Dictionary<string, List<ModelPickerEntry>> bySignature)
+                && bySignature != null
+                && bySignature.TryGetValue(signature, out List<ModelPickerEntry> cachedEntries))
             {
-                entries = cached.Entries != null
-                    ? new List<ModelPickerEntry>(cached.Entries)
+                entries = cachedEntries != null
+                    ? new List<ModelPickerEntry>(cachedEntries)
                     : new List<ModelPickerEntry>();
                 return true;
             }
@@ -123,11 +117,14 @@ namespace FWEledit
                 return;
             }
 
-            modelPickerEntriesCache[listIndex] = new PickerEntriesCacheEntry
+            if (!modelPickerEntriesCache.TryGetValue(listIndex, out Dictionary<string, List<ModelPickerEntry>> bySignature)
+                || bySignature == null)
             {
-                Signature = signature,
-                Entries = entries != null ? new List<ModelPickerEntry>(entries) : new List<ModelPickerEntry>()
-            };
+                bySignature = new Dictionary<string, List<ModelPickerEntry>>(StringComparer.Ordinal);
+                modelPickerEntriesCache[listIndex] = bySignature;
+            }
+
+            bySignature[signature] = entries != null ? new List<ModelPickerEntry>(entries) : new List<ModelPickerEntry>();
         }
 
         public void InvalidatePickerEntries(int listIndex)

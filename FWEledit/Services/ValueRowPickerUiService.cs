@@ -198,17 +198,38 @@ namespace FWEledit
                 currentResolvedPathId = resolvedCurrentPathId;
             }
 
+            string preferredPackage = modelPickerService.GuessModelPackageFromMappedPath(resolvedCurrentMappedPath);
+            if (string.IsNullOrWhiteSpace(preferredPackage))
+            {
+                preferredPackage = "models";
+            }
+
             List<ModelPickerEntry> entries = BuildModelPickerEntriesForList(
                 listCollection,
                 database,
                 listIndex,
+                preferredPackage,
                 modelPickerService,
                 modelPickerCacheService,
                 modelPackageNotificationService,
                 dialogService,
                 owner);
 
-            using (ModelPickerWindow picker = new ModelPickerWindow(entries, currentResolvedPathId))
+            using (ModelPickerWindow picker = new ModelPickerWindow(
+                entries,
+                currentResolvedPathId,
+                preferredPackage,
+                package => BuildModelPickerEntriesForList(
+                    listCollection,
+                    database,
+                    listIndex,
+                    package,
+                    modelPickerService,
+                    modelPickerCacheService,
+                    modelPackageNotificationService,
+                    dialogService,
+                    owner),
+                iconKey => database.images(iconKey)))
             {
                 if (picker.ShowDialog(owner) != DialogResult.OK)
                 {
@@ -244,7 +265,6 @@ namespace FWEledit
                 }
 
                 itemGrid.Rows[rowIndex].Cells[2].Value = selectedPathId.ToString();
-                modelPickerCacheService?.InvalidatePickerEntries(listIndex);
             }
         }
 
@@ -694,6 +714,7 @@ namespace FWEledit
             eListCollection listCollection,
             CacheSave database,
             int listIndex,
+            string package,
             ModelPickerService modelPickerService,
             ModelPickerCacheService modelPickerCacheService,
             ModelPackageNotificationService modelPackageNotificationService,
@@ -705,28 +726,37 @@ namespace FWEledit
                 return new List<ModelPickerEntry>();
             }
 
-            string cacheSignature = BuildPickerEntriesCacheSignature(listCollection, database, listIndex);
+            string safePackage = (package ?? string.Empty).Trim().ToLowerInvariant();
+            if (string.IsNullOrWhiteSpace(safePackage))
+            {
+                safePackage = "models";
+            }
+
+            string cacheSignature = BuildPickerEntriesCacheSignature(listCollection, database, listIndex, modelPickerService)
+                + "|pkg:"
+                + safePackage;
             if (modelPickerCacheService != null
                 && modelPickerCacheService.TryGetPickerEntries(listIndex, cacheSignature, out List<ModelPickerEntry> cachedEntries))
             {
                 return cachedEntries;
             }
 
-            List<ModelPickerEntry> builtEntries = modelPickerService.BuildModelPickerEntries(
+            List<ModelPickerEntry> builtEntries = modelPickerService.BuildModelPickerEntriesForPackage(
                 listCollection,
                 database,
                 listIndex,
+                safePackage,
                 iconKey => database.images(iconKey),
-                package =>
+                missingPackage =>
                 {
-                    if (modelPickerCacheService == null || !modelPickerCacheService.TryMarkMissingExtractNotified(package))
+                    if (modelPickerCacheService == null || !modelPickerCacheService.TryMarkMissingExtractNotified(missingPackage))
                     {
                         return;
                     }
                     if (dialogService != null && modelPackageNotificationService != null)
                     {
                         dialogService.ShowMessage(
-                            modelPackageNotificationService.BuildMissingPackageMessage(package),
+                            modelPackageNotificationService.BuildMissingPackageMessage(missingPackage),
                             modelPackageNotificationService.Title,
                             MessageBoxButtons.OK,
                             MessageBoxIcon.Information,
@@ -741,13 +771,15 @@ namespace FWEledit
         private static string BuildPickerEntriesCacheSignature(
             eListCollection listCollection,
             CacheSave database,
-            int listIndex)
+            int listIndex,
+            ModelPickerService modelPickerService)
         {
             try
             {
                 int rows = 0;
                 int fields = 0;
                 string listName = string.Empty;
+                ulong usageHash = 1469598103934665603UL;
                 if (listCollection != null
                     && listIndex >= 0
                     && listIndex < listCollection.Lists.Length
@@ -760,6 +792,25 @@ namespace FWEledit
                         ? listCollection.Lists[listIndex].elementFields.Length
                         : 0;
                     listName = listCollection.Lists[listIndex].listName ?? string.Empty;
+
+                    if (modelPickerService != null && rows > 0)
+                    {
+                        int[] modelUsageFields = modelPickerService.GetModelUsageFieldIndices(listCollection, listIndex);
+                        for (int row = 0; row < rows; row++)
+                        {
+                            for (int mf = 0; mf < modelUsageFields.Length; mf++)
+                            {
+                                string value = listCollection.GetValue(listIndex, row, modelUsageFields[mf]) ?? string.Empty;
+                                for (int i = 0; i < value.Length; i++)
+                                {
+                                    usageHash ^= value[i];
+                                    usageHash *= 1099511628211UL;
+                                }
+                                usageHash ^= ';';
+                                usageHash *= 1099511628211UL;
+                            }
+                        }
+                    }
                 }
 
                 int pathCount = database?.pathById?.Count ?? 0;
@@ -783,7 +834,9 @@ namespace FWEledit
                     + "|"
                     + maxPath.ToString(System.Globalization.CultureInfo.InvariantCulture)
                     + "|"
-                    + listName;
+                    + listName
+                    + "|"
+                    + usageHash.ToString("X16", System.Globalization.CultureInfo.InvariantCulture);
             }
             catch
             {
