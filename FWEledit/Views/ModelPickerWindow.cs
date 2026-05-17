@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
-using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -13,6 +12,11 @@ namespace FWEledit
     public class ModelPickerWindow : Form
     {
         private readonly List<ModelPickerEntry> allEntries;
+        private List<ModelPickerEntry> filteredEntries;
+        private readonly HashSet<string> loadedPackages;
+        private readonly Func<string, List<ModelPickerEntry>> packageEntriesLoader;
+        private readonly Func<string, Bitmap> iconLoader;
+        private readonly Dictionary<string, Bitmap> iconBitmapCache;
         private readonly ComboBox packageFilter;
         private readonly ComboBox folderFilter;
         private readonly TextBox searchBox;
@@ -31,18 +35,58 @@ namespace FWEledit
         private int previewPendingAuto;
         private int lastPreviewPathId;
         private int previewSelectionVersion;
+        private int nextEntryIndex;
         private bool isInitializing;
+        private CancellationTokenSource prefetchCancellation;
+        private Task prefetchTask;
         public int SelectedPathId { get; private set; }
         public string SelectedMappedPath { get; private set; }
 
-        public ModelPickerWindow(List<ModelPickerEntry> entries, int currentPathId)
+        public ModelPickerWindow(
+            List<ModelPickerEntry> entries,
+            int currentPathId,
+            string preferredPackage,
+            Func<string, List<ModelPickerEntry>> packageEntriesLoader = null,
+            Func<string, Bitmap> iconLoader = null)
         {
             allEntries = entries ?? new List<ModelPickerEntry>();
+            filteredEntries = new List<ModelPickerEntry>();
+            loadedPackages = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            this.packageEntriesLoader = packageEntriesLoader;
+            this.iconLoader = iconLoader;
+            iconBitmapCache = new Dictionary<string, Bitmap>(StringComparer.OrdinalIgnoreCase);
             SelectedPathId = currentPathId;
             SelectedMappedPath = string.Empty;
             previewAssetManager = new AssetManager();
             modelPreviewService = new ModelPreviewService();
             isInitializing = true;
+            nextEntryIndex = 1;
+
+            for (int i = 0; i < allEntries.Count; i++)
+            {
+                ModelPickerEntry entry = allEntries[i];
+                if (!string.IsNullOrWhiteSpace(entry?.Package))
+                {
+                    loadedPackages.Add(entry.Package);
+                }
+
+                if (entry != null)
+                {
+                    if (string.IsNullOrWhiteSpace(entry.IndexSearch))
+                    {
+                        entry.IndexSearch = entry.Index.ToString();
+                    }
+                    if (string.IsNullOrWhiteSpace(entry.SearchKey))
+                    {
+                        entry.SearchKey = BuildEntrySearchKey(entry);
+                    }
+                }
+
+                if (entry != null && entry.Index >= nextEntryIndex)
+                {
+                    nextEntryIndex = entry.Index + 1;
+                }
+            }
 
             Text = "Choice Model";
             StartPosition = FormStartPosition.CenterParent;
@@ -52,6 +96,7 @@ namespace FWEledit
             BackColor = Color.White;
             Font = new Font("Segoe UI", 9F, FontStyle.Regular, GraphicsUnit.Point, ((byte)(0)));
             KeyDown += OnKeyDown;
+            FormClosed += (s, e) => CancelAggressivePrefetch();
 
             Panel top = new Panel();
             top.Dock = DockStyle.Top;
@@ -65,6 +110,10 @@ namespace FWEledit
             packageFilter.Top = 8;
             packageFilter.SelectedIndexChanged += (s, e) =>
             {
+                if (!isInitializing)
+                {
+                    EnsurePackageLoaded(Convert.ToString(packageFilter.SelectedItem));
+                }
                 BuildFolderFilter();
                 ScheduleFilterApply();
             };
@@ -120,6 +169,7 @@ namespace FWEledit
             grid.AllowUserToDeleteRows = false;
             grid.AllowUserToResizeRows = false;
             grid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None;
+            grid.VirtualMode = true;
             grid.MultiSelect = false;
             grid.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
             grid.RowHeadersVisible = false;
@@ -136,6 +186,8 @@ namespace FWEledit
             grid.RowTemplate.Height = 24;
             grid.DoubleClick += (s, e) => ConfirmSelection();
             grid.SelectionChanged += (s, e) => ScheduleAutoPreview();
+            grid.CellValueNeeded += OnGridCellValueNeeded;
+            grid.CellFormatting += OnGridCellFormatting;
             grid.KeyDown += (s, e) =>
             {
                 if (e.KeyCode == Keys.Enter)
@@ -221,22 +273,32 @@ namespace FWEledit
             };
 
             BuildPackageFilter();
-            string preferredPackage = GetPackageForPathId(currentPathId);
-            if (!string.IsNullOrWhiteSpace(preferredPackage))
+            string resolvedPreferredPackage = preferredPackage;
+            if (string.IsNullOrWhiteSpace(resolvedPreferredPackage))
+            {
+                resolvedPreferredPackage = GetPackageForPathId(currentPathId);
+            }
+            if (string.IsNullOrWhiteSpace(resolvedPreferredPackage))
+            {
+                resolvedPreferredPackage = "models";
+            }
+            if (!string.IsNullOrWhiteSpace(resolvedPreferredPackage))
             {
                 for (int i = 0; i < packageFilter.Items.Count; i++)
                 {
-                    if (string.Equals(Convert.ToString(packageFilter.Items[i]), preferredPackage, StringComparison.OrdinalIgnoreCase))
+                    if (string.Equals(Convert.ToString(packageFilter.Items[i]), resolvedPreferredPackage, StringComparison.OrdinalIgnoreCase))
                     {
                         packageFilter.SelectedIndex = i;
                         break;
                     }
                 }
             }
+            EnsurePackageLoaded(Convert.ToString(packageFilter.SelectedItem));
             BuildFolderFilter(currentPathId);
             ApplyFilter();
             SelectCurrentPathId(currentPathId);
             isInitializing = false;
+            StartAggressivePrefetch();
         }
 
         private void OnKeyDown(object sender, KeyEventArgs e)
@@ -291,9 +353,8 @@ namespace FWEledit
                 folders.Add(folder);
             }
 
-            List<string> sorted = folders
-                .OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
-                .ToList();
+            List<string> sorted = new List<string>(folders);
+            sorted.Sort(StringComparer.OrdinalIgnoreCase);
 
             folderFilter.Items.Add(string.Empty);
             for (int i = 0; i < sorted.Count; i++)
@@ -347,49 +408,289 @@ namespace FWEledit
 
         private void ApplyFilter()
         {
-            List<ModelPickerEntry> filtered = GetFilteredEntries();
-            grid.SuspendLayout();
-            grid.Rows.Clear();
-            for (int i = 0; i < filtered.Count; i++)
+            EnsurePackageLoaded(Convert.ToString(packageFilter.SelectedItem));
+            filteredEntries = GetFilteredEntries();
+            grid.RowCount = filteredEntries.Count;
+            grid.Invalidate();
+
+            statusLabel.Text = filteredEntries.Count.ToString() + " entries";
+            if (grid.RowCount > 0)
             {
-                ModelPickerEntry e = filtered[i];
-                string name = e.Uses > 0 ? e.ItemName : "[NOT USING]";
-                string idText = e.Uses > 0 && e.ItemId > 0 ? e.ItemId.ToString() : "-";
-                string usesText = e.Uses > 0 ? e.Uses.ToString() : "-";
-                int rowIndex = grid.Rows.Add(
-                    i.ToString(),
-                    e.RelativePath ?? string.Empty,
-                    e.Icon ?? Properties.Resources.blank,
-                    name,
-                    idText,
-                    usesText,
-                    e.PathId.ToString()
-                );
-                grid.Rows[rowIndex].Tag = e;
-
-                if (e.Uses <= 0)
+                int selectedRow = grid.CurrentCell != null ? grid.CurrentCell.RowIndex : 0;
+                if (selectedRow < 0 || selectedRow >= grid.RowCount)
                 {
-                    grid.Rows[rowIndex].Cells[3].Style.ForeColor = Color.LimeGreen;
+                    selectedRow = 0;
                 }
-                else
+                if (grid.ColumnCount > 0)
                 {
-                    grid.Rows[rowIndex].Cells[5].Style.ForeColor = Color.Cyan;
+                    grid.CurrentCell = grid.Rows[selectedRow].Cells[0];
                 }
-
-                if (e.PathId <= 0)
-                {
-                    grid.Rows[rowIndex].Cells[6].Style.ForeColor = Color.Orange;
-                }
-            }
-            grid.ResumeLayout();
-
-            statusLabel.Text = filtered.Count.ToString() + " entries";
-            if (grid.Rows.Count > 0 && grid.CurrentCell == null)
-            {
-                grid.CurrentCell = grid.Rows[0].Cells[0];
-                grid.Rows[0].Selected = true;
             }
             ScheduleAutoPreview();
+        }
+
+        private void OnGridCellValueNeeded(object sender, DataGridViewCellValueEventArgs e)
+        {
+            ModelPickerEntry entry = TryGetEntryAtRow(e.RowIndex);
+            if (entry == null)
+            {
+                e.Value = null;
+                return;
+            }
+
+            switch (e.ColumnIndex)
+            {
+                case 0:
+                    e.Value = e.RowIndex.ToString();
+                    break;
+                case 1:
+                    e.Value = entry.RelativePath ?? string.Empty;
+                    break;
+                case 2:
+                    e.Value = ResolveEntryIcon(entry);
+                    break;
+                case 3:
+                    e.Value = entry.Uses > 0 ? entry.ItemName : "[NOT USING]";
+                    break;
+                case 4:
+                    e.Value = entry.Uses > 0 && entry.ItemId > 0 ? entry.ItemId.ToString() : "-";
+                    break;
+                case 5:
+                    e.Value = entry.Uses > 0 ? entry.Uses.ToString() : "-";
+                    break;
+                case 6:
+                    e.Value = entry.PathId.ToString();
+                    break;
+            }
+        }
+
+        private void OnGridCellFormatting(object sender, DataGridViewCellFormattingEventArgs e)
+        {
+            ModelPickerEntry entry = TryGetEntryAtRow(e.RowIndex);
+            if (entry == null)
+            {
+                return;
+            }
+
+            if (e.ColumnIndex == 3)
+            {
+                e.CellStyle.ForeColor = entry.Uses <= 0 ? Color.LimeGreen : Color.White;
+            }
+            else if (e.ColumnIndex == 5)
+            {
+                e.CellStyle.ForeColor = entry.Uses > 0 ? Color.Cyan : Color.White;
+            }
+            else if (e.ColumnIndex == 6)
+            {
+                e.CellStyle.ForeColor = entry.PathId <= 0 ? Color.Orange : Color.White;
+            }
+            else
+            {
+                e.CellStyle.ForeColor = Color.White;
+            }
+        }
+
+        private ModelPickerEntry TryGetEntryAtRow(int rowIndex)
+        {
+            if (rowIndex < 0 || filteredEntries == null || rowIndex >= filteredEntries.Count)
+            {
+                return null;
+            }
+
+            return filteredEntries[rowIndex];
+        }
+
+        private Bitmap ResolveEntryIcon(ModelPickerEntry entry)
+        {
+            if (entry == null)
+            {
+                return Properties.Resources.blank;
+            }
+
+            if (entry.Icon != null)
+            {
+                return entry.Icon;
+            }
+
+            if (string.IsNullOrWhiteSpace(entry.IconKey)
+                || iconLoader == null)
+            {
+                return Properties.Resources.NoIcon;
+            }
+
+            if (iconBitmapCache.TryGetValue(entry.IconKey, out Bitmap cached) && cached != null)
+            {
+                return cached;
+            }
+
+            Bitmap resolved = null;
+            try
+            {
+                resolved = iconLoader(entry.IconKey);
+            }
+            catch
+            { }
+
+            if (resolved == null)
+            {
+                resolved = Properties.Resources.NoIcon;
+            }
+
+            iconBitmapCache[entry.IconKey] = resolved;
+            return resolved;
+        }
+
+        private void EnsurePackageLoaded(string package)
+        {
+            if (string.IsNullOrWhiteSpace(package))
+            {
+                return;
+            }
+            if (loadedPackages.Contains(package))
+            {
+                return;
+            }
+            if (packageEntriesLoader == null)
+            {
+                return;
+            }
+
+            List<ModelPickerEntry> loaded = packageEntriesLoader(package);
+            TryAppendLoadedEntries(package, loaded);
+        }
+
+        private bool TryAppendLoadedEntries(string package, List<ModelPickerEntry> loaded)
+        {
+            if (string.IsNullOrWhiteSpace(package))
+            {
+                return false;
+            }
+            if (loadedPackages.Contains(package))
+            {
+                return false;
+            }
+
+            if (loaded != null && loaded.Count > 0)
+            {
+                for (int i = 0; i < loaded.Count; i++)
+                {
+                    ModelPickerEntry entry = loaded[i];
+                    if (entry == null)
+                    {
+                        continue;
+                    }
+                    entry.Index = nextEntryIndex++;
+                    entry.IndexSearch = entry.Index.ToString();
+                    if (string.IsNullOrWhiteSpace(entry.SearchKey))
+                    {
+                        entry.SearchKey = BuildEntrySearchKey(entry);
+                    }
+                    allEntries.Add(entry);
+                }
+            }
+
+            loadedPackages.Add(package);
+            return true;
+        }
+
+        private void StartAggressivePrefetch()
+        {
+            if (packageEntriesLoader == null || IsDisposed)
+            {
+                return;
+            }
+
+            CancelAggressivePrefetch();
+            prefetchCancellation = new CancellationTokenSource();
+            CancellationToken token = prefetchCancellation.Token;
+            prefetchTask = Task.Run(async () =>
+            {
+                try
+                {
+                    await Task.Delay(650, token);
+                }
+                catch (TaskCanceledException)
+                {
+                    return;
+                }
+
+                for (int i = 0; i < ModelPickerCatalog.PackageOrder.Length; i++)
+                {
+                    if (token.IsCancellationRequested)
+                    {
+                        break;
+                    }
+
+                    string package = ModelPickerCatalog.PackageOrder[i];
+                    List<ModelPickerEntry> loaded = null;
+                    try
+                    {
+                        loaded = packageEntriesLoader(package);
+                    }
+                    catch
+                    {
+                        loaded = null;
+                    }
+
+                    if (token.IsCancellationRequested)
+                    {
+                        break;
+                    }
+
+                    if (IsDisposed || !IsHandleCreated)
+                    {
+                        break;
+                    }
+
+                    try
+                    {
+                        BeginInvoke((Action)(() =>
+                        {
+                            if (IsDisposed || token.IsCancellationRequested)
+                            {
+                                return;
+                            }
+
+                            bool appended = TryAppendLoadedEntries(package, loaded);
+                            if (!appended)
+                            {
+                                return;
+                            }
+
+                            string selectedPackage = Convert.ToString(packageFilter.SelectedItem);
+                            if (string.Equals(selectedPackage, package, StringComparison.OrdinalIgnoreCase))
+                            {
+                                BuildFolderFilter();
+                                ApplyFilter();
+                            }
+                        }));
+                    }
+                    catch
+                    {
+                        break;
+                    }
+                }
+            });
+        }
+
+        private void CancelAggressivePrefetch()
+        {
+            try
+            {
+                if (prefetchCancellation != null)
+                {
+                    prefetchCancellation.Cancel();
+                    prefetchCancellation.Dispose();
+                    prefetchCancellation = null;
+                }
+            }
+            catch
+            {
+            }
+            finally
+            {
+                prefetchTask = null;
+            }
         }
 
         private List<ModelPickerEntry> GetFilteredEntries()
@@ -403,33 +704,80 @@ namespace FWEledit
             string term = (searchBox.Text ?? string.Empty).Trim().ToLowerInvariant();
             bool keepOnlyUnused = onlyUnusedCheck.Checked;
             bool onlyGfx = onlyGfxCheck.Checked;
+            bool hasFolder = !string.IsNullOrWhiteSpace(folder);
+            bool hasTerm = !string.IsNullOrWhiteSpace(term);
+            List<ModelPickerEntry> result = new List<ModelPickerEntry>();
 
-            IEnumerable<ModelPickerEntry> query = allEntries;
-            query = query.Where(x => string.Equals(x.Package, package, StringComparison.OrdinalIgnoreCase));
-            if (!string.IsNullOrWhiteSpace(folder))
+            for (int i = 0; i < allEntries.Count; i++)
             {
-                query = query.Where(x => string.Equals(ExtractTopFolder(x.RelativePath, package), folder, StringComparison.OrdinalIgnoreCase));
-            }
-            if (onlyGfx)
-            {
-                query = query.Where(x => string.Equals(Path.GetExtension(x.RelativePath ?? string.Empty), ".gfx", StringComparison.OrdinalIgnoreCase));
-            }
-            if (keepOnlyUnused)
-            {
-                query = query.Where(x => x.Uses <= 0);
-            }
-            if (!string.IsNullOrWhiteSpace(term))
-            {
-                query = query.Where(x =>
-                    x.Index.ToString().Contains(term)
-                    || x.PathId.ToString().Contains(term)
-                    || (!string.IsNullOrWhiteSpace(x.RelativePath) && x.RelativePath.ToLowerInvariant().Contains(term))
-                    || (!string.IsNullOrWhiteSpace(x.ItemName) && x.ItemName.ToLowerInvariant().Contains(term))
-                    || (x.ItemId > 0 && x.ItemId.ToString().Contains(term))
-                );
+                ModelPickerEntry entry = allEntries[i];
+                if (entry == null)
+                {
+                    continue;
+                }
+
+                if (!string.Equals(entry.Package, package, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (hasFolder && !string.Equals(ExtractTopFolder(entry.RelativePath, package), folder, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (onlyGfx && !string.Equals(Path.GetExtension(entry.RelativePath ?? string.Empty), ".gfx", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (keepOnlyUnused && entry.Uses > 0)
+                {
+                    continue;
+                }
+
+                if (hasTerm)
+                {
+                    bool matchesIndex = !string.IsNullOrWhiteSpace(entry.IndexSearch)
+                        && entry.IndexSearch.IndexOf(term, StringComparison.Ordinal) >= 0;
+
+                    if (!matchesIndex)
+                    {
+                        string searchKey = entry.SearchKey;
+                        if (string.IsNullOrWhiteSpace(searchKey))
+                        {
+                            searchKey = BuildEntrySearchKey(entry);
+                            entry.SearchKey = searchKey;
+                        }
+
+                        if (searchKey.IndexOf(term, StringComparison.Ordinal) < 0)
+                        {
+                            continue;
+                        }
+                    }
+                }
+
+                result.Add(entry);
             }
 
-            return query.ToList();
+            return result;
+        }
+
+        private static string BuildEntrySearchKey(ModelPickerEntry entry)
+        {
+            if (entry == null)
+            {
+                return string.Empty;
+            }
+
+            return ((entry.RelativePath ?? string.Empty)
+                    + "|"
+                    + (entry.ItemName ?? string.Empty)
+                    + "|"
+                    + entry.ItemId.ToString()
+                    + "|"
+                    + entry.PathId.ToString())
+                .ToLowerInvariant();
         }
 
         private void ExportCsv()
@@ -540,17 +888,15 @@ namespace FWEledit
             {
                 return;
             }
-            for (int i = 0; i < grid.Rows.Count; i++)
+            for (int i = 0; i < filteredEntries.Count; i++)
             {
-                int rowPathId;
-                if (!int.TryParse(Convert.ToString(grid.Rows[i].Cells[6].Value), out rowPathId))
+                ModelPickerEntry entry = filteredEntries[i];
+                if (entry != null && entry.PathId == pathId)
                 {
-                    continue;
-                }
-                if (rowPathId == pathId)
-                {
-                    grid.CurrentCell = grid.Rows[i].Cells[0];
-                    grid.Rows[i].Selected = true;
+                    if (grid.ColumnCount > 0 && i < grid.RowCount)
+                    {
+                        grid.CurrentCell = grid.Rows[i].Cells[0];
+                    }
                     if (i > 0)
                     {
                         grid.FirstDisplayedScrollingRowIndex = i;
@@ -562,22 +908,19 @@ namespace FWEledit
 
         private void ConfirmSelection()
         {
-            if (grid.CurrentRow == null)
+            int rowIndex = grid.CurrentCell != null ? grid.CurrentCell.RowIndex : -1;
+            if (rowIndex < 0)
             {
                 return;
             }
 
-            ModelPickerEntry selected = grid.CurrentRow.Tag as ModelPickerEntry;
+            ModelPickerEntry selected = TryGetEntryAtRow(rowIndex);
             if (selected == null)
             {
                 return;
             }
 
-            int pathId;
-            if (!int.TryParse(Convert.ToString(grid.CurrentRow.Cells[6].Value), out pathId))
-            {
-                pathId = 0;
-            }
+            int pathId = selected.PathId;
 
             string mappedPath = selected.MappedPath;
             if (string.IsNullOrWhiteSpace(mappedPath))
@@ -612,7 +955,8 @@ namespace FWEledit
             {
                 return;
             }
-            if (grid == null || grid.CurrentRow == null)
+            int rowIndex = grid != null && grid.CurrentCell != null ? grid.CurrentCell.RowIndex : -1;
+            if (rowIndex < 0 || rowIndex >= grid.RowCount)
             {
                 return;
             }
@@ -623,7 +967,8 @@ namespace FWEledit
 
         private async void PreviewSelectionAsync(bool force)
         {
-            if (grid.CurrentRow == null || modelPreviewService == null || previewAssetManager == null)
+            int currentRowIndex = grid != null && grid.CurrentCell != null ? grid.CurrentCell.RowIndex : -1;
+            if (currentRowIndex < 0 || modelPreviewService == null || previewAssetManager == null)
             {
                 return;
             }
@@ -647,7 +992,8 @@ namespace FWEledit
                 UseWaitCursor = false;
                 Cursor.Current = Cursors.Default;
                 Control focusedBeforeUpdate = FindFocusedDescendant(this);
-                if (!(grid.CurrentRow.Tag is ModelPickerEntry selected) || selected == null)
+                ModelPickerEntry selected = TryGetEntryAtRow(currentRowIndex);
+                if (selected == null)
                 {
                     return;
                 }
@@ -663,7 +1009,8 @@ namespace FWEledit
                 }
                 if (string.IsNullOrWhiteSpace(mappedPath))
                 {
-                    MessageBox.Show("Invalid model path.", "Choice Model", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    modelPreviewService.ShowPreviewMessage("Invalid model path.", force, Handle);
+                    previewWindowOpened = modelPreviewService.IsPreviewWindowOpen();
                     return;
                 }
 
@@ -685,10 +1032,8 @@ namespace FWEledit
 
                 if (!ok)
                 {
-                    if (!string.IsNullOrWhiteSpace(error))
-                    {
-                        MessageBox.Show(error, "Choice Model", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                    }
+                    modelPreviewService.ShowPreviewMessage(error, force, Handle);
+                    previewWindowOpened = modelPreviewService.IsPreviewWindowOpen();
                     return;
                 }
 
@@ -734,7 +1079,8 @@ namespace FWEledit
             }
             catch (Exception ex)
             {
-                MessageBox.Show("MODEL PREVIEW ERROR!\n" + ex.Message, "Choice Model", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                modelPreviewService.ShowPreviewMessage("MODEL PREVIEW ERROR!\n" + ex.Message, force, Handle);
+                previewWindowOpened = modelPreviewService.IsPreviewWindowOpen();
             }
             finally
             {

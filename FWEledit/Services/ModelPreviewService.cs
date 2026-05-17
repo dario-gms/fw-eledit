@@ -249,6 +249,92 @@ namespace FWEledit
             }
         }
 
+        public void ShowPreviewMessage(string message, bool activateWindow, IntPtr nonActivatingOwnerHandle)
+        {
+            string safeMessage = string.IsNullOrWhiteSpace(message)
+                ? "Model preview unavailable for this file."
+                : message.Trim();
+
+            bool requireNonActivating = !activateWindow;
+            if (activePreviewWindow != null && !activePreviewWindow.IsDisposed)
+            {
+                if (activePreviewWindow.IsNonActivatingWindow != requireNonActivating)
+                {
+                    try
+                    {
+                        activePreviewWindow.Close();
+                    }
+                    catch
+                    {
+                    }
+
+                    activePreviewWindow = null;
+                }
+            }
+
+            if (activePreviewWindow != null && !activePreviewWindow.IsDisposed)
+            {
+                try
+                {
+                    activePreviewWindow.SetNonActivatingOwnerHandle(nonActivatingOwnerHandle);
+                    activePreviewWindow.ShowStatusMessage(safeMessage);
+                }
+                catch
+                {
+                }
+
+                if (activateWindow
+                    && activePreviewWindow.WindowState == FormWindowState.Minimized)
+                {
+                    activePreviewWindow.WindowState = FormWindowState.Normal;
+                }
+                if (activateWindow)
+                {
+                    activePreviewWindow.BringToFront();
+                    activePreviewWindow.Activate();
+                }
+                return;
+            }
+
+            ModelPreviewWindow window = new ModelPreviewWindow(new ModelPreviewMeshData(), !activateWindow, nonActivatingOwnerHandle);
+            activePreviewWindow = window;
+            window.FormClosed += (s, e) =>
+            {
+                if (ReferenceEquals(activePreviewWindow, window))
+                {
+                    activePreviewWindow = null;
+                }
+            };
+
+            IWin32Window ownerWindow = null;
+            if (nonActivatingOwnerHandle != IntPtr.Zero)
+            {
+                ownerWindow = new WindowHandleWrapper(nonActivatingOwnerHandle);
+            }
+
+            if (ownerWindow != null)
+            {
+                window.Show(ownerWindow);
+            }
+            else
+            {
+                window.Show();
+            }
+
+            window.ShowStatusMessage(safeMessage);
+
+            if (activateWindow
+                && window.WindowState == FormWindowState.Minimized)
+            {
+                window.WindowState = FormWindowState.Normal;
+            }
+            if (activateWindow)
+            {
+                window.BringToFront();
+                window.Activate();
+            }
+        }
+
         public void SetPreviewWindowInteractionEnabled(bool enabled)
         {
             if (activePreviewWindow == null || activePreviewWindow.IsDisposed)
