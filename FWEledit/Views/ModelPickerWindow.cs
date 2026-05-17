@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
-using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -38,6 +37,8 @@ namespace FWEledit
         private int previewSelectionVersion;
         private int nextEntryIndex;
         private bool isInitializing;
+        private CancellationTokenSource prefetchCancellation;
+        private Task prefetchTask;
         public int SelectedPathId { get; private set; }
         public string SelectedMappedPath { get; private set; }
 
@@ -69,6 +70,18 @@ namespace FWEledit
                     loadedPackages.Add(entry.Package);
                 }
 
+                if (entry != null)
+                {
+                    if (string.IsNullOrWhiteSpace(entry.IndexSearch))
+                    {
+                        entry.IndexSearch = entry.Index.ToString();
+                    }
+                    if (string.IsNullOrWhiteSpace(entry.SearchKey))
+                    {
+                        entry.SearchKey = BuildEntrySearchKey(entry);
+                    }
+                }
+
                 if (entry != null && entry.Index >= nextEntryIndex)
                 {
                     nextEntryIndex = entry.Index + 1;
@@ -83,6 +96,7 @@ namespace FWEledit
             BackColor = Color.White;
             Font = new Font("Segoe UI", 9F, FontStyle.Regular, GraphicsUnit.Point, ((byte)(0)));
             KeyDown += OnKeyDown;
+            FormClosed += (s, e) => CancelAggressivePrefetch();
 
             Panel top = new Panel();
             top.Dock = DockStyle.Top;
@@ -284,6 +298,7 @@ namespace FWEledit
             ApplyFilter();
             SelectCurrentPathId(currentPathId);
             isInitializing = false;
+            StartAggressivePrefetch();
         }
 
         private void OnKeyDown(object sender, KeyEventArgs e)
@@ -338,9 +353,8 @@ namespace FWEledit
                 folders.Add(folder);
             }
 
-            List<string> sorted = folders
-                .OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
-                .ToList();
+            List<string> sorted = new List<string>(folders);
+            sorted.Sort(StringComparer.OrdinalIgnoreCase);
 
             folderFilter.Items.Add(string.Empty);
             for (int i = 0; i < sorted.Count; i++)
@@ -542,24 +556,141 @@ namespace FWEledit
             }
 
             List<ModelPickerEntry> loaded = packageEntriesLoader(package);
-            if (loaded == null || loaded.Count == 0)
+            TryAppendLoadedEntries(package, loaded);
+        }
+
+        private bool TryAppendLoadedEntries(string package, List<ModelPickerEntry> loaded)
+        {
+            if (string.IsNullOrWhiteSpace(package))
             {
-                loadedPackages.Add(package);
-                return;
+                return false;
+            }
+            if (loadedPackages.Contains(package))
+            {
+                return false;
             }
 
-            for (int i = 0; i < loaded.Count; i++)
+            if (loaded != null && loaded.Count > 0)
             {
-                ModelPickerEntry entry = loaded[i];
-                if (entry == null)
+                for (int i = 0; i < loaded.Count; i++)
                 {
-                    continue;
+                    ModelPickerEntry entry = loaded[i];
+                    if (entry == null)
+                    {
+                        continue;
+                    }
+                    entry.Index = nextEntryIndex++;
+                    entry.IndexSearch = entry.Index.ToString();
+                    if (string.IsNullOrWhiteSpace(entry.SearchKey))
+                    {
+                        entry.SearchKey = BuildEntrySearchKey(entry);
+                    }
+                    allEntries.Add(entry);
                 }
-                entry.Index = nextEntryIndex++;
-                allEntries.Add(entry);
             }
 
             loadedPackages.Add(package);
+            return true;
+        }
+
+        private void StartAggressivePrefetch()
+        {
+            if (packageEntriesLoader == null || IsDisposed)
+            {
+                return;
+            }
+
+            CancelAggressivePrefetch();
+            prefetchCancellation = new CancellationTokenSource();
+            CancellationToken token = prefetchCancellation.Token;
+            prefetchTask = Task.Run(async () =>
+            {
+                try
+                {
+                    await Task.Delay(650, token);
+                }
+                catch (TaskCanceledException)
+                {
+                    return;
+                }
+
+                for (int i = 0; i < ModelPickerCatalog.PackageOrder.Length; i++)
+                {
+                    if (token.IsCancellationRequested)
+                    {
+                        break;
+                    }
+
+                    string package = ModelPickerCatalog.PackageOrder[i];
+                    List<ModelPickerEntry> loaded = null;
+                    try
+                    {
+                        loaded = packageEntriesLoader(package);
+                    }
+                    catch
+                    {
+                        loaded = null;
+                    }
+
+                    if (token.IsCancellationRequested)
+                    {
+                        break;
+                    }
+
+                    if (IsDisposed || !IsHandleCreated)
+                    {
+                        break;
+                    }
+
+                    try
+                    {
+                        BeginInvoke((Action)(() =>
+                        {
+                            if (IsDisposed || token.IsCancellationRequested)
+                            {
+                                return;
+                            }
+
+                            bool appended = TryAppendLoadedEntries(package, loaded);
+                            if (!appended)
+                            {
+                                return;
+                            }
+
+                            string selectedPackage = Convert.ToString(packageFilter.SelectedItem);
+                            if (string.Equals(selectedPackage, package, StringComparison.OrdinalIgnoreCase))
+                            {
+                                BuildFolderFilter();
+                                ApplyFilter();
+                            }
+                        }));
+                    }
+                    catch
+                    {
+                        break;
+                    }
+                }
+            });
+        }
+
+        private void CancelAggressivePrefetch()
+        {
+            try
+            {
+                if (prefetchCancellation != null)
+                {
+                    prefetchCancellation.Cancel();
+                    prefetchCancellation.Dispose();
+                    prefetchCancellation = null;
+                }
+            }
+            catch
+            {
+            }
+            finally
+            {
+                prefetchTask = null;
+            }
         }
 
         private List<ModelPickerEntry> GetFilteredEntries()
@@ -573,33 +704,80 @@ namespace FWEledit
             string term = (searchBox.Text ?? string.Empty).Trim().ToLowerInvariant();
             bool keepOnlyUnused = onlyUnusedCheck.Checked;
             bool onlyGfx = onlyGfxCheck.Checked;
+            bool hasFolder = !string.IsNullOrWhiteSpace(folder);
+            bool hasTerm = !string.IsNullOrWhiteSpace(term);
+            List<ModelPickerEntry> result = new List<ModelPickerEntry>();
 
-            IEnumerable<ModelPickerEntry> query = allEntries;
-            query = query.Where(x => string.Equals(x.Package, package, StringComparison.OrdinalIgnoreCase));
-            if (!string.IsNullOrWhiteSpace(folder))
+            for (int i = 0; i < allEntries.Count; i++)
             {
-                query = query.Where(x => string.Equals(ExtractTopFolder(x.RelativePath, package), folder, StringComparison.OrdinalIgnoreCase));
-            }
-            if (onlyGfx)
-            {
-                query = query.Where(x => string.Equals(Path.GetExtension(x.RelativePath ?? string.Empty), ".gfx", StringComparison.OrdinalIgnoreCase));
-            }
-            if (keepOnlyUnused)
-            {
-                query = query.Where(x => x.Uses <= 0);
-            }
-            if (!string.IsNullOrWhiteSpace(term))
-            {
-                query = query.Where(x =>
-                    x.Index.ToString().Contains(term)
-                    || x.PathId.ToString().Contains(term)
-                    || (!string.IsNullOrWhiteSpace(x.RelativePath) && x.RelativePath.ToLowerInvariant().Contains(term))
-                    || (!string.IsNullOrWhiteSpace(x.ItemName) && x.ItemName.ToLowerInvariant().Contains(term))
-                    || (x.ItemId > 0 && x.ItemId.ToString().Contains(term))
-                );
+                ModelPickerEntry entry = allEntries[i];
+                if (entry == null)
+                {
+                    continue;
+                }
+
+                if (!string.Equals(entry.Package, package, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (hasFolder && !string.Equals(ExtractTopFolder(entry.RelativePath, package), folder, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (onlyGfx && !string.Equals(Path.GetExtension(entry.RelativePath ?? string.Empty), ".gfx", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (keepOnlyUnused && entry.Uses > 0)
+                {
+                    continue;
+                }
+
+                if (hasTerm)
+                {
+                    bool matchesIndex = !string.IsNullOrWhiteSpace(entry.IndexSearch)
+                        && entry.IndexSearch.IndexOf(term, StringComparison.Ordinal) >= 0;
+
+                    if (!matchesIndex)
+                    {
+                        string searchKey = entry.SearchKey;
+                        if (string.IsNullOrWhiteSpace(searchKey))
+                        {
+                            searchKey = BuildEntrySearchKey(entry);
+                            entry.SearchKey = searchKey;
+                        }
+
+                        if (searchKey.IndexOf(term, StringComparison.Ordinal) < 0)
+                        {
+                            continue;
+                        }
+                    }
+                }
+
+                result.Add(entry);
             }
 
-            return query.ToList();
+            return result;
+        }
+
+        private static string BuildEntrySearchKey(ModelPickerEntry entry)
+        {
+            if (entry == null)
+            {
+                return string.Empty;
+            }
+
+            return ((entry.RelativePath ?? string.Empty)
+                    + "|"
+                    + (entry.ItemName ?? string.Empty)
+                    + "|"
+                    + entry.ItemId.ToString()
+                    + "|"
+                    + entry.PathId.ToString())
+                .ToLowerInvariant();
         }
 
         private void ExportCsv()
@@ -831,7 +1009,8 @@ namespace FWEledit
                 }
                 if (string.IsNullOrWhiteSpace(mappedPath))
                 {
-                    MessageBox.Show("Invalid model path.", "Choice Model", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    modelPreviewService.ShowPreviewMessage("Invalid model path.", force, Handle);
+                    previewWindowOpened = modelPreviewService.IsPreviewWindowOpen();
                     return;
                 }
 
@@ -853,10 +1032,8 @@ namespace FWEledit
 
                 if (!ok)
                 {
-                    if (!string.IsNullOrWhiteSpace(error))
-                    {
-                        MessageBox.Show(error, "Choice Model", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                    }
+                    modelPreviewService.ShowPreviewMessage(error, force, Handle);
+                    previewWindowOpened = modelPreviewService.IsPreviewWindowOpen();
                     return;
                 }
 
@@ -902,7 +1079,8 @@ namespace FWEledit
             }
             catch (Exception ex)
             {
-                MessageBox.Show("MODEL PREVIEW ERROR!\n" + ex.Message, "Choice Model", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                modelPreviewService.ShowPreviewMessage("MODEL PREVIEW ERROR!\n" + ex.Message, force, Handle);
+                previewWindowOpened = modelPreviewService.IsPreviewWindowOpen();
             }
             finally
             {

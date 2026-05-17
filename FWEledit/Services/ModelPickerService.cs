@@ -7,11 +7,23 @@ namespace FWEledit
 {
     public sealed class ModelPickerService
     {
+        private sealed class ModelPickerListContext
+        {
+            public Dictionary<int, int> UsesByPathId { get; } = new Dictionary<int, int>();
+            public Dictionary<int, int> SampleItemIdByPathId { get; } = new Dictionary<int, int>();
+            public Dictionary<int, string> SampleItemNameByPathId { get; } = new Dictionary<int, string>();
+            public Dictionary<int, string> SampleIconKeyByPathId { get; } = new Dictionary<int, string>();
+            public Dictionary<string, List<int>> PathIdsByNormalizedPath { get; set; } = new Dictionary<string, List<int>>(StringComparer.OrdinalIgnoreCase);
+        }
+
         private readonly ModelPickerCacheService cacheService;
         private readonly AssetManager assetManager;
         private readonly IconResolutionService iconResolutionService;
         private readonly IdGenerationService idGenerationService;
         private readonly ItemFieldClassifierService fieldClassifier;
+        private readonly Dictionary<string, ModelPickerListContext> listContextCache
+            = new Dictionary<string, ModelPickerListContext>(StringComparer.Ordinal);
+        private readonly object listContextSyncRoot = new object();
 
         public ModelPickerService(
             ModelPickerCacheService cacheService,
@@ -50,6 +62,7 @@ namespace FWEledit
                 for (int i = 0; i < packageEntries.Count; i++)
                 {
                     packageEntries[i].Index = nextIndex++;
+                    packageEntries[i].IndexSearch = packageEntries[i].Index.ToString();
                     entries.Add(packageEntries[i]);
                 }
             }
@@ -63,7 +76,8 @@ namespace FWEledit
             int listIndex,
             string package,
             Func<string, Bitmap> iconLoader,
-            Action<string> missingPackageNotifier)
+            Action<string> missingPackageNotifier,
+            string contextCacheKey = null)
         {
             List<ModelPickerEntry> entries = new List<ModelPickerEntry>();
             if (database == null || database.pathById == null || database.pathById.Count == 0)
@@ -79,6 +93,109 @@ namespace FWEledit
                 return entries;
             }
 
+            ModelPickerListContext context = GetOrBuildListContext(
+                listCollection,
+                database,
+                listIndex,
+                contextCacheKey);
+            int idx = 1;
+            List<string> packageFiles = EnumerateModelPickerPackageFiles(package, missingPackageNotifier);
+            for (int i = 0; i < packageFiles.Count; i++)
+            {
+                string relativePath = packageFiles[i];
+                int pathId = ResolveModelEntryPathId(package, relativePath, context.PathIdsByNormalizedPath, context.UsesByPathId);
+                int uses = 0;
+                int itemId = 0;
+                string itemName = string.Empty;
+                string iconKey = string.Empty;
+                string mappedPath = BuildMappedPath(package, relativePath);
+                Bitmap icon = Properties.Resources.NoIcon;
+                if (pathId > 0)
+                {
+                    context.UsesByPathId.TryGetValue(pathId, out uses);
+                    context.SampleItemIdByPathId.TryGetValue(pathId, out itemId);
+                    context.SampleItemNameByPathId.TryGetValue(pathId, out itemName);
+                    string mappedFromPathId;
+                    if (database.pathById.TryGetValue(pathId, out mappedFromPathId) && !string.IsNullOrWhiteSpace(mappedFromPathId))
+                    {
+                        mappedPath = mappedFromPathId;
+                    }
+
+                    if (context.SampleIconKeyByPathId.TryGetValue(pathId, out iconKey)
+                        && !string.IsNullOrWhiteSpace(iconKey)
+                        && database != null
+                        && database.sourceBitmap != null
+                        && database.ContainsKey(iconKey))
+                    {
+                        icon = null;
+                    }
+                }
+
+                entries.Add(new ModelPickerEntry
+                {
+                    Index = idx++,
+                    PathId = pathId,
+                    Package = package,
+                    RelativePath = relativePath,
+                    MappedPath = mappedPath,
+                    Icon = icon,
+                    IconKey = iconKey,
+                    SearchKey = BuildEntrySearchKey(relativePath, itemName, itemId, pathId),
+                    IndexSearch = idx.ToString(),
+                    ItemId = itemId,
+                    ItemName = itemName,
+                    Uses = uses
+                });
+            }
+
+            return entries;
+        }
+
+        private ModelPickerListContext GetOrBuildListContext(
+            eListCollection listCollection,
+            CacheSave database,
+            int listIndex,
+            string contextCacheKey)
+        {
+            string safeKey = contextCacheKey ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(safeKey))
+            {
+                return BuildListContext(listCollection, database, listIndex);
+            }
+
+            lock (listContextSyncRoot)
+            {
+                if (listContextCache.TryGetValue(safeKey, out ModelPickerListContext cached)
+                    && cached != null)
+                {
+                    return cached;
+                }
+            }
+
+            ModelPickerListContext built = BuildListContext(listCollection, database, listIndex);
+            lock (listContextSyncRoot)
+            {
+                if (!listContextCache.ContainsKey(safeKey))
+                {
+                    listContextCache[safeKey] = built;
+                }
+
+                if (listContextCache.Count > 8)
+                {
+                    listContextCache.Clear();
+                    listContextCache[safeKey] = built;
+                }
+            }
+
+            return built;
+        }
+
+        private ModelPickerListContext BuildListContext(
+            eListCollection listCollection,
+            CacheSave database,
+            int listIndex)
+        {
+            ModelPickerListContext context = new ModelPickerListContext();
             int[] modelFields = GetModelUsageFieldIndices(listCollection, listIndex);
             int idFieldIndex = idGenerationService.GetIdFieldIndex(listCollection, listIndex);
             int nameFieldIndex = -1;
@@ -98,11 +215,6 @@ namespace FWEledit
                     break;
                 }
             }
-
-            Dictionary<int, int> usesByPathId = new Dictionary<int, int>();
-            Dictionary<int, int> sampleItemIdByPathId = new Dictionary<int, int>();
-            Dictionary<int, string> sampleItemNameByPathId = new Dictionary<int, string>();
-            Dictionary<int, string> sampleIconKeyByPathId = new Dictionary<int, string>();
 
             if (modelFields.Length > 0)
             {
@@ -135,18 +247,18 @@ namespace FWEledit
                         }
 
                         int c;
-                        usesByPathId.TryGetValue(pathId, out c);
-                        usesByPathId[pathId] = c + 1;
-                        if (!sampleItemIdByPathId.ContainsKey(pathId))
+                        context.UsesByPathId.TryGetValue(pathId, out c);
+                        context.UsesByPathId[pathId] = c + 1;
+                        if (!context.SampleItemIdByPathId.ContainsKey(pathId))
                         {
-                            sampleItemIdByPathId[pathId] = itemId;
-                            sampleItemNameByPathId[pathId] = itemName;
+                            context.SampleItemIdByPathId[pathId] = itemId;
+                            context.SampleItemNameByPathId[pathId] = itemName;
                             if (iconFieldIndex >= 0)
                             {
                                 string iconKey = iconResolutionService.ResolveIconKeyForList(database, listCollection, listIndex, listCollection.GetValue(listIndex, row, iconFieldIndex));
                                 if (!string.IsNullOrWhiteSpace(iconKey))
                                 {
-                                    sampleIconKeyByPathId[pathId] = iconKey;
+                                    context.SampleIconKeyByPathId[pathId] = iconKey;
                                 }
                             }
                         }
@@ -154,56 +266,20 @@ namespace FWEledit
                 }
             }
 
-            Dictionary<string, List<int>> pathIdsByNormalizedPath = BuildModelPathIdLookup(database);
-            int idx = 1;
-            List<string> packageFiles = EnumerateModelPickerPackageFiles(package, missingPackageNotifier);
-            for (int i = 0; i < packageFiles.Count; i++)
-            {
-                string relativePath = packageFiles[i];
-                int pathId = ResolveModelEntryPathId(package, relativePath, pathIdsByNormalizedPath, usesByPathId);
-                int uses = 0;
-                int itemId = 0;
-                string itemName = string.Empty;
-                string iconKey = string.Empty;
-                string mappedPath = BuildMappedPath(package, relativePath);
-                Bitmap icon = Properties.Resources.NoIcon;
-                if (pathId > 0)
-                {
-                    usesByPathId.TryGetValue(pathId, out uses);
-                    sampleItemIdByPathId.TryGetValue(pathId, out itemId);
-                    sampleItemNameByPathId.TryGetValue(pathId, out itemName);
-                    string mappedFromPathId;
-                    if (database.pathById.TryGetValue(pathId, out mappedFromPathId) && !string.IsNullOrWhiteSpace(mappedFromPathId))
-                    {
-                        mappedPath = mappedFromPathId;
-                    }
+            context.PathIdsByNormalizedPath = BuildModelPathIdLookup(database);
+            return context;
+        }
 
-                    if (sampleIconKeyByPathId.TryGetValue(pathId, out iconKey)
-                        && !string.IsNullOrWhiteSpace(iconKey)
-                        && database != null
-                        && database.sourceBitmap != null
-                        && database.ContainsKey(iconKey))
-                    {
-                        icon = null;
-                    }
-                }
-
-                entries.Add(new ModelPickerEntry
-                {
-                    Index = idx++,
-                    PathId = pathId,
-                    Package = package,
-                    RelativePath = relativePath,
-                    MappedPath = mappedPath,
-                    Icon = icon,
-                    IconKey = iconKey,
-                    ItemId = itemId,
-                    ItemName = itemName,
-                    Uses = uses
-                });
-            }
-
-            return entries;
+        private static string BuildEntrySearchKey(string relativePath, string itemName, int itemId, int pathId)
+        {
+            return ((relativePath ?? string.Empty)
+                    + "|"
+                    + (itemName ?? string.Empty)
+                    + "|"
+                    + itemId.ToString()
+                    + "|"
+                    + pathId.ToString())
+                .ToLowerInvariant();
         }
 
         public List<string> EnumerateModelPickerPackageFiles(string package, Action<string> missingPackageNotifier)

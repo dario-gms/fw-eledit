@@ -47,6 +47,7 @@ namespace FWEledit
         private ModelPreviewGpuViewport gpuViewport;
         private string gpuViewportCreationError;
         private readonly Panel viewportHost;
+        private readonly Label previewStatusLabel;
         private Control activeViewport;
         private readonly CheckBox wireframeCheck;
         private readonly CheckBox animationCheck;
@@ -135,6 +136,17 @@ namespace FWEledit
             {
                 viewportHost.Controls.Add(gpuViewport);
             }
+
+            previewStatusLabel = new Label();
+            previewStatusLabel.Dock = DockStyle.Fill;
+            previewStatusLabel.Visible = false;
+            previewStatusLabel.BackColor = Color.FromArgb(34, 34, 34);
+            previewStatusLabel.ForeColor = Color.FromArgb(255, 210, 120);
+            previewStatusLabel.Padding = new Padding(18);
+            previewStatusLabel.TextAlign = ContentAlignment.MiddleCenter;
+            previewStatusLabel.Font = new Font("Segoe UI", 10F, FontStyle.Regular, GraphicsUnit.Point, ((byte)(0)));
+            viewportHost.Controls.Add(previewStatusLabel);
+            previewStatusLabel.BringToFront();
 
             Panel footer = new Panel();
             footer.Dock = DockStyle.Bottom;
@@ -690,6 +702,7 @@ namespace FWEledit
             SuspendLayout();
             try
             {
+                ShowStatusMessageInternal(string.Empty);
                 UpdateHeaderForMesh(meshData);
                 if (cpuViewport != null)
                 {
@@ -710,6 +723,41 @@ namespace FWEledit
             finally
             {
                 ResumeLayout(true);
+            }
+        }
+
+        public void ShowStatusMessage(string message)
+        {
+            if (IsDisposed)
+            {
+                return;
+            }
+
+            if (InvokeRequired)
+            {
+                BeginInvoke((Action)(() => ShowStatusMessage(message)));
+                return;
+            }
+
+            ShowStatusMessageInternal(message);
+        }
+
+        private void ShowStatusMessageInternal(string message)
+        {
+            if (previewStatusLabel == null)
+            {
+                return;
+            }
+
+            string text = string.IsNullOrWhiteSpace(message)
+                ? string.Empty
+                : message.Trim();
+
+            previewStatusLabel.Text = text;
+            previewStatusLabel.Visible = !string.IsNullOrWhiteSpace(text);
+            if (previewStatusLabel.Visible)
+            {
+                previewStatusLabel.BringToFront();
             }
         }
 

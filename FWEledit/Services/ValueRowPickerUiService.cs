@@ -9,6 +9,7 @@ namespace FWEledit
 {
     public sealed class ValueRowPickerUiService
     {
+        private static readonly object ModelPickerBuildSyncRoot = new object();
         private int previewLoadInProgress;
         private bool liveModelPreviewEnabled;
         private int lastPreviewPathId;
@@ -726,46 +727,51 @@ namespace FWEledit
                 return new List<ModelPickerEntry>();
             }
 
-            string safePackage = (package ?? string.Empty).Trim().ToLowerInvariant();
-            if (string.IsNullOrWhiteSpace(safePackage))
+            lock (ModelPickerBuildSyncRoot)
             {
-                safePackage = "models";
-            }
-
-            string cacheSignature = BuildPickerEntriesCacheSignature(listCollection, database, listIndex, modelPickerService)
-                + "|pkg:"
-                + safePackage;
-            if (modelPickerCacheService != null
-                && modelPickerCacheService.TryGetPickerEntries(listIndex, cacheSignature, out List<ModelPickerEntry> cachedEntries))
-            {
-                return cachedEntries;
-            }
-
-            List<ModelPickerEntry> builtEntries = modelPickerService.BuildModelPickerEntriesForPackage(
-                listCollection,
-                database,
-                listIndex,
-                safePackage,
-                iconKey => database.images(iconKey),
-                missingPackage =>
+                string safePackage = (package ?? string.Empty).Trim().ToLowerInvariant();
+                if (string.IsNullOrWhiteSpace(safePackage))
                 {
-                    if (modelPickerCacheService == null || !modelPickerCacheService.TryMarkMissingExtractNotified(missingPackage))
-                    {
-                        return;
-                    }
-                    if (dialogService != null && modelPackageNotificationService != null)
-                    {
-                        dialogService.ShowMessage(
-                            modelPackageNotificationService.BuildMissingPackageMessage(missingPackage),
-                            modelPackageNotificationService.Title,
-                            MessageBoxButtons.OK,
-                            MessageBoxIcon.Information,
-                            owner);
-                    }
-                });
+                    safePackage = "models";
+                }
 
-            modelPickerCacheService?.SetPickerEntries(listIndex, cacheSignature, builtEntries);
-            return builtEntries;
+                string listContextSignature = BuildPickerEntriesCacheSignature(listCollection, database, listIndex, modelPickerService);
+                string cacheSignature = listContextSignature
+                    + "|pkg:"
+                    + safePackage;
+                if (modelPickerCacheService != null
+                    && modelPickerCacheService.TryGetPickerEntries(listIndex, cacheSignature, out List<ModelPickerEntry> cachedEntries))
+                {
+                    return cachedEntries;
+                }
+
+                List<ModelPickerEntry> builtEntries = modelPickerService.BuildModelPickerEntriesForPackage(
+                    listCollection,
+                    database,
+                    listIndex,
+                    safePackage,
+                    iconKey => database.images(iconKey),
+                    missingPackage =>
+                    {
+                        if (modelPickerCacheService == null || !modelPickerCacheService.TryMarkMissingExtractNotified(missingPackage))
+                        {
+                            return;
+                        }
+                        if (dialogService != null && modelPackageNotificationService != null)
+                        {
+                            dialogService.ShowMessage(
+                                modelPackageNotificationService.BuildMissingPackageMessage(missingPackage),
+                                modelPackageNotificationService.Title,
+                                MessageBoxButtons.OK,
+                                MessageBoxIcon.Information,
+                                owner);
+                        }
+                    },
+                    listContextSignature);
+
+                modelPickerCacheService?.SetPickerEntries(listIndex, cacheSignature, builtEntries);
+                return builtEntries;
+            }
         }
 
         private static string BuildPickerEntriesCacheSignature(

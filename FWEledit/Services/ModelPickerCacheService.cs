@@ -5,6 +5,7 @@ namespace FWEledit
 {
     public sealed class ModelPickerCacheService
     {
+        private readonly object syncRoot = new object();
         private readonly Dictionary<int, string> modelPackageByPathIdCache = new Dictionary<int, string>();
         private string modelPackageCacheSignature = string.Empty;
         private readonly Dictionary<string, ModelPickerPackageCacheEntry> modelPickerPackageCache
@@ -16,22 +17,28 @@ namespace FWEledit
 
         public void EnsurePackageCacheSignature(string signature)
         {
-            string safeSignature = signature ?? string.Empty;
-            if (!string.Equals(safeSignature, modelPackageCacheSignature, StringComparison.OrdinalIgnoreCase))
+            lock (syncRoot)
             {
-                modelPackageByPathIdCache.Clear();
-                modelPackageCacheSignature = safeSignature;
+                string safeSignature = signature ?? string.Empty;
+                if (!string.Equals(safeSignature, modelPackageCacheSignature, StringComparison.OrdinalIgnoreCase))
+                {
+                    modelPackageByPathIdCache.Clear();
+                    modelPackageCacheSignature = safeSignature;
+                }
             }
         }
 
         public bool TryGetPackageForPathId(int pathId, out string package)
         {
-            if (modelPackageByPathIdCache.TryGetValue(pathId, out package) && !string.IsNullOrWhiteSpace(package))
+            lock (syncRoot)
             {
-                return true;
+                if (modelPackageByPathIdCache.TryGetValue(pathId, out package) && !string.IsNullOrWhiteSpace(package))
+                {
+                    return true;
+                }
+                package = package ?? string.Empty;
+                return false;
             }
-            package = package ?? string.Empty;
-            return false;
         }
 
         public void SetPackageForPathId(int pathId, string package)
@@ -40,26 +47,32 @@ namespace FWEledit
             {
                 return;
             }
-            modelPackageByPathIdCache[pathId] = package ?? string.Empty;
+            lock (syncRoot)
+            {
+                modelPackageByPathIdCache[pathId] = package ?? string.Empty;
+            }
         }
 
         public bool TryGetPickerFiles(string cacheKey, DateTime pckTimestampUtc, out List<string> files)
         {
-            files = null;
-            ModelPickerPackageCacheEntry cached;
-            if (string.IsNullOrWhiteSpace(cacheKey))
+            lock (syncRoot)
             {
+                files = null;
+                ModelPickerPackageCacheEntry cached;
+                if (string.IsNullOrWhiteSpace(cacheKey))
+                {
+                    return false;
+                }
+                if (modelPickerPackageCache.TryGetValue(cacheKey, out cached)
+                    && cached != null
+                    && cached.Files != null
+                    && cached.PckTimestampUtc == pckTimestampUtc)
+                {
+                    files = new List<string>(cached.Files);
+                    return true;
+                }
                 return false;
             }
-            if (modelPickerPackageCache.TryGetValue(cacheKey, out cached)
-                && cached != null
-                && cached.Files != null
-                && cached.PckTimestampUtc == pckTimestampUtc)
-            {
-                files = new List<string>(cached.Files);
-                return true;
-            }
-            return false;
         }
 
         public void SetPickerFiles(string cacheKey, DateTime pckTimestampUtc, List<string> files)
@@ -68,46 +81,55 @@ namespace FWEledit
             {
                 return;
             }
-            modelPickerPackageCache[cacheKey] = new ModelPickerPackageCacheEntry
+            lock (syncRoot)
             {
-                PckTimestampUtc = pckTimestampUtc,
-                Files = files != null ? new List<string>(files) : new List<string>()
-            };
+                modelPickerPackageCache[cacheKey] = new ModelPickerPackageCacheEntry
+                {
+                    PckTimestampUtc = pckTimestampUtc,
+                    Files = files != null ? new List<string>(files) : new List<string>()
+                };
+            }
         }
 
         public bool TryMarkMissingExtractNotified(string package)
         {
-            if (string.IsNullOrWhiteSpace(package))
+            lock (syncRoot)
             {
-                return false;
+                if (string.IsNullOrWhiteSpace(package))
+                {
+                    return false;
+                }
+                if (modelPickerMissingExtractNotified.Contains(package))
+                {
+                    return false;
+                }
+                modelPickerMissingExtractNotified.Add(package);
+                return true;
             }
-            if (modelPickerMissingExtractNotified.Contains(package))
-            {
-                return false;
-            }
-            modelPickerMissingExtractNotified.Add(package);
-            return true;
         }
 
         public bool TryGetPickerEntries(int listIndex, string signature, out List<ModelPickerEntry> entries)
         {
-            entries = null;
-            if (listIndex < 0 || string.IsNullOrWhiteSpace(signature))
+            lock (syncRoot)
             {
+                entries = null;
+                if (listIndex < 0 || string.IsNullOrWhiteSpace(signature))
+                {
+                    return false;
+                }
+
+                if (modelPickerEntriesCache.TryGetValue(listIndex, out Dictionary<string, List<ModelPickerEntry>> bySignature)
+                    && bySignature != null
+                    && bySignature.TryGetValue(signature, out List<ModelPickerEntry> cachedEntries))
+                {
+                    entries = cachedEntries != null
+                        ? new List<ModelPickerEntry>(cachedEntries)
+                        : new List<ModelPickerEntry>();
+                    return true;
+                }
+
                 return false;
             }
-
-            if (modelPickerEntriesCache.TryGetValue(listIndex, out Dictionary<string, List<ModelPickerEntry>> bySignature)
-                && bySignature != null
-                && bySignature.TryGetValue(signature, out List<ModelPickerEntry> cachedEntries))
-            {
-                entries = cachedEntries != null
-                    ? new List<ModelPickerEntry>(cachedEntries)
-                    : new List<ModelPickerEntry>();
-                return true;
-            }
-
-            return false;
         }
 
         public void SetPickerEntries(int listIndex, string signature, List<ModelPickerEntry> entries)
@@ -117,14 +139,17 @@ namespace FWEledit
                 return;
             }
 
-            if (!modelPickerEntriesCache.TryGetValue(listIndex, out Dictionary<string, List<ModelPickerEntry>> bySignature)
-                || bySignature == null)
+            lock (syncRoot)
             {
-                bySignature = new Dictionary<string, List<ModelPickerEntry>>(StringComparer.Ordinal);
-                modelPickerEntriesCache[listIndex] = bySignature;
-            }
+                if (!modelPickerEntriesCache.TryGetValue(listIndex, out Dictionary<string, List<ModelPickerEntry>> bySignature)
+                    || bySignature == null)
+                {
+                    bySignature = new Dictionary<string, List<ModelPickerEntry>>(StringComparer.Ordinal);
+                    modelPickerEntriesCache[listIndex] = bySignature;
+                }
 
-            bySignature[signature] = entries != null ? new List<ModelPickerEntry>(entries) : new List<ModelPickerEntry>();
+                bySignature[signature] = entries != null ? new List<ModelPickerEntry>(entries) : new List<ModelPickerEntry>();
+            }
         }
 
         public void InvalidatePickerEntries(int listIndex)
@@ -134,7 +159,10 @@ namespace FWEledit
                 return;
             }
 
-            modelPickerEntriesCache.Remove(listIndex);
+            lock (syncRoot)
+            {
+                modelPickerEntriesCache.Remove(listIndex);
+            }
         }
     }
 }

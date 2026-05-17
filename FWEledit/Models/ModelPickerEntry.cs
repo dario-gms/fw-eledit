@@ -11,6 +11,8 @@ namespace FWEledit
         public string MappedPath { get; set; }
         public Bitmap Icon { get; set; }
         public string IconKey { get; set; }
+        public string SearchKey { get; set; }
+        public string IndexSearch { get; set; }
         public int ItemId { get; set; }
         public string ItemName { get; set; }
         public int Uses { get; set; }
