@@ -9,7 +9,6 @@ namespace FWEledit
 {
     public sealed class ValueRowPickerUiService
     {
-        private static readonly object ModelPickerBuildSyncRoot = new object();
         private int previewLoadInProgress;
         private bool liveModelPreviewEnabled;
         private int lastPreviewPathId;
@@ -727,51 +726,48 @@ namespace FWEledit
                 return new List<ModelPickerEntry>();
             }
 
-            lock (ModelPickerBuildSyncRoot)
+            string safePackage = (package ?? string.Empty).Trim().ToLowerInvariant();
+            if (string.IsNullOrWhiteSpace(safePackage))
             {
-                string safePackage = (package ?? string.Empty).Trim().ToLowerInvariant();
-                if (string.IsNullOrWhiteSpace(safePackage))
-                {
-                    safePackage = "models";
-                }
-
-                string listContextSignature = BuildPickerEntriesCacheSignature(listCollection, database, listIndex, modelPickerService);
-                string cacheSignature = listContextSignature
-                    + "|pkg:"
-                    + safePackage;
-                if (modelPickerCacheService != null
-                    && modelPickerCacheService.TryGetPickerEntries(listIndex, cacheSignature, out List<ModelPickerEntry> cachedEntries))
-                {
-                    return cachedEntries;
-                }
-
-                List<ModelPickerEntry> builtEntries = modelPickerService.BuildModelPickerEntriesForPackage(
-                    listCollection,
-                    database,
-                    listIndex,
-                    safePackage,
-                    iconKey => database.images(iconKey),
-                    missingPackage =>
-                    {
-                        if (modelPickerCacheService == null || !modelPickerCacheService.TryMarkMissingExtractNotified(missingPackage))
-                        {
-                            return;
-                        }
-                        if (dialogService != null && modelPackageNotificationService != null)
-                        {
-                            dialogService.ShowMessage(
-                                modelPackageNotificationService.BuildMissingPackageMessage(missingPackage),
-                                modelPackageNotificationService.Title,
-                                MessageBoxButtons.OK,
-                                MessageBoxIcon.Information,
-                                owner);
-                        }
-                    },
-                    listContextSignature);
-
-                modelPickerCacheService?.SetPickerEntries(listIndex, cacheSignature, builtEntries);
-                return builtEntries;
+                safePackage = "models";
             }
+
+            string listContextSignature = BuildPickerEntriesCacheSignature(listCollection, database, listIndex, modelPickerService);
+            string cacheSignature = listContextSignature
+                + "|pkg:"
+                + safePackage;
+            if (modelPickerCacheService != null
+                && modelPickerCacheService.TryGetPickerEntries(listIndex, cacheSignature, out List<ModelPickerEntry> cachedEntries))
+            {
+                return cachedEntries;
+            }
+
+            List<ModelPickerEntry> builtEntries = modelPickerService.BuildModelPickerEntriesForPackage(
+                listCollection,
+                database,
+                listIndex,
+                safePackage,
+                iconKey => database.images(iconKey),
+                missingPackage =>
+                {
+                    if (modelPickerCacheService == null || !modelPickerCacheService.TryMarkMissingExtractNotified(missingPackage))
+                    {
+                        return;
+                    }
+                    if (dialogService != null && modelPackageNotificationService != null)
+                    {
+                        dialogService.ShowMessage(
+                            modelPackageNotificationService.BuildMissingPackageMessage(missingPackage),
+                            modelPackageNotificationService.Title,
+                            MessageBoxButtons.OK,
+                            MessageBoxIcon.Information,
+                            owner);
+                    }
+                },
+                listContextSignature);
+
+            modelPickerCacheService?.SetPickerEntries(listIndex, cacheSignature, builtEntries);
+            return builtEntries;
         }
 
         private static string BuildPickerEntriesCacheSignature(
@@ -868,6 +864,321 @@ namespace FWEledit
             }
 
             return pathIdResolutionService.TryGetCurrentPathId(itemGrid, rowIndex, extractor);
+        }
+
+        private static float ResolvePreviewScaleFromGrid(DataGridView itemGrid, string modelFieldName)
+        {
+            if (itemGrid == null || itemGrid.Rows == null || itemGrid.Rows.Count <= 0)
+            {
+                return 1f;
+            }
+
+            float fallback = 1f;
+            int bestScore = int.MinValue;
+            float bestValue = 1f;
+            if (TryExtractInlineScaleFromGridModelField(itemGrid, modelFieldName, out float inlineScale))
+            {
+                bestScore = 500;
+                bestValue = inlineScale;
+            }
+            for (int i = 0; i < itemGrid.Rows.Count; i++)
+            {
+                string fieldName = Convert.ToString(itemGrid.Rows[i].Cells[0].Value);
+                if (!LooksLikeScaleFieldName(fieldName))
+                {
+                    continue;
+                }
+
+                string rawValue = Convert.ToString(itemGrid.Rows[i].Cells[2].Value);
+                if (TryParsePreviewScale(rawValue, out float parsed))
+                {
+                    int score = GetScaleFieldAffinity(modelFieldName, fieldName);
+                    if (IsPrimaryScaleField(fieldName))
+                    {
+                        score += 200;
+                    }
+
+                    if (score > bestScore)
+                    {
+                        bestScore = score;
+                        bestValue = parsed;
+                    }
+                    fallback = parsed;
+                }
+            }
+
+            return bestScore > int.MinValue ? bestValue : fallback;
+        }
+
+        private static bool TryExtractInlineScaleFromGridModelField(DataGridView itemGrid, string modelFieldName, out float scale)
+        {
+            scale = 1f;
+            if (itemGrid == null || itemGrid.Rows == null || itemGrid.Rows.Count <= 0 || string.IsNullOrWhiteSpace(modelFieldName))
+            {
+                return false;
+            }
+
+            string normalizedModel = NormalizeFieldToken(modelFieldName);
+            for (int i = 0; i < itemGrid.Rows.Count; i++)
+            {
+                string fieldName = Convert.ToString(itemGrid.Rows[i].Cells[0].Value);
+                if (NormalizeFieldToken(fieldName) != normalizedModel)
+                {
+                    continue;
+                }
+
+                string rawValue = Convert.ToString(itemGrid.Rows[i].Cells[2].Value);
+                if (TryExtractInlineScaleFromModelValue(rawValue, out float inlineScale))
+                {
+                    scale = inlineScale;
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool TryExtractInlineScaleFromModelValue(string modelFieldRawValue, out float scale)
+        {
+            scale = 1f;
+            if (string.IsNullOrWhiteSpace(modelFieldRawValue))
+            {
+                return false;
+            }
+
+            string[] parts = modelFieldRawValue.Split(new[] { '|', ';', ',', ':', '\t', ' ' }, StringSplitOptions.RemoveEmptyEntries);
+            if (parts == null || parts.Length < 2)
+            {
+                return false;
+            }
+
+            int parsedPathId = 0;
+            int.TryParse(parts[0], out parsedPathId);
+            for (int i = 1; i < parts.Length; i++)
+            {
+                string token = parts[i].Trim();
+                if (string.IsNullOrWhiteSpace(token))
+                {
+                    continue;
+                }
+
+                if (!float.TryParse(token, NumberStyles.Float, CultureInfo.InvariantCulture, out float parsed)
+                    && !float.TryParse(token, NumberStyles.Float, CultureInfo.CurrentCulture, out parsed))
+                {
+                    continue;
+                }
+
+                if (parsedPathId > 0 && Math.Abs(parsed - parsedPathId) < 0.01f)
+                {
+                    continue;
+                }
+
+                if (parsed <= 0f || parsed < 0.1f || parsed > 5000f)
+                {
+                    continue;
+                }
+
+                scale = NormalizePreviewScale(parsed);
+                return scale > 0.01f;
+            }
+
+            return false;
+        }
+
+        private static bool IsPrimaryScaleField(string fieldName)
+        {
+            if (string.IsNullOrWhiteSpace(fieldName))
+            {
+                return false;
+            }
+
+            string normalized = fieldName.Trim().ToLowerInvariant()
+                .Replace(" ", string.Empty)
+                .Replace("_", string.Empty);
+
+            return normalized.Contains("scalemodel")
+                || normalized == "scale"
+                || normalized == "modelscale";
+        }
+
+        private static bool LooksLikeScaleFieldName(string fieldName)
+        {
+            if (string.IsNullOrWhiteSpace(fieldName))
+            {
+                return false;
+            }
+
+            string normalized = fieldName.Trim().ToLowerInvariant()
+                .Replace(" ", string.Empty)
+                .Replace("_", string.Empty);
+
+            if (normalized == "size")
+            {
+                return true;
+            }
+
+            return normalized.Contains("scalemodel")
+                || normalized == "scale"
+                || normalized.Contains("bodyscale")
+                || normalized.Contains("modelscale")
+                || normalized.Contains("weaponscale")
+                || normalized.Contains("itemscale")
+                || normalized.Contains("ratio")
+                || normalized.Contains("factor")
+                || normalized.Contains("proportion")
+                || normalized.Contains("percent")
+                || normalized.Contains("zoom")
+                || normalized.Contains("mul")
+                || normalized.Contains("size")
+                || fieldName.Contains("缩放")
+                || fieldName.Contains("比例")
+                || fieldName.Contains("尺寸")
+                || fieldName.Contains("大小")
+                || fieldName.Contains("倍率");
+        }
+
+        private static int GetScaleFieldAffinity(string modelFieldName, string scaleFieldName)
+        {
+            if (string.IsNullOrWhiteSpace(scaleFieldName))
+            {
+                return int.MinValue;
+            }
+
+            int score = 0;
+            string model = NormalizeFieldToken(modelFieldName);
+            string scale = NormalizeFieldToken(scaleFieldName);
+
+            if (IsFemaleMarker(model) && IsFemaleMarker(scale))
+            {
+                score += 120;
+            }
+            if (IsMaleMarker(model) && IsMaleMarker(scale))
+            {
+                score += 120;
+            }
+            if (model.Contains("weapon") && scale.Contains("weapon"))
+            {
+                score += 30;
+            }
+            if (model.Contains("model") && scale.Contains("model"))
+            {
+                score += 20;
+            }
+            if (!string.IsNullOrWhiteSpace(model)
+                && !string.IsNullOrWhiteSpace(scale)
+                && (scale.Contains(model) || model.Contains(scale)))
+            {
+                score += 40;
+            }
+
+            return score;
+        }
+
+        private static string NormalizeFieldToken(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return string.Empty;
+            }
+
+            return value.Trim().ToLowerInvariant()
+                .Replace(" ", string.Empty)
+                .Replace("_", string.Empty)
+                .Replace("-", string.Empty);
+        }
+
+        private static bool IsFemaleMarker(string token)
+        {
+            if (string.IsNullOrWhiteSpace(token))
+            {
+                return false;
+            }
+
+            return token.Contains("female")
+                || token.Contains("woman")
+                || token.Contains("girl")
+                || token.Contains("feminino")
+                || token.Contains("mulher")
+                || token.Contains("lady")
+                || token.Contains("女");
+        }
+
+        private static bool IsMaleMarker(string token)
+        {
+            if (string.IsNullOrWhiteSpace(token))
+            {
+                return false;
+            }
+
+            return token.Contains("male")
+                || token.Contains("man")
+                || token.Contains("boy")
+                || token.Contains("masculino")
+                || token.Contains("homem")
+                || token.Contains("gent")
+                || token.Contains("男");
+        }
+
+        private static bool TryParsePreviewScale(string raw, out float scale)
+        {
+            scale = 1f;
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                return false;
+            }
+
+            string normalized = raw.Trim();
+            int pipe = normalized.IndexOf('|');
+            if (pipe > 0)
+            {
+                normalized = normalized.Substring(0, pipe).Trim();
+            }
+
+            if (!float.TryParse(normalized, NumberStyles.Float, CultureInfo.InvariantCulture, out float parsed)
+                && !float.TryParse(normalized, NumberStyles.Float, CultureInfo.CurrentCulture, out parsed))
+            {
+                return false;
+            }
+            if (parsed <= 0f)
+            {
+                return false;
+            }
+            if (parsed < 0.1f)
+            {
+                return false;
+            }
+
+            scale = NormalizePreviewScale(parsed);
+            return scale > 0.01f;
+        }
+
+        private static float NormalizePreviewScale(float value)
+        {
+            if (float.IsNaN(value) || float.IsInfinity(value))
+            {
+                return 1f;
+            }
+
+            float normalized = value;
+            if (normalized > 10f && normalized <= 500f)
+            {
+                normalized /= 100f;
+            }
+            else if (normalized > 500f && normalized <= 5000f)
+            {
+                normalized /= 1000f;
+            }
+
+            if (normalized < 0.05f)
+            {
+                normalized = 0.05f;
+            }
+            if (normalized > 8f)
+            {
+                normalized = 8f;
+            }
+
+            return normalized;
         }
 
         private static bool TryResolveModelPathById(

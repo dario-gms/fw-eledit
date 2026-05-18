@@ -54,7 +54,6 @@ namespace FWEledit
         public int OrgColorArgb { get; set; } = unchecked((int)0xFFFFFFFF);
         public float[] ShaderFloats { get; set; } = new float[0];
         public int OuterNum { get; set; }
-
         public int VertexCount
         {
             get { return Vertices == null ? 0 : Vertices.Length; }
