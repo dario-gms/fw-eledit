@@ -58,10 +58,12 @@ namespace FWEledit
         private readonly Label summaryLabel;
         private readonly Label sourceLabel;
         private readonly Timer animationTimer;
+        private readonly Timer cameraPersistenceTimer;
         private DateTime lastAnimationTickUtc;
         private bool suppressRendererPreferenceSave;
         private static ViewCameraState persistedCameraState;
         private static bool cameraSettingsLoaded;
+        private const float CameraStateEpsilon = 0.0005f;
 
         public ModelPreviewWindow(ModelPreviewMeshData meshData, bool showWithoutActivation, IntPtr nonActivatingOwnerHandle)
         {
@@ -231,6 +233,11 @@ namespace FWEledit
             animationTimer.Tick += OnAnimationTimerTick;
             lastAnimationTickUtc = DateTime.UtcNow;
 
+            cameraPersistenceTimer = new Timer();
+            cameraPersistenceTimer.Interval = 800;
+            cameraPersistenceTimer.Tick += (s, e) => PersistCameraStateIfChanged();
+            cameraPersistenceTimer.Start();
+
             Controls.Add(viewportHost);
             Controls.Add(footer);
             Controls.Add(sourceLabel);
@@ -244,6 +251,11 @@ namespace FWEledit
                 {
                     animationTimer.Stop();
                     animationTimer.Dispose();
+                }
+                if (cameraPersistenceTimer != null)
+                {
+                    cameraPersistenceTimer.Stop();
+                    cameraPersistenceTimer.Dispose();
                 }
             };
             Shown += (s, e) =>
@@ -724,6 +736,35 @@ namespace FWEledit
             {
                 ResumeLayout(true);
             }
+        }
+
+        private void PersistCameraStateIfChanged()
+        {
+            ViewCameraState state = NormalizeCameraState(CaptureCameraState(activeViewport));
+            if (!state.IsValid)
+            {
+                return;
+            }
+
+            ViewCameraState currentPersisted = NormalizeCameraState(persistedCameraState);
+            if (currentPersisted.IsValid && AreCameraStatesEquivalent(state, currentPersisted))
+            {
+                return;
+            }
+
+            SaveCameraSettings();
+        }
+
+        private static bool AreCameraStatesEquivalent(ViewCameraState a, ViewCameraState b)
+        {
+            if (!a.IsValid || !b.IsValid)
+            {
+                return false;
+            }
+
+            return Math.Abs(a.Yaw - b.Yaw) <= CameraStateEpsilon
+                && Math.Abs(a.Pitch - b.Pitch) <= CameraStateEpsilon
+                && Math.Abs(a.Zoom - b.Zoom) <= CameraStateEpsilon;
         }
 
         public void ShowStatusMessage(string message)
@@ -1965,8 +2006,9 @@ float4 PSMain(PS_INPUT input) : SV_Target
 
                 float aspect = width / (float)Math.Max(1, height);
                 SharpDX.Matrix projection = SharpDX.Matrix.PerspectiveFovRH((float)(Math.PI / 4.0), aspect, 0.05f, 200.0f);
+                float normRadius = Math.Max(0.0001f, radius);
                 SharpDX.Matrix world = SharpDX.Matrix.Translation(-center.X, -center.Y, -center.Z)
-                    * SharpDX.Matrix.Scaling(1f / radius)
+                    * SharpDX.Matrix.Scaling(1f / normRadius)
                     * SharpDX.Matrix.RotationY(yaw)
                     * SharpDX.Matrix.RotationX(pitch);
                 float cameraDistance = 3.2f / Math.Max(0.15f, zoom);
@@ -2737,8 +2779,9 @@ float4 PSMain(PS_INPUT input) : SV_Target
                     200.0f);
 
                 Matrix4 model = Matrix4.Identity;
+                float normRadius = Math.Max(0.0001f, radius);
                 model *= Matrix4.CreateTranslation(-center.X, -center.Y, -center.Z);
-                model *= Matrix4.CreateScale(1f / radius);
+                model *= Matrix4.CreateScale(1f / normRadius);
                 model *= Matrix4.CreateRotationY(yaw);
                 model *= Matrix4.CreateRotationX(pitch);
                 float cameraDistance = 3.2f / Math.Max(0.15f, zoom);
@@ -3215,10 +3258,11 @@ float4 PSMain(PS_INPUT input) : SV_Target
 
                 float baseScale = Math.Min(renderWidth, renderHeight) * 0.42f;
                 float cameraDistance = 3.2f / Math.Max(0.15f, zoom);
+                float normRadius = Math.Max(0.0001f, radius);
 
                 for (int i = 0; i < vertices.Length; i++)
                 {
-                    Vector3f local = (vertices[i] - center) / radius;
+                    Vector3f local = (vertices[i] - center) / normRadius;
 
                     float x = local.X;
                     float y = local.Y;

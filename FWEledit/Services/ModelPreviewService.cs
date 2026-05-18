@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
@@ -36,6 +37,11 @@ namespace FWEledit
 
         private readonly PckEntryReaderService pckEntryReaderService = new PckEntryReaderService();
         private readonly EmbeddedModelPreviewLoaderService embeddedPreviewLoaderService;
+        private readonly Dictionary<string, ModelPreviewMeshData> previewMeshCache
+            = new Dictionary<string, ModelPreviewMeshData>(StringComparer.OrdinalIgnoreCase);
+        private readonly LinkedList<string> previewMeshCacheOrder = new LinkedList<string>();
+        private readonly object previewMeshCacheSync = new object();
+        private const int PreviewMeshCacheCapacity = 128;
         private ModelPreviewWindow activePreviewWindow;
 
         public ModelPreviewService()
@@ -76,7 +82,7 @@ namespace FWEledit
 
             try
             {
-                if (!embeddedPreviewLoaderService.TryLoadPreviewMesh(assetManager, mappedPath, out meshData, out errorMessage))
+                if (!TryLoadPreviewMeshCached(assetManager, mappedPath, out meshData, out errorMessage))
                 {
                     if (string.IsNullOrWhiteSpace(errorMessage))
                     {
@@ -115,7 +121,7 @@ namespace FWEledit
 
             try
             {
-                if (!embeddedPreviewLoaderService.TryLoadPreviewMesh(assetManager, mappedPath, out meshData, out errorMessage))
+                if (!TryLoadPreviewMeshCached(assetManager, mappedPath, out meshData, out errorMessage))
                 {
                     if (string.IsNullOrWhiteSpace(errorMessage))
                     {
@@ -436,6 +442,117 @@ namespace FWEledit
 
             ShowPreviewWindow(meshData);
             return true;
+        }
+
+        private bool TryLoadPreviewMeshCached(
+            AssetManager assetManager,
+            string mappedPath,
+            out ModelPreviewMeshData meshData,
+            out string errorMessage)
+        {
+            meshData = null;
+            errorMessage = string.Empty;
+
+            string cacheKey = NormalizePreviewCacheKey(mappedPath);
+            if (string.IsNullOrWhiteSpace(cacheKey))
+            {
+                return embeddedPreviewLoaderService.TryLoadPreviewMesh(assetManager, mappedPath, out meshData, out errorMessage);
+            }
+
+            lock (previewMeshCacheSync)
+            {
+                if (previewMeshCache.TryGetValue(cacheKey, out ModelPreviewMeshData cached) && cached != null)
+                {
+                    TouchPreviewCacheKey(cacheKey);
+                    meshData = CloneForPreviewRequest(cached);
+                    return true;
+                }
+            }
+
+            if (!embeddedPreviewLoaderService.TryLoadPreviewMesh(assetManager, mappedPath, out ModelPreviewMeshData loaded, out errorMessage))
+            {
+                meshData = null;
+                return false;
+            }
+
+            ModelPreviewMeshData toStore = CloneForPreviewRequest(loaded);
+            lock (previewMeshCacheSync)
+            {
+                previewMeshCache[cacheKey] = toStore;
+                TouchPreviewCacheKey(cacheKey);
+                TrimPreviewCacheIfNeeded();
+            }
+
+            meshData = CloneForPreviewRequest(toStore);
+            return true;
+        }
+
+        private static string NormalizePreviewCacheKey(string mappedPath)
+        {
+            return (mappedPath ?? string.Empty).Trim().Replace('/', '\\').ToLowerInvariant();
+        }
+
+        private void TouchPreviewCacheKey(string cacheKey)
+        {
+            if (string.IsNullOrWhiteSpace(cacheKey))
+            {
+                return;
+            }
+
+            LinkedListNode<string> node = previewMeshCacheOrder.Find(cacheKey);
+            if (node != null)
+            {
+                previewMeshCacheOrder.Remove(node);
+            }
+
+            previewMeshCacheOrder.AddLast(cacheKey);
+        }
+
+        private void TrimPreviewCacheIfNeeded()
+        {
+            while (previewMeshCache.Count > PreviewMeshCacheCapacity && previewMeshCacheOrder.First != null)
+            {
+                string oldest = previewMeshCacheOrder.First.Value;
+                previewMeshCacheOrder.RemoveFirst();
+                if (!string.IsNullOrWhiteSpace(oldest))
+                {
+                    previewMeshCache.Remove(oldest);
+                }
+            }
+        }
+
+        private static ModelPreviewMeshData CloneForPreviewRequest(ModelPreviewMeshData source)
+        {
+            if (source == null)
+            {
+                return new ModelPreviewMeshData();
+            }
+
+            PreviewTextureData[] clonedTextures = source.Textures == null
+                ? new PreviewTextureData[0]
+                : (PreviewTextureData[])source.Textures.Clone();
+
+            return new ModelPreviewMeshData
+            {
+                SourceMappedPath = source.SourceMappedPath ?? string.Empty,
+                EcmPath = source.EcmPath ?? string.Empty,
+                EcmAbsolutePath = source.EcmAbsolutePath ?? string.Empty,
+                SkinModelPath = source.SkinModelPath ?? string.Empty,
+                SkiPath = source.SkiPath ?? string.Empty,
+                SkiAbsolutePath = source.SkiAbsolutePath ?? string.Empty,
+                Vertices = source.Vertices ?? new Vector3f[0],
+                UVs = source.UVs ?? new Vector2f[0],
+                Indices = source.Indices ?? new int[0],
+                TriangleColors = source.TriangleColors ?? new int[0],
+                TriangleTextureIndices = source.TriangleTextureIndices ?? new int[0],
+                Textures = clonedTextures,
+                SrcBlend = source.SrcBlend,
+                DestBlend = source.DestBlend,
+                EmissiveColorArgb = source.EmissiveColorArgb,
+                OrgColorArgb = source.OrgColorArgb,
+                ShaderFloats = source.ShaderFloats ?? new float[0],
+                OuterNum = source.OuterNum
+            };
         }
     }
 }

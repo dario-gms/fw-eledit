@@ -16,5 +16,6 @@ namespace FWEledit
         public int ItemId { get; set; }
         public string ItemName { get; set; }
         public int Uses { get; set; }
+        public float PreviewScale { get; set; } = 1f;
     }
 }

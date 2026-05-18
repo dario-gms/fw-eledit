@@ -11,18 +11,32 @@ namespace FWEledit
 {
     public class ModelPickerWindow : Form
     {
+        private sealed class PreparedPackageData
+        {
+            public string Package { get; set; }
+            public List<ModelPickerEntry> Entries { get; set; }
+            public Dictionary<string, List<ModelPickerEntry>> EntriesByFolder { get; set; }
+        }
+
         private readonly List<ModelPickerEntry> allEntries;
         private List<ModelPickerEntry> filteredEntries;
         private readonly HashSet<string> loadedPackages;
         private readonly Func<string, List<ModelPickerEntry>> packageEntriesLoader;
         private readonly Func<string, Bitmap> iconLoader;
         private readonly Dictionary<string, Bitmap> iconBitmapCache;
+        private readonly Dictionary<string, List<ModelPickerEntry>> entriesByPackage;
+        private readonly Dictionary<string, List<string>> folderNamesByPackageCache;
+        private readonly Dictionary<string, Dictionary<string, List<ModelPickerEntry>>> entriesByPackageAndFolder;
+        private readonly HashSet<string> loadingPackages;
+        private string activeLoadingPackage;
         private readonly ComboBox packageFilter;
         private readonly ComboBox folderFilter;
         private readonly TextBox searchBox;
         private readonly CheckBox onlyUnusedCheck;
         private readonly CheckBox onlyGfxCheck;
         private readonly Button exportCsvButton;
+        private readonly Label loadingLabel;
+        private readonly ProgressBar loadingProgress;
         private readonly Button previewButton;
         private readonly DataGridView grid;
         private readonly Label statusLabel;
@@ -55,6 +69,11 @@ namespace FWEledit
             this.packageEntriesLoader = packageEntriesLoader;
             this.iconLoader = iconLoader;
             iconBitmapCache = new Dictionary<string, Bitmap>(StringComparer.OrdinalIgnoreCase);
+            entriesByPackage = new Dictionary<string, List<ModelPickerEntry>>(StringComparer.OrdinalIgnoreCase);
+            folderNamesByPackageCache = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+            entriesByPackageAndFolder = new Dictionary<string, Dictionary<string, List<ModelPickerEntry>>>(StringComparer.OrdinalIgnoreCase);
+            loadingPackages = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            activeLoadingPackage = string.Empty;
             SelectedPathId = currentPathId;
             SelectedMappedPath = string.Empty;
             previewAssetManager = new AssetManager();
@@ -80,6 +99,7 @@ namespace FWEledit
                     {
                         entry.SearchKey = BuildEntrySearchKey(entry);
                     }
+                    IndexEntryByPackage(entry);
                 }
 
                 if (entry != null && entry.Index >= nextEntryIndex)
@@ -112,10 +132,15 @@ namespace FWEledit
             {
                 if (!isInitializing)
                 {
-                    EnsurePackageLoaded(Convert.ToString(packageFilter.SelectedItem));
+                    CancelAggressivePrefetch();
+                    EnsurePackageLoadedAsync(Convert.ToString(packageFilter.SelectedItem));
                 }
                 BuildFolderFilter();
                 ScheduleFilterApply();
+                if (!isInitializing)
+                {
+                    StartAggressivePrefetch();
+                }
             };
             top.Controls.Add(packageFilter);
 
@@ -162,6 +187,27 @@ namespace FWEledit
             exportCsvButton.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             exportCsvButton.Click += (s, e) => ExportCsv();
             top.Controls.Add(exportCsvButton);
+
+            loadingProgress = new ProgressBar();
+            loadingProgress.Style = ProgressBarStyle.Marquee;
+            loadingProgress.MarqueeAnimationSpeed = 28;
+            loadingProgress.Width = 110;
+            loadingProgress.Height = 14;
+            loadingProgress.Left = exportCsvButton.Right + 10;
+            loadingProgress.Top = 12;
+            loadingProgress.Visible = false;
+            loadingProgress.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            top.Controls.Add(loadingProgress);
+
+            loadingLabel = new Label();
+            loadingLabel.AutoSize = true;
+            loadingLabel.Left = loadingProgress.Right + 6;
+            loadingLabel.Top = 10;
+            loadingLabel.ForeColor = Color.FromArgb(60, 60, 60);
+            loadingLabel.Text = string.Empty;
+            loadingLabel.Visible = false;
+            loadingLabel.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            top.Controls.Add(loadingLabel);
 
             grid = new DataGridView();
             grid.Dock = DockStyle.Fill;
@@ -334,27 +380,7 @@ namespace FWEledit
                 return;
             }
 
-            HashSet<string> folders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-            for (int i = 0; i < allEntries.Count; i++)
-            {
-                ModelPickerEntry e = allEntries[i];
-                if (!string.Equals(e.Package, package, StringComparison.OrdinalIgnoreCase))
-                {
-                    continue;
-                }
-
-                string folder = ExtractTopFolder(e.RelativePath, package);
-                if (string.IsNullOrWhiteSpace(folder))
-                {
-                    continue;
-                }
-
-                folders.Add(folder);
-            }
-
-            List<string> sorted = new List<string>(folders);
-            sorted.Sort(StringComparer.OrdinalIgnoreCase);
+            List<string> sorted = GetSortedFoldersForPackage(package);
 
             folderFilter.Items.Add(string.Empty);
             for (int i = 0; i < sorted.Count; i++)
@@ -396,6 +422,104 @@ namespace FWEledit
             return value.Substring(0, slash);
         }
 
+        private void IndexEntryByPackage(ModelPickerEntry entry)
+        {
+            if (entry == null || string.IsNullOrWhiteSpace(entry.Package))
+            {
+                return;
+            }
+
+            string package = entry.Package;
+            if (!entriesByPackage.TryGetValue(package, out List<ModelPickerEntry> packageEntries) || packageEntries == null)
+            {
+                packageEntries = new List<ModelPickerEntry>();
+                entriesByPackage[package] = packageEntries;
+            }
+
+            packageEntries.Add(entry);
+            folderNamesByPackageCache.Remove(package);
+
+            string folder = ExtractTopFolder(entry.RelativePath, package);
+            if (!entriesByPackageAndFolder.TryGetValue(package, out Dictionary<string, List<ModelPickerEntry>> byFolder) || byFolder == null)
+            {
+                byFolder = new Dictionary<string, List<ModelPickerEntry>>(StringComparer.OrdinalIgnoreCase);
+                entriesByPackageAndFolder[package] = byFolder;
+            }
+
+            if (!byFolder.TryGetValue(folder ?? string.Empty, out List<ModelPickerEntry> folderEntries) || folderEntries == null)
+            {
+                folderEntries = new List<ModelPickerEntry>();
+                byFolder[folder ?? string.Empty] = folderEntries;
+            }
+
+            folderEntries.Add(entry);
+        }
+
+        private List<ModelPickerEntry> GetEntriesForPackage(string package)
+        {
+            if (string.IsNullOrWhiteSpace(package))
+            {
+                return new List<ModelPickerEntry>();
+            }
+
+            if (entriesByPackage.TryGetValue(package, out List<ModelPickerEntry> packageEntries) && packageEntries != null)
+            {
+                return packageEntries;
+            }
+
+            return new List<ModelPickerEntry>();
+        }
+
+        private List<string> GetSortedFoldersForPackage(string package)
+        {
+            if (string.IsNullOrWhiteSpace(package))
+            {
+                return new List<string>();
+            }
+
+            if (folderNamesByPackageCache.TryGetValue(package, out List<string> cached) && cached != null)
+            {
+                return cached;
+            }
+
+            HashSet<string> folders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (entriesByPackageAndFolder.TryGetValue(package, out Dictionary<string, List<ModelPickerEntry>> byFolder)
+                && byFolder != null)
+            {
+                foreach (KeyValuePair<string, List<ModelPickerEntry>> kv in byFolder)
+                {
+                    string folderName = kv.Key ?? string.Empty;
+                    if (!string.IsNullOrWhiteSpace(folderName))
+                    {
+                        folders.Add(folderName);
+                    }
+                }
+            }
+
+            List<string> sorted = new List<string>(folders);
+            sorted.Sort(StringComparer.OrdinalIgnoreCase);
+            folderNamesByPackageCache[package] = sorted;
+            return sorted;
+        }
+
+        private List<ModelPickerEntry> GetEntriesForPackageFolder(string package, string folder)
+        {
+            if (string.IsNullOrWhiteSpace(package) || string.IsNullOrWhiteSpace(folder))
+            {
+                return new List<ModelPickerEntry>();
+            }
+
+            if (entriesByPackageAndFolder.TryGetValue(package, out Dictionary<string, List<ModelPickerEntry>> byFolder)
+                && byFolder != null
+                && byFolder.TryGetValue(folder, out List<ModelPickerEntry> folderEntries)
+                && folderEntries != null)
+            {
+                return folderEntries;
+            }
+
+            return new List<ModelPickerEntry>();
+        }
+
         private void ScheduleFilterApply()
         {
             if (isInitializing)
@@ -408,12 +532,14 @@ namespace FWEledit
 
         private void ApplyFilter()
         {
-            EnsurePackageLoaded(Convert.ToString(packageFilter.SelectedItem));
             filteredEntries = GetFilteredEntries();
             grid.RowCount = filteredEntries.Count;
             grid.Invalidate();
 
-            statusLabel.Text = filteredEntries.Count.ToString() + " entries";
+            if (loadingPackages.Count <= 0)
+            {
+                statusLabel.Text = filteredEntries.Count.ToString() + " entries";
+            }
             if (grid.RowCount > 0)
             {
                 int selectedRow = grid.CurrentCell != null ? grid.CurrentCell.RowIndex : 0;
@@ -556,40 +682,166 @@ namespace FWEledit
             }
 
             List<ModelPickerEntry> loaded = packageEntriesLoader(package);
-            TryAppendLoadedEntries(package, loaded);
+            PreparedPackageData prepared = PreparePackageData(package, loaded);
+            TryAppendPreparedPackage(prepared);
         }
 
-        private bool TryAppendLoadedEntries(string package, List<ModelPickerEntry> loaded)
+        private void EnsurePackageLoadedAsync(string package)
         {
-            if (string.IsNullOrWhiteSpace(package))
+            if (string.IsNullOrWhiteSpace(package)
+                || loadedPackages.Contains(package)
+                || packageEntriesLoader == null)
             {
-                return false;
-            }
-            if (loadedPackages.Contains(package))
-            {
-                return false;
+                return;
             }
 
-            if (loaded != null && loaded.Count > 0)
+            if (loadingPackages.Contains(package))
             {
-                for (int i = 0; i < loaded.Count; i++)
+                return;
+            }
+
+            loadingPackages.Add(package);
+            activeLoadingPackage = package;
+            UpdateLoadingIndicator();
+
+            Task.Run(() =>
+            {
+                try
                 {
-                    ModelPickerEntry entry = loaded[i];
-                    if (entry == null)
-                    {
-                        continue;
-                    }
-                    entry.Index = nextEntryIndex++;
-                    entry.IndexSearch = entry.Index.ToString();
-                    if (string.IsNullOrWhiteSpace(entry.SearchKey))
-                    {
-                        entry.SearchKey = BuildEntrySearchKey(entry);
-                    }
-                    allEntries.Add(entry);
+                    List<ModelPickerEntry> loaded = packageEntriesLoader(package);
+                    return PreparePackageData(package, loaded);
                 }
+                catch
+                {
+                    return PreparePackageData(package, null);
+                }
+            }).ContinueWith(t =>
+            {
+                if (IsDisposed)
+                {
+                    return;
+                }
+
+                try
+                {
+                    BeginInvoke((Action)(() =>
+                    {
+                        if (IsDisposed)
+                        {
+                            return;
+                        }
+
+                        loadingPackages.Remove(package);
+                        if (loadingPackages.Count <= 0)
+                        {
+                            activeLoadingPackage = string.Empty;
+                        }
+                        else if (string.Equals(activeLoadingPackage, package, StringComparison.OrdinalIgnoreCase))
+                        {
+                            foreach (string pending in loadingPackages)
+                            {
+                                activeLoadingPackage = pending ?? string.Empty;
+                                break;
+                            }
+                        }
+                        UpdateLoadingIndicator();
+                        TryAppendPreparedPackage(t.Result);
+                        BuildFolderFilter();
+                        ApplyFilter();
+                    }));
+                }
+                catch
+                {
+                    // Window is closing or handle is gone; ignore.
+                }
+            });
+        }
+
+        private void UpdateLoadingIndicator()
+        {
+            bool isLoading = loadingPackages.Count > 0;
+            string packageText = string.IsNullOrWhiteSpace(activeLoadingPackage) ? "package" : activeLoadingPackage;
+
+            if (loadingProgress != null)
+            {
+                loadingProgress.Visible = isLoading;
             }
 
-            loadedPackages.Add(package);
+            if (loadingLabel != null)
+            {
+                loadingLabel.Visible = isLoading;
+                loadingLabel.Text = isLoading ? ("Loading " + packageText + "...") : string.Empty;
+            }
+
+            if (statusLabel != null)
+            {
+                statusLabel.Text = isLoading
+                    ? ("Loading " + packageText + "...")
+                    : (filteredEntries.Count.ToString() + " entries");
+            }
+        }
+
+        private PreparedPackageData PreparePackageData(string package, List<ModelPickerEntry> loaded)
+        {
+            PreparedPackageData prepared = new PreparedPackageData
+            {
+                Package = package ?? string.Empty,
+                Entries = new List<ModelPickerEntry>(loaded != null ? loaded.Count : 0),
+                EntriesByFolder = new Dictionary<string, List<ModelPickerEntry>>(StringComparer.OrdinalIgnoreCase)
+            };
+
+            if (string.IsNullOrWhiteSpace(prepared.Package) || loaded == null || loaded.Count == 0)
+            {
+                return prepared;
+            }
+
+            for (int i = 0; i < loaded.Count; i++)
+            {
+                ModelPickerEntry entry = loaded[i];
+                if (entry == null)
+                {
+                    continue;
+                }
+
+                if (string.IsNullOrWhiteSpace(entry.IndexSearch))
+                {
+                    entry.IndexSearch = entry.Index.ToString();
+                }
+                if (string.IsNullOrWhiteSpace(entry.SearchKey))
+                {
+                    entry.SearchKey = BuildEntrySearchKey(entry);
+                }
+
+                prepared.Entries.Add(entry);
+
+                string folder = ExtractTopFolder(entry.RelativePath, prepared.Package) ?? string.Empty;
+                if (!prepared.EntriesByFolder.TryGetValue(folder, out List<ModelPickerEntry> folderEntries) || folderEntries == null)
+                {
+                    folderEntries = new List<ModelPickerEntry>();
+                    prepared.EntriesByFolder[folder] = folderEntries;
+                }
+                folderEntries.Add(entry);
+            }
+
+            return prepared;
+        }
+
+        private bool TryAppendPreparedPackage(PreparedPackageData prepared)
+        {
+            if (prepared == null || string.IsNullOrWhiteSpace(prepared.Package))
+            {
+                return false;
+            }
+            if (loadedPackages.Contains(prepared.Package))
+            {
+                return false;
+            }
+
+            entriesByPackage[prepared.Package] = prepared.Entries ?? new List<ModelPickerEntry>();
+            entriesByPackageAndFolder[prepared.Package] = prepared.EntriesByFolder
+                ?? new Dictionary<string, List<ModelPickerEntry>>(StringComparer.OrdinalIgnoreCase);
+            folderNamesByPackageCache.Remove(prepared.Package);
+            loadedPackages.Add(prepared.Package);
             return true;
         }
 
@@ -622,14 +874,15 @@ namespace FWEledit
                     }
 
                     string package = ModelPickerCatalog.PackageOrder[i];
-                    List<ModelPickerEntry> loaded = null;
+                    PreparedPackageData prepared = null;
                     try
                     {
-                        loaded = packageEntriesLoader(package);
+                        List<ModelPickerEntry> loaded = packageEntriesLoader(package);
+                        prepared = PreparePackageData(package, loaded);
                     }
                     catch
                     {
-                        loaded = null;
+                        prepared = PreparePackageData(package, null);
                     }
 
                     if (token.IsCancellationRequested)
@@ -651,7 +904,7 @@ namespace FWEledit
                                 return;
                             }
 
-                            bool appended = TryAppendLoadedEntries(package, loaded);
+                            bool appended = TryAppendPreparedPackage(prepared);
                             if (!appended)
                             {
                                 return;
@@ -707,21 +960,14 @@ namespace FWEledit
             bool hasFolder = !string.IsNullOrWhiteSpace(folder);
             bool hasTerm = !string.IsNullOrWhiteSpace(term);
             List<ModelPickerEntry> result = new List<ModelPickerEntry>();
+            List<ModelPickerEntry> packageEntries = hasFolder
+                ? GetEntriesForPackageFolder(package, folder)
+                : GetEntriesForPackage(package);
 
-            for (int i = 0; i < allEntries.Count; i++)
+            for (int i = 0; i < packageEntries.Count; i++)
             {
-                ModelPickerEntry entry = allEntries[i];
+                ModelPickerEntry entry = packageEntries[i];
                 if (entry == null)
-                {
-                    continue;
-                }
-
-                if (!string.Equals(entry.Package, package, StringComparison.OrdinalIgnoreCase))
-                {
-                    continue;
-                }
-
-                if (hasFolder && !string.Equals(ExtractTopFolder(entry.RelativePath, package), folder, StringComparison.OrdinalIgnoreCase))
                 {
                     continue;
                 }

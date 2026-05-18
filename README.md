@@ -12,16 +12,14 @@ FWEledit is based on [sELedit++ by Wrechid](https://github.com/Wrechid/sELedit-)
 
 ---
 
-## What's New in v0.9.4
+## What's New in v0.9.4.2
 
-- Native `.gfx` support in model preview and Choice Model workflow.
 - Improved model-path resolution for `file_model*`, `file_models*`, and related fields.
 - Better visual parity for mounts and model variants (including package/path edge-cases).
-- Choice Model UX upgrades: `.gfx`-only filtering, smoother preview flow, and focus behavior fixes.
 - Fixed Choice Model instability issues (including split-container crash scenarios).
 - Safer PathID assignment and persistence flow for new model paths.
 - `path.data` save pipeline hardened to reduce mapping corruption and improve in-game stability.
-- Project/app version metadata updated to `v0.9.4`.
+- Project/app version metadata updated to `v0.9.4.2`.
 
 ---
 
