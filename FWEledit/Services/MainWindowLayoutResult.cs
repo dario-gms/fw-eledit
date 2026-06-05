@@ -18,6 +18,8 @@ namespace FWEledit
         public Button DescriptionSaveButton { get; set; }
         public Label DescriptionStatusLabel { get; set; }
         public Button InlinePickIconButton { get; set; }
+        public Button BackButton { get; set; }
+        public Button ForwardButton { get; set; }
         public ListBox SearchSuggestionList { get; set; }
     }
 }

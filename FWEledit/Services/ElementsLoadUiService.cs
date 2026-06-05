@@ -59,6 +59,8 @@ namespace FWEledit
                     setCursor(Cursors.AppStarting);
                 }
 
+                SaveProgressService.SetVisible(progressBar, true);
+
                 if (resetState != null)
                 {
                     resetState();
@@ -86,6 +88,7 @@ namespace FWEledit
                     {
                         progressBar.Value = 0;
                     }
+                    SaveProgressService.SetVisible(progressBar, false);
                     return false;
                 }
 
@@ -165,11 +168,6 @@ namespace FWEledit
                     iconListAvailabilityService.EnsureIconListAvailable(assetManager);
                 }
 
-                if (progressBar != null)
-                {
-                    progressBar.Value = 0;
-                }
-
                 if (navigationSelectionService != null)
                 {
                     navigationSelectionService.RestoreSelection(
@@ -183,6 +181,11 @@ namespace FWEledit
                 if (navigationStateService != null)
                 {
                     navigationStateService.SaveGameFolder(gameFolderPath);
+                }
+
+                if (progressBar != null)
+                {
+                    progressBar.Value = 0;
                 }
 
                 return true;
@@ -203,6 +206,7 @@ namespace FWEledit
             }
             finally
             {
+                SaveProgressService.SetVisible(progressBar, false);
                 if (setCursor != null)
                 {
                     setCursor(Cursors.Default);

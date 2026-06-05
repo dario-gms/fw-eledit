@@ -9,7 +9,7 @@ namespace FWEledit
         public List<DescriptionPreviewSegment> BuildSegments(string rawText)
         {
             List<DescriptionPreviewSegment> segments = new List<DescriptionPreviewSegment>();
-            string text = rawText ?? string.Empty;
+            string text = NormalizeText(rawText);
             Color currentColor = Color.White;
             StringBuilder chunk = new StringBuilder();
             int i = 0;
@@ -17,6 +17,13 @@ namespace FWEledit
             {
                 if (text[i] == '^')
                 {
+                    if (IsShortFormatMarker(text, i) || IsChainedControlMarker(text, i))
+                    {
+                        FlushChunk(segments, chunk, currentColor);
+                        i += 5;
+                        continue;
+                    }
+
                     // FW color tag: ^RRGGBB
                     if (i + 7 <= text.Length && IsHexSequence(text, i + 1, 6))
                     {
@@ -34,8 +41,8 @@ namespace FWEledit
                         continue;
                     }
 
-                    // Some FW strings include short formatting markers like ^0037 before a real color tag.
-                    if (i + 5 <= text.Length && IsHexSequence(text, i + 1, 4))
+                    // Some FW strings include short formatting markers like ^0037.
+                    if (IsFourDigitControlMarker(text, i))
                     {
                         FlushChunk(segments, chunk, currentColor);
                         i += 5;
@@ -65,6 +72,100 @@ namespace FWEledit
             chunk.Clear();
         }
 
+        private static string NormalizeText(string rawText)
+        {
+            return (rawText ?? string.Empty)
+                .Replace("\\r", "\r")
+                .Replace("\\n", "\n");
+        }
+
+        private static bool IsShortFormatMarker(string text, int caretIndex)
+        {
+            if (string.IsNullOrEmpty(text) || caretIndex < 0 || caretIndex + 5 > text.Length)
+            {
+                return false;
+            }
+
+            if (text[caretIndex] != '^')
+            {
+                return false;
+            }
+
+            for (int i = caretIndex + 1; i < caretIndex + 5; i++)
+            {
+                if (text[i] < '0' || text[i] > '9')
+                {
+                    return false;
+                }
+            }
+
+            if (caretIndex + 5 >= text.Length)
+            {
+                return true;
+            }
+
+            char next = text[caretIndex + 5];
+            return next == '^' || !IsHexChar(next);
+        }
+
+        private static bool IsChainedControlMarker(string text, int caretIndex)
+        {
+            if (string.IsNullOrEmpty(text) || caretIndex < 0 || caretIndex + 12 > text.Length)
+            {
+                return false;
+            }
+
+            if (text[caretIndex] != '^' || text[caretIndex + 5] != '^')
+            {
+                return false;
+            }
+
+            return IsControlMarkerBody(text, caretIndex + 1)
+                && IsHexSequence(text, caretIndex + 6, 6);
+        }
+
+        private static bool IsFourDigitControlMarker(string text, int caretIndex)
+        {
+            if (string.IsNullOrEmpty(text) || caretIndex < 0 || caretIndex + 5 > text.Length)
+            {
+                return false;
+            }
+
+            if (text[caretIndex] != '^' || !IsControlMarkerBody(text, caretIndex + 1))
+            {
+                return false;
+            }
+
+            if (caretIndex + 7 <= text.Length && IsHexSequence(text, caretIndex + 1, 6))
+            {
+                return false;
+            }
+
+            return true;
+        }
+
+        private static bool IsControlMarkerBody(string text, int startIndex)
+        {
+            if (string.IsNullOrEmpty(text) || startIndex < 0 || startIndex + 4 > text.Length)
+            {
+                return false;
+            }
+
+            for (int i = startIndex; i < startIndex + 4; i++)
+            {
+                char c = text[i];
+                bool isMarkerChar = (c >= '0' && c <= '9')
+                    || (c >= 'a' && c <= 'z')
+                    || (c >= 'A' && c <= 'Z');
+                if (!isMarkerChar)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
         private static bool IsHexSequence(string text, int startIndex, int length)
         {
             if (string.IsNullOrEmpty(text) || startIndex < 0 || length <= 0)
@@ -89,6 +190,13 @@ namespace FWEledit
                 }
             }
             return true;
+        }
+
+        private static bool IsHexChar(char c)
+        {
+            return (c >= '0' && c <= '9')
+                || (c >= 'a' && c <= 'f')
+                || (c >= 'A' && c <= 'F');
         }
     }
 }

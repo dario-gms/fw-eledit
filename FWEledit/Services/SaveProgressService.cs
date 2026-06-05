@@ -14,6 +14,7 @@ namespace FWEledit
 
             try
             {
+                SetVisible(progressBar, true);
                 progressBar.Minimum = 0;
                 progressBar.Maximum = 100;
                 progressBar.Value = 0;
@@ -93,6 +94,7 @@ namespace FWEledit
             try
             {
                 progressBar.Value = 0;
+                SetVisible(progressBar, false);
                 progressBar.Refresh();
                 Application.DoEvents();
             }
@@ -117,6 +119,29 @@ namespace FWEledit
             catch
             {
             }
+        }
+
+        public static void SetVisible(Control progressBar, bool visible)
+        {
+            if (progressBar == null)
+            {
+                return;
+            }
+
+            progressBar.Visible = visible;
+            TableLayoutPanel table = progressBar.Parent as TableLayoutPanel;
+            if (table != null)
+            {
+                int row = table.GetRow(progressBar);
+                if (row >= 0 && row < table.RowStyles.Count)
+                {
+                    table.RowStyles[row].SizeType = SizeType.Absolute;
+                    table.RowStyles[row].Height = visible ? 10F : 0F;
+                }
+                table.PerformLayout();
+            }
+            progressBar.Refresh();
+            Application.DoEvents();
         }
     }
 }

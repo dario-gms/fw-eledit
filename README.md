@@ -12,6 +12,20 @@ FWEledit is based on [sELedit++ by Wrechid](https://github.com/Wrechid/sELedit-)
 
 ---
 
+## What's New in v0.9.5
+
+- Redesigned main editor layout to reduce spreadsheet density and improve scanability.
+- Moved navigation controls and list selection into the left panel with cleaner panel separation.
+- Restyled the Elements list, search controls, menu, progress indicator, and splitter for a calmer interface.
+- Reworked the Values inspector so read-only field names are visually distinct from editable values.
+- Added back/forward selection history for recently selected items.
+- Added right-click actions on Elements rows for Search and Preview workflows.
+- Improved Description preview rendering for FW color tags and short control markers.
+- Hid technical index/type columns by default while preserving the underlying data model.
+- Project/app version metadata updated to `v0.9.5`.
+
+---
+
 ## What's New in v0.9.4.2
 
 - Native `.gfx` support in model preview and Choice Model workflow.
@@ -172,21 +186,20 @@ On the next launch, **File > Load Last Folder** reopens the same game folder imm
 ┌─────────────────────────────────────────────────────────────────┐
 │  File   Edit   Tools   About                                    │
 ├──────────────────┬──────────────────────────────────────────────┤
-│  List selector   │  Values  │  Description                      │
-│  ───────────     │  ──────────────────────────────────────────  │
-│  Search bar      │  Name       │  Type    │  Value              │
-│                  │  id         │  int32   │  1234               │
-│  ID │ Icon │ Name│  name       │  wstring │  Iron Sword         │
-│  ── │ ──── │ ────│  file_icon  │  int32   │  4521  [...]        │
-│  1  │  🗡  │ ... │  file_model │  int32   │  8800  [...]        │
-│  2  │  🗡  │ ... │  ...        │  ...     │  ...                │
+│  < > List selector │  Values  │  Description                    │
+│  ───────────────   │  ────────────────────────────────────────  │
+│  ID │ Icon │ Name  │  Property label       Editable value       │
+│  ── │ ──── │ ────  │  id                   1234                 │
+│  1  │  🗡  │ ...   │  name                 Iron Sword           │
+│  2  │  🗡  │ ...   │  file_icon            4521  [...]          │
+│  Search + filters  │  file_model           8800  [...]          │
 └──────────────────┴──────────────────────────────────────────────┘
 ```
 
-- **List selector (top-left dropdown):** chooses the active data table (e.g., `Equipment`, `MEDICINE_ESSENCE`, `NPC_ESSENCE`).
-- **Item grid (left panel):** shows ID, icon thumbnail, and name for every entry in the selected list. Click a row to load its fields on the right.
-- **Values tab (right panel):** shows every field for the selected item as Name / Type / Value rows. Click a value cell to edit it. Changed fields turn blue; invalid entries turn red.
-- **Description tab (right panel):** shows the raw description text and a styled color-tag preview. Edit in the top box; the preview updates in real time.
+- **List selector (left panel):** chooses the active data table (e.g., `Equipment`, `MEDICINE_ESSENCE`, `NPC_ESSENCE`). Back/forward arrows return to recently selected items.
+- **Item grid (left panel):** shows ID, icon thumbnail, and name for every entry in the selected list. Click a row to load its fields on the right; right-click opens search and preview actions.
+- **Values tab (right panel):** shows every field for the selected item as read-only property labels and editable value cells. Technical type/index columns are hidden by default. Changed fields turn blue; invalid entries turn red.
+- **Description tab (right panel):** shows a styled color-tag preview and the raw description text. FW color/control tags are rendered in the preview while the source remains editable.
 - **Inline picker button (`[...]`):** appears on `file_icon` and `file_model*` rows in the Values grid. Click to open the icon or model chooser for that field.
 
 ---

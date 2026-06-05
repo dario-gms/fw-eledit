@@ -89,6 +89,7 @@ namespace FWEledit
                 value => viewModel.SuppressValuesUiRefresh = value);
 
             RefreshLiveModelPreviewFromCurrentRow(true);
+            RecordSelectionHistory();
 		}
 
 

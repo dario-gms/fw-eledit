@@ -8,7 +8,7 @@ namespace FWEledit
     {
         public void DrawItem(ComboBox combo, DrawItemEventArgs e, IList<string> theme)
         {
-            if (combo == null || e == null || theme == null || theme.Count <= 10)
+            if (combo == null || e == null)
             {
                 return;
             }
@@ -20,8 +20,8 @@ namespace FWEledit
             try
             {
                 bool selected = (e.State & DrawItemState.Selected) == DrawItemState.Selected;
-                Color backColor = Color.FromName(selected ? theme[8] : theme[7]);
-                Color foreColor = Color.FromName(selected ? theme[10] : theme[9]);
+                Color backColor = selected ? Color.FromArgb(225, 231, 238) : Color.White;
+                Color foreColor = Color.FromArgb(29, 36, 45);
 
                 using (SolidBrush backBrush = new SolidBrush(backColor))
                 {
@@ -29,7 +29,14 @@ namespace FWEledit
                 }
                 using (SolidBrush textBrush = new SolidBrush(foreColor))
                 {
-                    e.Graphics.DrawString(combo.Items[e.Index].ToString(), e.Font, textBrush, new Point(e.Bounds.X, e.Bounds.Y));
+                    Rectangle textBounds = new Rectangle(e.Bounds.X + 4, e.Bounds.Y, e.Bounds.Width - 8, e.Bounds.Height);
+                    TextRenderer.DrawText(
+                        e.Graphics,
+                        combo.Items[e.Index].ToString(),
+                        e.Font,
+                        textBounds,
+                        foreColor,
+                        TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.EndEllipsis);
                 }
             }
             catch
