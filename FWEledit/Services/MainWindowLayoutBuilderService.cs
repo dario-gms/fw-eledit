@@ -33,7 +33,9 @@ namespace FWEledit
             KeyEventHandler suggestionKeyDown,
             EventHandler pickIconClick,
             EventHandler descriptionChanged,
-            EventHandler saveDescriptionClick)
+            EventHandler saveDescriptionClick,
+            EventHandler backClick,
+            EventHandler forwardClick)
         {
             if (owner == null)
             {
@@ -41,6 +43,7 @@ namespace FWEledit
             }
 
             owner.SuspendLayout();
+            owner.Font = new Font("Segoe UI", 9F, FontStyle.Regular, GraphicsUnit.Point, ((byte)(0)));
 
             if (legacyListBox != null)
             {
@@ -53,42 +56,42 @@ namespace FWEledit
 
             TableLayoutPanel root = new TableLayoutPanel();
             root.Dock = DockStyle.Fill;
-            int topInset = (menuStrip != null ? menuStrip.Height : 24) + 6;
-            root.Padding = new Padding(6, topInset, 6, 6);
+            root.BackColor = Color.FromArgb(31, 34, 39);
+            int topInset = (menuStrip != null ? menuStrip.Height : 24) + 8;
+            root.Padding = new Padding(10, topInset, 10, 8);
             root.ColumnCount = 1;
-            root.RowCount = 3;
+            root.RowCount = 2;
             root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 30F));
             root.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 16F));
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 0F));
 
-            Panel topPanel = new Panel();
-            topPanel.Dock = DockStyle.Fill;
-            topPanel.Margin = new Padding(0);
+            FlowLayoutPanel historyPanel = new FlowLayoutPanel();
+            historyPanel.Dock = DockStyle.Fill;
+            historyPanel.Margin = new Padding(0, 0, 4, 6);
+            historyPanel.WrapContents = false;
+            historyPanel.FlowDirection = FlowDirection.LeftToRight;
 
-            if (versionLabel != null)
+            Button backButton = CreateNavButton("<");
+            Button forwardButton = CreateNavButton(">");
+            if (backClick != null)
             {
-                versionLabel.Parent = topPanel;
-                versionLabel.Dock = DockStyle.Right;
-                versionLabel.Width = 180;
-                versionLabel.TextAlign = ContentAlignment.MiddleRight;
-                versionLabel.Margin = new Padding(0);
+                backButton.Click += backClick;
             }
-
-            if (listCombo != null)
+            if (forwardClick != null)
             {
-                listCombo.Parent = topPanel;
-                listCombo.Dock = DockStyle.Fill;
-                listCombo.Margin = new Padding(0);
+                forwardButton.Click += forwardClick;
             }
+            historyPanel.Controls.Add(backButton);
+            historyPanel.Controls.Add(forwardButton);
+
+            Label listCaption = CreateCaption("Element List");
 
             TableLayoutPanel offsetPanel = new TableLayoutPanel();
-            offsetPanel.Dock = DockStyle.Right;
-            offsetPanel.Width = 480;
+            offsetPanel.Dock = DockStyle.Fill;
             offsetPanel.Margin = new Padding(0);
             offsetPanel.ColumnCount = 2;
             offsetPanel.RowCount = 1;
-            offsetPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 56F));
+            offsetPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 58F));
             offsetPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
             offsetPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
 
@@ -105,7 +108,7 @@ namespace FWEledit
             {
                 offsetBox.Parent = offsetPanel;
                 offsetBox.Dock = DockStyle.Fill;
-                offsetBox.Margin = new Padding(0);
+                offsetBox.Margin = new Padding(0, 0, 0, 4);
             }
 
             if (offsetLabel != null)
@@ -117,77 +120,102 @@ namespace FWEledit
                 offsetPanel.Controls.Add(offsetBox, 1, 0);
             }
 
-            if (listCombo != null)
-            {
-                topPanel.Controls.Add(listCombo);
-            }
-            topPanel.Controls.Add(offsetPanel);
-            if (versionLabel != null)
-            {
-                topPanel.Controls.Add(versionLabel);
-            }
+            Label offsetCaption = CreateCaption("Selection Offset");
 
             SplitContainer mainSplit = new SplitContainer();
             mainSplit.Dock = DockStyle.Fill;
             mainSplit.Margin = new Padding(0);
             mainSplit.FixedPanel = FixedPanel.Panel1;
-            mainSplit.SplitterWidth = 5;
+            mainSplit.BackColor = Color.FromArgb(211, 218, 226);
+            mainSplit.SplitterWidth = 4;
 
             Panel leftPanel = new Panel();
             leftPanel.Dock = DockStyle.Fill;
+            leftPanel.Padding = new Padding(0, 0, 0, 0);
+            leftPanel.BackColor = Color.FromArgb(24, 26, 30);
+
+            TableLayoutPanel leftHeader = new TableLayoutPanel();
+            leftHeader.Dock = DockStyle.Top;
+            leftHeader.Height = 54;
+            leftHeader.Margin = new Padding(0);
+            leftHeader.ColumnCount = 2;
+            leftHeader.RowCount = 2;
+            leftHeader.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 60F));
+            leftHeader.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            leftHeader.RowStyles.Add(new RowStyle(SizeType.Absolute, 18F));
+            leftHeader.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+            leftHeader.Controls.Add(historyPanel, 0, 1);
+            leftHeader.Controls.Add(listCaption, 1, 0);
+
+            if (listCombo != null)
+            {
+                listCombo.Parent = leftHeader;
+                listCombo.Dock = DockStyle.Fill;
+                listCombo.Margin = new Padding(0, 0, 0, 6);
+                listCombo.Height = 28;
+                leftHeader.Controls.Add(listCombo, 1, 1);
+            }
+
+            Label elementsCaption = CreateSectionLabel("Elements");
+            elementsCaption.Dock = DockStyle.Top;
+            elementsCaption.Height = 28;
 
             if (elementsGrid != null)
             {
                 elementsGrid.Parent = leftPanel;
                 elementsGrid.Dock = DockStyle.Fill;
+                elementsGrid.Margin = new Padding(0);
             }
 
-            Panel searchOptionsPanel = new Panel();
+            FlowLayoutPanel searchOptionsPanel = new FlowLayoutPanel();
             searchOptionsPanel.Dock = DockStyle.Bottom;
-            searchOptionsPanel.Height = 26;
+            searchOptionsPanel.Height = 28;
+            searchOptionsPanel.Margin = new Padding(0);
+            searchOptionsPanel.Padding = new Padding(4, 3, 0, 0);
+            searchOptionsPanel.WrapContents = false;
 
             if (searchAll != null)
             {
                 searchAll.Parent = searchOptionsPanel;
-                searchAll.Dock = DockStyle.Left;
-                searchAll.Width = 82;
+                searchAll.Width = 86;
+                searchAll.Margin = new Padding(0, 0, 6, 0);
             }
 
             if (searchExact != null)
             {
                 searchExact.Parent = searchOptionsPanel;
-                searchExact.Dock = DockStyle.Left;
-                searchExact.Width = 105;
+                searchExact.Width = 112;
+                searchExact.Margin = new Padding(0, 0, 6, 0);
             }
 
             if (searchMatchCase != null)
             {
                 searchMatchCase.Parent = searchOptionsPanel;
-                searchMatchCase.Dock = DockStyle.Left;
-                searchMatchCase.Width = 96;
+                searchMatchCase.Width = 104;
+                searchMatchCase.Margin = new Padding(0, 0, 0, 0);
             }
 
             TableLayoutPanel searchPanel = new TableLayoutPanel();
             searchPanel.Dock = DockStyle.Bottom;
-            searchPanel.Height = 30;
+            searchPanel.Height = 34;
             searchPanel.Margin = new Padding(0);
             searchPanel.ColumnCount = 2;
             searchPanel.RowCount = 1;
             searchPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
-            searchPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 94F));
+            searchPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 104F));
             searchPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
 
             if (searchBox != null)
             {
                 searchBox.Dock = DockStyle.Fill;
-                searchBox.Margin = new Padding(0);
+                searchBox.Margin = new Padding(0, 4, 6, 4);
                 searchPanel.Controls.Add(searchBox, 0, 0);
             }
 
             if (searchButton != null)
             {
                 searchButton.Dock = DockStyle.Fill;
-                searchButton.Margin = new Padding(0);
+                searchButton.Margin = new Padding(0, 3, 0, 4);
                 searchPanel.Controls.Add(searchButton, 1, 0);
             }
 
@@ -212,6 +240,8 @@ namespace FWEledit
             {
                 leftPanel.Controls.Add(elementsGrid);
             }
+            leftPanel.Controls.Add(elementsCaption);
+            leftPanel.Controls.Add(leftHeader);
             leftPanel.Controls.Add(searchSuggestionList);
             leftPanel.Controls.Add(searchOptionsPanel);
             leftPanel.Controls.Add(searchPanel);
@@ -219,10 +249,36 @@ namespace FWEledit
 
             Panel rightPanel = new Panel();
             rightPanel.Dock = DockStyle.Fill;
+            rightPanel.BackColor = Color.FromArgb(31, 34, 39);
+
+            TableLayoutPanel rightLayout = new TableLayoutPanel();
+            rightLayout.Dock = DockStyle.Fill;
+            rightLayout.Margin = new Padding(0);
+            rightLayout.ColumnCount = 2;
+            rightLayout.RowCount = 3;
+            rightLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            rightLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 190F));
+            rightLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 18F));
+            rightLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 36F));
+            rightLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+
+            rightLayout.Controls.Add(offsetCaption, 0, 0);
+            rightLayout.Controls.Add(offsetPanel, 0, 1);
+
+            if (versionLabel != null)
+            {
+                versionLabel.Parent = rightLayout;
+                versionLabel.Dock = DockStyle.Fill;
+                versionLabel.TextAlign = ContentAlignment.MiddleRight;
+                versionLabel.Margin = new Padding(0);
+                versionLabel.Font = new Font(owner.Font, FontStyle.Regular);
+                rightLayout.Controls.Add(versionLabel, 1, 0);
+                rightLayout.SetRowSpan(versionLabel, 2);
+            }
 
             TableLayoutPanel setValuePanel = new TableLayoutPanel();
             setValuePanel.Dock = DockStyle.Bottom;
-            setValuePanel.Height = 30;
+            setValuePanel.Height = 36;
             setValuePanel.Margin = new Padding(0);
             setValuePanel.ColumnCount = 2;
             setValuePanel.RowCount = 1;
@@ -234,7 +290,7 @@ namespace FWEledit
             if (setValueBox != null)
             {
                 setValueBox.Dock = DockStyle.Fill;
-                setValueBox.Margin = new Padding(0);
+                setValueBox.Margin = new Padding(0, 5, 8, 5);
                 setValueBox.TextAlign = HorizontalAlignment.Center;
                 setValuePanel.Controls.Add(setValueBox, 0, 0);
             }
@@ -242,7 +298,7 @@ namespace FWEledit
             if (setValueButton != null)
             {
                 setValueButton.Dock = DockStyle.Fill;
-                setValueButton.Margin = new Padding(0);
+                setValueButton.Margin = new Padding(0, 4, 0, 5);
                 setValueButton.Enabled = false;
                 setValuePanel.Controls.Add(setValueButton, 1, 0);
             }
@@ -250,17 +306,22 @@ namespace FWEledit
             TabControl rightTabs = new TabControl();
             rightTabs.Dock = DockStyle.Fill;
             rightTabs.Margin = new Padding(0);
+            rightTabs.Font = new Font("Segoe UI", 9F, FontStyle.Regular, GraphicsUnit.Point, ((byte)(0)));
             if (updatePickIconButtonState != null)
             {
                 rightTabs.SelectedIndexChanged += (s, e) => updatePickIconButtonState();
             }
 
             TabPage valuesTab = new TabPage("Values");
-            valuesTab.Padding = new Padding(0);
+            valuesTab.Padding = new Padding(0, 6, 0, 0);
+
+            Label valuesCaption = CreateSectionLabel("Properties");
+            valuesCaption.Dock = DockStyle.Top;
+            valuesCaption.Height = 30;
 
             TabControl equipmentTabs = new TabControl();
             equipmentTabs.Dock = DockStyle.Top;
-            equipmentTabs.Height = 26;
+            equipmentTabs.Height = 30;
             equipmentTabs.Margin = new Padding(0);
             equipmentTabs.Visible = false;
             if (changeItem != null)
@@ -288,21 +349,28 @@ namespace FWEledit
             {
                 valuesGrid.Parent = valuesTab;
                 valuesGrid.Dock = DockStyle.Fill;
+                valuesGrid.Margin = new Padding(0);
+                ApplyInspectorGridLayout(valuesGrid);
                 if (updatePickIconButtonState != null)
                 {
                     valuesGrid.CurrentCellChanged += (s, e) => updatePickIconButtonState();
                     valuesGrid.Scroll += (s, e) => updatePickIconButtonState();
                     valuesGrid.SizeChanged += (s, e) => updatePickIconButtonState();
                 }
+            }
+            valuesTab.Controls.Add(setValuePanel);
+            if (valuesGrid != null)
+            {
                 valuesTab.Controls.Add(valuesGrid);
             }
             valuesTab.Controls.Add(equipmentTabs);
-            valuesTab.Controls.Add(setValuePanel);
+            valuesTab.Controls.Add(valuesCaption);
             if (valuesGrid != null)
             {
                 valuesTab.Controls.SetChildIndex(valuesGrid, 0);
             }
-            valuesTab.Controls.SetChildIndex(equipmentTabs, 1);
+            valuesTab.Controls.SetChildIndex(valuesCaption, 1);
+            valuesTab.Controls.SetChildIndex(equipmentTabs, 2);
             valuesTab.Controls.SetChildIndex(setValuePanel, 2);
 
             Button inlinePickIconButton = new Button();
@@ -320,17 +388,19 @@ namespace FWEledit
             }
 
             TabPage descriptionTab = new TabPage("Description");
-            descriptionTab.Padding = new Padding(6);
+            descriptionTab.Padding = new Padding(0, 8, 0, 0);
 
             TableLayoutPanel descriptionLayout = new TableLayoutPanel();
             descriptionLayout.Dock = DockStyle.Fill;
             descriptionLayout.Margin = new Padding(0);
             descriptionLayout.ColumnCount = 1;
-            descriptionLayout.RowCount = 3;
+            descriptionLayout.RowCount = 5;
             descriptionLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
-            descriptionLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 30F));
-            descriptionLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 55F));
-            descriptionLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 45F));
+            descriptionLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 36F));
+            descriptionLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 24F));
+            descriptionLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 62F));
+            descriptionLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 24F));
+            descriptionLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 38F));
 
             Panel descriptionHeader = new Panel();
             descriptionHeader.Dock = DockStyle.Fill;
@@ -339,7 +409,8 @@ namespace FWEledit
             Button descriptionSaveButton = new Button();
             descriptionSaveButton.Text = "Stage Description";
             descriptionSaveButton.Dock = DockStyle.Right;
-            descriptionSaveButton.Width = 140;
+            descriptionSaveButton.Width = 150;
+            descriptionSaveButton.Margin = new Padding(0, 3, 0, 4);
             if (saveDescriptionClick != null)
             {
                 descriptionSaveButton.Click += saveDescriptionClick;
@@ -349,6 +420,7 @@ namespace FWEledit
             descriptionStatusLabel.Dock = DockStyle.Fill;
             descriptionStatusLabel.TextAlign = ContentAlignment.MiddleLeft;
             descriptionStatusLabel.Text = "Loaded from configs.pck.files";
+            descriptionStatusLabel.Padding = new Padding(8, 0, 0, 0);
 
             descriptionHeader.Controls.Add(descriptionStatusLabel);
             descriptionHeader.Controls.Add(descriptionSaveButton);
@@ -361,6 +433,7 @@ namespace FWEledit
             descriptionEditor.AcceptsTab = true;
             descriptionEditor.WordWrap = false;
             descriptionEditor.Font = new Font("Consolas", 9F, FontStyle.Regular, GraphicsUnit.Point, ((byte)(0)));
+            descriptionEditor.BorderStyle = BorderStyle.FixedSingle;
             if (descriptionChanged != null)
             {
                 descriptionEditor.TextChanged += descriptionChanged;
@@ -376,15 +449,23 @@ namespace FWEledit
             descriptionPreview.ForeColor = Color.White;
             descriptionPreview.Font = new Font("Segoe UI", 10F, FontStyle.Regular, GraphicsUnit.Point, ((byte)(0)));
 
+            Label previewLabel = CreateSubsectionLabel("Rendered Preview");
+            Label sourceLabel = CreateSubsectionLabel("Source Text");
+
             descriptionLayout.Controls.Add(descriptionHeader, 0, 0);
-            descriptionLayout.Controls.Add(descriptionEditor, 0, 1);
+            descriptionLayout.Controls.Add(previewLabel, 0, 1);
             descriptionLayout.Controls.Add(descriptionPreview, 0, 2);
+            descriptionLayout.Controls.Add(sourceLabel, 0, 3);
+            descriptionLayout.Controls.Add(descriptionEditor, 0, 4);
             descriptionTab.Controls.Add(descriptionLayout);
 
             rightTabs.TabPages.Add(valuesTab);
             rightTabs.TabPages.Add(descriptionTab);
 
-            rightPanel.Controls.Add(rightTabs);
+            rightTabs.Margin = new Padding(0, 8, 0, 0);
+            rightLayout.Controls.Add(rightTabs, 0, 2);
+            rightLayout.SetColumnSpan(rightTabs, 2);
+            rightPanel.Controls.Add(rightLayout);
             mainSplit.Panel2.Controls.Add(rightPanel);
 
             if (progressBar != null)
@@ -392,13 +473,14 @@ namespace FWEledit
                 progressBar.Parent = root;
                 progressBar.Dock = DockStyle.Fill;
                 progressBar.Margin = new Padding(0);
+                progressBar.Height = 8;
+                progressBar.Visible = false;
             }
 
-            root.Controls.Add(topPanel, 0, 0);
-            root.Controls.Add(mainSplit, 0, 1);
+            root.Controls.Add(mainSplit, 0, 0);
             if (progressBar != null)
             {
-                root.Controls.Add(progressBar, 0, 2);
+                root.Controls.Add(progressBar, 0, 1);
             }
 
             owner.Controls.Add(root);
@@ -430,8 +512,106 @@ namespace FWEledit
                 DescriptionSaveButton = descriptionSaveButton,
                 DescriptionStatusLabel = descriptionStatusLabel,
                 InlinePickIconButton = inlinePickIconButton,
+                BackButton = backButton,
+                ForwardButton = forwardButton,
                 SearchSuggestionList = searchSuggestionList
             };
+        }
+
+        private static Label CreateCaption(string text)
+        {
+            return new Label
+            {
+                Text = text,
+                AutoSize = false,
+                Dock = DockStyle.Fill,
+                Margin = new Padding(0),
+                TextAlign = ContentAlignment.BottomLeft,
+                Font = new Font("Segoe UI", 8F, FontStyle.Bold, GraphicsUnit.Point, ((byte)(0))),
+                ForeColor = Color.FromArgb(83, 96, 112)
+            };
+        }
+
+        private static Label CreateSectionLabel(string text)
+        {
+            return new Label
+            {
+                Text = text,
+                AutoSize = false,
+                Dock = DockStyle.Top,
+                Margin = new Padding(0),
+                Padding = new Padding(8, 0, 0, 0),
+                TextAlign = ContentAlignment.MiddleLeft,
+                Font = new Font("Segoe UI", 9F, FontStyle.Bold, GraphicsUnit.Point, ((byte)(0))),
+                BackColor = Color.FromArgb(225, 231, 238),
+                ForeColor = Color.FromArgb(83, 96, 112)
+            };
+        }
+
+        private static Button CreateNavButton(string text)
+        {
+            return new Button
+            {
+                Text = text,
+                Width = 22,
+                Height = 22,
+                Margin = new Padding(0, 0, 4, 0),
+                FlatStyle = FlatStyle.Flat,
+                TabStop = false,
+                Enabled = false,
+                BackColor = Color.FromArgb(232, 237, 243),
+                ForeColor = Color.FromArgb(29, 36, 45)
+            };
+        }
+
+        private static Label CreateSubsectionLabel(string text)
+        {
+            return new Label
+            {
+                Text = text,
+                AutoSize = false,
+                Dock = DockStyle.Fill,
+                Margin = new Padding(0),
+                Padding = new Padding(8, 0, 0, 0),
+                TextAlign = ContentAlignment.MiddleLeft,
+                Font = new Font("Segoe UI", 8.25F, FontStyle.Bold, GraphicsUnit.Point, ((byte)(0))),
+                BackColor = Color.FromArgb(225, 231, 238),
+                ForeColor = Color.FromArgb(83, 96, 112)
+            };
+        }
+
+        private static void ApplyInspectorGridLayout(DataGridView grid)
+        {
+            if (grid == null)
+            {
+                return;
+            }
+
+            grid.BorderStyle = BorderStyle.None;
+            grid.CellBorderStyle = DataGridViewCellBorderStyle.SingleHorizontal;
+            grid.ColumnHeadersBorderStyle = DataGridViewHeaderBorderStyle.None;
+            grid.RowHeadersBorderStyle = DataGridViewHeaderBorderStyle.None;
+            grid.ColumnHeadersHeight = 30;
+            grid.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.DisableResizing;
+            grid.RowTemplate.Height = 24;
+            grid.RowTemplate.Resizable = DataGridViewTriState.False;
+            grid.RowHeadersVisible = false;
+            grid.RowHeadersWidth = 4;
+            grid.RowHeadersWidthSizeMode = DataGridViewRowHeadersWidthSizeMode.DisableResizing;
+            grid.SelectionMode = DataGridViewSelectionMode.CellSelect;
+            grid.AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.None;
+            grid.DefaultCellStyle.Padding = new Padding(4, 0, 4, 0);
+            grid.ColumnHeadersDefaultCellStyle.Padding = new Padding(4, 0, 4, 0);
+
+            if (grid.Columns.Count >= 3)
+            {
+                grid.Columns[0].AutoSizeMode = DataGridViewAutoSizeColumnMode.None;
+                grid.Columns[0].Width = 300;
+                grid.Columns[1].AutoSizeMode = DataGridViewAutoSizeColumnMode.None;
+                grid.Columns[1].Visible = false;
+                grid.Columns[2].AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
+                grid.Columns[2].MinimumWidth = 280;
+            }
         }
     }
 }

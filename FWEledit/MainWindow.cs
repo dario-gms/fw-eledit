@@ -23,7 +23,12 @@ namespace FWEledit
         private TabControl fwRightTabs;
         private TabPage fwValuesTab;
         private Button fwInlinePickIconButton;
+        private Button fwBackButton;
+        private Button fwForwardButton;
         private int fwInlinePickIconRowIndex = -1;
+        private bool suppressSelectionHistory;
+        private int selectionHistoryIndex = -1;
+        private readonly List<NavigationSnapshot> selectionHistory = new List<NavigationSnapshot>();
         private bool liveModelPreviewRefreshInProgress;
         private TabControl fwEquipmentTabs;
         private TabPage fwEquipmentTabMain;

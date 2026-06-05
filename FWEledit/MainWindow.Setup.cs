@@ -77,13 +77,14 @@ namespace FWEledit
                 textBox_search_KeyDown);
             dataGridView_item.CellMouseDown += dataGridView_item_CellMouseDown;
             dataGridView_item.CurrentCellChanged += dataGridView_item_CurrentCellChanged;
+            dataGridView_elems.CellMouseDown += dataGridView_elems_CellMouseDown;
 
             Assembly assembly = Assembly.GetExecutingAssembly();
             mainWindowVersionUiService.InitializeVersion(
                 assembly,
                 label_Version,
                 navigationStateService,
-                "0.9.4.2");
+                "0.9.5");
 
             cpb2.Value = 0;
             colorTheme();
@@ -122,7 +123,9 @@ namespace FWEledit
                 searchSuggestionList_KeyDown,
                 click_pick_icon,
                 fw_description_changed,
-                click_save_description);
+                click_save_description,
+                click_navigation_back,
+                click_navigation_forward);
 
             fwMainSplit = layout.MainSplit;
             fwRightTabs = layout.RightTabs;
@@ -138,13 +141,243 @@ namespace FWEledit
             fwDescriptionSaveButton = layout.DescriptionSaveButton;
             fwDescriptionStatusLabel = layout.DescriptionStatusLabel;
             fwInlinePickIconButton = layout.InlinePickIconButton;
+            fwBackButton = layout.BackButton;
+            fwForwardButton = layout.ForwardButton;
             searchSuggestionList = layout.SearchSuggestionList;
+            InitializeElementContextActions();
             fwLayoutInitialized = true;
         }
 
         private void EnsureMainSplitSizing()
         {
             mainWindowLayoutUiService.EnsureMainSplitSizing(fwMainSplit, splitContainerSizingService);
+        }
+
+        private void InitializeElementContextActions()
+        {
+            if (contextMenuStrip_items == null)
+            {
+                return;
+            }
+
+            if (!contextMenuStrip_items.Items.ContainsKey("searchElementToolStripMenuItem"))
+            {
+                ToolStripMenuItem searchItem = new ToolStripMenuItem();
+                searchItem.Name = "searchElementToolStripMenuItem";
+                searchItem.Text = "Search";
+                searchItem.Click += click_context_search;
+                contextMenuStrip_items.Items.Insert(0, searchItem);
+            }
+
+            if (!contextMenuStrip_items.Items.ContainsKey("previewElementToolStripMenuItem"))
+            {
+                ToolStripMenuItem previewItem = new ToolStripMenuItem();
+                previewItem.Name = "previewElementToolStripMenuItem";
+                previewItem.Text = "Preview";
+                previewItem.Click += click_context_preview;
+                int insertIndex = contextMenuStrip_items.Items.ContainsKey("searchElementToolStripMenuItem") ? 1 : 0;
+                contextMenuStrip_items.Items.Insert(insertIndex, previewItem);
+            }
+
+            if (!contextMenuStrip_items.Items.ContainsKey("elementContextSeparator"))
+            {
+                ToolStripSeparator separator = new ToolStripSeparator();
+                separator.Name = "elementContextSeparator";
+                int insertIndex = contextMenuStrip_items.Items.ContainsKey("previewElementToolStripMenuItem") ? 2 : 0;
+                contextMenuStrip_items.Items.Insert(insertIndex, separator);
+            }
+        }
+
+        private void dataGridView_elems_CellMouseDown(object sender, DataGridViewCellMouseEventArgs e)
+        {
+            if (e == null || e.Button != MouseButtons.Right || dataGridView_elems == null || e.RowIndex < 0)
+            {
+                return;
+            }
+            if (e.RowIndex >= dataGridView_elems.Rows.Count)
+            {
+                return;
+            }
+
+            int columnIndex = e.ColumnIndex >= 0 ? e.ColumnIndex : 0;
+            if (columnIndex >= dataGridView_elems.Columns.Count)
+            {
+                columnIndex = 0;
+            }
+
+            dataGridView_elems.ClearSelection();
+            dataGridView_elems.CurrentCell = dataGridView_elems.Rows[e.RowIndex].Cells[columnIndex];
+            dataGridView_elems.Rows[e.RowIndex].Selected = true;
+        }
+
+        private void click_context_search(object sender, EventArgs e)
+        {
+            if (textBox_search == null)
+            {
+                return;
+            }
+
+            textBox_search.Focus();
+            textBox_search.SelectAll();
+        }
+
+        private void click_context_preview(object sender, EventArgs e)
+        {
+            int modelRow = FindFirstModelFieldRow();
+            if (modelRow < 0)
+            {
+                MessageBox.Show("This item does not have a model preview field.");
+                return;
+            }
+
+            OpenModelPreviewForValueRow(modelRow);
+        }
+
+        private void click_navigation_back(object sender, EventArgs e)
+        {
+            NavigateSelectionHistory(-1);
+        }
+
+        private void click_navigation_forward(object sender, EventArgs e)
+        {
+            NavigateSelectionHistory(1);
+        }
+
+        private void RecordSelectionHistory()
+        {
+            if (suppressSelectionHistory || comboBox_lists == null || dataGridView_elems == null || dataGridView_elems.CurrentCell == null)
+            {
+                return;
+            }
+
+            NavigationSnapshot snapshot = navigationSnapshotService.CaptureSnapshot(comboBox_lists.SelectedIndex, dataGridView_elems);
+            if (snapshot == null || snapshot.ListIndex < 0 || snapshot.GridRowIndex < 0)
+            {
+                return;
+            }
+
+            if (selectionHistoryIndex >= 0 && selectionHistoryIndex < selectionHistory.Count)
+            {
+                NavigationSnapshot current = selectionHistory[selectionHistoryIndex];
+                if (current.ListIndex == snapshot.ListIndex && current.ItemId == snapshot.ItemId && current.GridRowIndex == snapshot.GridRowIndex)
+                {
+                    UpdateSelectionHistoryButtons();
+                    return;
+                }
+            }
+
+            while (selectionHistory.Count > selectionHistoryIndex + 1)
+            {
+                selectionHistory.RemoveAt(selectionHistory.Count - 1);
+            }
+
+            selectionHistory.Add(snapshot);
+            selectionHistoryIndex = selectionHistory.Count - 1;
+            UpdateSelectionHistoryButtons();
+        }
+
+        private void NavigateSelectionHistory(int direction)
+        {
+            int targetIndex = selectionHistoryIndex + direction;
+            if (targetIndex < 0 || targetIndex >= selectionHistory.Count)
+            {
+                return;
+            }
+
+            suppressSelectionHistory = true;
+            try
+            {
+                RestoreSelectionSnapshot(selectionHistory[targetIndex]);
+                selectionHistoryIndex = targetIndex;
+            }
+            finally
+            {
+                suppressSelectionHistory = false;
+                UpdateSelectionHistoryButtons();
+            }
+        }
+
+        private void RestoreSelectionSnapshot(NavigationSnapshot snapshot)
+        {
+            if (snapshot == null || comboBox_lists == null || dataGridView_elems == null)
+            {
+                return;
+            }
+            if (snapshot.ListIndex < 0 || snapshot.ListIndex >= comboBox_lists.Items.Count)
+            {
+                return;
+            }
+
+            viewModel.EnableSelectionItem = false;
+            try
+            {
+                if (comboBox_lists.SelectedIndex != snapshot.ListIndex)
+                {
+                    comboBox_lists.SelectedIndex = snapshot.ListIndex;
+                }
+            }
+            finally
+            {
+                viewModel.EnableSelectionItem = true;
+            }
+
+            int targetRow = FindElementRow(snapshot);
+            if (targetRow < 0)
+            {
+                return;
+            }
+
+            dataGridView_elems.ClearSelection();
+            dataGridView_elems.CurrentCell = dataGridView_elems.Rows[targetRow].Cells[0];
+            dataGridView_elems.Rows[targetRow].Selected = true;
+            try
+            {
+                dataGridView_elems.FirstDisplayedScrollingRowIndex =
+                    snapshot.FirstDisplayedRow >= 0 && snapshot.FirstDisplayedRow < dataGridView_elems.Rows.Count
+                        ? snapshot.FirstDisplayedRow
+                        : targetRow;
+            }
+            catch
+            {
+            }
+
+            change_item(null, null);
+        }
+
+        private int FindElementRow(NavigationSnapshot snapshot)
+        {
+            if (snapshot == null || dataGridView_elems == null)
+            {
+                return -1;
+            }
+
+            if (snapshot.ItemId > 0)
+            {
+                for (int row = 0; row < dataGridView_elems.Rows.Count; row++)
+                {
+                    int rowId;
+                    if (int.TryParse(Convert.ToString(dataGridView_elems.Rows[row].Cells[0].Value), out rowId) && rowId == snapshot.ItemId)
+                    {
+                        return row;
+                    }
+                }
+            }
+
+            return snapshot.GridRowIndex >= 0 && snapshot.GridRowIndex < dataGridView_elems.Rows.Count
+                ? snapshot.GridRowIndex
+                : -1;
+        }
+
+        private void UpdateSelectionHistoryButtons()
+        {
+            if (fwBackButton != null)
+            {
+                fwBackButton.Enabled = selectionHistoryIndex > 0;
+            }
+            if (fwForwardButton != null)
+            {
+                fwForwardButton.Enabled = selectionHistoryIndex >= 0 && selectionHistoryIndex < selectionHistory.Count - 1;
+            }
         }
 
         private void MainWindow_Shown(object sender, EventArgs e)
@@ -234,6 +467,9 @@ namespace FWEledit
                 () =>
                 {
                     dirtyStateTracker.Clear();
+                    selectionHistory.Clear();
+                    selectionHistoryIndex = -1;
+                    UpdateSelectionHistoryButtons();
                     viewModel.DescriptionViewModel.ResetPendingChanges();
                     viewModel.HasUnsavedChanges = false;
                 },

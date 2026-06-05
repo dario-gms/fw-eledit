@@ -16,11 +16,11 @@ namespace FWEledit
 
             sizingService.EnsureSizing(
                 mainSplit,
-                260,
+                360,
                 420,
-                280,
                 380,
-                0.33);
+                520,
+                0.37);
         }
 
         public void HandleShown(
