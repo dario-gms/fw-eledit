@@ -1,5 +1,6 @@
 using System;
 using System.Drawing;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 
 namespace FWEledit
@@ -128,8 +129,157 @@ namespace FWEledit
                 message => MessageBox.Show(message));
         }
 
+        private sealed class CurrentItemModelPreviewResult
+        {
+            public bool Success { get; set; }
+            public string Error { get; set; }
+            public ModelPreviewMeshData MeshData { get; set; }
+        }
+
+        private void OpenModelPreviewForCurrentItem()
+        {
+            OpenModelPreviewForCurrentItem(true, true);
+        }
+
+        private async void OpenModelPreviewForCurrentItem(bool showMessages, bool enableLivePreview)
+        {
+            if (sessionService == null
+                || sessionService.AssetManager == null
+                || sessionService.Database == null
+                || sessionService.ListCollection == null
+                || comboBox_lists == null
+                || modelPreviewService == null
+                || modelPickerService == null
+                || itemFieldClassifierService == null)
+            {
+                return;
+            }
+
+            int listIndex = comboBox_lists.SelectedIndex;
+            int elementIndex = ResolveCurrentElementIndex();
+            int fieldIndex;
+            string fieldName;
+            int pathId;
+            if (!TryResolveFirstModelPreviewFieldForCurrentItem(listIndex, elementIndex, out fieldIndex, out fieldName, out pathId))
+            {
+                if (showMessages)
+                {
+                    MessageBox.Show("This item does not have a model preview field.");
+                }
+                return;
+            }
+
+            string listName = sessionService.ListCollection.Lists[listIndex].listName ?? string.Empty;
+            bool restoreWaitCursor = UseWaitCursor;
+            try
+            {
+                UseWaitCursor = true;
+                CurrentItemModelPreviewResult result = await Task.Run(delegate
+                {
+                    CurrentItemModelPreviewResult buildResult = new CurrentItemModelPreviewResult();
+                    string errorMessage;
+                    ModelPreviewMeshData meshData;
+                    bool ok = modelPreviewService.TryBuildPreviewMeshData(
+                        sessionService.AssetManager,
+                        sessionService.Database,
+                        pathId,
+                        fieldName,
+                        listName,
+                        modelPickerService,
+                        out meshData,
+                        out errorMessage);
+
+                    buildResult.Success = ok;
+                    buildResult.Error = errorMessage ?? string.Empty;
+                    buildResult.MeshData = meshData;
+                    return buildResult;
+                });
+
+                if (!result.Success)
+                {
+                    if (showMessages && !string.IsNullOrWhiteSpace(result.Error))
+                    {
+                        MessageBox.Show(result.Error);
+                    }
+                    return;
+                }
+
+                modelPreviewService.ShowPreviewWindow(result.MeshData);
+                if (enableLivePreview && valueRowPickerUiService != null)
+                {
+                    valueRowPickerUiService.EnableLiveModelPreview(pathId, listIndex, fieldIndex);
+                }
+            }
+            catch (Exception ex)
+            {
+                if (showMessages)
+                {
+                    MessageBox.Show("MODEL PREVIEW ERROR!\n" + ex.Message);
+                }
+            }
+            finally
+            {
+                UseWaitCursor = restoreWaitCursor;
+            }
+        }
+
+        private bool TryResolveFirstModelPreviewFieldForCurrentItem(
+            int listIndex,
+            int elementIndex,
+            out int fieldIndex,
+            out string fieldName,
+            out int pathId)
+        {
+            fieldIndex = -1;
+            fieldName = string.Empty;
+            pathId = 0;
+
+            if (sessionService == null
+                || sessionService.ListCollection == null
+                || listIndex < 0
+                || listIndex >= sessionService.ListCollection.Lists.Length
+                || elementIndex < 0
+                || elementIndex >= sessionService.ListCollection.Lists[listIndex].elementValues.Length)
+            {
+                return false;
+            }
+
+            string[] fields = sessionService.ListCollection.Lists[listIndex].elementFields;
+            if (fields == null)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < fields.Length; i++)
+            {
+                string candidateFieldName = fields[i] ?? string.Empty;
+                if (!itemFieldClassifierService.IsModelUsageFieldName(candidateFieldName))
+                {
+                    continue;
+                }
+
+                string rawValue = sessionService.ListCollection.GetValue(listIndex, elementIndex, i);
+                int candidatePathId;
+                if ((modelPickerService.TryExtractPathId(rawValue, out candidatePathId) || int.TryParse(rawValue, out candidatePathId))
+                    && candidatePathId > 0)
+                {
+                    fieldIndex = i;
+                    fieldName = candidateFieldName;
+                    pathId = candidatePathId;
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         private void dataGridView_item_CurrentCellChanged(object sender, EventArgs e)
         {
+            if (viewModel != null && viewModel.SuppressValuesUiRefresh)
+            {
+                return;
+            }
+
             UpdateRawValueEditorFromCurrentCell();
             RefreshLiveModelPreviewFromCurrentRow(false);
         }
@@ -222,14 +372,14 @@ namespace FWEledit
             graphics.DrawImage(icon, bounds);
         }
 
-        private static Color ResolveReferenceValueTextColor(int quality, bool selected, Color fallback)
+        private Color ResolveReferenceValueTextColor(int quality, bool selected, Color fallback)
         {
             Color color;
             if (ItemQualityCatalog.TryGetColor(quality, out color))
             {
                 if (quality == 1 && !selected)
                 {
-                    return Color.FromArgb(29, 36, 45);
+                    return fwDarkMode ? Color.FromArgb(235, 238, 244) : Color.FromArgb(29, 36, 45);
                 }
                 return color;
             }
@@ -328,12 +478,13 @@ namespace FWEledit
                 return;
             }
 
-            object current = dataGridView_item.Rows[rowIndex].Cells[2].Value;
+            object current = dataGridView_item.Rows[rowIndex].Cells[2].Tag ?? dataGridView_item.Rows[rowIndex].Cells[2].Value;
             if (string.Equals(Convert.ToString(current), rawValue, StringComparison.Ordinal))
             {
                 return;
             }
 
+            dataGridView_item.Rows[rowIndex].Cells[2].Tag = rawValue;
             dataGridView_item.Rows[rowIndex].Cells[2].Value = rawValue;
             if (fwRawValueUpButton != null)
             {
@@ -419,6 +570,18 @@ namespace FWEledit
 
             if (rowIndex < 0 || rowIndex >= dataGridView_item.Rows.Count)
             {
+                if (preferFirstModelField)
+                {
+                    liveModelPreviewRefreshInProgress = true;
+                    try
+                    {
+                        OpenModelPreviewForCurrentItem(false, true);
+                    }
+                    finally
+                    {
+                        liveModelPreviewRefreshInProgress = false;
+                    }
+                }
                 return;
             }
 
@@ -522,6 +685,17 @@ namespace FWEledit
                 message => MessageBox.Show(message));
         }
 
+        protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+        {
+            if (keyData == (Keys.Control | Keys.Shift | Keys.G))
+            {
+                GoToReferencedItemFromCurrentValueRow(true);
+                return true;
+            }
+
+            return base.ProcessCmdKey(ref msg, keyData);
+        }
+
         private void dataGridView_item_CellMouseDown(object sender, DataGridViewCellMouseEventArgs e)
         {
             if (e == null || e.Button != MouseButtons.Right || e.RowIndex < 0 || dataGridView_item == null)
@@ -573,11 +747,27 @@ namespace FWEledit
                 && sessionService.ListCollection != null
                 && itemFieldClassifierService.IsAddonTypeField(sessionService.ListCollection, comboBox_lists.SelectedIndex, fieldName);
             bool isItemQualityField = itemFieldClassifierService != null && itemFieldClassifierService.IsItemQualityFieldName(fieldName);
+            bool isReferenceField = itemReferenceService != null
+                && sessionService != null
+                && sessionService.ListCollection != null
+                && itemReferenceService.IsReferenceField(sessionService.ListCollection, comboBox_lists.SelectedIndex, fieldName);
 
             ContextMenuStrip menu = new ContextMenuStrip();
 
+            if (isReferenceField && CanResolveReferencedItemForValueRow(rowIndex))
+            {
+                ToolStripMenuItem goToItem = new ToolStripMenuItem("Go to referenced item");
+                goToItem.ShortcutKeyDisplayString = "Ctrl+Shift+G";
+                goToItem.Click += (menuSender, args) => GoToReferencedItemFromValueRow(rowIndex, true);
+                menu.Items.Add(goToItem);
+            }
+
             if (isModelField)
             {
+                if (menu.Items.Count > 0)
+                {
+                    menu.Items.Add(new ToolStripSeparator());
+                }
                 menu.Items.Add("Choose Model...", null, (menuSender, args) => OpenModelPickerForValueRow(rowIndex));
             }
 
@@ -620,6 +810,141 @@ namespace FWEledit
             }
 
             menu.Show(screenLocation);
+        }
+
+        private void GoToReferencedItemFromCurrentValueRow(bool showMessage)
+        {
+            if (dataGridView_item == null || dataGridView_item.CurrentCell == null)
+            {
+                if (showMessage)
+                {
+                    MessageBox.Show("Select a referenced value first.", "Go to referenced item", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
+                return;
+            }
+
+            GoToReferencedItemFromValueRow(dataGridView_item.CurrentCell.RowIndex, showMessage);
+        }
+
+        private bool CanResolveReferencedItemForValueRow(int rowIndex)
+        {
+            ItemReferenceOption option;
+            return TryResolveReferencedItemForValueRow(rowIndex, out option);
+        }
+
+        private void GoToReferencedItemFromValueRow(int rowIndex, bool showMessage)
+        {
+            ItemReferenceOption option;
+            if (!TryResolveReferencedItemForValueRow(rowIndex, out option))
+            {
+                if (showMessage)
+                {
+                    MessageBox.Show("This value does not point to a known item.", "Go to referenced item", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
+                return;
+            }
+
+            NavigateToElement(option.ListIndex, option.ElementIndex);
+        }
+
+        private bool TryResolveReferencedItemForValueRow(int rowIndex, out ItemReferenceOption option)
+        {
+            option = null;
+            if (sessionService == null
+                || sessionService.ListCollection == null
+                || dataGridView_item == null
+                || comboBox_lists == null
+                || itemReferenceService == null
+                || rowIndex < 0
+                || rowIndex >= dataGridView_item.Rows.Count)
+            {
+                return false;
+            }
+
+            int listIndex = comboBox_lists.SelectedIndex;
+            string fieldName = Convert.ToString(dataGridView_item.Rows[rowIndex].Cells[0].Value);
+            if (!itemReferenceService.IsReferenceField(sessionService.ListCollection, listIndex, fieldName))
+            {
+                return false;
+            }
+
+            string rawValue = GetRawValueForValueRow(rowIndex);
+            return itemReferenceService.TryResolveReferenceOption(
+                sessionService.ListCollection,
+                listIndex,
+                fieldName,
+                rawValue,
+                sessionService.Database,
+                iconResolutionService,
+                out option);
+        }
+
+        private string GetRawValueForValueRow(int rowIndex)
+        {
+            if (dataGridView_item == null || rowIndex < 0 || rowIndex >= dataGridView_item.Rows.Count)
+            {
+                return string.Empty;
+            }
+
+            object raw = dataGridView_item.Rows[rowIndex].Cells[2].Tag;
+            if (raw != null)
+            {
+                return Convert.ToString(raw);
+            }
+
+            int listIndex = comboBox_lists != null ? comboBox_lists.SelectedIndex : -1;
+            int fieldIndex = valueRowIndexService.GetFieldIndexForValueRow(dataGridView_item, rowIndex);
+            int elementIndex = ResolveCurrentElementIndex();
+            if (sessionService != null
+                && sessionService.ListCollection != null
+                && listIndex >= 0
+                && fieldIndex >= 0
+                && elementIndex >= 0
+                && listIndex < sessionService.ListCollection.Lists.Length
+                && elementIndex < sessionService.ListCollection.Lists[listIndex].elementValues.Length
+                && fieldIndex < sessionService.ListCollection.Lists[listIndex].elementFields.Length)
+            {
+                return sessionService.ListCollection.GetValue(listIndex, elementIndex, fieldIndex);
+            }
+
+            return Convert.ToString(dataGridView_item.Rows[rowIndex].Cells[2].Value);
+        }
+
+        private void NavigateToElement(int listIndex, int elementIndex)
+        {
+            if (sessionService == null
+                || sessionService.ListCollection == null
+                || comboBox_lists == null
+                || dataGridView_elems == null
+                || listIndex < 0
+                || listIndex >= sessionService.ListCollection.Lists.Length
+                || elementIndex < 0
+                || elementIndex >= sessionService.ListCollection.Lists[listIndex].elementValues.Length)
+            {
+                return;
+            }
+
+            if (listIndex < comboBox_lists.Items.Count && comboBox_lists.SelectedIndex != listIndex)
+            {
+                comboBox_lists.SelectedIndex = listIndex;
+            }
+
+            if (elementIndex >= dataGridView_elems.Rows.Count)
+            {
+                return;
+            }
+
+            dataGridView_elems.ClearSelection();
+            dataGridView_elems.CurrentCell = dataGridView_elems.Rows[elementIndex].Cells[0];
+            dataGridView_elems.Rows[elementIndex].Selected = true;
+            try
+            {
+                dataGridView_elems.FirstDisplayedScrollingRowIndex = elementIndex;
+            }
+            catch
+            {
+            }
+            PersistNavigationState();
         }
 
     }

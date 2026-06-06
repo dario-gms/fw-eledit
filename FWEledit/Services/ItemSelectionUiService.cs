@@ -22,13 +22,14 @@ namespace FWEledit
                 return;
             }
 
-            itemGrid.Enabled = false;
+            DataGridViewRow[] rows = new DataGridViewRow[selection.Rows.Count];
             for (int i = 0; i < selection.Rows.Count; i++)
             {
                 ValueRowDisplay rowDisplay = selection.Rows[i];
-                int rowIndex = itemGrid.Rows.Add(new string[] { rowDisplay.FieldName, rowDisplay.FieldType, rowDisplay.DisplayValue });
-                DataGridViewRow row = itemGrid.Rows[rowIndex];
+                DataGridViewRow row = (DataGridViewRow)itemGrid.RowTemplate.Clone();
+                row.CreateCells(itemGrid, new string[] { rowDisplay.FieldName, rowDisplay.FieldType, rowDisplay.DisplayValue });
                 row.Tag = rowDisplay.FieldIndex;
+                row.Cells[2].Tag = rowDisplay.RawValue ?? string.Empty;
                 if (rowDisplay.FieldIndex >= 0)
                 {
                     row.HeaderCell.Value = rowDisplay.FieldIndex.ToString();
@@ -41,10 +42,15 @@ namespace FWEledit
                 {
                     row.Cells[2].Style.ForeColor = Color.DeepSkyBlue;
                 }
+                rows[i] = row;
             }
-            itemGrid.Enabled = true;
 
-            if (scrollIndex > -1)
+            if (rows.Length > 0)
+            {
+                itemGrid.Rows.AddRange(rows);
+            }
+
+            if (scrollIndex > -1 && scrollIndex < itemGrid.Rows.Count)
             {
                 itemGrid.FirstDisplayedScrollingRowIndex = scrollIndex;
             }

@@ -25,7 +25,9 @@ namespace FWEledit
         private Button fwInlinePickIconButton;
         private Button fwBackButton;
         private Button fwForwardButton;
+        private Button fwThemeToggleButton;
         private int fwInlinePickIconRowIndex = -1;
+        private bool fwDarkMode;
         private bool suppressSelectionHistory;
         private int selectionHistoryIndex = -1;
         private readonly List<NavigationSnapshot> selectionHistory = new List<NavigationSnapshot>();

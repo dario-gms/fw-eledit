@@ -28,6 +28,7 @@ namespace FWEledit
         public Button RawValueDownButton { get; set; }
         public Button BackButton { get; set; }
         public Button ForwardButton { get; set; }
+        public Button ThemeToggleButton { get; set; }
         public ListBox SearchSuggestionList { get; set; }
     }
 }

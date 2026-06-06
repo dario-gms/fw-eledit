@@ -35,6 +35,10 @@ namespace FWEledit
                 return false;
             }
 
+            if (result.MarkDirty)
+            {
+                itemGrid.Rows[context.GridRow].Cells[2].Tag = result.RawValue ?? string.Empty;
+            }
             if (!string.IsNullOrWhiteSpace(result.DisplayValue))
             {
                 itemGrid.Rows[context.GridRow].Cells[2].Value = result.DisplayValue;

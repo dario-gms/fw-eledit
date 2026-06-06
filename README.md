@@ -12,6 +12,18 @@ FWEledit is based on [sELedit++ by Wrechid](https://github.com/Wrechid/sELedit-)
 
 ---
 
+## What's New in v0.9.5.2
+
+- Added light/dark theme switching with persisted preference across app restarts.
+- Refined dark-mode styling for tabs, grids, scrollbars, borders, headers, and editor surfaces.
+- Kept the Elements list visually consistent with the item-quality color workflow.
+- Fixed model preview actions so preview works outside the Models tab and refreshes when changing equipment.
+- Improved selection fluidity by suppressing redraw while the right-side values panel is rebuilt.
+- Reduced unnecessary preview/editor refresh work during item changes for smoother navigation.
+- Project/app version metadata updated to `v0.9.5.2`.
+
+---
+
 ## What's New in v0.9.5.1
 
 - Added equipment-focused tabs beside Values, including Models, Refine, and Decompose groupings.

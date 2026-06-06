@@ -364,7 +364,10 @@ namespace FWEledit
                 searchSuggestionList_KeyDown,
                 click_pick_icon,
                 fw_description_changed,
-                click_save_description);
+                click_save_description,
+                click_navigation_back,
+                click_navigation_forward,
+                click_toggle_theme);
 
             fwMainSplit = layout.MainSplit;
             fwRightTabs = layout.RightTabs;
@@ -380,7 +383,9 @@ namespace FWEledit
             fwDescriptionSaveButton = layout.DescriptionSaveButton;
             fwDescriptionStatusLabel = layout.DescriptionStatusLabel;
             fwInlinePickIconButton = layout.InlinePickIconButton;
+            fwThemeToggleButton = layout.ThemeToggleButton;
             searchSuggestionList = layout.SearchSuggestionList;
+            UpdateThemeToggleButton();
             fwLayoutInitialized = true;
         }
 
@@ -428,12 +433,15 @@ namespace FWEledit
                 button_search,
                 button_SetValue,
                 fwInlinePickIconButton,
+                fwThemeToggleButton,
                 fwDescriptionSaveButton,
                 fwDescriptionEditor,
                 fwDescriptionPreview,
                 fwDescriptionStatusLabel,
                 () => new ThemeMenuRenderer(() => database != null ? database.arrTheme : null),
-                itemListThemeService);
+                itemListThemeService,
+                fwDarkMode);
+            UpdateThemeToggleButton();
         }
 
         private void comboBoxDb_DrawItem(object sender, DrawItemEventArgs e)

@@ -34,5 +34,8 @@
     <Setting Name="ModelPreviewCameraZoom" Type="System.Single" Scope="User">
       <Value Profile="(Default)">1</Value>
     </Setting>
+    <Setting Name="UseDarkMode" Type="System.Boolean" Scope="User">
+      <Value Profile="(Default)">False</Value>
+    </Setting>
   </Settings>
 </SettingsFile>

@@ -53,14 +53,16 @@ namespace FWEledit
                     FieldIndex = -1,
                     FieldName = "id_talk",
                     FieldType = "int32",
-                    DisplayValue = conversationList.talk_procs[elementIndex].id_talk.ToString()
+                    DisplayValue = conversationList.talk_procs[elementIndex].id_talk.ToString(),
+                    RawValue = conversationList.talk_procs[elementIndex].id_talk.ToString()
                 });
                 rows.Add(new ValueRowDisplay
                 {
                     FieldIndex = -1,
                     FieldName = "text",
                     FieldType = "wstring:128",
-                    DisplayValue = conversationList.talk_procs[elementIndex].GetText()
+                    DisplayValue = conversationList.talk_procs[elementIndex].GetText(),
+                    RawValue = conversationList.talk_procs[elementIndex].GetText()
                 });
 
                 for (int q = 0; q < conversationList.talk_procs[elementIndex].num_window; q++)
@@ -70,21 +72,24 @@ namespace FWEledit
                         FieldIndex = -1,
                         FieldName = "window_" + q + "_id",
                         FieldType = "int32",
-                        DisplayValue = conversationList.talk_procs[elementIndex].windows[q].id.ToString()
+                        DisplayValue = conversationList.talk_procs[elementIndex].windows[q].id.ToString(),
+                        RawValue = conversationList.talk_procs[elementIndex].windows[q].id.ToString()
                     });
                     rows.Add(new ValueRowDisplay
                     {
                         FieldIndex = -1,
                         FieldName = "window_" + q + "_id_parent",
                         FieldType = "int32",
-                        DisplayValue = conversationList.talk_procs[elementIndex].windows[q].id_parent.ToString()
+                        DisplayValue = conversationList.talk_procs[elementIndex].windows[q].id_parent.ToString(),
+                        RawValue = conversationList.talk_procs[elementIndex].windows[q].id_parent.ToString()
                     });
                     rows.Add(new ValueRowDisplay
                     {
                         FieldIndex = -1,
                         FieldName = "window_" + q + "_talk_text",
                         FieldType = "wstring:" + conversationList.talk_procs[elementIndex].windows[q].talk_text_len,
-                        DisplayValue = conversationList.talk_procs[elementIndex].windows[q].GetText()
+                        DisplayValue = conversationList.talk_procs[elementIndex].windows[q].GetText(),
+                        RawValue = conversationList.talk_procs[elementIndex].windows[q].GetText()
                     });
                     for (int c = 0; c < conversationList.talk_procs[elementIndex].windows[q].num_option; c++)
                     {
@@ -93,21 +98,24 @@ namespace FWEledit
                             FieldIndex = -1,
                             FieldName = "window_" + q + "_option_" + c + "_param",
                             FieldType = "int32",
-                            DisplayValue = conversationList.talk_procs[elementIndex].windows[q].options[c].param.ToString()
+                            DisplayValue = conversationList.talk_procs[elementIndex].windows[q].options[c].param.ToString(),
+                            RawValue = conversationList.talk_procs[elementIndex].windows[q].options[c].param.ToString()
                         });
                         rows.Add(new ValueRowDisplay
                         {
                             FieldIndex = -1,
                             FieldName = "window_" + q + "_option_" + c + "_text",
                             FieldType = "wstring:128",
-                            DisplayValue = conversationList.talk_procs[elementIndex].windows[q].options[c].GetText()
+                            DisplayValue = conversationList.talk_procs[elementIndex].windows[q].options[c].GetText(),
+                            RawValue = conversationList.talk_procs[elementIndex].windows[q].options[c].GetText()
                         });
                         rows.Add(new ValueRowDisplay
                         {
                             FieldIndex = -1,
                             FieldName = "window_" + q + "_option_" + c + "_id",
                             FieldType = "int32",
-                            DisplayValue = conversationList.talk_procs[elementIndex].windows[q].options[c].id.ToString()
+                            DisplayValue = conversationList.talk_procs[elementIndex].windows[q].options[c].id.ToString(),
+                            RawValue = conversationList.talk_procs[elementIndex].windows[q].options[c].id.ToString()
                         });
                     }
                 }
@@ -128,7 +136,8 @@ namespace FWEledit
                     continue;
                 }
 
-                string fieldValue = listCollection.GetValue(listIndex, elementIndex, f);
+                string rawValue = listCollection.GetValue(listIndex, elementIndex, f);
+                string fieldValue = rawValue;
                 if (listIndex == 0)
                 {
                     if (string.Equals(fieldName, "name", System.StringComparison.OrdinalIgnoreCase))
@@ -161,6 +170,7 @@ namespace FWEledit
                     FieldName = fieldName,
                     FieldType = listCollection.Lists[listIndex].elementTypes[f],
                     DisplayValue = fieldValue,
+                    RawValue = rawValue,
                     IsInvalid = isFieldInvalid != null && isFieldInvalid(listIndex, elementIndex, f),
                     IsDirty = isFieldDirty != null && isFieldDirty(listIndex, elementIndex, f)
                 };

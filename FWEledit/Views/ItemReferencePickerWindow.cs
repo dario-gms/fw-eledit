@@ -18,6 +18,7 @@ namespace FWEledit
         private string searchText = string.Empty;
 
         public int SelectedId { get; private set; }
+        public ItemReferenceOption SelectedOption { get; private set; }
 
         public ItemReferencePickerWindow(List<ItemReferenceOption> options, int currentId, int targetListIndex, CacheSave database, string title)
         {
@@ -240,6 +241,7 @@ namespace FWEledit
                 return;
             }
 
+            SelectedOption = option;
             SelectedId = option.Id;
             DialogResult = DialogResult.OK;
             Close();

@@ -88,6 +88,7 @@ namespace FWEledit
                 navigationStateService,
                 "0.9.5.1");
 
+            fwDarkMode = Properties.Settings.Default.UseDarkMode;
             cpb2.Value = 0;
             colorTheme();
         }
@@ -127,7 +128,8 @@ namespace FWEledit
                 fw_description_changed,
                 click_save_description,
                 click_navigation_back,
-                click_navigation_forward);
+                click_navigation_forward,
+                click_toggle_theme);
 
             fwMainSplit = layout.MainSplit;
             fwRightTabs = layout.RightTabs;
@@ -153,10 +155,12 @@ namespace FWEledit
             fwRawValueDownButton = layout.RawValueDownButton;
             fwBackButton = layout.BackButton;
             fwForwardButton = layout.ForwardButton;
+            fwThemeToggleButton = layout.ThemeToggleButton;
             searchSuggestionList = layout.SearchSuggestionList;
             InitializeElementContextActions();
             InitializeDescriptionFormattingActions();
             InitializeRawValueEditor();
+            UpdateThemeToggleButton();
             fwLayoutInitialized = true;
         }
 
@@ -256,7 +260,7 @@ namespace FWEledit
             int modelRow = FindFirstModelFieldRow();
             if (modelRow < 0)
             {
-                MessageBox.Show("This item does not have a model preview field.");
+                OpenModelPreviewForCurrentItem();
                 return;
             }
 
@@ -449,12 +453,33 @@ namespace FWEledit
                 button_search,
                 button_SetValue,
                 fwInlinePickIconButton,
+                fwThemeToggleButton,
                 fwDescriptionSaveButton,
                 fwDescriptionEditor,
                 fwDescriptionPreview,
                 fwDescriptionStatusLabel,
                 () => new ThemeMenuRenderer(() => sessionService.Database != null ? sessionService.Database.arrTheme : null),
-                itemListThemeService);
+                itemListThemeService,
+                fwDarkMode);
+            UpdateThemeToggleButton();
+        }
+
+        private void click_toggle_theme(object sender, EventArgs e)
+        {
+            fwDarkMode = !fwDarkMode;
+            Properties.Settings.Default.UseDarkMode = fwDarkMode;
+            Properties.Settings.Default.Save();
+            colorTheme();
+            dataGridView_item.Invalidate();
+            dataGridView_elems.Invalidate();
+        }
+
+        private void UpdateThemeToggleButton()
+        {
+            if (fwThemeToggleButton != null)
+            {
+                fwThemeToggleButton.Text = fwDarkMode ? "Light mode" : "Dark mode";
+            }
         }
 
         private void comboBoxDb_DrawItem(object sender, DrawItemEventArgs e)

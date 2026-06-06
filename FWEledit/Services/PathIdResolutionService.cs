@@ -14,7 +14,7 @@ namespace FWEledit
                 return 0;
             }
 
-            object valueObj = grid.Rows[rowIndex].Cells[2].Value;
+            object valueObj = grid.Rows[rowIndex].Cells[2].Tag ?? grid.Rows[rowIndex].Cells[2].Value;
             int value;
             if (tryExtractPathId != null && tryExtractPathId(Convert.ToString(valueObj), out value))
             {
