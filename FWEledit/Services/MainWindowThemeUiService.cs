@@ -26,12 +26,14 @@ namespace FWEledit
             Button searchButton,
             Button setValueButton,
             Button inlinePickIconButton,
+            Button themeToggleButton,
             Button descriptionSaveButton,
             TextBox descriptionEditor,
             RichTextBox descriptionPreview,
             Label descriptionStatusLabel,
             Func<ThemeMenuRenderer> menuRendererFactory,
-            ItemListThemeService itemListThemeService)
+            ItemListThemeService itemListThemeService,
+            bool darkMode)
         {
             if (themeUiService == null)
             {
@@ -58,12 +60,14 @@ namespace FWEledit
                 searchButton,
                 setValueButton,
                 inlinePickIconButton,
+                themeToggleButton,
                 descriptionSaveButton,
                 descriptionEditor,
                 descriptionPreview,
                 descriptionStatusLabel,
                 menuRendererFactory,
-                itemListThemeService);
+                itemListThemeService,
+                darkMode);
         }
 
         public void DrawComboBoxItem(

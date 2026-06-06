@@ -35,7 +35,8 @@ namespace FWEledit
             EventHandler descriptionChanged,
             EventHandler saveDescriptionClick,
             EventHandler backClick,
-            EventHandler forwardClick)
+            EventHandler forwardClick,
+            EventHandler themeToggleClick)
         {
             if (owner == null)
             {
@@ -258,13 +259,27 @@ namespace FWEledit
             rightLayout.RowCount = 4;
             rightLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
             rightLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 190F));
-            rightLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 18F));
-            rightLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 36F));
+            rightLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 28F));
+            rightLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 26F));
             rightLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 34F));
             rightLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
 
             rightLayout.Controls.Add(offsetCaption, 0, 0);
             rightLayout.Controls.Add(offsetPanel, 0, 1);
+
+            Button themeToggleButton = new Button();
+            themeToggleButton.Text = "Dark mode";
+            themeToggleButton.Dock = DockStyle.Right;
+            themeToggleButton.Width = 92;
+            themeToggleButton.Height = 22;
+            themeToggleButton.Margin = new Padding(0, 0, 0, 6);
+            themeToggleButton.FlatStyle = FlatStyle.Flat;
+            themeToggleButton.TabStop = false;
+            if (themeToggleClick != null)
+            {
+                themeToggleButton.Click += themeToggleClick;
+            }
+            rightLayout.Controls.Add(themeToggleButton, 1, 0);
 
             if (versionLabel != null)
             {
@@ -273,8 +288,7 @@ namespace FWEledit
                 versionLabel.TextAlign = ContentAlignment.MiddleRight;
                 versionLabel.Margin = new Padding(0);
                 versionLabel.Font = new Font(owner.Font, FontStyle.Regular);
-                rightLayout.Controls.Add(versionLabel, 1, 0);
-                rightLayout.SetRowSpan(versionLabel, 2);
+                rightLayout.Controls.Add(versionLabel, 1, 1);
             }
 
             TableLayoutPanel rawValuePanel = new TableLayoutPanel();
@@ -326,7 +340,7 @@ namespace FWEledit
             valuesInspectorPanel.Dock = DockStyle.Fill;
             valuesInspectorPanel.Margin = new Padding(0);
 
-            TabControl rightTabs = new TabControl();
+            TabControl rightTabs = new ThemedTabControl();
             rightTabs.Dock = DockStyle.Fill;
             rightTabs.Margin = new Padding(0);
             rightTabs.Font = new Font("Segoe UI", 9F, FontStyle.Regular, GraphicsUnit.Point, ((byte)(0)));
@@ -575,6 +589,7 @@ namespace FWEledit
                 RawValueDownButton = rawValueDownButton,
                 BackButton = backButton,
                 ForwardButton = forwardButton,
+                ThemeToggleButton = themeToggleButton,
                 SearchSuggestionList = searchSuggestionList
             };
         }

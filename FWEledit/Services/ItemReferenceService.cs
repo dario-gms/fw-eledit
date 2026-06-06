@@ -14,6 +14,7 @@ namespace FWEledit
         private List<ItemReferenceOption> searchableOptions;
         private Dictionary<int, ItemReferenceOption> searchableOptionsById;
         private Dictionary<string, ItemReferenceOption> searchableOptionsByName;
+        private readonly Dictionary<string, ItemReferenceOption> preferredOptionsByFieldAndId = new Dictionary<string, ItemReferenceOption>(StringComparer.OrdinalIgnoreCase);
 
         public void ClearCache()
         {
@@ -94,6 +95,12 @@ namespace FWEledit
                 return rawValue ?? string.Empty;
             }
 
+            ItemReferenceOption preferredOption;
+            if (TryGetPreferredReferenceOption(listIndex, fieldName, id, out preferredOption))
+            {
+                return string.IsNullOrWhiteSpace(preferredOption.Name) ? rawValue : preferredOption.Name;
+            }
+
             int targetListIndex;
             if (!TryGetTargetListIndex(listCollection, listIndex, fieldName, out targetListIndex))
             {
@@ -125,6 +132,11 @@ namespace FWEledit
             if (!TryGetTargetListIndex(listCollection, listIndex, fieldName, out targetListIndex))
             {
                 return false;
+            }
+
+            if (TryGetPreferredReferenceOption(listIndex, fieldName, id, out option))
+            {
+                return true;
             }
 
             if (TryFindOptionById(listCollection, targetListIndex, id, database, iconResolutionService, out option))
@@ -166,6 +178,33 @@ namespace FWEledit
             }
 
             return value;
+        }
+
+        public void RememberReferenceOverride(int sourceListIndex, string fieldName, ItemReferenceOption option)
+        {
+            if (option == null || option.Id <= 0)
+            {
+                return;
+            }
+
+            string key = BuildPreferredReferenceKey(sourceListIndex, fieldName, option.Id);
+            preferredOptionsByFieldAndId[key] = option;
+        }
+
+        private bool TryGetPreferredReferenceOption(int sourceListIndex, string fieldName, int id, out ItemReferenceOption option)
+        {
+            option = null;
+            if (id <= 0)
+            {
+                return false;
+            }
+
+            return preferredOptionsByFieldAndId.TryGetValue(BuildPreferredReferenceKey(sourceListIndex, fieldName, id), out option);
+        }
+
+        private static string BuildPreferredReferenceKey(int sourceListIndex, string fieldName, int id)
+        {
+            return sourceListIndex.ToString() + "|" + (fieldName ?? string.Empty).Trim().ToLowerInvariant() + "|" + id.ToString();
         }
 
         public List<ItemReferenceOption> BuildOptions(eListCollection listCollection, int targetListIndex)

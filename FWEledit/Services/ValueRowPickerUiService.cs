@@ -35,6 +35,14 @@ namespace FWEledit
             lastPreviewRowIndex = -1;
         }
 
+        public void EnableLiveModelPreview(int pathId, int listIndex, int rowIndex)
+        {
+            liveModelPreviewEnabled = true;
+            lastPreviewPathId = pathId;
+            lastPreviewListIndex = listIndex;
+            lastPreviewRowIndex = rowIndex;
+        }
+
         private sealed class ModelPreviewBuildResult
         {
             public bool Success { get; set; }
@@ -273,7 +281,7 @@ namespace FWEledit
                     itemGrid.CurrentCell = itemGrid.Rows[rowIndex].Cells[2];
                 }
 
-                itemGrid.Rows[rowIndex].Cells[2].Value = selectedPathId.ToString();
+                SetValueCellRawValue(itemGrid, rowIndex, selectedPathId.ToString());
             }
         }
 
@@ -461,7 +469,7 @@ namespace FWEledit
             }
             if (currentType <= 0)
             {
-                int.TryParse(Convert.ToString(itemGrid.Rows[rowIndex].Cells[2].Value), out currentType);
+                int.TryParse(GetValueCellRawValue(itemGrid, rowIndex), out currentType);
             }
 
             List<AddonTypeOption> options = addonTypeOptionService != null
@@ -483,7 +491,7 @@ namespace FWEledit
                     return;
                 }
 
-                itemGrid.Rows[rowIndex].Cells[2].Value = picker.SelectedType.ToString();
+                SetValueCellRawValue(itemGrid, rowIndex, picker.SelectedType.ToString());
             }
         }
 
@@ -506,7 +514,7 @@ namespace FWEledit
             }
 
             int currentValue = 0;
-            string rawValue = Convert.ToString(itemGrid.Rows[rowIndex].Cells[2].Value);
+            string rawValue = GetValueCellRawValue(itemGrid, rowIndex);
             int.TryParse(rawValue, out currentValue);
 
             List<QualityOption> safeOptions = options != null
@@ -519,7 +527,7 @@ namespace FWEledit
                     return;
                 }
 
-                itemGrid.Rows[rowIndex].Cells[2].Value = picker.SelectedValue.ToString(CultureInfo.InvariantCulture);
+                SetValueCellRawValue(itemGrid, rowIndex, picker.SelectedValue.ToString(CultureInfo.InvariantCulture));
             }
         }
 
@@ -551,7 +559,7 @@ namespace FWEledit
             }
 
             int currentId = 0;
-            string currentText = Convert.ToString(itemGrid.Rows[rowIndex].Cells[2].Value);
+            string currentText = GetValueCellRawValue(itemGrid, rowIndex);
             int.TryParse(currentText, out currentId);
             if (currentId <= 0)
             {
@@ -577,7 +585,8 @@ namespace FWEledit
                     return;
                 }
 
-                itemGrid.Rows[rowIndex].Cells[2].Value = picker.SelectedId.ToString(CultureInfo.InvariantCulture);
+                itemReferenceService.RememberReferenceOverride(listIndex, fieldName, picker.SelectedOption);
+                SetValueCellRawValue(itemGrid, rowIndex, picker.SelectedId.ToString(CultureInfo.InvariantCulture));
             }
         }
 
@@ -648,7 +657,7 @@ namespace FWEledit
                     return;
                 }
 
-                itemGrid.Rows[rowIndex].Cells[2].Value = selectedPathId.ToString();
+                SetValueCellRawValue(itemGrid, rowIndex, selectedPathId.ToString());
             }
         }
 
@@ -933,6 +942,34 @@ namespace FWEledit
             return pathIdResolutionService.TryGetCurrentPathId(itemGrid, rowIndex, extractor);
         }
 
+        private static string GetValueCellRawValue(DataGridView itemGrid, int rowIndex)
+        {
+            if (itemGrid == null || rowIndex < 0 || rowIndex >= itemGrid.Rows.Count)
+            {
+                return string.Empty;
+            }
+
+            object raw = itemGrid.Rows[rowIndex].Cells[2].Tag;
+            if (raw != null)
+            {
+                return Convert.ToString(raw);
+            }
+
+            return Convert.ToString(itemGrid.Rows[rowIndex].Cells[2].Value);
+        }
+
+        private static void SetValueCellRawValue(DataGridView itemGrid, int rowIndex, string rawValue)
+        {
+            if (itemGrid == null || rowIndex < 0 || rowIndex >= itemGrid.Rows.Count)
+            {
+                return;
+            }
+
+            string safeValue = rawValue ?? string.Empty;
+            itemGrid.Rows[rowIndex].Cells[2].Tag = safeValue;
+            itemGrid.Rows[rowIndex].Cells[2].Value = safeValue;
+        }
+
         private static float ResolvePreviewScaleFromGrid(DataGridView itemGrid, string modelFieldName)
         {
             if (itemGrid == null || itemGrid.Rows == null || itemGrid.Rows.Count <= 0)
@@ -956,7 +993,7 @@ namespace FWEledit
                     continue;
                 }
 
-                string rawValue = Convert.ToString(itemGrid.Rows[i].Cells[2].Value);
+                string rawValue = GetValueCellRawValue(itemGrid, i);
                 if (TryParsePreviewScale(rawValue, out float parsed))
                 {
                     int score = GetScaleFieldAffinity(modelFieldName, fieldName);
@@ -994,7 +1031,7 @@ namespace FWEledit
                     continue;
                 }
 
-                string rawValue = Convert.ToString(itemGrid.Rows[i].Cells[2].Value);
+                string rawValue = GetValueCellRawValue(itemGrid, i);
                 if (TryExtractInlineScaleFromModelValue(rawValue, out float inlineScale))
                 {
                     scale = inlineScale;

@@ -928,6 +928,7 @@
     <Compile Include="Services\NavigationSelectionService.cs" />
     <Compile Include="Services\ClosePromptService.cs" />
     <Compile Include="Services\ClosePromptUiService.cs" />
+    <Compile Include="Services\ControlRedrawScope.cs" />
     <Compile Include="Services\IconListAvailabilityService.cs" />
     <Compile Include="Services\WindowTitleService.cs" />
     <Compile Include="Services\InfoMessageService.cs" />
@@ -935,6 +936,7 @@
     <Compile Include="Services\ClipboardUiService.cs" />
     <Compile Include="Services\ValidationUiService.cs" />
     <Compile Include="Services\ThemeUiService.cs" />
+    <Compile Include="Services\ThemedTabControl.cs" />
     <Compile Include="Services\ThemeMenuRenderer.cs" />
     <Compile Include="Services\SplitContainerSizingService.cs" />
     <Compile Include="Services\StartupSessionService.cs" />

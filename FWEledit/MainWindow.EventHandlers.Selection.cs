@@ -111,7 +111,7 @@ namespace FWEledit
 
         private void change_value(object sender, DataGridViewCellEventArgs ea)
 		{
-            if (viewModel == null || sessionService.ListCollection == null || sessionService.Database == null)
+            if (viewModel == null || !viewModel.EnableSelectionItem || sessionService.ListCollection == null || sessionService.Database == null)
             {
                 return;
             }

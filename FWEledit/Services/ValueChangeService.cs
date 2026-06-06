@@ -150,6 +150,7 @@ namespace FWEledit
             }
 
             result.MarkDirty = true;
+            result.RawValue = valueToSet;
             result.DisplayValue = valueToSet;
             if (request.IsModelField)
             {

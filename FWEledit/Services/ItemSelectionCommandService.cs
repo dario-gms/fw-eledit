@@ -22,19 +22,20 @@ namespace FWEledit
                 return;
             }
 
-            setSuppressValuesUiRefresh?.Invoke(true);
-            itemGrid.SuspendLayout();
-            itemGrid.Rows.Clear();
-
-            resetProctypeLocations?.Invoke();
-
             try
             {
-                uiService.ApplySelection(workflowService, request, itemGrid, context.ScrollIndex);
+                setSuppressValuesUiRefresh?.Invoke(true);
+                using (new ControlRedrawScope(itemGrid))
+                {
+                    itemGrid.Rows.Clear();
+
+                    resetProctypeLocations?.Invoke();
+
+                    uiService.ApplySelection(workflowService, request, itemGrid, context.ScrollIndex);
+                }
             }
             finally
             {
-                itemGrid.ResumeLayout();
                 setSuppressValuesUiRefresh?.Invoke(false);
             }
 
