@@ -3,8 +3,9 @@ namespace FWEledit
     public enum EquipmentValuesTab
     {
         Main,
-        Refine,
         Models,
+        Refine,
+        Decompose,
         Other,
         All
     }

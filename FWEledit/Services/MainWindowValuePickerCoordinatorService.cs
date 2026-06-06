@@ -104,6 +104,36 @@ namespace FWEledit
                 owner);
         }
 
+        public void OpenItemReferencePickerForValueRow(
+            MainWindowValueRowPickerUiService mainWindowValueRowPickerUiService,
+            ValueRowPickerUiService valueRowPickerUiService,
+            ISessionService sessionService,
+            DataGridView valuesGrid,
+            int listIndex,
+            int rowIndex,
+            ItemReferenceService itemReferenceService,
+            IconResolutionService iconResolutionService,
+            IWin32Window owner,
+            Action<string> showMessage)
+        {
+            if (mainWindowValueRowPickerUiService == null || sessionService == null)
+            {
+                return;
+            }
+
+            mainWindowValueRowPickerUiService.OpenItemReferencePickerForValueRow(
+                valueRowPickerUiService,
+                sessionService.ListCollection,
+                sessionService.Database,
+                valuesGrid,
+                listIndex,
+                rowIndex,
+                itemReferenceService,
+                iconResolutionService,
+                owner,
+                showMessage);
+        }
+
         public void OpenIconPickerForValueRow(
             MainWindowValueRowPickerUiService mainWindowValueRowPickerUiService,
             ValueRowPickerUiService valueRowPickerUiService,
@@ -231,10 +261,12 @@ namespace FWEledit
             int listIndex,
             DataGridViewCellEventArgs args,
             ItemFieldClassifierService fieldClassifierService,
+            ItemReferenceService itemReferenceService,
             Action<int> openIconPickerForValueRow,
             Action<int> openAddonTypePickerForValueRow,
             Action<int> openItemQualityPickerForValueRow,
             Action<int> openModelPickerForValueRow,
+            Action<int> openItemReferencePickerForValueRow,
             Action updatePickIconButtonState,
             Action<string> showMessage)
         {
@@ -250,10 +282,12 @@ namespace FWEledit
                 listIndex,
                 args,
                 fieldClassifierService,
+                itemReferenceService,
                 openIconPickerForValueRow,
                 openAddonTypePickerForValueRow,
                 openItemQualityPickerForValueRow,
                 openModelPickerForValueRow,
+                openItemReferencePickerForValueRow,
                 updatePickIconButtonState,
                 showMessage);
         }

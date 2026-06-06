@@ -159,9 +159,7 @@ namespace FWEledit
 
         private void click_SetValue(object sender, EventArgs e)
 		{
-            mainWindowActionsCoordinatorService.HandleSetValue(
-                setValueActionService,
-                message => MessageBox.Show(message));
+            ApplyRawValueEditorToCurrentCell();
 		}
     }
 }

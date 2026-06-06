@@ -10,17 +10,13 @@ namespace FWEledit
             {
                 return EquipmentValuesTab.All;
             }
-            switch (tabs.SelectedIndex)
+
+            if (tabs.SelectedTab != null && tabs.SelectedTab.Tag is EquipmentValuesTab)
             {
-                case 1:
-                    return EquipmentValuesTab.Refine;
-                case 2:
-                    return EquipmentValuesTab.Models;
-                case 3:
-                    return EquipmentValuesTab.Other;
-                default:
-                    return EquipmentValuesTab.Main;
+                return (EquipmentValuesTab)tabs.SelectedTab.Tag;
             }
+
+            return EquipmentValuesTab.Main;
         }
 
         public bool ShouldIncludeField(EquipmentFieldService equipmentFieldService, eListCollection listCollection, int listIndex, string fieldName, EquipmentValuesTab tab)
@@ -41,6 +37,7 @@ namespace FWEledit
 
             bool isModels = equipmentFieldService.IsEquipmentModelsField(fieldName);
             bool isRefine = equipmentFieldService.IsEquipmentRefineField(fieldName);
+            bool isDecompose = equipmentFieldService.IsEquipmentDecomposeField(fieldName);
             bool isOther = equipmentFieldService.IsEquipmentOtherField(fieldName);
 
             switch (tab)
@@ -49,11 +46,13 @@ namespace FWEledit
                     return isModels;
                 case EquipmentValuesTab.Refine:
                     return isRefine;
+                case EquipmentValuesTab.Decompose:
+                    return isDecompose;
                 case EquipmentValuesTab.Other:
                     return isOther;
                 case EquipmentValuesTab.Main:
                 default:
-                    return !isModels && !isRefine && !isOther;
+                    return !isModels && !isRefine && !isDecompose;
             }
         }
 
@@ -68,23 +67,43 @@ namespace FWEledit
                 return;
             }
 
-            int targetIndex = 0;
+            if (equipmentFieldService.IsEquipmentModelsField(fieldName))
+            {
+                SelectTaggedTab(tabs, EquipmentValuesTab.Models);
+                return;
+            }
             if (equipmentFieldService.IsEquipmentRefineField(fieldName))
             {
-                targetIndex = 1;
+                SelectTaggedTab(tabs, EquipmentValuesTab.Refine);
+                return;
             }
-            else if (equipmentFieldService.IsEquipmentModelsField(fieldName))
+            if (equipmentFieldService.IsEquipmentDecomposeField(fieldName))
             {
-                targetIndex = 2;
-            }
-            else if (equipmentFieldService.IsEquipmentOtherField(fieldName))
-            {
-                targetIndex = 3;
+                SelectTaggedTab(tabs, EquipmentValuesTab.Decompose);
+                return;
             }
 
-            if (tabs.SelectedIndex != targetIndex)
+            SelectTaggedTab(tabs, EquipmentValuesTab.Main);
+        }
+
+        public void UpdateVisibility(TabControl tabs, bool show, TabPage modelsTab, TabPage refineTab, TabPage decomposeTab, TabPage descriptionTab)
+        {
+            if (tabs == null)
             {
-                tabs.SelectedIndex = targetIndex;
+                return;
+            }
+
+            SetEquipmentPageVisible(tabs, modelsTab, show, descriptionTab);
+            SetEquipmentPageVisible(tabs, refineTab, show, descriptionTab);
+            SetEquipmentPageVisible(tabs, decomposeTab, show, descriptionTab);
+
+            if (!show && tabs.SelectedTab != null && tabs.SelectedTab.Tag is EquipmentValuesTab)
+            {
+                EquipmentValuesTab selected = (EquipmentValuesTab)tabs.SelectedTab.Tag;
+                if (selected != EquipmentValuesTab.Main)
+                {
+                    SelectTaggedTab(tabs, EquipmentValuesTab.Main);
+                }
             }
         }
 
@@ -102,6 +121,44 @@ namespace FWEledit
             if (show)
             {
                 tabs.BringToFront();
+            }
+        }
+
+        private static void SelectTaggedTab(TabControl tabs, EquipmentValuesTab tab)
+        {
+            if (tabs == null)
+            {
+                return;
+            }
+
+            foreach (TabPage page in tabs.TabPages)
+            {
+                if (page.Tag is EquipmentValuesTab && (EquipmentValuesTab)page.Tag == tab)
+                {
+                    tabs.SelectedTab = page;
+                    return;
+                }
+            }
+        }
+
+        private static void SetEquipmentPageVisible(TabControl tabs, TabPage page, bool show, TabPage descriptionTab)
+        {
+            if (tabs == null || page == null)
+            {
+                return;
+            }
+
+            bool isVisible = tabs.TabPages.Contains(page);
+            if (show && !isVisible)
+            {
+                int insertIndex = descriptionTab != null && tabs.TabPages.Contains(descriptionTab)
+                    ? tabs.TabPages.IndexOf(descriptionTab)
+                    : tabs.TabPages.Count;
+                tabs.TabPages.Insert(insertIndex, page);
+            }
+            else if (!show && isVisible)
+            {
+                tabs.TabPages.Remove(page);
             }
         }
     }
