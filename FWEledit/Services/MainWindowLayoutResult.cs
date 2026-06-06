@@ -9,15 +9,23 @@ namespace FWEledit
         public TabPage ValuesTab { get; set; }
         public TabControl EquipmentTabs { get; set; }
         public TabPage EquipmentTabMain { get; set; }
-        public TabPage EquipmentTabRefine { get; set; }
         public TabPage EquipmentTabModels { get; set; }
+        public TabPage EquipmentTabRefine { get; set; }
+        public TabPage EquipmentTabDecompose { get; set; }
         public TabPage EquipmentTabOther { get; set; }
         public TabPage DescriptionTab { get; set; }
         public TextBox DescriptionEditor { get; set; }
         public RichTextBox DescriptionPreview { get; set; }
         public Button DescriptionSaveButton { get; set; }
         public Label DescriptionStatusLabel { get; set; }
+        public Button DescriptionColorButton { get; set; }
+        public Button DescriptionLineBreakButton { get; set; }
+        public Button DescriptionNormalFontButton { get; set; }
+        public Button DescriptionSmallFontButton { get; set; }
+        public Button DescriptionTitleFontButton { get; set; }
         public Button InlinePickIconButton { get; set; }
+        public Button RawValueUpButton { get; set; }
+        public Button RawValueDownButton { get; set; }
         public Button BackButton { get; set; }
         public Button ForwardButton { get; set; }
         public ListBox SearchSuggestionList { get; set; }

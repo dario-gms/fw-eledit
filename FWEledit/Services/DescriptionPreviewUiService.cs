@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Text;
@@ -21,7 +22,7 @@ namespace FWEledit
             for (int i = 0; i < segments.Count; i++)
             {
                 DescriptionPreviewSegment segment = segments[i];
-                AppendSegment(previewBox, RemoveResidualTags(segment.Text), segment.Color);
+                AppendSegment(previewBox, RemoveResidualTags(segment.Text), segment);
             }
 
             previewBox.SelectionStart = 0;
@@ -29,7 +30,7 @@ namespace FWEledit
             previewBox.ResumeLayout();
         }
 
-        private void AppendSegment(RichTextBox previewBox, string text, Color color)
+        private void AppendSegment(RichTextBox previewBox, string text, DescriptionPreviewSegment segment)
         {
             if (previewBox == null || string.IsNullOrEmpty(text))
             {
@@ -39,7 +40,15 @@ namespace FWEledit
             int start = previewBox.TextLength;
             previewBox.SelectionStart = start;
             previewBox.SelectionLength = 0;
-            previewBox.SelectionColor = color;
+            previewBox.SelectionColor = segment.Color;
+            FontStyle style = segment.FontStyle;
+            if (segment.Underline)
+            {
+                style |= FontStyle.Underline;
+            }
+            float scale = segment.FontScale > 0 ? segment.FontScale : 1F;
+            float size = Math.Max(6F, previewBox.Font.Size * scale);
+            previewBox.SelectionFont = new Font(previewBox.Font.FontFamily, size, style, previewBox.Font.Unit);
             previewBox.AppendText(text);
         }
 
@@ -56,9 +65,31 @@ namespace FWEledit
             {
                 if (text[i] == '^')
                 {
+                    if (i + 8 <= text.Length && text[i + 1] == 'U' && IsHexSequence(text, i + 2, 6))
+                    {
+                        i += 8;
+                        continue;
+                    }
+
                     if (i + 7 <= text.Length && IsHexSequence(text, i + 1, 6))
                     {
                         i += 7;
+                        continue;
+                    }
+
+                    if (i + 5 <= text.Length && text[i + 1] == 'O' && IsDigitSequence(text, i + 2, 3))
+                    {
+                        i += 5;
+                        continue;
+                    }
+
+                    if (i + 2 <= text.Length
+                        && (text[i + 1] == 'N'
+                            || text[i + 1] == 'u'
+                            || text[i + 1] == 'o'
+                            || text[i + 1] == 'p'))
+                    {
+                        i += 2;
                         continue;
                     }
 
@@ -90,6 +121,24 @@ namespace FWEledit
                     || (c >= 'a' && c <= 'f')
                     || (c >= 'A' && c <= 'F');
                 if (!isHex)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private static bool IsDigitSequence(string text, int startIndex, int length)
+        {
+            if (string.IsNullOrEmpty(text) || startIndex < 0 || startIndex + length > text.Length)
+            {
+                return false;
+            }
+
+            for (int i = startIndex; i < startIndex + length; i++)
+            {
+                if (text[i] < '0' || text[i] > '9')
                 {
                     return false;
                 }

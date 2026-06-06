@@ -729,7 +729,7 @@ namespace FWEledit
             string mappedPath;
             if (TryResolveModelPathById(database, pathId, fieldName, listName, out resolvedPathId, out mappedPath, true))
             {
-                return pathId + " | " + mappedPath;
+                return mappedPath;
             }
 
             return pathId.ToString();

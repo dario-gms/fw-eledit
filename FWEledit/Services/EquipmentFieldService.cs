@@ -10,9 +10,20 @@ namespace FWEledit
             {
                 return false;
             }
-            string listName = listCollection.Lists[listIndex].listName ?? string.Empty;
+            string listName = NormalizeListName(listCollection.Lists[listIndex].listName);
             return string.Equals(listName, "EQUIPMENT_ESSENCE", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(listName, "Equipment", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string NormalizeListName(string listName)
+        {
+            if (string.IsNullOrWhiteSpace(listName))
+            {
+                return string.Empty;
+            }
+
+            string[] split = listName.Split(new string[] { " - " }, StringSplitOptions.None);
+            return split.Length > 1 ? split[1].Trim() : listName.Trim();
         }
 
         public bool IsEquipmentModelsField(string fieldName)
@@ -46,6 +57,17 @@ namespace FWEledit
                 || string.Equals(name, "can_sign", StringComparison.OrdinalIgnoreCase);
         }
 
+        public bool IsEquipmentDecomposeField(string fieldName)
+        {
+            if (string.IsNullOrWhiteSpace(fieldName))
+            {
+                return false;
+            }
+            string name = fieldName.Trim();
+            return name.StartsWith("decompose_", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(name, "can_decompose", StringComparison.OrdinalIgnoreCase);
+        }
+
         public bool IsEquipmentOtherField(string fieldName)
         {
             if (string.IsNullOrWhiteSpace(fieldName))
@@ -54,7 +76,6 @@ namespace FWEledit
             }
             string name = fieldName.Trim();
             return name.StartsWith("color_", StringComparison.OrdinalIgnoreCase)
-                || name.StartsWith("decompose_", StringComparison.OrdinalIgnoreCase)
                 || name.StartsWith("max_recast_", StringComparison.OrdinalIgnoreCase)
                 || name.StartsWith("min_recast_", StringComparison.OrdinalIgnoreCase)
                 || name.StartsWith("extend_identify_", StringComparison.OrdinalIgnoreCase)
@@ -63,7 +84,6 @@ namespace FWEledit
                 || name.StartsWith("gfx_", StringComparison.OrdinalIgnoreCase)
                 || name.StartsWith("id_full_pvp_", StringComparison.OrdinalIgnoreCase)
                 || name.StartsWith("id_cancel_full_pvp_", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(name, "can_decompose", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(name, "can_auction", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(name, "auction_fee", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(name, "show_gfx_need_gem_value", StringComparison.OrdinalIgnoreCase)

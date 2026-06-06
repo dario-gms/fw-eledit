@@ -1,4 +1,5 @@
 using System;
+using System.Drawing;
 using System.Windows.Forms;
 
 namespace FWEledit
@@ -133,6 +134,88 @@ namespace FWEledit
                 descriptionPreviewService,
                 fwDescriptionPreview,
                 rawText);
+        }
+
+        private void InitializeDescriptionFormattingActions()
+        {
+            if (fwDescriptionColorButton != null)
+            {
+                fwDescriptionColorButton.Click += click_description_color;
+            }
+            if (fwDescriptionLineBreakButton != null)
+            {
+                fwDescriptionLineBreakButton.Click += (s, e) => InsertDescriptionText(Environment.NewLine);
+            }
+            if (fwDescriptionNormalFontButton != null)
+            {
+                fwDescriptionNormalFontButton.Click += (s, e) => InsertDescriptionTag("^O053", false);
+            }
+            if (fwDescriptionSmallFontButton != null)
+            {
+                fwDescriptionSmallFontButton.Click += (s, e) => InsertDescriptionTag("^O005", "^O053");
+            }
+            if (fwDescriptionTitleFontButton != null)
+            {
+                fwDescriptionTitleFontButton.Click += (s, e) => InsertDescriptionTag("^O057", "^O053");
+            }
+        }
+
+        private void click_description_color(object sender, EventArgs e)
+        {
+            using (ColorDialog dialog = new ColorDialog())
+            {
+                dialog.AllowFullOpen = true;
+                dialog.FullOpen = true;
+                dialog.Color = Color.White;
+                if (dialog.ShowDialog(this) != DialogResult.OK)
+                {
+                    return;
+                }
+
+                InsertDescriptionTag("^" + ToFwColorTag(dialog.Color), true);
+            }
+        }
+
+        private void InsertDescriptionTag(string tag, bool resetAfterSelection)
+        {
+            InsertDescriptionTag(tag, resetAfterSelection ? "^FFFFFF" : string.Empty);
+        }
+
+        private void InsertDescriptionTag(string tag, string resetTag)
+        {
+            if (fwDescriptionEditor == null || string.IsNullOrEmpty(tag))
+            {
+                return;
+            }
+
+            string selectedText = fwDescriptionEditor.SelectedText ?? string.Empty;
+            if (selectedText.Length > 0)
+            {
+                string reset = resetTag ?? string.Empty;
+                fwDescriptionEditor.SelectedText = tag + selectedText + reset;
+            }
+            else
+            {
+                fwDescriptionEditor.SelectedText = tag;
+            }
+
+            fwDescriptionEditor.Focus();
+        }
+
+        private void InsertDescriptionText(string text)
+        {
+            if (fwDescriptionEditor == null || string.IsNullOrEmpty(text))
+            {
+                return;
+            }
+
+            fwDescriptionEditor.SelectedText = text;
+            fwDescriptionEditor.Focus();
+        }
+
+        private static string ToFwColorTag(Color color)
+        {
+            return color.R.ToString("X2") + color.G.ToString("X2") + color.B.ToString("X2");
         }
 
         private void click_save_description(object sender, EventArgs e)

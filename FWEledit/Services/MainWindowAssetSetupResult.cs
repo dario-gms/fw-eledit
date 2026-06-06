@@ -4,6 +4,7 @@ namespace FWEledit
     {
         public AssetManager AssetManager { get; set; }
         public AddonTypeOptionService AddonTypeOptionService { get; set; }
+        public ItemReferenceService ItemReferenceService { get; set; }
         public ModelPickerService ModelPickerService { get; set; }
         public ItemValueRowBuilderService ItemValueRowBuilderService { get; set; }
         public ItemSelectionWorkflowService ItemSelectionWorkflowService { get; set; }

@@ -53,6 +53,7 @@ namespace FWEledit
 
             MainWindowAssetSetupResult assetSetup = bootstrap.AssetSetup ?? new MainWindowAssetSetupResult();
             addonTypeOptionService = assetSetup.AddonTypeOptionService ?? new AddonTypeOptionService(addonTypeHintService);
+            itemReferenceService = assetSetup.ItemReferenceService ?? new ItemReferenceService();
             modelPickerService = assetSetup.ModelPickerService;
             itemValueRowBuilderService = assetSetup.ItemValueRowBuilderService;
             itemSelectionWorkflowService = assetSetup.ItemSelectionWorkflowService;
@@ -77,6 +78,7 @@ namespace FWEledit
                 textBox_search_KeyDown);
             dataGridView_item.CellMouseDown += dataGridView_item_CellMouseDown;
             dataGridView_item.CurrentCellChanged += dataGridView_item_CurrentCellChanged;
+            dataGridView_item.CellPainting += dataGridView_item_CellPainting;
             dataGridView_elems.CellMouseDown += dataGridView_elems_CellMouseDown;
 
             Assembly assembly = Assembly.GetExecutingAssembly();
@@ -84,7 +86,7 @@ namespace FWEledit
                 assembly,
                 label_Version,
                 navigationStateService,
-                "0.9.5");
+                "0.9.5.1");
 
             cpb2.Value = 0;
             colorTheme();
@@ -132,20 +134,48 @@ namespace FWEledit
             fwValuesTab = layout.ValuesTab;
             fwEquipmentTabs = layout.EquipmentTabs;
             fwEquipmentTabMain = layout.EquipmentTabMain;
-            fwEquipmentTabRefine = layout.EquipmentTabRefine;
             fwEquipmentTabModels = layout.EquipmentTabModels;
+            fwEquipmentTabRefine = layout.EquipmentTabRefine;
+            fwEquipmentTabDecompose = layout.EquipmentTabDecompose;
             fwEquipmentTabOther = layout.EquipmentTabOther;
             fwDescriptionTab = layout.DescriptionTab;
             fwDescriptionEditor = layout.DescriptionEditor;
             fwDescriptionPreview = layout.DescriptionPreview;
             fwDescriptionSaveButton = layout.DescriptionSaveButton;
             fwDescriptionStatusLabel = layout.DescriptionStatusLabel;
+            fwDescriptionColorButton = layout.DescriptionColorButton;
+            fwDescriptionLineBreakButton = layout.DescriptionLineBreakButton;
+            fwDescriptionNormalFontButton = layout.DescriptionNormalFontButton;
+            fwDescriptionSmallFontButton = layout.DescriptionSmallFontButton;
+            fwDescriptionTitleFontButton = layout.DescriptionTitleFontButton;
             fwInlinePickIconButton = layout.InlinePickIconButton;
+            fwRawValueUpButton = layout.RawValueUpButton;
+            fwRawValueDownButton = layout.RawValueDownButton;
             fwBackButton = layout.BackButton;
             fwForwardButton = layout.ForwardButton;
             searchSuggestionList = layout.SearchSuggestionList;
             InitializeElementContextActions();
+            InitializeDescriptionFormattingActions();
+            InitializeRawValueEditor();
             fwLayoutInitialized = true;
+        }
+
+        private void InitializeRawValueEditor()
+        {
+            if (textBox_SetValue != null)
+            {
+                textBox_SetValue.TextChanged += raw_value_editor_changed;
+                textBox_SetValue.KeyDown += raw_value_editor_key_down;
+            }
+            if (fwRawValueUpButton != null)
+            {
+                fwRawValueUpButton.Click += (s, e) => AdjustRawValueEditor(1);
+            }
+            if (fwRawValueDownButton != null)
+            {
+                fwRawValueDownButton.Click += (s, e) => AdjustRawValueEditor(-1);
+            }
+            UpdateRawValueEditorFromCurrentCell();
         }
 
         private void EnsureMainSplitSizing()

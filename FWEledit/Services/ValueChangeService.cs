@@ -10,17 +10,20 @@ namespace FWEledit
         private readonly ModelPickerService modelPickerService;
         private readonly IdGenerationService idGenerationService;
         private readonly IconResolutionService iconResolutionService;
+        private readonly ItemReferenceService itemReferenceService;
 
         public ValueChangeService(
             AddonParamService addonParamService,
             ModelPickerService modelPickerService,
             IdGenerationService idGenerationService,
-            IconResolutionService iconResolutionService)
+            IconResolutionService iconResolutionService,
+            ItemReferenceService itemReferenceService)
         {
             this.addonParamService = addonParamService;
             this.modelPickerService = modelPickerService;
             this.idGenerationService = idGenerationService;
             this.iconResolutionService = iconResolutionService;
+            this.itemReferenceService = itemReferenceService;
         }
 
         public ValueChangeResult Apply(ValueChangeRequest request)
@@ -70,6 +73,10 @@ namespace FWEledit
                     return result;
                 }
                 valueToSet = modelPathId.ToString();
+            }
+            else if (itemReferenceService != null && itemReferenceService.IsReferenceField(request.ListCollection, request.ListIndex, request.FieldName))
+            {
+                valueToSet = itemReferenceService.NormalizeReferenceInput(request.ListCollection, request.ListIndex, request.FieldName, valueToSet);
             }
 
             if (request.IsIdEdit)
@@ -137,12 +144,21 @@ namespace FWEledit
                 request.ClearFieldInvalid?.Invoke(request.ListIndex, request.SelectedElementIndices[i], request.FieldIndex);
             }
 
+            if (itemReferenceService != null && AffectsItemReferenceCache(request.FieldName))
+            {
+                itemReferenceService.ClearCache();
+            }
+
             result.MarkDirty = true;
             result.DisplayValue = valueToSet;
             if (request.IsModelField)
             {
                 string listName = request.ListCollection.Lists[request.ListIndex].listName ?? string.Empty;
                 result.DisplayValue = modelPickerService.FormatModelPathIdDisplay(request.Database, valueToSet, request.FieldName, listName);
+            }
+            else if (itemReferenceService != null && itemReferenceService.IsReferenceField(request.ListCollection, request.ListIndex, request.FieldName))
+            {
+                result.DisplayValue = itemReferenceService.FormatReferenceValue(request.ListCollection, request.ListIndex, request.FieldName, valueToSet);
             }
             else if (request.ListIndex == 0 && addonParamService.IsAddonParamField(request.FieldName))
             {
@@ -217,6 +233,16 @@ namespace FWEledit
 
             result.Success = true;
             return result;
+        }
+
+        private static bool AffectsItemReferenceCache(string fieldName)
+        {
+            return string.Equals(fieldName, "id", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(fieldName, "ID", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(fieldName, "name", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(fieldName, "file_icon", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(fieldName, "file_icon1", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(fieldName, "item_quality", StringComparison.OrdinalIgnoreCase);
         }
 
         private ValueChangeResult ApplyConversationChange(ValueChangeRequest request)

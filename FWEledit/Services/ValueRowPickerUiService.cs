@@ -99,10 +99,12 @@ namespace FWEledit
             int listIndex,
             DataGridViewCellEventArgs e,
             ItemFieldClassifierService fieldClassifier,
+            ItemReferenceService itemReferenceService,
             Action<int> openIconPicker,
             Action<int> openAddonTypePicker,
             Action<int> openItemQualityPicker,
             Action<int> openModelPicker,
+            Action<int> openItemReferencePicker,
             Action updateInlineIconButton,
             Action<string> showError)
         {
@@ -140,6 +142,13 @@ namespace FWEledit
                     if (openModelPicker != null)
                     {
                         openModelPicker(e.RowIndex);
+                    }
+                }
+                else if (itemReferenceService != null && itemReferenceService.IsReferenceField(listCollection, listIndex, fieldName))
+                {
+                    if (openItemReferencePicker != null)
+                    {
+                        openItemReferencePicker(e.RowIndex);
                     }
                 }
 
@@ -511,6 +520,64 @@ namespace FWEledit
                 }
 
                 itemGrid.Rows[rowIndex].Cells[2].Value = picker.SelectedValue.ToString(CultureInfo.InvariantCulture);
+            }
+        }
+
+        public void OpenItemReferencePickerForValueRow(
+            eListCollection listCollection,
+            CacheSave database,
+            DataGridView itemGrid,
+            int listIndex,
+            int rowIndex,
+            ItemReferenceService itemReferenceService,
+            IconResolutionService iconResolutionService,
+            IWin32Window owner,
+            Action<string> showMessage)
+        {
+            if (listCollection == null || itemGrid == null || itemReferenceService == null || listIndex < 0)
+            {
+                return;
+            }
+            if (rowIndex < 0 || rowIndex >= itemGrid.Rows.Count)
+            {
+                return;
+            }
+
+            string fieldName = Convert.ToString(itemGrid.Rows[rowIndex].Cells[0].Value);
+            int targetListIndex;
+            if (!itemReferenceService.TryGetTargetListIndex(listCollection, listIndex, fieldName, out targetListIndex))
+            {
+                return;
+            }
+
+            int currentId = 0;
+            string currentText = Convert.ToString(itemGrid.Rows[rowIndex].Cells[2].Value);
+            int.TryParse(currentText, out currentId);
+            if (currentId <= 0)
+            {
+                string normalized = itemReferenceService.NormalizeReferenceInput(listCollection, listIndex, fieldName, currentText);
+                int.TryParse(normalized, out currentId);
+            }
+
+            List<ItemReferenceOption> options = itemReferenceService.BuildSearchableOptions(listCollection, database, iconResolutionService);
+            if (options.Count == 0)
+            {
+                if (showMessage != null)
+                {
+                    showMessage("No referenced items found.");
+                }
+                return;
+            }
+
+            string targetName = listCollection.Lists[targetListIndex].listName ?? "Item";
+            using (ItemReferencePickerWindow picker = new ItemReferencePickerWindow(options, currentId, targetListIndex, database, "Choose " + targetName))
+            {
+                if (picker.ShowDialog(owner) != DialogResult.OK)
+                {
+                    return;
+                }
+
+                itemGrid.Rows[rowIndex].Cells[2].Value = picker.SelectedId.ToString(CultureInfo.InvariantCulture);
             }
         }
 

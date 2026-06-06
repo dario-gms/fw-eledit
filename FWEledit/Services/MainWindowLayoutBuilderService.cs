@@ -255,11 +255,12 @@ namespace FWEledit
             rightLayout.Dock = DockStyle.Fill;
             rightLayout.Margin = new Padding(0);
             rightLayout.ColumnCount = 2;
-            rightLayout.RowCount = 3;
+            rightLayout.RowCount = 4;
             rightLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
             rightLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 190F));
             rightLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 18F));
             rightLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 36F));
+            rightLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 34F));
             rightLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
 
             rightLayout.Controls.Add(offsetCaption, 0, 0);
@@ -276,78 +277,101 @@ namespace FWEledit
                 rightLayout.SetRowSpan(versionLabel, 2);
             }
 
-            TableLayoutPanel setValuePanel = new TableLayoutPanel();
-            setValuePanel.Dock = DockStyle.Bottom;
-            setValuePanel.Height = 36;
-            setValuePanel.Margin = new Padding(0);
-            setValuePanel.ColumnCount = 2;
-            setValuePanel.RowCount = 1;
-            setValuePanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
-            setValuePanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 128F));
-            setValuePanel.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
-            setValuePanel.Visible = false;
+            TableLayoutPanel rawValuePanel = new TableLayoutPanel();
+            rawValuePanel.Dock = DockStyle.Fill;
+            rawValuePanel.Margin = new Padding(0);
+            rawValuePanel.ColumnCount = 5;
+            rawValuePanel.RowCount = 1;
+            rawValuePanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 58F));
+            rawValuePanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            rawValuePanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 48F));
+            rawValuePanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 30F));
+            rawValuePanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 30F));
+            rawValuePanel.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+
+            Label rawValueLabel = CreateCaption("Selected ID");
+            rawValueLabel.Dock = DockStyle.Fill;
+            rawValueLabel.TextAlign = ContentAlignment.MiddleLeft;
+            rawValuePanel.Controls.Add(rawValueLabel, 0, 0);
 
             if (setValueBox != null)
             {
                 setValueBox.Dock = DockStyle.Fill;
-                setValueBox.Margin = new Padding(0, 5, 8, 5);
+                setValueBox.Margin = new Padding(0, 0, 6, 4);
                 setValueBox.TextAlign = HorizontalAlignment.Center;
-                setValuePanel.Controls.Add(setValueBox, 0, 0);
+                setValueBox.Text = string.Empty;
+                rawValuePanel.Controls.Add(setValueBox, 1, 0);
             }
 
             if (setValueButton != null)
             {
+                setValueButton.Text = "Set";
                 setValueButton.Dock = DockStyle.Fill;
-                setValueButton.Margin = new Padding(0, 4, 0, 5);
-                setValueButton.Enabled = false;
-                setValuePanel.Controls.Add(setValueButton, 1, 0);
+                setValueButton.Margin = new Padding(0, 0, 6, 4);
+                setValueButton.FlatStyle = FlatStyle.Flat;
+                setValueButton.BackColor = Color.FromArgb(232, 237, 243);
+                setValueButton.ForeColor = Color.FromArgb(29, 36, 45);
+                setValueButton.Visible = true;
+                rawValuePanel.Controls.Add(setValueButton, 2, 0);
             }
+
+            Button rawValueUpButton = CreateStepperButton("^");
+            Button rawValueDownButton = CreateStepperButton("v");
+            rawValuePanel.Controls.Add(rawValueUpButton, 3, 0);
+            rawValuePanel.Controls.Add(rawValueDownButton, 4, 0);
+            rightLayout.Controls.Add(rawValuePanel, 0, 2);
+            rightLayout.SetColumnSpan(rawValuePanel, 2);
+
+            Panel valuesInspectorPanel = new Panel();
+            valuesInspectorPanel.Dock = DockStyle.Fill;
+            valuesInspectorPanel.Margin = new Padding(0);
 
             TabControl rightTabs = new TabControl();
             rightTabs.Dock = DockStyle.Fill;
             rightTabs.Margin = new Padding(0);
             rightTabs.Font = new Font("Segoe UI", 9F, FontStyle.Regular, GraphicsUnit.Point, ((byte)(0)));
-            if (updatePickIconButtonState != null)
+            if (updatePickIconButtonState != null || changeItem != null)
             {
-                rightTabs.SelectedIndexChanged += (s, e) => updatePickIconButtonState();
+                rightTabs.SelectedIndexChanged += (s, e) =>
+                {
+                    if (rightTabs.SelectedTab != null && rightTabs.SelectedTab.Tag is EquipmentValuesTab)
+                    {
+                        MoveValuesInspectorToSelectedTab(rightTabs, valuesInspectorPanel);
+                        if (changeItem != null && (canChangeItem == null || canChangeItem()))
+                        {
+                            changeItem();
+                        }
+                    }
+                    if (updatePickIconButtonState != null)
+                    {
+                        updatePickIconButtonState();
+                    }
+                };
             }
 
             TabPage valuesTab = new TabPage("Values");
             valuesTab.Padding = new Padding(0, 6, 0, 0);
+            valuesTab.Tag = EquipmentValuesTab.Main;
 
             Label valuesCaption = CreateSectionLabel("Properties");
             valuesCaption.Dock = DockStyle.Top;
             valuesCaption.Height = 30;
 
-            TabControl equipmentTabs = new TabControl();
-            equipmentTabs.Dock = DockStyle.Top;
-            equipmentTabs.Height = 30;
-            equipmentTabs.Margin = new Padding(0);
-            equipmentTabs.Visible = false;
-            if (changeItem != null)
-            {
-                equipmentTabs.SelectedIndexChanged += (s, e) =>
-                {
-                    if (canChangeItem == null || canChangeItem())
-                    {
-                        changeItem();
-                    }
-                };
-            }
-
-            TabPage equipmentTabMain = new TabPage("Main");
-            TabPage equipmentTabRefine = new TabPage("Refine");
+            TabPage equipmentTabMain = valuesTab;
             TabPage equipmentTabModels = new TabPage("Models");
-            TabPage equipmentTabOther = new TabPage("Other");
-
-            equipmentTabs.TabPages.Add(equipmentTabMain);
-            equipmentTabs.TabPages.Add(equipmentTabRefine);
-            equipmentTabs.TabPages.Add(equipmentTabModels);
-            equipmentTabs.TabPages.Add(equipmentTabOther);
+            equipmentTabModels.Padding = new Padding(0, 6, 0, 0);
+            equipmentTabModels.Tag = EquipmentValuesTab.Models;
+            TabPage equipmentTabRefine = new TabPage("Refine");
+            equipmentTabRefine.Padding = new Padding(0, 6, 0, 0);
+            equipmentTabRefine.Tag = EquipmentValuesTab.Refine;
+            TabPage equipmentTabDecompose = new TabPage("Decompose");
+            equipmentTabDecompose.Padding = new Padding(0, 6, 0, 0);
+            equipmentTabDecompose.Tag = EquipmentValuesTab.Decompose;
+            TabPage equipmentTabOther = null;
 
             if (valuesGrid != null)
             {
-                valuesGrid.Parent = valuesTab;
+                valuesGrid.Parent = valuesInspectorPanel;
                 valuesGrid.Dock = DockStyle.Fill;
                 valuesGrid.Margin = new Padding(0);
                 ApplyInspectorGridLayout(valuesGrid);
@@ -358,20 +382,17 @@ namespace FWEledit
                     valuesGrid.SizeChanged += (s, e) => updatePickIconButtonState();
                 }
             }
-            valuesTab.Controls.Add(setValuePanel);
             if (valuesGrid != null)
             {
-                valuesTab.Controls.Add(valuesGrid);
+                valuesInspectorPanel.Controls.Add(valuesGrid);
             }
-            valuesTab.Controls.Add(equipmentTabs);
-            valuesTab.Controls.Add(valuesCaption);
+            valuesInspectorPanel.Controls.Add(valuesCaption);
             if (valuesGrid != null)
             {
-                valuesTab.Controls.SetChildIndex(valuesGrid, 0);
+                valuesInspectorPanel.Controls.SetChildIndex(valuesGrid, 0);
             }
-            valuesTab.Controls.SetChildIndex(valuesCaption, 1);
-            valuesTab.Controls.SetChildIndex(equipmentTabs, 2);
-            valuesTab.Controls.SetChildIndex(setValuePanel, 2);
+            valuesInspectorPanel.Controls.SetChildIndex(valuesCaption, 1);
+            valuesTab.Controls.Add(valuesInspectorPanel);
 
             Button inlinePickIconButton = new Button();
             inlinePickIconButton.Text = "...";
@@ -394,13 +415,14 @@ namespace FWEledit
             descriptionLayout.Dock = DockStyle.Fill;
             descriptionLayout.Margin = new Padding(0);
             descriptionLayout.ColumnCount = 1;
-            descriptionLayout.RowCount = 5;
+            descriptionLayout.RowCount = 6;
             descriptionLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
             descriptionLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 36F));
             descriptionLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 24F));
-            descriptionLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 62F));
+            descriptionLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 58F));
             descriptionLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 24F));
-            descriptionLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 38F));
+            descriptionLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 34F));
+            descriptionLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 42F));
 
             Panel descriptionHeader = new Panel();
             descriptionHeader.Dock = DockStyle.Fill;
@@ -452,18 +474,49 @@ namespace FWEledit
             Label previewLabel = CreateSubsectionLabel("Rendered Preview");
             Label sourceLabel = CreateSubsectionLabel("Source Text");
 
+            FlowLayoutPanel descriptionToolbar = new FlowLayoutPanel();
+            descriptionToolbar.Dock = DockStyle.Fill;
+            descriptionToolbar.Margin = new Padding(0);
+            descriptionToolbar.Padding = new Padding(6, 4, 0, 4);
+            descriptionToolbar.WrapContents = false;
+            descriptionToolbar.FlowDirection = FlowDirection.LeftToRight;
+            descriptionToolbar.BackColor = Color.FromArgb(238, 241, 245);
+
+            Button descriptionColorButton = CreateDescriptionToolButton("Color...");
+            Button descriptionLineBreakButton = CreateDescriptionToolButton("Line");
+            Button descriptionNormalFontButton = CreateDescriptionToolButton("Normal");
+            Button descriptionSmallFontButton = CreateDescriptionToolButton("Small");
+            Button descriptionTitleFontButton = CreateDescriptionToolButton("Title");
+
+            ToolTip descriptionToolTip = new ToolTip();
+            descriptionToolTip.SetToolTip(descriptionColorButton, "Insert FW color tag (^RRGGBB).");
+            descriptionToolTip.SetToolTip(descriptionLineBreakButton, "Insert a line break.");
+            descriptionToolTip.SetToolTip(descriptionNormalFontButton, "Switch to Raven's normal hint font (^O053).");
+            descriptionToolTip.SetToolTip(descriptionSmallFontButton, "Switch to Raven's smaller emphasis font (^O005).");
+            descriptionToolTip.SetToolTip(descriptionTitleFontButton, "Switch to the larger title hint font (^O057).");
+
+            descriptionToolbar.Controls.Add(descriptionColorButton);
+            descriptionToolbar.Controls.Add(descriptionLineBreakButton);
+            descriptionToolbar.Controls.Add(descriptionNormalFontButton);
+            descriptionToolbar.Controls.Add(descriptionSmallFontButton);
+            descriptionToolbar.Controls.Add(descriptionTitleFontButton);
+
             descriptionLayout.Controls.Add(descriptionHeader, 0, 0);
             descriptionLayout.Controls.Add(previewLabel, 0, 1);
             descriptionLayout.Controls.Add(descriptionPreview, 0, 2);
             descriptionLayout.Controls.Add(sourceLabel, 0, 3);
-            descriptionLayout.Controls.Add(descriptionEditor, 0, 4);
+            descriptionLayout.Controls.Add(descriptionToolbar, 0, 4);
+            descriptionLayout.Controls.Add(descriptionEditor, 0, 5);
             descriptionTab.Controls.Add(descriptionLayout);
 
             rightTabs.TabPages.Add(valuesTab);
+            rightTabs.TabPages.Add(equipmentTabModels);
+            rightTabs.TabPages.Add(equipmentTabRefine);
+            rightTabs.TabPages.Add(equipmentTabDecompose);
             rightTabs.TabPages.Add(descriptionTab);
 
             rightTabs.Margin = new Padding(0, 8, 0, 0);
-            rightLayout.Controls.Add(rightTabs, 0, 2);
+            rightLayout.Controls.Add(rightTabs, 0, 3);
             rightLayout.SetColumnSpan(rightTabs, 2);
             rightPanel.Controls.Add(rightLayout);
             mainSplit.Panel2.Controls.Add(rightPanel);
@@ -501,17 +554,25 @@ namespace FWEledit
                 MainSplit = mainSplit,
                 RightTabs = rightTabs,
                 ValuesTab = valuesTab,
-                EquipmentTabs = equipmentTabs,
+                EquipmentTabs = rightTabs,
                 EquipmentTabMain = equipmentTabMain,
-                EquipmentTabRefine = equipmentTabRefine,
                 EquipmentTabModels = equipmentTabModels,
+                EquipmentTabRefine = equipmentTabRefine,
+                EquipmentTabDecompose = equipmentTabDecompose,
                 EquipmentTabOther = equipmentTabOther,
                 DescriptionTab = descriptionTab,
                 DescriptionEditor = descriptionEditor,
                 DescriptionPreview = descriptionPreview,
                 DescriptionSaveButton = descriptionSaveButton,
                 DescriptionStatusLabel = descriptionStatusLabel,
+                DescriptionColorButton = descriptionColorButton,
+                DescriptionLineBreakButton = descriptionLineBreakButton,
+                DescriptionNormalFontButton = descriptionNormalFontButton,
+                DescriptionSmallFontButton = descriptionSmallFontButton,
+                DescriptionTitleFontButton = descriptionTitleFontButton,
                 InlinePickIconButton = inlinePickIconButton,
+                RawValueUpButton = rawValueUpButton,
+                RawValueDownButton = rawValueDownButton,
                 BackButton = backButton,
                 ForwardButton = forwardButton,
                 SearchSuggestionList = searchSuggestionList
@@ -562,6 +623,56 @@ namespace FWEledit
                 BackColor = Color.FromArgb(232, 237, 243),
                 ForeColor = Color.FromArgb(29, 36, 45)
             };
+        }
+
+        private static Button CreateStepperButton(string text)
+        {
+            return new Button
+            {
+                Text = text,
+                Dock = DockStyle.Fill,
+                Margin = new Padding(0, 0, 4, 4),
+                FlatStyle = FlatStyle.Flat,
+                TabStop = false,
+                BackColor = Color.FromArgb(232, 237, 243),
+                ForeColor = Color.FromArgb(29, 36, 45),
+                Font = new Font("Segoe UI", 8F, FontStyle.Bold, GraphicsUnit.Point, ((byte)(0)))
+            };
+        }
+
+        private static Button CreateDescriptionToolButton(string text)
+        {
+            return new Button
+            {
+                Text = text,
+                AutoSize = false,
+                Width = text.Length > 6 ? 74 : 58,
+                Height = 24,
+                Margin = new Padding(0, 0, 6, 0),
+                FlatStyle = FlatStyle.Flat,
+                TabStop = false,
+                BackColor = Color.FromArgb(232, 237, 243),
+                ForeColor = Color.FromArgb(29, 36, 45),
+                Font = new Font("Segoe UI", 8.25F, FontStyle.Regular, GraphicsUnit.Point, ((byte)(0)))
+            };
+        }
+
+        private static void MoveValuesInspectorToSelectedTab(TabControl tabs, Panel valuesInspectorPanel)
+        {
+            if (tabs == null || valuesInspectorPanel == null || tabs.SelectedTab == null)
+            {
+                return;
+            }
+            if (!(tabs.SelectedTab.Tag is EquipmentValuesTab))
+            {
+                return;
+            }
+            if (valuesInspectorPanel.Parent != tabs.SelectedTab)
+            {
+                tabs.SelectedTab.Controls.Add(valuesInspectorPanel);
+            }
+            valuesInspectorPanel.Dock = DockStyle.Fill;
+            valuesInspectorPanel.BringToFront();
         }
 
         private static Label CreateSubsectionLabel(string text)

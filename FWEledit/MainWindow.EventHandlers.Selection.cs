@@ -88,6 +88,7 @@ namespace FWEledit
                 PersistNavigationState,
                 value => viewModel.SuppressValuesUiRefresh = value);
 
+            UpdateRawValueEditorFromCurrentCell();
             RefreshLiveModelPreviewFromCurrentRow(true);
             RecordSelectionHistory();
 		}
@@ -185,6 +186,7 @@ namespace FWEledit
                 viewModel);
 
             RefreshLiveModelPreviewFromCurrentRow(false);
+            UpdateRawValueEditorFromCurrentCell();
         }
     }
 }

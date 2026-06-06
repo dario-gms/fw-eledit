@@ -32,14 +32,22 @@ namespace FWEledit
         private bool liveModelPreviewRefreshInProgress;
         private TabControl fwEquipmentTabs;
         private TabPage fwEquipmentTabMain;
-        private TabPage fwEquipmentTabRefine;
         private TabPage fwEquipmentTabModels;
+        private TabPage fwEquipmentTabRefine;
+        private TabPage fwEquipmentTabDecompose;
         private TabPage fwEquipmentTabOther;
         private TabPage fwDescriptionTab;
         private TextBox fwDescriptionEditor;
         private RichTextBox fwDescriptionPreview;
         private Button fwDescriptionSaveButton;
         private Label fwDescriptionStatusLabel;
+        private Button fwDescriptionColorButton;
+        private Button fwDescriptionLineBreakButton;
+        private Button fwDescriptionNormalFontButton;
+        private Button fwDescriptionSmallFontButton;
+        private Button fwDescriptionTitleFontButton;
+        private Button fwRawValueUpButton;
+        private Button fwRawValueDownButton;
         
         private readonly ElementDeletionUiService elementDeletionUiService = new ElementDeletionUiService();
         private readonly ElementCloneUiService elementCloneUiService = new ElementCloneUiService();
@@ -60,6 +68,7 @@ namespace FWEledit
         private readonly AddonTypeOptionService addonTypeOptionService;
         private readonly AddonParamService addonParamService = new AddonParamService();
         private readonly ItemFieldClassifierService itemFieldClassifierService = new ItemFieldClassifierService();
+        private readonly ItemReferenceService itemReferenceService;
         private readonly EquipmentFieldService equipmentFieldService = new EquipmentFieldService();
         private readonly EquipmentTabService equipmentTabService = new EquipmentTabService();
         private readonly ModelPickerCacheService modelPickerCacheService = new ModelPickerCacheService();

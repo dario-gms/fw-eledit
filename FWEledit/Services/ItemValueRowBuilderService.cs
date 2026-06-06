@@ -7,15 +7,18 @@ namespace FWEledit
         private readonly AddonTypeDisplayService addonTypeDisplayService;
         private readonly AddonParamService addonParamService;
         private readonly ModelPickerService modelPickerService;
+        private readonly ItemReferenceService itemReferenceService;
 
         public ItemValueRowBuilderService(
             AddonTypeDisplayService addonTypeDisplayService,
             AddonParamService addonParamService,
-            ModelPickerService modelPickerService)
+            ModelPickerService modelPickerService,
+            ItemReferenceService itemReferenceService)
         {
             this.addonTypeDisplayService = addonTypeDisplayService;
             this.addonParamService = addonParamService;
             this.modelPickerService = modelPickerService;
+            this.itemReferenceService = itemReferenceService;
         }
 
         public List<ValueRowDisplay> BuildRows(
@@ -146,6 +149,10 @@ namespace FWEledit
                 {
                     string listName = listCollection.Lists[listIndex].listName ?? string.Empty;
                     fieldValue = modelPickerService.FormatModelPathIdDisplay(database, fieldValue, fieldName, listName);
+                }
+                else if (itemReferenceService != null && itemReferenceService.IsReferenceField(listCollection, listIndex, fieldName))
+                {
+                    fieldValue = itemReferenceService.FormatReferenceValue(listCollection, listIndex, fieldName, fieldValue);
                 }
 
                 ValueRowDisplay row = new ValueRowDisplay

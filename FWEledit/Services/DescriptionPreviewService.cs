@@ -11,23 +11,19 @@ namespace FWEledit
             List<DescriptionPreviewSegment> segments = new List<DescriptionPreviewSegment>();
             string text = NormalizeText(rawText);
             Color currentColor = Color.White;
+            float currentFontScale = 1F;
+            FontStyle currentFontStyle = FontStyle.Regular;
+            bool currentUnderline = false;
             StringBuilder chunk = new StringBuilder();
             int i = 0;
             while (i < text.Length)
             {
                 if (text[i] == '^')
                 {
-                    if (IsShortFormatMarker(text, i) || IsChainedControlMarker(text, i))
-                    {
-                        FlushChunk(segments, chunk, currentColor);
-                        i += 5;
-                        continue;
-                    }
-
                     // FW color tag: ^RRGGBB
                     if (i + 7 <= text.Length && IsHexSequence(text, i + 1, 6))
                     {
-                        FlushChunk(segments, chunk, currentColor);
+                        FlushChunk(segments, chunk, currentColor, currentFontScale, currentFontStyle, currentUnderline);
                         string hex = text.Substring(i + 1, 6);
                         try
                         {
@@ -41,10 +37,62 @@ namespace FWEledit
                         continue;
                     }
 
+                    if (i + 2 <= text.Length && text[i + 1] == 'N')
+                    {
+                        FlushChunk(segments, chunk, currentColor, currentFontScale, currentFontStyle, currentUnderline);
+                        currentColor = Color.White;
+                        i += 2;
+                        continue;
+                    }
+
+                    if (i + 5 <= text.Length && text[i + 1] == 'O' && IsDigitSequence(text, i + 2, 3))
+                    {
+                        FlushChunk(segments, chunk, currentColor, currentFontScale, currentFontStyle, currentUnderline);
+                        ApplyFontTag(text.Substring(i + 2, 3), out currentFontScale, out currentFontStyle);
+                        i += 5;
+                        continue;
+                    }
+
+                    if (i + 8 <= text.Length && text[i + 1] == 'U' && IsHexSequence(text, i + 2, 6))
+                    {
+                        FlushChunk(segments, chunk, currentColor, currentFontScale, currentFontStyle, currentUnderline);
+                        currentUnderline = !currentUnderline;
+                        i += 8;
+                        continue;
+                    }
+
+                    if (i + 2 <= text.Length && text[i + 1] == 'u')
+                    {
+                        FlushChunk(segments, chunk, currentColor, currentFontScale, currentFontStyle, currentUnderline);
+                        currentUnderline = !currentUnderline;
+                        i += 2;
+                        continue;
+                    }
+
+                    if (i + 2 <= text.Length && text[i + 1] == 'p')
+                    {
+                        i += 2;
+                        continue;
+                    }
+
+                    if (i + 2 <= text.Length && text[i + 1] == 'o')
+                    {
+                        chunk.Append(' ');
+                        i += 2;
+                        continue;
+                    }
+
+                    if (IsShortFormatMarker(text, i) || IsChainedControlMarker(text, i))
+                    {
+                        FlushChunk(segments, chunk, currentColor, currentFontScale, currentFontStyle, currentUnderline);
+                        i += 5;
+                        continue;
+                    }
+
                     // Some FW strings include short formatting markers like ^0037.
                     if (IsFourDigitControlMarker(text, i))
                     {
-                        FlushChunk(segments, chunk, currentColor);
+                        FlushChunk(segments, chunk, currentColor, currentFontScale, currentFontStyle, currentUnderline);
                         i += 5;
                         continue;
                     }
@@ -54,11 +102,17 @@ namespace FWEledit
                 i++;
             }
 
-            FlushChunk(segments, chunk, currentColor);
+            FlushChunk(segments, chunk, currentColor, currentFontScale, currentFontStyle, currentUnderline);
             return segments;
         }
 
-        private static void FlushChunk(List<DescriptionPreviewSegment> segments, StringBuilder chunk, Color color)
+        private static void FlushChunk(
+            List<DescriptionPreviewSegment> segments,
+            StringBuilder chunk,
+            Color color,
+            float fontScale,
+            FontStyle fontStyle,
+            bool underline)
         {
             if (chunk.Length == 0)
             {
@@ -67,9 +121,44 @@ namespace FWEledit
             segments.Add(new DescriptionPreviewSegment
             {
                 Text = chunk.ToString(),
-                Color = color
+                Color = color,
+                FontScale = fontScale,
+                FontStyle = fontStyle,
+                Underline = underline
             });
             chunk.Clear();
+        }
+
+        private static void ApplyFontTag(string fontTag, out float fontScale, out FontStyle fontStyle)
+        {
+            fontScale = 1F;
+            fontStyle = FontStyle.Regular;
+
+            switch (fontTag)
+            {
+                case "005":
+                case "009":
+                    fontScale = 0.92F;
+                    break;
+                case "037":
+                case "041":
+                    fontScale = 1F;
+                    fontStyle = FontStyle.Bold;
+                    break;
+                case "057":
+                    fontScale = 1.12F;
+                    fontStyle = FontStyle.Bold;
+                    break;
+                case "061":
+                    fontScale = 1.2F;
+                    fontStyle = FontStyle.Bold;
+                    break;
+                case "065":
+                case "069":
+                    fontScale = 1.15F;
+                    fontStyle = FontStyle.Bold;
+                    break;
+            }
         }
 
         private static string NormalizeText(string rawText)
@@ -189,6 +278,24 @@ namespace FWEledit
                     return false;
                 }
             }
+            return true;
+        }
+
+        private static bool IsDigitSequence(string text, int startIndex, int length)
+        {
+            if (string.IsNullOrEmpty(text) || startIndex < 0 || startIndex + length > text.Length)
+            {
+                return false;
+            }
+
+            for (int i = startIndex; i < startIndex + length; i++)
+            {
+                if (text[i] < '0' || text[i] > '9')
+                {
+                    return false;
+                }
+            }
+
             return true;
         }
 

@@ -19,6 +19,7 @@ namespace FWEledit
             assetManager.load(false);
 
             AddonTypeOptionService addonTypeOptionService = new AddonTypeOptionService(addonTypeHintService);
+            ItemReferenceService itemReferenceService = new ItemReferenceService();
             ModelPickerService modelPickerService = new ModelPickerService(
                 modelPickerCacheService,
                 assetManager,
@@ -28,19 +29,22 @@ namespace FWEledit
             ItemValueRowBuilderService itemValueRowBuilderService = new ItemValueRowBuilderService(
                 addonTypeDisplayService,
                 addonParamService,
-                modelPickerService);
+                modelPickerService,
+                itemReferenceService);
             ItemSelectionWorkflowService itemSelectionWorkflowService = new ItemSelectionWorkflowService(itemValueRowBuilderService);
             ValueCompatibilityService valueCompatibilityService = new ValueCompatibilityService(fieldValueValidationService);
             ValueChangeService valueChangeService = new ValueChangeService(
                 addonParamService,
                 modelPickerService,
                 idGenerationService,
-                iconResolutionService);
+                iconResolutionService,
+                itemReferenceService);
 
             return new MainWindowAssetSetupResult
             {
                 AssetManager = assetManager,
                 AddonTypeOptionService = addonTypeOptionService,
+                ItemReferenceService = itemReferenceService,
                 ModelPickerService = modelPickerService,
                 ItemValueRowBuilderService = itemValueRowBuilderService,
                 ItemSelectionWorkflowService = itemSelectionWorkflowService,

@@ -393,6 +393,7 @@
     <Compile Include="Models\ElementsJoinResult.cs" />
     <Compile Include="Models\IconEntryModel.cs" />
     <Compile Include="Models\IconPickerData.cs" />
+    <Compile Include="Models\ItemReferenceOption.cs" />
     <Compile Include="Models\ItemTooltipResult.cs" />
     <Compile Include="Models\ItemSelectionRequest.cs" />
     <Compile Include="Models\ItemSelectionResult.cs" />
@@ -790,6 +791,7 @@
     <Compile Include="Services\ItemDescriptionFileService.cs" />
     <Compile Include="Services\ItemDescriptionCodec.cs" />
     <Compile Include="Services\ItemFieldClassifierService.cs" />
+    <Compile Include="Services\ItemReferenceService.cs" />
     <Compile Include="Services\ItemTooltipService.cs" />
     <Compile Include="Services\FieldValueValidationService.cs" />
     <Compile Include="Services\ValueCompatibilityService.cs" />
@@ -972,6 +974,9 @@
     <Compile Include="ViewModels\RulesWindowViewModel.cs" />
     <Compile Include="ViewModels\ViewModelBase.cs" />
     <Compile Include="Views\AddonTypePickerWindow.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Views\ItemReferencePickerWindow.cs">
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="Views\ModelPickerWindow.cs">

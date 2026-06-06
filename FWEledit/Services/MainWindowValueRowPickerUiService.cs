@@ -101,6 +101,35 @@ namespace FWEledit
                 owner);
         }
 
+        public void OpenItemReferencePickerForValueRow(
+            ValueRowPickerUiService valueRowPickerUiService,
+            eListCollection listCollection,
+            CacheSave database,
+            DataGridView valuesGrid,
+            int listIndex,
+            int rowIndex,
+            ItemReferenceService itemReferenceService,
+            IconResolutionService iconResolutionService,
+            IWin32Window owner,
+            Action<string> showMessage)
+        {
+            if (valueRowPickerUiService == null)
+            {
+                return;
+            }
+
+            valueRowPickerUiService.OpenItemReferencePickerForValueRow(
+                listCollection,
+                database,
+                valuesGrid,
+                listIndex,
+                rowIndex,
+                itemReferenceService,
+                iconResolutionService,
+                owner,
+                showMessage);
+        }
+
         public void OpenIconPickerForValueRow(
             ValueRowPickerUiService valueRowPickerUiService,
             eListCollection listCollection,
@@ -220,10 +249,12 @@ namespace FWEledit
             int listIndex,
             DataGridViewCellEventArgs args,
             ItemFieldClassifierService fieldClassifierService,
+            ItemReferenceService itemReferenceService,
             Action<int> openIconPicker,
             Action<int> openAddonPicker,
             Action<int> openQualityPicker,
             Action<int> openModelPicker,
+            Action<int> openItemReferencePicker,
             Action updateInlineButton,
             Action<string> showMessage)
         {
@@ -238,10 +269,12 @@ namespace FWEledit
                 listIndex,
                 args,
                 fieldClassifierService,
+                itemReferenceService,
                 openIconPicker,
                 openAddonPicker,
                 openQualityPicker,
                 openModelPicker,
+                openItemReferencePicker,
                 updateInlineButton,
                 showMessage);
         }

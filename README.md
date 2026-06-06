@@ -12,6 +12,20 @@ FWEledit is based on [sELedit++ by Wrechid](https://github.com/Wrechid/sELedit-)
 
 ---
 
+## What's New in v0.9.5.1
+
+- Added equipment-focused tabs beside Values, including Models, Refine, and Decompose groupings.
+- Added item-reference resolution for equipment fields so IDs display as item names where possible.
+- Added a rich item reference picker with dark list styling, icons, quality colors, list filtering, and global search.
+- Added a `Selected ID` editor below the offset field with Set, increment, and decrement controls for safer raw ID editing.
+- Updated model value display to show the resolved path while keeping the raw ID editable through `Selected ID`.
+- Added icon and quality-colored rendering for referenced item values in the Values grid.
+- Improved Description editing with formatting/color shortcut buttons and broader FW tag rendering.
+- Cached item-reference lookups to improve scrolling and rendering performance in parser-heavy tabs such as Refine.
+- Project/app version metadata updated to `v0.9.5.1`.
+
+---
+
 ## What's New in v0.9.5
 
 - Redesigned main editor layout to reduce spreadsheet density and improve scanability.
