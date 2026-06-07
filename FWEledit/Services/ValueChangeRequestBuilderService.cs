@@ -66,8 +66,13 @@ namespace FWEledit
             {
                 fieldType = Convert.ToString(itemGrid.Rows[gridRow].Cells[1].Value);
             }
-            object rawValue = itemGrid.Rows[gridRow].Cells[2].Tag;
-            string valueToSet = Convert.ToString(rawValue ?? itemGrid.Rows[gridRow].Cells[2].Value);
+            DataGridViewCell valueCell = itemGrid.Rows[gridRow].Cells[2];
+            string taggedRawValue = Convert.ToString(valueCell.Tag);
+            string cellValue = Convert.ToString(valueCell.Value);
+            string valueToSet = !string.IsNullOrWhiteSpace(taggedRawValue)
+                && string.Equals(cellValue, taggedRawValue, StringComparison.Ordinal)
+                    ? taggedRawValue
+                    : cellValue;
 
             Func<string, string, bool> isValueCompatible = null;
             if (compatibilityService != null)
