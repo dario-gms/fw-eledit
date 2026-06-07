@@ -305,6 +305,12 @@ namespace FWEledit
             }
 
             string rawValue = sessionService.ListCollection.GetValue(listIndex, elementIndex, fieldIndex);
+            if (creaturePortraitIconService.IsCreaturePortraitField(sessionService.ListCollection, listIndex, fieldName))
+            {
+                PaintPortraitValueCell(e, creaturePortraitIconService, rawValue);
+                return;
+            }
+
             ItemReferenceOption option;
             if (!itemReferenceService.TryResolveReferenceOption(
                 sessionService.ListCollection,
@@ -345,6 +351,56 @@ namespace FWEledit
                 e.CellBounds.Height);
 
             string text = string.IsNullOrWhiteSpace(option.Name) ? option.Id.ToString() : option.Name;
+            TextRenderer.DrawText(
+                e.Graphics,
+                text,
+                e.CellStyle.Font,
+                textBounds,
+                textColor,
+                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
+
+            e.Handled = true;
+        }
+
+        private void PaintPortraitValueCell(DataGridViewCellPaintingEventArgs e, CreaturePortraitIconService portraitIconService, string rawValue)
+        {
+            bool selected = (e.State & DataGridViewElementStates.Selected) == DataGridViewElementStates.Selected;
+            Color backColor = selected ? e.CellStyle.SelectionBackColor : e.CellStyle.BackColor;
+            Color textColor = selected ? Color.White : e.CellStyle.ForeColor;
+
+            using (SolidBrush brush = new SolidBrush(backColor))
+            {
+                e.Graphics.FillRectangle(brush, e.CellBounds);
+            }
+
+            e.Paint(e.CellBounds, DataGridViewPaintParts.Border | DataGridViewPaintParts.Focus);
+
+            int pathId;
+            string mappedPath;
+            Bitmap icon = Properties.Resources.NoIcon;
+            string text = rawValue ?? string.Empty;
+            if (portraitIconService.TryResolvePortraitPath(sessionService.Database, rawValue, out pathId, out mappedPath))
+            {
+                Bitmap loaded = portraitIconService.TryLoadPortraitThumbnail(mappedPath, 32);
+                if (loaded != null)
+                {
+                    icon = loaded;
+                }
+
+                string name = System.IO.Path.GetFileName(mappedPath);
+                text = string.IsNullOrWhiteSpace(name) ? mappedPath : name + " | " + mappedPath;
+            }
+
+            Rectangle iconBounds = new Rectangle(e.CellBounds.Left + 6, e.CellBounds.Top + 2, 20, Math.Max(16, e.CellBounds.Height - 4));
+            iconBounds.Width = Math.Min(20, iconBounds.Height);
+            e.Graphics.DrawImage(icon, iconBounds);
+
+            Rectangle textBounds = new Rectangle(
+                iconBounds.Right + 7,
+                e.CellBounds.Top,
+                Math.Max(4, e.CellBounds.Width - iconBounds.Width - 18),
+                e.CellBounds.Height);
+
             TextRenderer.DrawText(
                 e.Graphics,
                 text,
@@ -742,6 +798,7 @@ namespace FWEledit
             bool isModelField = itemFieldClassifierService != null && itemFieldClassifierService.IsModelFieldName(fieldName);
             bool isModelPreviewField = itemFieldClassifierService != null && itemFieldClassifierService.IsModelUsageFieldName(fieldName);
             bool isIconField = itemFieldClassifierService != null && itemFieldClassifierService.IsIconFieldName(fieldName);
+            bool isPortraitIconField = creaturePortraitIconService.IsCreaturePortraitField(sessionService != null ? sessionService.ListCollection : null, comboBox_lists.SelectedIndex, fieldName);
             bool isAddonTypeField = itemFieldClassifierService != null
                 && sessionService != null
                 && sessionService.ListCollection != null
@@ -782,7 +839,7 @@ namespace FWEledit
                 {
                     menu.Items.Add(new ToolStripSeparator());
                 }
-                menu.Items.Add("Choose Icon...", null, (menuSender, args) => OpenIconPickerForValueRow(rowIndex));
+                menu.Items.Add(isPortraitIconField ? "Choose TGA Portrait..." : "Choose Icon...", null, (menuSender, args) => OpenIconPickerForValueRow(rowIndex));
             }
 
             if (isAddonTypeField)

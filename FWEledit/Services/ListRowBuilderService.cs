@@ -6,10 +6,12 @@ namespace FWEledit
     public sealed class ListRowBuilderService
     {
         private readonly IconResolutionService iconResolutionService;
+        private readonly CreaturePortraitIconService creaturePortraitIconService;
 
         public ListRowBuilderService(IconResolutionService iconResolutionService)
         {
             this.iconResolutionService = iconResolutionService;
+            this.creaturePortraitIconService = new CreaturePortraitIconService();
         }
 
         public List<object[]> BuildRows(
@@ -72,10 +74,19 @@ namespace FWEledit
                     Bitmap img = Properties.Resources.NoIcon;
                     if (pos2 > -1)
                     {
-                        string path = iconResolutionService.ResolveIconKeyForList(database, listCollection, listIndex, listCollection.GetValue(listIndex, e, pos2));
-                        if (database != null && database.sourceBitmap != null && database.ContainsKey(path))
+                        string rawIcon = listCollection.GetValue(listIndex, e, pos2);
+                        Bitmap portrait;
+                        if (creaturePortraitIconService.TryResolvePortrait(database, listCollection, listIndex, rawIcon, out portrait))
                         {
-                            img = database.images(path);
+                            img = portrait;
+                        }
+                        else
+                        {
+                            string path = iconResolutionService.ResolveIconKeyForList(database, listCollection, listIndex, rawIcon);
+                            if (database != null && database.sourceBitmap != null && database.ContainsKey(path))
+                            {
+                                img = database.images(path);
+                            }
                         }
                     }
                     rows.Add(new object[] { listCollection.GetValue(listIndex, e, 0), img, composeDisplayName(listIndex, e, pos) });

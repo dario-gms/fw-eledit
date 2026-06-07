@@ -92,6 +92,7 @@ namespace FWEledit
         private readonly ElementIndexResolverService elementIndexResolverService = new ElementIndexResolverService();
         private readonly IconUsageLookupService iconUsageLookupService = new IconUsageLookupService();
         private readonly PathIdResolutionService pathIdResolutionService = new PathIdResolutionService();
+        private readonly CreaturePortraitIconService creaturePortraitIconService = new CreaturePortraitIconService();
         private readonly SearchSuggestionService searchSuggestionService = new SearchSuggestionService();
         private readonly SearchSuggestionUiService searchSuggestionUiService = new SearchSuggestionUiService();
         private readonly SearchPlaceholderService searchPlaceholderService = new SearchPlaceholderService();
