@@ -5,6 +5,9 @@ namespace FWEledit
 {
     public sealed class ItemReferenceService
     {
+        private const int AllListsTargetIndex = -1;
+        private const int ItemListsTargetIndex = -2;
+
         private eListCollection cachedListCollection;
         private CacheSave cachedDatabase;
         private IconResolutionService cachedIconResolutionService;
@@ -14,6 +17,9 @@ namespace FWEledit
         private List<ItemReferenceOption> searchableOptions;
         private Dictionary<int, ItemReferenceOption> searchableOptionsById;
         private Dictionary<string, ItemReferenceOption> searchableOptionsByName;
+        private List<ItemReferenceOption> searchableItemOptions;
+        private Dictionary<int, ItemReferenceOption> searchableItemOptionsById;
+        private Dictionary<string, ItemReferenceOption> searchableItemOptionsByName;
         private readonly Dictionary<string, ItemReferenceOption> preferredOptionsByFieldAndId = new Dictionary<string, ItemReferenceOption>(StringComparer.OrdinalIgnoreCase);
 
         public void ClearCache()
@@ -27,6 +33,14 @@ namespace FWEledit
             searchableOptions = null;
             searchableOptionsById = null;
             searchableOptionsByName = null;
+            searchableItemOptions = null;
+            searchableItemOptionsById = null;
+            searchableItemOptionsByName = null;
+        }
+
+        public bool IsItemListTargetIndex(int targetListIndex)
+        {
+            return targetListIndex == ItemListsTargetIndex;
         }
 
         public bool IsReferenceField(eListCollection listCollection, int listIndex, string fieldName)
@@ -43,7 +57,9 @@ namespace FWEledit
                 return false;
             }
 
+            string sourceListName = NormalizeListName(listCollection.Lists[listIndex].listName);
             string name = fieldName.Trim();
+            string normalizedName = name.ToLowerInvariant();
             string targetListName = null;
 
             if (name.StartsWith("id_estone_", StringComparison.OrdinalIgnoreCase))
@@ -78,6 +94,14 @@ namespace FWEledit
             {
                 targetListName = "EQUIPMENT_PROPERTY_RANDOM_CONFIG";
             }
+            else if (TryGetMappedTargetListName(sourceListName, normalizedName, out targetListName))
+            {
+            }
+            else if (IsGenericItemReferenceField(sourceListName, normalizedName))
+            {
+                targetListIndex = ItemListsTargetIndex;
+                return true;
+            }
 
             if (string.IsNullOrWhiteSpace(targetListName))
             {
@@ -108,12 +132,21 @@ namespace FWEledit
             }
 
             ItemReferenceOption option;
-            if (!TryFindOptionById(listCollection, targetListIndex, id, out option))
+            if (targetListIndex >= 0 && TryFindOptionById(listCollection, targetListIndex, id, out option))
             {
-                if (!TryFindOptionByIdAcrossLists(listCollection, id, null, null, out option))
+                return string.IsNullOrWhiteSpace(option.Name) ? rawValue : option.Name;
+            }
+
+            if (targetListIndex == ItemListsTargetIndex)
+            {
+                if (!TryFindItemOptionByIdAcrossLists(listCollection, id, null, null, out option))
                 {
                     return rawValue ?? string.Empty;
                 }
+            }
+            else if (!TryFindOptionByIdAcrossLists(listCollection, id, null, null, out option))
+            {
+                return rawValue ?? string.Empty;
             }
 
             return string.IsNullOrWhiteSpace(option.Name) ? rawValue : option.Name;
@@ -139,9 +172,14 @@ namespace FWEledit
                 return true;
             }
 
-            if (TryFindOptionById(listCollection, targetListIndex, id, database, iconResolutionService, out option))
+            if (targetListIndex >= 0 && TryFindOptionById(listCollection, targetListIndex, id, database, iconResolutionService, out option))
             {
                 return true;
+            }
+
+            if (targetListIndex == ItemListsTargetIndex)
+            {
+                return TryFindItemOptionByIdAcrossLists(listCollection, id, database, iconResolutionService, out option);
             }
 
             return TryFindOptionByIdAcrossLists(listCollection, id, database, iconResolutionService, out option);
@@ -167,7 +205,12 @@ namespace FWEledit
             }
 
             ItemReferenceOption option;
-            if (TryFindOptionByName(listCollection, targetListIndex, value.Trim(), out option))
+            if (targetListIndex >= 0 && TryFindOptionByName(listCollection, targetListIndex, value.Trim(), out option))
+            {
+                return option.Id.ToString();
+            }
+
+            if (targetListIndex == ItemListsTargetIndex && TryFindItemOptionByNameAcrossLists(listCollection, value.Trim(), out option))
             {
                 return option.Id.ToString();
             }
@@ -311,6 +354,49 @@ namespace FWEledit
             return searchableOptions;
         }
 
+        public List<ItemReferenceOption> BuildSearchableItemOptions(eListCollection listCollection, CacheSave database, IconResolutionService iconResolutionService)
+        {
+            if (listCollection == null || listCollection.Lists == null)
+            {
+                return new List<ItemReferenceOption>();
+            }
+
+            EnsureCacheContext(listCollection, database, iconResolutionService);
+
+            if (searchableItemOptions != null)
+            {
+                return searchableItemOptions;
+            }
+
+            searchableItemOptions = new List<ItemReferenceOption>();
+            for (int listIndex = 0; listIndex < listCollection.Lists.Length; listIndex++)
+            {
+                if (!HasPrimaryIdField(listCollection, listIndex) || !IsItemList(listCollection, listIndex))
+                {
+                    continue;
+                }
+
+                searchableItemOptions.AddRange(BuildOptions(listCollection, listIndex, database, iconResolutionService));
+            }
+
+            searchableItemOptionsById = new Dictionary<int, ItemReferenceOption>();
+            searchableItemOptionsByName = new Dictionary<string, ItemReferenceOption>(StringComparer.OrdinalIgnoreCase);
+            for (int i = 0; i < searchableItemOptions.Count; i++)
+            {
+                ItemReferenceOption option = searchableItemOptions[i];
+                if (!searchableItemOptionsById.ContainsKey(option.Id))
+                {
+                    searchableItemOptionsById.Add(option.Id, option);
+                }
+                if (!string.IsNullOrWhiteSpace(option.Name) && !searchableItemOptionsByName.ContainsKey(option.Name))
+                {
+                    searchableItemOptionsByName.Add(option.Name, option);
+                }
+            }
+
+            return searchableItemOptions;
+        }
+
         public bool TryFindOptionById(eListCollection listCollection, int targetListIndex, int id, out ItemReferenceOption option)
         {
             return TryFindOptionById(listCollection, targetListIndex, id, null, null, out option);
@@ -355,11 +441,33 @@ namespace FWEledit
             return false;
         }
 
+        private bool TryFindItemOptionByIdAcrossLists(eListCollection listCollection, int id, CacheSave database, IconResolutionService iconResolutionService, out ItemReferenceOption option)
+        {
+            option = null;
+            BuildSearchableItemOptions(listCollection, database, iconResolutionService);
+            if (searchableItemOptionsById != null && searchableItemOptionsById.TryGetValue(id, out option))
+            {
+                return true;
+            }
+            return false;
+        }
+
         private bool TryFindOptionByNameAcrossLists(eListCollection listCollection, string name, out ItemReferenceOption option)
         {
             option = null;
             BuildSearchableOptions(listCollection, null, null);
             if (searchableOptionsByName != null && searchableOptionsByName.TryGetValue(name, out option))
+            {
+                return true;
+            }
+            return false;
+        }
+
+        private bool TryFindItemOptionByNameAcrossLists(eListCollection listCollection, string name, out ItemReferenceOption option)
+        {
+            option = null;
+            BuildSearchableItemOptions(listCollection, null, null);
+            if (searchableItemOptionsByName != null && searchableItemOptionsByName.TryGetValue(name, out option))
             {
                 return true;
             }
@@ -416,6 +524,229 @@ namespace FWEledit
             return false;
         }
 
+        private static bool TryGetMappedTargetListName(string sourceListName, string fieldName, out string targetListName)
+        {
+            targetListName = null;
+            if (string.IsNullOrWhiteSpace(fieldName))
+            {
+                return false;
+            }
+
+            if (fieldName.StartsWith("id_addon_prop_", StringComparison.OrdinalIgnoreCase)
+                || fieldName.StartsWith("addons_", StringComparison.OrdinalIgnoreCase)
+                || fieldName.StartsWith("addon_props_", StringComparison.OrdinalIgnoreCase)
+                || fieldName.StartsWith("addon_id_", StringComparison.OrdinalIgnoreCase)
+                || fieldName.Contains("_id_addons_"))
+            {
+                targetListName = "EQUIPMENT_ADDON";
+                return true;
+            }
+
+            if (fieldName.Contains("rune_addon_package"))
+            {
+                targetListName = "RUNE_ADDON_PACKAGE_CONFIG";
+                return true;
+            }
+
+            if (fieldName.Contains("rune_package"))
+            {
+                targetListName = "RUNE_PACKAGE_CONFIG";
+                return true;
+            }
+
+            if (fieldName.Contains("special_status_package"))
+            {
+                targetListName = "SPECIAL_STATUS_PACKAGE_CONFIG";
+                return true;
+            }
+
+            if (fieldName.Contains("status_package"))
+            {
+                targetListName = "STATUS_PACKAGE_EXPRESSIONS_CONFIG";
+                return true;
+            }
+
+            if (fieldName.Contains("equip_transform_cfg") || fieldName.Contains("equip_transform_config"))
+            {
+                targetListName = "EQUIP_TRANSFORM_CONFIG";
+                return true;
+            }
+
+            if ((fieldName.Contains("equip") || fieldName.Contains("equipment"))
+                && fieldName.EndsWith("_id", StringComparison.OrdinalIgnoreCase))
+            {
+                targetListName = "Equipment";
+                return true;
+            }
+
+            if (fieldName.Contains("fashion_dye_cfg") || fieldName.Contains("fashion_dye_config"))
+            {
+                targetListName = "FASHION_DYE_CONFIG";
+                return true;
+            }
+
+            if (fieldName.Contains("color_plan"))
+            {
+                targetListName = "COLOR_PLAN_CONFIG";
+                return true;
+            }
+
+            if (fieldName.Contains("quality_config"))
+            {
+                targetListName = "EQUIPMENT_QUALITY_CONFIG";
+                return true;
+            }
+
+            if (fieldName.Contains("property_random") || fieldName.Contains("equip_prop"))
+            {
+                targetListName = "EQUIPMENT_PROPERTY_RANDOM_CONFIG";
+                return true;
+            }
+
+            if (fieldName.Contains("dynamic_instance"))
+            {
+                targetListName = "DYNAMIC_INSTANCE_CONFIG";
+                return true;
+            }
+
+            if (fieldName.Contains("monster") && fieldName.EndsWith("_id", StringComparison.OrdinalIgnoreCase))
+            {
+                targetListName = "MONSTER_ESSENCE";
+                return true;
+            }
+
+            if ((fieldName.Contains("npc") || fieldName.StartsWith("id_npc_", StringComparison.OrdinalIgnoreCase))
+                && fieldName.EndsWith("_id", StringComparison.OrdinalIgnoreCase))
+            {
+                targetListName = "NPC_ESSENCE";
+                return true;
+            }
+
+            if (fieldName.Contains("mine") && fieldName.EndsWith("_id", StringComparison.OrdinalIgnoreCase))
+            {
+                targetListName = "MINE_ESSENCE";
+                return true;
+            }
+
+            if (fieldName.Contains("recipe") && fieldName.EndsWith("_id", StringComparison.OrdinalIgnoreCase))
+            {
+                targetListName = "RECIPE_ESSENCE";
+                return true;
+            }
+
+            if (fieldName.Contains("pet_skill") && fieldName.EndsWith("_id", StringComparison.OrdinalIgnoreCase))
+            {
+                targetListName = "PET_SKILL_ESSENCE";
+                return true;
+            }
+
+            if (fieldName.Contains("skillmatter") || fieldName.Contains("skill_matter"))
+            {
+                targetListName = "SKILLMATTER_ESSENCE";
+                return true;
+            }
+
+            if (fieldName.Contains("drop") && (fieldName.Contains("table") || fieldName.Contains("droptable")))
+            {
+                targetListName = "DROPTABLE_ESSENCE";
+                return true;
+            }
+
+            if (fieldName.Contains("producing_area"))
+            {
+                targetListName = "TRADE_PORT_DISTANCE_CONFIG";
+                return true;
+            }
+
+            if (fieldName.Contains("port_service"))
+            {
+                targetListName = "NPC_TRADE_PORT_SERVICE";
+                return true;
+            }
+
+            if (fieldName.Contains("title") && fieldName.EndsWith("_id", StringComparison.OrdinalIgnoreCase))
+            {
+                targetListName = "TITLE_PROP_CONFIG";
+                return true;
+            }
+
+            if (fieldName.Contains("identify") && fieldName.EndsWith("_id", StringComparison.OrdinalIgnoreCase))
+            {
+                targetListName = "idENTIFY_SCROLL_ESSENCE";
+                return true;
+            }
+
+            if (string.Equals(sourceListName, "RECIPE_ESSENCE", StringComparison.OrdinalIgnoreCase)
+                && (IsNumberedIdField(fieldName, "materials_") || IsNumberedIdField(fieldName, "acquired_")))
+            {
+                targetListName = null;
+                return false;
+            }
+
+            return false;
+        }
+
+        private static bool IsGenericItemReferenceField(string sourceListName, string fieldName)
+        {
+            if (string.IsNullOrWhiteSpace(fieldName))
+            {
+                return false;
+            }
+
+            if (fieldName == "id" || fieldName.EndsWith("_num", StringComparison.OrdinalIgnoreCase)
+                || fieldName.EndsWith("_count", StringComparison.OrdinalIgnoreCase)
+                || fieldName.EndsWith("_time", StringComparison.OrdinalIgnoreCase)
+                || fieldName.EndsWith("_level", StringComparison.OrdinalIgnoreCase)
+                || fieldName.EndsWith("_probability", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            if ((fieldName.Contains("item") && HasIdToken(fieldName))
+                || fieldName.EndsWith("_tool_id", StringComparison.OrdinalIgnoreCase)
+                || fieldName.EndsWith("_ticket_id", StringComparison.OrdinalIgnoreCase)
+                || fieldName.EndsWith("_book_id", StringComparison.OrdinalIgnoreCase)
+                || fieldName.EndsWith("_scroll_id", StringComparison.OrdinalIgnoreCase)
+                || fieldName.EndsWith("_stone_id", StringComparison.OrdinalIgnoreCase)
+                || fieldName.EndsWith("_matter_id", StringComparison.OrdinalIgnoreCase)
+                || fieldName.EndsWith("_result_id", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            if (IsNumberedIdField(fieldName, "gift_")
+                || IsNumberedIdField(fieldName, "reward_")
+                || IsNumberedIdField(fieldName, "materials_")
+                || IsNumberedIdField(fieldName, "acquired_")
+                || IsNumberedIdField(fieldName, "stone_")
+                || IsNumberedIdField(fieldName, "tools_")
+                || IsNumberedIdField(fieldName, "tool_"))
+            {
+                return true;
+            }
+
+            if (string.Equals(sourceListName, "RECIPE_ESSENCE", StringComparison.OrdinalIgnoreCase)
+                && (IsNumberedIdField(fieldName, "materials_") || IsNumberedIdField(fieldName, "acquired_")))
+            {
+                return true;
+            }
+
+            return false;
+        }
+
+        private static bool HasIdToken(string fieldName)
+        {
+            return fieldName.StartsWith("id_", StringComparison.OrdinalIgnoreCase)
+                || fieldName.EndsWith("_id", StringComparison.OrdinalIgnoreCase)
+                || fieldName.Contains("_id_");
+        }
+
+        private static bool IsNumberedIdField(string fieldName, string prefix)
+        {
+            return fieldName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+                && (fieldName.EndsWith("_id", StringComparison.OrdinalIgnoreCase) || fieldName.Contains("_id_"));
+        }
+
         private static int GetNameFieldIndex(eListCollection listCollection, int listIndex)
         {
             for (int i = 0; i < listCollection.Lists[listIndex].elementFields.Length; i++)
@@ -467,6 +798,36 @@ namespace FWEledit
 
             return string.Equals(listCollection.Lists[listIndex].elementFields[0], "id", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(listCollection.Lists[listIndex].elementFields[0], "ID", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsItemList(eListCollection listCollection, int listIndex)
+        {
+            if (listCollection == null || listIndex < 0 || listIndex >= listCollection.Lists.Length)
+            {
+                return false;
+            }
+
+            string listName = NormalizeListName(listCollection.Lists[listIndex].listName);
+            if (string.Equals(listName, "Equipment", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            string[] fields = listCollection.Lists[listIndex].elementFields;
+            if (fields == null)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < fields.Length; i++)
+            {
+                if (string.Equals(fields[i], "item_quality", StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private static string ResolveOptionIconKey(eListCollection listCollection, CacheSave database, IconResolutionService iconResolutionService, int listIndex, int elementIndex, int iconIndex)

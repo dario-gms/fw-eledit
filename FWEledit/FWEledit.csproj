@@ -22,7 +22,7 @@
     <UpdateRequired>false</UpdateRequired>
     <MapFileExtensions>true</MapFileExtensions>
     <ApplicationRevision>0</ApplicationRevision>
-    <ApplicationVersion>0.9.5</ApplicationVersion>
+    <ApplicationVersion>0.9.5.3</ApplicationVersion>
     <IsWebBootstrapper>false</IsWebBootstrapper>
     <UseApplicationTrust>false</UseApplicationTrust>
     <BootstrapperEnabled>true</BootstrapperEnabled>
@@ -417,6 +417,7 @@
     <Compile Include="Models\SearchSuggestion.cs" />
     <Compile Include="Models\SelectionState.cs" />
     <Compile Include="Models\ToolPreviewData.cs" />
+    <Compile Include="Models\TgaPortraitEntry.cs" />
     <Compile Include="Models\WindowOpenResult.cs" />
     <Compile Include="Models\ValueRowDisplay.cs" />
     <Compile Include="Models\ListRowUpdate.cs" />
@@ -929,6 +930,7 @@
     <Compile Include="Services\ClosePromptService.cs" />
     <Compile Include="Services\ClosePromptUiService.cs" />
     <Compile Include="Services\ControlRedrawScope.cs" />
+    <Compile Include="Services\CreaturePortraitIconService.cs" />
     <Compile Include="Services\IconListAvailabilityService.cs" />
     <Compile Include="Services\WindowTitleService.cs" />
     <Compile Include="Services\InfoMessageService.cs" />
@@ -940,6 +942,7 @@
     <Compile Include="Services\ThemeMenuRenderer.cs" />
     <Compile Include="Services\SplitContainerSizingService.cs" />
     <Compile Include="Services\StartupSessionService.cs" />
+    <Compile Include="Services\TgaImageService.cs" />
     <Compile Include="Services\ReplaceWindowUiService.cs" />
     <Compile Include="Services\ReplaceWindowUiServiceExtensions.cs" />
     <Compile Include="Services\XrefItemUiService.cs" />
@@ -988,6 +991,9 @@
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="Views\QualityPickerWindow.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Views\TgaPortraitPickerWindow.cs">
       <SubType>Form</SubType>
     </Compile>
     <EmbeddedResource Include="About.resx">

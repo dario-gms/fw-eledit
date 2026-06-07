@@ -567,7 +567,9 @@ namespace FWEledit
                 int.TryParse(normalized, out currentId);
             }
 
-            List<ItemReferenceOption> options = itemReferenceService.BuildSearchableOptions(listCollection, database, iconResolutionService);
+            List<ItemReferenceOption> options = itemReferenceService.IsItemListTargetIndex(targetListIndex)
+                ? itemReferenceService.BuildSearchableItemOptions(listCollection, database, iconResolutionService)
+                : itemReferenceService.BuildSearchableOptions(listCollection, database, iconResolutionService);
             if (options.Count == 0)
             {
                 if (showMessage != null)
@@ -577,7 +579,9 @@ namespace FWEledit
                 return;
             }
 
-            string targetName = listCollection.Lists[targetListIndex].listName ?? "Item";
+            string targetName = targetListIndex >= 0 && targetListIndex < listCollection.Lists.Length
+                ? listCollection.Lists[targetListIndex].listName ?? "Item"
+                : "item";
             using (ItemReferencePickerWindow picker = new ItemReferencePickerWindow(options, currentId, targetListIndex, database, "Choose " + targetName))
             {
                 if (picker.ShowDialog(owner) != DialogResult.OK)
@@ -628,6 +632,44 @@ namespace FWEledit
             if (fieldIndex < 0)
             {
                 return;
+            }
+
+            CreaturePortraitIconService portraitIconService = new CreaturePortraitIconService();
+            if (portraitIconService.IsCreaturePortraitField(listCollection, listIndex, fieldName))
+            {
+                List<TgaPortraitEntry> entries = portraitIconService.BuildPortraitEntries(database, 96);
+                if (entries.Count == 0)
+                {
+                    MessageBox.Show(
+                        "No TGA portrait entries were found in path.data.",
+                        "TGA Portrait",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Information);
+                    return;
+                }
+
+                using (TgaPortraitPickerWindow picker = new TgaPortraitPickerWindow(entries, currentPathId))
+                {
+                    if (picker.ShowDialog(owner) != DialogResult.OK)
+                    {
+                        return;
+                    }
+
+                    int selectedPathId = picker.SelectedPathId;
+                    if (selectedPathId <= 0 || selectedPathId == currentPathId)
+                    {
+                        return;
+                    }
+
+                    if (itemGrid.CurrentCell == null || itemGrid.CurrentCell.RowIndex != rowIndex)
+                    {
+                        itemGrid.CurrentCell = itemGrid.Rows[rowIndex].Cells[2];
+                    }
+
+                    SetValueCellRawValue(itemGrid, rowIndex, selectedPathId.ToString());
+                    itemGrid.Rows[rowIndex].Cells[2].Value = portraitIconService.FormatPortraitPathIdDisplay(database, selectedPathId.ToString());
+                    return;
+                }
             }
 
             Dictionary<int, int> usageLookup = iconUsageLookupService != null

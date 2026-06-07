@@ -8,6 +8,7 @@ namespace FWEledit
         private readonly AddonParamService addonParamService;
         private readonly ModelPickerService modelPickerService;
         private readonly ItemReferenceService itemReferenceService;
+        private readonly CreaturePortraitIconService creaturePortraitIconService;
 
         public ItemValueRowBuilderService(
             AddonTypeDisplayService addonTypeDisplayService,
@@ -19,6 +20,7 @@ namespace FWEledit
             this.addonParamService = addonParamService;
             this.modelPickerService = modelPickerService;
             this.itemReferenceService = itemReferenceService;
+            this.creaturePortraitIconService = new CreaturePortraitIconService();
         }
 
         public List<ValueRowDisplay> BuildRows(
@@ -154,7 +156,11 @@ namespace FWEledit
                     }
                 }
 
-                if (modelPickerService != null && isModelFieldName != null && isModelFieldName(fieldName))
+                if (creaturePortraitIconService.IsCreaturePortraitField(listCollection, listIndex, fieldName))
+                {
+                    fieldValue = creaturePortraitIconService.FormatPortraitPathIdDisplay(database, fieldValue);
+                }
+                else if (modelPickerService != null && isModelFieldName != null && isModelFieldName(fieldName))
                 {
                     string listName = listCollection.Lists[listIndex].listName ?? string.Empty;
                     fieldValue = modelPickerService.FormatModelPathIdDisplay(database, fieldValue, fieldName, listName);

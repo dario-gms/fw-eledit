@@ -66,7 +66,8 @@ namespace FWEledit
             {
                 fieldType = Convert.ToString(itemGrid.Rows[gridRow].Cells[1].Value);
             }
-            string valueToSet = Convert.ToString(itemGrid.Rows[gridRow].Cells[2].Value);
+            object rawValue = itemGrid.Rows[gridRow].Cells[2].Tag;
+            string valueToSet = Convert.ToString(rawValue ?? itemGrid.Rows[gridRow].Cells[2].Value);
 
             Func<string, string, bool> isValueCompatible = null;
             if (compatibilityService != null)

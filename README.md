@@ -12,6 +12,18 @@ FWEledit is based on [sELedit++ by Wrechid](https://github.com/Wrechid/sELedit-)
 
 ---
 
+## What's New in v0.9.5.3
+
+- Expanded ID parsing for fields that reference other lists, including broader item/reference support across parser-heavy tables.
+- Fixed cross-list duplicate-ID resolution so item references prefer the correct item-bearing lists instead of unrelated lists with the same ID.
+- Added NPC/Monster portrait support for `NPC_ESSENCE` and `MONSTER_ESSENCE`, resolving `file_icon` PathIDs to TGA portrait assets instead of the normal item icon atlas.
+- Added a TGA portrait picker with search, thumbnails, and preview for NPC/Monster `file_icon` values.
+- Rendered portrait-backed `file_icon` values with a thumbnail and resolved TGA path while preserving the raw numeric PathID for safe editing.
+- Fixed portrait picker updates so choosing a TGA no longer triggers invalid `int32` validation and refreshes the Elements list icon correctly.
+- Project/app version metadata updated to `v0.9.5.3`.
+
+---
+
 ## What's New in v0.9.5.2
 
 - Added light/dark theme switching with persisted preference across app restarts.

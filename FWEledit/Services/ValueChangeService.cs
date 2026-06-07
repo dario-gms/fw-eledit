@@ -11,6 +11,7 @@ namespace FWEledit
         private readonly IdGenerationService idGenerationService;
         private readonly IconResolutionService iconResolutionService;
         private readonly ItemReferenceService itemReferenceService;
+        private readonly CreaturePortraitIconService creaturePortraitIconService = new CreaturePortraitIconService();
 
         public ValueChangeService(
             AddonParamService addonParamService,
@@ -157,6 +158,10 @@ namespace FWEledit
                 string listName = request.ListCollection.Lists[request.ListIndex].listName ?? string.Empty;
                 result.DisplayValue = modelPickerService.FormatModelPathIdDisplay(request.Database, valueToSet, request.FieldName, listName);
             }
+            else if (creaturePortraitIconService.IsCreaturePortraitField(request.ListCollection, request.ListIndex, request.FieldName))
+            {
+                result.DisplayValue = creaturePortraitIconService.FormatPortraitPathIdDisplay(request.Database, valueToSet);
+            }
             else if (itemReferenceService != null && itemReferenceService.IsReferenceField(request.ListCollection, request.ListIndex, request.FieldName))
             {
                 result.DisplayValue = itemReferenceService.FormatReferenceValue(request.ListCollection, request.ListIndex, request.FieldName, valueToSet);
@@ -218,10 +223,19 @@ namespace FWEledit
                     Image icon = Properties.Resources.blank;
                     if (pos2 > -1)
                     {
-                        string path = iconResolutionService.ResolveIconKeyForList(request.Database, request.ListCollection, request.ListIndex, request.ListCollection.GetValue(request.ListIndex, elementIndex, pos2));
-                        if (request.Database != null && request.Database.sourceBitmap != null && request.Database.ContainsKey(path))
+                        string rawIcon = request.ListCollection.GetValue(request.ListIndex, elementIndex, pos2);
+                        Bitmap portrait;
+                        if (creaturePortraitIconService.TryResolvePortrait(request.Database, request.ListCollection, request.ListIndex, rawIcon, out portrait))
                         {
-                            icon = request.Database.images(path);
+                            icon = portrait;
+                        }
+                        else
+                        {
+                            string path = iconResolutionService.ResolveIconKeyForList(request.Database, request.ListCollection, request.ListIndex, rawIcon);
+                            if (request.Database != null && request.Database.sourceBitmap != null && request.Database.ContainsKey(path))
+                            {
+                                icon = request.Database.images(path);
+                            }
                         }
                     }
                     update.IdValue = request.ListCollection.GetValue(request.ListIndex, elementIndex, 0);
