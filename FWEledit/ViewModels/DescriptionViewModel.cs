@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace FWEledit
 {
@@ -69,6 +70,52 @@ namespace FWEledit
                 statusText = StatusText;
             }
             return changed;
+        }
+
+        public bool StageEditorTextForItems(IEnumerable<int> itemIds, string editorText, out string statusText)
+        {
+            statusText = StatusText;
+            if (itemIds == null)
+            {
+                return StageEditorText(editorText, out statusText);
+            }
+
+            string encoded = ItemDescriptionCodec.EncodeForStorage(editorText ?? string.Empty);
+            HashSet<int> stagedIds = new HashSet<int>();
+            int firstStagedId = 0;
+            int changedCount = 0;
+            foreach (int itemId in itemIds)
+            {
+                if (itemId <= 0 || !stagedIds.Add(itemId))
+                {
+                    continue;
+                }
+                if (firstStagedId == 0)
+                {
+                    firstStagedId = itemId;
+                }
+
+                if (store.Stage(itemId, encoded))
+                {
+                    changedCount++;
+                }
+            }
+
+            if (stagedIds.Count == 0)
+            {
+                return StageEditorText(editorText, out statusText);
+            }
+
+            if (changedCount > 0)
+            {
+                StatusText = stagedIds.Count == 1
+                    ? "Description staged for item " + firstStagedId + " (save with File > Save)"
+                    : "Description staged for " + stagedIds.Count + " items (save with File > Save)";
+                statusText = StatusText;
+                return true;
+            }
+
+            return false;
         }
 
         public bool FlushToDisk(AssetManager asm, out string statusText, out string errorMessage)

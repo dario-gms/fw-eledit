@@ -79,6 +79,17 @@ namespace FWEledit
                 this);
         }
 
+        private void OpenGenderTypePickerForValueRow(int rowIndex)
+        {
+            mainWindowValuePickerCoordinatorService.OpenGenderTypePickerForValueRow(
+                mainWindowValueRowPickerUiService,
+                valueRowPickerUiService,
+                dataGridView_item,
+                rowIndex,
+                itemFieldClassifierService,
+                this);
+        }
+
         private void OpenItemReferencePickerForValueRow(int rowIndex)
         {
             mainWindowValuePickerCoordinatorService.OpenItemReferencePickerForValueRow(
@@ -735,6 +746,7 @@ namespace FWEledit
                 OpenIconPickerForValueRow,
                 OpenAddonTypePickerForValueRow,
                 OpenItemQualityPickerForValueRow,
+                OpenGenderTypePickerForValueRow,
                 OpenModelPickerForValueRow,
                 OpenItemReferencePickerForValueRow,
                 UpdatePickIconButtonState,
@@ -804,6 +816,7 @@ namespace FWEledit
                 && sessionService.ListCollection != null
                 && itemFieldClassifierService.IsAddonTypeField(sessionService.ListCollection, comboBox_lists.SelectedIndex, fieldName);
             bool isItemQualityField = itemFieldClassifierService != null && itemFieldClassifierService.IsItemQualityFieldName(fieldName);
+            bool isGenderTypeField = itemFieldClassifierService != null && itemFieldClassifierService.IsGenderTypeFieldName(fieldName);
             bool isReferenceField = itemReferenceService != null
                 && sessionService != null
                 && sessionService.ListCollection != null
@@ -858,6 +871,15 @@ namespace FWEledit
                     menu.Items.Add(new ToolStripSeparator());
                 }
                 menu.Items.Add("Choose Item Quality...", null, (menuSender, args) => OpenItemQualityPickerForValueRow(rowIndex));
+            }
+
+            if (isGenderTypeField)
+            {
+                if (menu.Items.Count > 0)
+                {
+                    menu.Items.Add(new ToolStripSeparator());
+                }
+                menu.Items.Add("Choose Gender Type...", null, (menuSender, args) => OpenGenderTypePickerForValueRow(rowIndex));
             }
 
             if (menu.Items.Count == 0)

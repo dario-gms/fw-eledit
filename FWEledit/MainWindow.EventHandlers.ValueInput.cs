@@ -30,6 +30,11 @@ namespace FWEledit
                 AdjustRawValueEditor(-1);
                 e.SuppressKeyPress = true;
             }
+            else if (e.KeyCode == Keys.Enter)
+            {
+                ApplyRawValueEditorToCurrentCell();
+                e.SuppressKeyPress = true;
+            }
         }
 
         private void raw_value_editor_changed(object sender, EventArgs e)

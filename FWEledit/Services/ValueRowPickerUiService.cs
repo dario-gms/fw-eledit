@@ -111,6 +111,7 @@ namespace FWEledit
             Action<int> openIconPicker,
             Action<int> openAddonTypePicker,
             Action<int> openItemQualityPicker,
+            Action<int> openGenderTypePicker,
             Action<int> openModelPicker,
             Action<int> openItemReferencePicker,
             Action updateInlineIconButton,
@@ -143,6 +144,13 @@ namespace FWEledit
                     if (openItemQualityPicker != null)
                     {
                         openItemQualityPicker(e.RowIndex);
+                    }
+                }
+                else if (fieldClassifier.IsGenderTypeFieldName(fieldName))
+                {
+                    if (openGenderTypePicker != null)
+                    {
+                        openGenderTypePicker(e.RowIndex);
                     }
                 }
                 else if (fieldClassifier.IsModelFieldName(fieldName))
@@ -521,6 +529,38 @@ namespace FWEledit
                 ? new List<QualityOption>(options)
                 : new List<QualityOption>();
             using (QualityPickerWindow picker = new QualityPickerWindow(safeOptions, currentValue))
+            {
+                if (picker.ShowDialog(owner) != DialogResult.OK)
+                {
+                    return;
+                }
+
+                SetValueCellRawValue(itemGrid, rowIndex, picker.SelectedValue.ToString(CultureInfo.InvariantCulture));
+            }
+        }
+
+        public void OpenGenderTypePickerForValueRow(
+            DataGridView itemGrid,
+            int rowIndex,
+            ItemFieldClassifierService fieldClassifier,
+            IWin32Window owner)
+        {
+            if (itemGrid == null || rowIndex < 0 || rowIndex >= itemGrid.Rows.Count)
+            {
+                return;
+            }
+
+            string fieldName = Convert.ToString(itemGrid.Rows[rowIndex].Cells[0].Value);
+            if (fieldClassifier == null || !fieldClassifier.IsGenderTypeFieldName(fieldName))
+            {
+                return;
+            }
+
+            int currentValue = 0;
+            string rawValue = GetValueCellRawValue(itemGrid, rowIndex);
+            int.TryParse(rawValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out currentValue);
+
+            using (QualityPickerWindow picker = new QualityPickerWindow(new List<QualityOption>(GenderTypeCatalog.Options), currentValue))
             {
                 if (picker.ShowDialog(owner) != DialogResult.OK)
                 {

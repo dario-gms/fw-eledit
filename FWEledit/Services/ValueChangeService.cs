@@ -79,6 +79,10 @@ namespace FWEledit
             {
                 valueToSet = itemReferenceService.NormalizeReferenceInput(request.ListCollection, request.ListIndex, request.FieldName, valueToSet);
             }
+            else if (GenderTypeCatalog.IsGenderTypeFieldName(request.FieldName))
+            {
+                valueToSet = GenderTypeCatalog.NormalizeInput(valueToSet);
+            }
 
             if (request.IsIdEdit)
             {
@@ -157,6 +161,14 @@ namespace FWEledit
             {
                 string listName = request.ListCollection.Lists[request.ListIndex].listName ?? string.Empty;
                 result.DisplayValue = modelPickerService.FormatModelPathIdDisplay(request.Database, valueToSet, request.FieldName, listName);
+            }
+            else if (string.Equals(request.FieldName, "item_quality", StringComparison.OrdinalIgnoreCase))
+            {
+                result.DisplayValue = ItemQualityCatalog.FormatDisplay(valueToSet);
+            }
+            else if (GenderTypeCatalog.IsGenderTypeFieldName(request.FieldName))
+            {
+                result.DisplayValue = GenderTypeCatalog.FormatDisplay(valueToSet);
             }
             else if (creaturePortraitIconService.IsCreaturePortraitField(request.ListCollection, request.ListIndex, request.FieldName))
             {

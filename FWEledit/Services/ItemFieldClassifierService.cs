@@ -15,6 +15,11 @@ namespace FWEledit
             return string.Equals(fieldName, "item_quality", StringComparison.OrdinalIgnoreCase);
         }
 
+        public bool IsGenderTypeFieldName(string fieldName)
+        {
+            return GenderTypeCatalog.IsGenderTypeFieldName(fieldName);
+        }
+
         public bool IsModelFieldName(string fieldName)
         {
             if (string.IsNullOrWhiteSpace(fieldName))

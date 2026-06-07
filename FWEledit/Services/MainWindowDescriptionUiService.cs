@@ -121,7 +121,8 @@ namespace FWEledit
             Action<string[]> applyRuntime,
             Action markUnsaved,
             Func<int> getSelectedListIndex,
-            Func<int> getSelectedRowIndex,
+            Func<int[]> getSelectedItemIds,
+            Func<int[]> getSelectedRowIndices,
             Action<int, int> markRowDirty)
         {
             if (descriptionUiService == null)
@@ -138,7 +139,8 @@ namespace FWEledit
                 applyRuntime,
                 markUnsaved,
                 getSelectedListIndex,
-                getSelectedRowIndex,
+                getSelectedItemIds,
+                getSelectedRowIndices,
                 markRowDirty);
         }
 

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace FWEledit
 {
@@ -77,7 +78,8 @@ namespace FWEledit
             Action<string[]> applyRuntime,
             Action markUnsaved,
             Func<int> getSelectedListIndex,
-            Func<int> getSelectedRowIndex,
+            Func<int[]> getSelectedItemIds,
+            Func<int[]> getSelectedRowIndices,
             Action<int, int> markRowDirty)
         {
             DescriptionChangeResult result = new DescriptionChangeResult();
@@ -90,7 +92,13 @@ namespace FWEledit
                 return result;
             }
 
-            result = workflowService.StageEditorText(viewModel.DescriptionViewModel, editorText);
+            int[] selectedItemIds = getSelectedItemIds != null ? getSelectedItemIds() : new int[0];
+            if (selectedItemIds == null || selectedItemIds.Length == 0)
+            {
+                selectedItemIds = new int[] { viewModel.DescriptionViewModel.CurrentItemId };
+            }
+
+            result = workflowService.StageEditorTextForItems(viewModel.DescriptionViewModel, selectedItemIds, editorText);
             if (result.Changed)
             {
                 if (markUnsaved != null)
@@ -102,13 +110,25 @@ namespace FWEledit
                     loadService.SyncRuntime(viewModel.DescriptionViewModel, runtimeService, applyRuntime);
                 }
 
-                if (getSelectedListIndex != null && getSelectedRowIndex != null && markRowDirty != null)
+                if (getSelectedListIndex != null && markRowDirty != null)
                 {
                     int listIndex = getSelectedListIndex();
-                    int rowIndex = getSelectedRowIndex();
-                    if (listIndex > -1 && rowIndex > -1)
+                    int[] rowIndices = getSelectedRowIndices != null ? getSelectedRowIndices() : new int[0];
+                    if (listIndex > -1)
                     {
-                        markRowDirty(listIndex, rowIndex);
+                        if (rowIndices == null || rowIndices.Length == 0)
+                        {
+                            rowIndices = new int[] { -1 };
+                        }
+
+                        HashSet<int> markedRows = new HashSet<int>();
+                        foreach (int rowIndex in rowIndices)
+                        {
+                            if (rowIndex > -1 && markedRows.Add(rowIndex))
+                            {
+                                markRowDirty(listIndex, rowIndex);
+                            }
+                        }
                     }
                 }
             }

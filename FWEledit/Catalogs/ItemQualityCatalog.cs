@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Drawing;
+using System.Globalization;
 
 namespace FWEledit
 {
@@ -36,6 +37,26 @@ namespace FWEledit
         public static List<QualityOption> Options
         {
             get { return ItemQualityOptions; }
+        }
+
+        public static string FormatDisplay(string rawValue)
+        {
+            int quality;
+            if (!int.TryParse(rawValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out quality))
+            {
+                return rawValue ?? string.Empty;
+            }
+
+            for (int i = 0; i < ItemQualityOptions.Count; i++)
+            {
+                QualityOption option = ItemQualityOptions[i];
+                if (option != null && option.Value == quality)
+                {
+                    return option.ToString();
+                }
+            }
+
+            return rawValue ?? string.Empty;
         }
 
         public static bool TryGetColor(int quality, out Color color)

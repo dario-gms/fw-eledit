@@ -22,7 +22,7 @@
     <UpdateRequired>false</UpdateRequired>
     <MapFileExtensions>true</MapFileExtensions>
     <ApplicationRevision>0</ApplicationRevision>
-    <ApplicationVersion>0.9.5.3</ApplicationVersion>
+    <ApplicationVersion>0.9.5.4</ApplicationVersion>
     <IsWebBootstrapper>false</IsWebBootstrapper>
     <UseApplicationTrust>false</UseApplicationTrust>
     <BootstrapperEnabled>true</BootstrapperEnabled>
@@ -380,6 +380,7 @@
     <Compile Include="MainWindow.Designer.cs">
       <DependentUpon>MainWindow.cs</DependentUpon>
     </Compile>
+    <Compile Include="Catalogs\GenderTypeCatalog.cs" />
     <Compile Include="Models\AddonTypeOption.cs" />
     <Compile Include="Models\ClassMaskFlags.cs" />
     <Compile Include="Models\ClipboardCopyResult.cs" />
