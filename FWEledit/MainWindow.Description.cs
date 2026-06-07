@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Windows.Forms;
 
@@ -76,7 +77,8 @@ namespace FWEledit
                 ApplyItemDescriptionRuntime,
                 () => viewModel.HasUnsavedChanges = true,
                 () => comboBox_lists.SelectedIndex,
-                () => dataGridView_elems.CurrentCell != null ? dataGridView_elems.CurrentCell.RowIndex : -1,
+                GetSelectedDescriptionItemIds,
+                GetSelectedDescriptionElementIndices,
                 (listIndex, rowIndex) => mainWindowDirtyTrackingService.MarkRowDirty(
                     dirtyStateTracker,
                     listDisplayService,
@@ -91,6 +93,81 @@ namespace FWEledit
                         fwDescriptionStatusLabel.Text = status;
                     }
                 });
+        }
+
+        private int[] GetSelectedDescriptionItemIds()
+        {
+            int listIndex = comboBox_lists != null ? comboBox_lists.SelectedIndex : -1;
+            int[] elementIndices = GetSelectedDescriptionElementIndices();
+            if (sessionService == null
+                || sessionService.ListCollection == null
+                || listIndex < 0
+                || listIndex >= sessionService.ListCollection.Lists.Length
+                || listIndex == sessionService.ListCollection.ConversationListIndex)
+            {
+                return new int[0];
+            }
+
+            List<int> ids = new List<int>();
+            HashSet<int> seenIds = new HashSet<int>();
+            for (int i = 0; i < elementIndices.Length; i++)
+            {
+                int elementIndex = elementIndices[i];
+                if (elementIndex < 0 || elementIndex >= sessionService.ListCollection.Lists[listIndex].elementValues.Length)
+                {
+                    continue;
+                }
+
+                int itemId;
+                if (int.TryParse(sessionService.ListCollection.GetValue(listIndex, elementIndex, 0), out itemId)
+                    && itemId > 0
+                    && seenIds.Add(itemId))
+                {
+                    ids.Add(itemId);
+                }
+            }
+
+            return ids.ToArray();
+        }
+
+        private int[] GetSelectedDescriptionElementIndices()
+        {
+            int listIndex = comboBox_lists != null ? comboBox_lists.SelectedIndex : -1;
+            if (sessionService == null
+                || sessionService.ListCollection == null
+                || dataGridView_elems == null
+                || listIndex < 0
+                || listIndex >= sessionService.ListCollection.Lists.Length
+                || listIndex == sessionService.ListCollection.ConversationListIndex)
+            {
+                return new int[0];
+            }
+
+            int[] gridRows = gridSelectionService != null
+                ? gridSelectionService.GetSelectedIndices(dataGridView_elems)
+                : new int[0];
+            if ((gridRows == null || gridRows.Length == 0) && dataGridView_elems.CurrentCell != null)
+            {
+                gridRows = new int[] { dataGridView_elems.CurrentCell.RowIndex };
+            }
+
+            List<int> elementIndices = new List<int>();
+            HashSet<int> seenIndices = new HashSet<int>();
+            for (int i = 0; i < gridRows.Length; i++)
+            {
+                int gridRow = gridRows[i];
+                int elementIndex = elementIndexResolverService != null
+                    ? elementIndexResolverService.ResolveElementIndexFromGridRow(sessionService.ListCollection, listIndex, gridRow, dataGridView_elems)
+                    : gridRow;
+                if (elementIndex >= 0
+                    && elementIndex < sessionService.ListCollection.Lists[listIndex].elementValues.Length
+                    && seenIndices.Add(elementIndex))
+                {
+                    elementIndices.Add(elementIndex);
+                }
+            }
+
+            return elementIndices.ToArray();
         }
 
         private bool FlushPendingDescriptionsToDisk()

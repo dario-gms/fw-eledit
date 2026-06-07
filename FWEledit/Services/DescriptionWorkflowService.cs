@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace FWEledit
 {
@@ -52,6 +53,20 @@ namespace FWEledit
 
             string statusText;
             result.Changed = descriptionViewModel.StageEditorText(editorText ?? string.Empty, out statusText);
+            result.StatusText = statusText ?? string.Empty;
+            return result;
+        }
+
+        public DescriptionChangeResult StageEditorTextForItems(DescriptionViewModel descriptionViewModel, IEnumerable<int> itemIds, string editorText)
+        {
+            DescriptionChangeResult result = new DescriptionChangeResult();
+            if (descriptionViewModel == null)
+            {
+                return result;
+            }
+
+            string statusText;
+            result.Changed = descriptionViewModel.StageEditorTextForItems(itemIds, editorText ?? string.Empty, out statusText);
             result.StatusText = statusText ?? string.Empty;
             return result;
         }

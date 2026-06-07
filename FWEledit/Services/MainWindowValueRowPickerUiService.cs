@@ -101,6 +101,25 @@ namespace FWEledit
                 owner);
         }
 
+        public void OpenGenderTypePickerForValueRow(
+            ValueRowPickerUiService valueRowPickerUiService,
+            DataGridView valuesGrid,
+            int rowIndex,
+            ItemFieldClassifierService fieldClassifierService,
+            IWin32Window owner)
+        {
+            if (valueRowPickerUiService == null)
+            {
+                return;
+            }
+
+            valueRowPickerUiService.OpenGenderTypePickerForValueRow(
+                valuesGrid,
+                rowIndex,
+                fieldClassifierService,
+                owner);
+        }
+
         public void OpenItemReferencePickerForValueRow(
             ValueRowPickerUiService valueRowPickerUiService,
             eListCollection listCollection,
@@ -253,6 +272,7 @@ namespace FWEledit
             Action<int> openIconPicker,
             Action<int> openAddonPicker,
             Action<int> openQualityPicker,
+            Action<int> openGenderTypePicker,
             Action<int> openModelPicker,
             Action<int> openItemReferencePicker,
             Action updateInlineButton,
@@ -273,6 +293,7 @@ namespace FWEledit
                 openIconPicker,
                 openAddonPicker,
                 openQualityPicker,
+                openGenderTypePicker,
                 openModelPicker,
                 openItemReferencePicker,
                 updateInlineButton,

@@ -12,6 +12,16 @@ FWEledit is based on [sELedit++ by Wrechid](https://github.com/Wrechid/sELedit-)
 
 ---
 
+## What's New in v0.9.5.4
+
+- Fixed multi-edit Description staging so editing descriptions for multiple selected items persists every selected item instead of only the active row.
+- Rendered `item_quality` values with their quality label in the Values grid while preserving the raw numeric value for saving.
+- Added friendly display and a mini picker for `gender_type`, `require_gender`, and reward gender fields (`0 = Male`, `1 = Female`, `2 = Female & Male`).
+- Allowed the raw `Selected ID` / Value editor to apply the typed value with Enter, in addition to the Set button.
+- Project/app version metadata updated to `v0.9.5.4`.
+
+---
+
 ## What's New in v0.9.5.3
 
 - Expanded ID parsing for fields that reference other lists, including broader item/reference support across parser-heavy tables.

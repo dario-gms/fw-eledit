@@ -160,6 +160,14 @@ namespace FWEledit
                 {
                     fieldValue = creaturePortraitIconService.FormatPortraitPathIdDisplay(database, fieldValue);
                 }
+                else if (string.Equals(fieldName, "item_quality", System.StringComparison.OrdinalIgnoreCase))
+                {
+                    fieldValue = ItemQualityCatalog.FormatDisplay(fieldValue);
+                }
+                else if (GenderTypeCatalog.IsGenderTypeFieldName(fieldName))
+                {
+                    fieldValue = GenderTypeCatalog.FormatDisplay(fieldValue);
+                }
                 else if (modelPickerService != null && isModelFieldName != null && isModelFieldName(fieldName))
                 {
                     string listName = listCollection.Lists[listIndex].listName ?? string.Empty;

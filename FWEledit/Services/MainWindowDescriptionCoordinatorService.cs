@@ -111,7 +111,8 @@ namespace FWEledit
             Action<string[]> applyRuntime,
             Action markUnsaved,
             Func<int> getSelectedListIndex,
-            Func<int> getSelectedRowIndex,
+            Func<int[]> getSelectedItemIds,
+            Func<int[]> getSelectedRowIndices,
             Action<int, int> markRowDirty,
             bool updateStatus,
             Action<string> updateStatusText)
@@ -131,7 +132,8 @@ namespace FWEledit
                 applyRuntime,
                 markUnsaved,
                 getSelectedListIndex,
-                getSelectedRowIndex,
+                getSelectedItemIds,
+                getSelectedRowIndices,
                 markRowDirty);
 
             if (updateStatus && updateStatusText != null && !string.IsNullOrWhiteSpace(result.StatusText))
