@@ -576,6 +576,7 @@ namespace FWEledit
             CacheSave database,
             DataGridView itemGrid,
             int listIndex,
+            int currentElementIndex,
             int rowIndex,
             ItemReferenceService itemReferenceService,
             IconResolutionService iconResolutionService,
@@ -593,7 +594,7 @@ namespace FWEledit
 
             string fieldName = Convert.ToString(itemGrid.Rows[rowIndex].Cells[0].Value);
             int targetListIndex;
-            if (!itemReferenceService.TryGetTargetListIndex(listCollection, listIndex, fieldName, out targetListIndex))
+            if (!itemReferenceService.TryGetTargetListIndex(listCollection, listIndex, currentElementIndex, fieldName, out targetListIndex))
             {
                 return;
             }
@@ -603,7 +604,7 @@ namespace FWEledit
             int.TryParse(currentText, out currentId);
             if (currentId <= 0)
             {
-                string normalized = itemReferenceService.NormalizeReferenceInput(listCollection, listIndex, fieldName, currentText);
+                string normalized = itemReferenceService.NormalizeReferenceInput(listCollection, listIndex, currentElementIndex, fieldName, currentText);
                 int.TryParse(normalized, out currentId);
             }
 
@@ -629,7 +630,7 @@ namespace FWEledit
                     return;
                 }
 
-                itemReferenceService.RememberReferenceOverride(listIndex, fieldName, picker.SelectedOption);
+                itemReferenceService.RememberReferenceOverride(listIndex, currentElementIndex, fieldName, picker.SelectedOption);
                 SetValueCellRawValue(itemGrid, rowIndex, picker.SelectedId.ToString(CultureInfo.InvariantCulture));
             }
         }

@@ -12,6 +12,19 @@ FWEledit is based on [sELedit++ by Wrechid](https://github.com/Wrechid/sELedit-)
 
 ---
 
+## What's New in v0.9.5.5
+
+- Replaced the always-on References tab with a lighter `Show references` context action on Elements rows, opening references in a dedicated window.
+- Added navigation from the references window so double-clicking or pressing Enter on a reference jumps directly to the source element.
+- Restored and accelerated the `Refs` count column using a shared reference index instead of repeated full rescans.
+- Added background warmup plus persisted disk caching for the reference index, so reference-heavy workflows no longer need to rebuild everything every launch.
+- Added safe cache invalidation for edited IDs, names, qualities, and icons to keep cached lookups fast without showing stale data.
+- Added cache layers for icon resolution, field-index lookups, and search suggestions to improve UI responsiveness across repeated navigation and search.
+- Corrected reference-window icon resolution so it follows the same path/icon logic as the main Elements panel.
+- Project/app version metadata updated to `v0.9.5.5`.
+
+---
+
 ## What's New in v0.9.5.4
 
 - Fixed multi-edit Description staging so editing descriptions for multiple selected items persists every selected item instead of only the active row.

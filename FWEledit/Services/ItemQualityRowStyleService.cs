@@ -46,6 +46,10 @@ namespace FWEledit
                 row.Cells[2].Style.SelectionBackColor = hover;
                 row.Cells[0].Style.SelectionBackColor = hover;
                 row.Cells[1].Style.SelectionBackColor = hover;
+                if (row.Cells.Count > 3)
+                {
+                    row.Cells[3].Style.SelectionBackColor = hover;
+                }
             }
             else
             {
@@ -60,6 +64,11 @@ namespace FWEledit
             row.Cells[2].Style.SelectionBackColor = elementGrid.DefaultCellStyle.SelectionBackColor;
             row.Cells[0].Style.SelectionBackColor = elementGrid.DefaultCellStyle.SelectionBackColor;
             row.Cells[1].Style.SelectionBackColor = elementGrid.DefaultCellStyle.SelectionBackColor;
+            if (row.Cells.Count > 3)
+            {
+                row.Cells[3].Style.SelectionBackColor = elementGrid.DefaultCellStyle.SelectionBackColor;
+                row.Cells[3].Style.SelectionForeColor = elementGrid.DefaultCellStyle.SelectionForeColor;
+            }
         }
     }
 }

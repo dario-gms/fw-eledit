@@ -166,6 +166,7 @@ namespace FWEledit
                 elementsGrid.Parent = leftPanel;
                 elementsGrid.Dock = DockStyle.Fill;
                 elementsGrid.Margin = new Padding(0);
+                EnsureReferenceCountColumn(elementsGrid);
             }
 
             FlowLayoutPanel searchOptionsPanel = new FlowLayoutPanel();
@@ -382,6 +383,8 @@ namespace FWEledit
             equipmentTabDecompose.Padding = new Padding(0, 6, 0, 0);
             equipmentTabDecompose.Tag = EquipmentValuesTab.Decompose;
             TabPage equipmentTabOther = null;
+            TabPage referencesTab = new TabPage("References");
+            referencesTab.Padding = new Padding(0, 6, 0, 0);
 
             if (valuesGrid != null)
             {
@@ -407,6 +410,46 @@ namespace FWEledit
             }
             valuesInspectorPanel.Controls.SetChildIndex(valuesCaption, 1);
             valuesTab.Controls.Add(valuesInspectorPanel);
+
+            Label referencesCaption = CreateSectionLabel("Referenced By");
+            referencesCaption.Dock = DockStyle.Top;
+            referencesCaption.Height = 30;
+
+            DataGridView referencesGrid = new DataGridView();
+            referencesGrid.Dock = DockStyle.Fill;
+            referencesGrid.Margin = new Padding(0);
+            referencesGrid.AllowUserToAddRows = false;
+            referencesGrid.AllowUserToDeleteRows = false;
+            referencesGrid.AllowUserToResizeRows = false;
+            referencesGrid.ReadOnly = true;
+            referencesGrid.RowHeadersVisible = false;
+            referencesGrid.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
+            referencesGrid.MultiSelect = false;
+            referencesGrid.AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.None;
+            referencesGrid.RowTemplate.Height = 38;
+            referencesGrid.ColumnHeadersHeight = 30;
+            referencesGrid.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.DisableResizing;
+            referencesGrid.EnableHeadersVisualStyles = false;
+            referencesGrid.BorderStyle = BorderStyle.None;
+            referencesGrid.CellBorderStyle = DataGridViewCellBorderStyle.SingleHorizontal;
+            referencesGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "refList", HeaderText = "List", Width = 185, ReadOnly = true });
+            referencesGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "refId", HeaderText = "ID", Width = 82, ReadOnly = true });
+            referencesGrid.Columns.Add(new DataGridViewImageColumn
+            {
+                Name = "refIcon",
+                HeaderText = string.Empty,
+                Width = 42,
+                MinimumWidth = 42,
+                ReadOnly = true,
+                ImageLayout = DataGridViewImageCellLayout.Zoom
+            });
+            referencesGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "refName", HeaderText = "Name", AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill, MinimumWidth = 180, ReadOnly = true });
+            referencesGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "refField", HeaderText = "Field", Width = 220, ReadOnly = true });
+            referencesGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "refValue", HeaderText = "Value", Width = 70, ReadOnly = true });
+            referencesTab.Controls.Add(referencesGrid);
+            referencesTab.Controls.Add(referencesCaption);
+            referencesTab.Controls.SetChildIndex(referencesGrid, 0);
+            referencesTab.Controls.SetChildIndex(referencesCaption, 1);
 
             Button inlinePickIconButton = new Button();
             inlinePickIconButton.Text = "...";
@@ -527,6 +570,7 @@ namespace FWEledit
             rightTabs.TabPages.Add(equipmentTabModels);
             rightTabs.TabPages.Add(equipmentTabRefine);
             rightTabs.TabPages.Add(equipmentTabDecompose);
+            rightTabs.TabPages.Add(referencesTab);
             rightTabs.TabPages.Add(descriptionTab);
 
             rightTabs.Margin = new Padding(0, 8, 0, 0);
@@ -574,6 +618,8 @@ namespace FWEledit
                 EquipmentTabRefine = equipmentTabRefine,
                 EquipmentTabDecompose = equipmentTabDecompose,
                 EquipmentTabOther = equipmentTabOther,
+                ReferencesTab = referencesTab,
+                ReferencesGrid = referencesGrid,
                 DescriptionTab = descriptionTab,
                 DescriptionEditor = descriptionEditor,
                 DescriptionPreview = descriptionPreview,
@@ -670,6 +716,25 @@ namespace FWEledit
                 ForeColor = Color.FromArgb(29, 36, 45),
                 Font = new Font("Segoe UI", 8.25F, FontStyle.Regular, GraphicsUnit.Point, ((byte)(0)))
             };
+        }
+
+        private static void EnsureReferenceCountColumn(DataGridView grid)
+        {
+            if (grid == null || grid.Columns.Contains("col_REFS"))
+            {
+                return;
+            }
+
+            DataGridViewTextBoxColumn refsColumn = new DataGridViewTextBoxColumn();
+            refsColumn.Name = "col_REFS";
+            refsColumn.HeaderText = "Refs";
+            refsColumn.Width = 44;
+            refsColumn.MinimumWidth = 40;
+            refsColumn.AutoSizeMode = DataGridViewAutoSizeColumnMode.None;
+            refsColumn.ReadOnly = true;
+            refsColumn.SortMode = DataGridViewColumnSortMode.NotSortable;
+            refsColumn.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter;
+            grid.Columns.Add(refsColumn);
         }
 
         private static void MoveValuesInspectorToSelectedTab(TabControl tabs, Panel valuesInspectorPanel)

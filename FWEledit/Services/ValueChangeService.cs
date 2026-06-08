@@ -77,11 +77,15 @@ namespace FWEledit
             }
             else if (itemReferenceService != null && itemReferenceService.IsReferenceField(request.ListCollection, request.ListIndex, request.FieldName))
             {
-                valueToSet = itemReferenceService.NormalizeReferenceInput(request.ListCollection, request.ListIndex, request.FieldName, valueToSet);
+                valueToSet = itemReferenceService.NormalizeReferenceInput(request.ListCollection, request.ListIndex, request.CurrentElementIndex, request.FieldName, valueToSet);
             }
             else if (GenderTypeCatalog.IsGenderTypeFieldName(request.FieldName))
             {
                 valueToSet = GenderTypeCatalog.NormalizeInput(valueToSet);
+            }
+            else if (ProbabilityDisplayService.IsProbabilityFieldName(request.FieldName))
+            {
+                valueToSet = ProbabilityDisplayService.NormalizeInput(valueToSet);
             }
 
             if (request.IsIdEdit)
@@ -170,13 +174,17 @@ namespace FWEledit
             {
                 result.DisplayValue = GenderTypeCatalog.FormatDisplay(valueToSet);
             }
+            else if (ProbabilityDisplayService.IsProbabilityFieldName(request.FieldName))
+            {
+                result.DisplayValue = ProbabilityDisplayService.FormatDisplay(valueToSet);
+            }
             else if (creaturePortraitIconService.IsCreaturePortraitField(request.ListCollection, request.ListIndex, request.FieldName))
             {
                 result.DisplayValue = creaturePortraitIconService.FormatPortraitPathIdDisplay(request.Database, valueToSet);
             }
             else if (itemReferenceService != null && itemReferenceService.IsReferenceField(request.ListCollection, request.ListIndex, request.FieldName))
             {
-                result.DisplayValue = itemReferenceService.FormatReferenceValue(request.ListCollection, request.ListIndex, request.FieldName, valueToSet);
+                result.DisplayValue = itemReferenceService.FormatReferenceValue(request.ListCollection, request.ListIndex, request.CurrentElementIndex, request.FieldName, valueToSet);
             }
             else if (request.ListIndex == 0 && addonParamService.IsAddonParamField(request.FieldName))
             {
@@ -197,7 +205,11 @@ namespace FWEledit
             bool requiresIconUpdate = string.Equals(request.FieldName, "id", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(request.FieldName, "name", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(request.FieldName, "file_icon", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(request.FieldName, "file_icon1", StringComparison.OrdinalIgnoreCase);
+                || string.Equals(request.FieldName, "file_icon1", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(request.FieldName, "is_category", StringComparison.OrdinalIgnoreCase)
+                || ((request.ListCollection.Lists[request.ListIndex].listName ?? string.Empty).IndexOf("DROPTABLE_ESSENCE", StringComparison.OrdinalIgnoreCase) >= 0
+                    && request.FieldName.StartsWith("drops_", StringComparison.OrdinalIgnoreCase)
+                    && request.FieldName.EndsWith("_id_obj", StringComparison.OrdinalIgnoreCase));
 
             int pos = -1;
             int pos2 = -1;

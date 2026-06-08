@@ -6,6 +6,11 @@ namespace FWEledit
 {
     public sealed class IconResolutionService
     {
+        private CacheSave cachedDatabase;
+        private readonly Dictionary<string, string> rawIconKeyCache = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<int, string> pathIdIconKeyCache = new Dictionary<int, string>();
+        private readonly Dictionary<string, string> listIconKeyCache = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
         public string ResolveIconKey(CacheSave database, string rawValue)
         {
             if (database == null || string.IsNullOrWhiteSpace(rawValue))
@@ -13,18 +18,31 @@ namespace FWEledit
                 return string.Empty;
             }
 
+            EnsureCacheContext(database);
+
             string value = rawValue.Trim();
+            string cached;
+            if (rawIconKeyCache.TryGetValue(value, out cached))
+            {
+                return cached ?? string.Empty;
+            }
+
             int index;
             if (int.TryParse(value, out index))
             {
                 if (database.imagesx != null && database.imagesx.ContainsKey(index))
                 {
-                    return database.imagesx[index];
+                    cached = database.imagesx[index];
+                    rawIconKeyCache[value] = cached;
+                    return cached;
                 }
                 if (database.imagesById != null && database.imagesById.ContainsKey(index))
                 {
-                    return database.imagesById[index];
+                    cached = database.imagesById[index];
+                    rawIconKeyCache[value] = cached;
+                    return cached;
                 }
+                rawIconKeyCache[value] = string.Empty;
                 return string.Empty;
             }
 
@@ -36,6 +54,7 @@ namespace FWEledit
 
             if (database.ContainsKey(key))
             {
+                rawIconKeyCache[value] = key;
                 return key;
             }
 
@@ -44,15 +63,18 @@ namespace FWEledit
                 string dds = key + ".dds";
                 if (database.ContainsKey(dds))
                 {
+                    rawIconKeyCache[value] = dds;
                     return dds;
                 }
                 string png = key + ".png";
                 if (database.ContainsKey(png))
                 {
+                    rawIconKeyCache[value] = png;
                     return png;
                 }
             }
 
+            rawIconKeyCache[value] = key;
             return key;
         }
 
@@ -61,6 +83,14 @@ namespace FWEledit
             if (database == null || database.pathById == null || database.pathById.Count == 0)
             {
                 return string.Empty;
+            }
+
+            EnsureCacheContext(database);
+
+            string cached;
+            if (pathIdIconKeyCache.TryGetValue(pathId, out cached))
+            {
+                return cached ?? string.Empty;
             }
 
             int[] candidates = new int[] { pathId, pathId + 1, pathId - 1 };
@@ -81,6 +111,7 @@ namespace FWEledit
                 string key = ResolveIconKey(database, mapped);
                 if (!string.IsNullOrWhiteSpace(key) && database.ContainsKey(key))
                 {
+                    pathIdIconKeyCache[pathId] = key;
                     return key;
                 }
 
@@ -90,11 +121,13 @@ namespace FWEledit
                     string dds = baseName + ".dds";
                     if (database.ContainsKey(dds))
                     {
+                        pathIdIconKeyCache[pathId] = dds;
                         return dds;
                     }
                 }
             }
 
+            pathIdIconKeyCache[pathId] = string.Empty;
             return string.Empty;
         }
 
@@ -122,25 +155,57 @@ namespace FWEledit
                 return ResolveIconKey(database, rawValue);
             }
 
+            EnsureCacheContext(database);
+
+            string cacheKey = listIndex.ToString() + "|" + ((rawValue ?? string.Empty).Trim());
+            string cached;
+            if (listIconKeyCache.TryGetValue(cacheKey, out cached))
+            {
+                return cached ?? string.Empty;
+            }
+
             int iconId;
             if (!int.TryParse((rawValue ?? string.Empty).Trim(), out iconId))
             {
-                return ResolveIconKey(database, rawValue);
+                cached = ResolveIconKey(database, rawValue);
+                listIconKeyCache[cacheKey] = cached;
+                return cached;
             }
 
             string mappedByPathData = ResolveIconKeyFromPathId(database, iconId);
             if (!string.IsNullOrWhiteSpace(mappedByPathData))
             {
+                listIconKeyCache[cacheKey] = mappedByPathData;
                 return mappedByPathData;
             }
 
             string directIndexKey = GetIconKeyByIndex(database, iconId);
             if (!string.IsNullOrWhiteSpace(directIndexKey))
             {
+                listIconKeyCache[cacheKey] = directIndexKey;
                 return directIndexKey;
             }
 
-            return ResolveIconKey(database, rawValue);
+            cached = ResolveIconKey(database, rawValue);
+            listIconKeyCache[cacheKey] = cached;
+            return cached;
+        }
+
+        public void ClearCache()
+        {
+            cachedDatabase = null;
+            rawIconKeyCache.Clear();
+            pathIdIconKeyCache.Clear();
+            listIconKeyCache.Clear();
+        }
+
+        private void EnsureCacheContext(CacheSave database)
+        {
+            if (!object.ReferenceEquals(cachedDatabase, database))
+            {
+                ClearCache();
+                cachedDatabase = database;
+            }
         }
     }
 }

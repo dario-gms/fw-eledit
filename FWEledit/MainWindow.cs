@@ -38,6 +38,11 @@ namespace FWEledit
         private TabPage fwEquipmentTabRefine;
         private TabPage fwEquipmentTabDecompose;
         private TabPage fwEquipmentTabOther;
+        private TabPage fwReferencesTab;
+        private DataGridView fwReferencesGrid;
+        private Form referencesViewerForm;
+        private Label referencesViewerLabel;
+        private DataGridView referencesViewerGrid;
         private TabPage fwDescriptionTab;
         private TextBox fwDescriptionEditor;
         private RichTextBox fwDescriptionPreview;
@@ -50,6 +55,18 @@ namespace FWEledit
         private Button fwDescriptionTitleFontButton;
         private Button fwRawValueUpButton;
         private Button fwRawValueDownButton;
+        private int referenceCountRefreshVersion;
+        private int referencesTabLoadVersion;
+        private System.Windows.Forms.Timer referencesTabRefreshTimer;
+        private System.Threading.Tasks.Task referenceIndexBuildTask;
+        private bool referenceIndexReady;
+        private readonly object referenceRowsCacheSync = new object();
+        private readonly Dictionary<string, List<ReferenceGridRowData>> referenceRowsCache = new Dictionary<string, List<ReferenceGridRowData>>();
+        private string persistedReferenceCachePath = string.Empty;
+        private string persistedReferenceCacheSignature = string.Empty;
+        private string persistedItemReferenceOptionsCachePath = string.Empty;
+        private System.Threading.Tasks.Task itemReferenceOptionsWarmupTask;
+        private bool itemReferenceOptionsReady;
         
         private readonly ElementDeletionUiService elementDeletionUiService = new ElementDeletionUiService();
         private readonly ElementCloneUiService elementCloneUiService = new ElementCloneUiService();
@@ -71,6 +88,7 @@ namespace FWEledit
         private readonly AddonParamService addonParamService = new AddonParamService();
         private readonly ItemFieldClassifierService itemFieldClassifierService = new ItemFieldClassifierService();
         private readonly ItemReferenceService itemReferenceService;
+        private readonly ReferenceIndexService referenceIndexService = new ReferenceIndexService();
         private readonly EquipmentFieldService equipmentFieldService = new EquipmentFieldService();
         private readonly EquipmentTabService equipmentTabService = new EquipmentTabService();
         private readonly ModelPickerCacheService modelPickerCacheService = new ModelPickerCacheService();

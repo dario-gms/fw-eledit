@@ -22,7 +22,7 @@
     <UpdateRequired>false</UpdateRequired>
     <MapFileExtensions>true</MapFileExtensions>
     <ApplicationRevision>0</ApplicationRevision>
-    <ApplicationVersion>0.9.5.4</ApplicationVersion>
+    <ApplicationVersion>0.9.5.5</ApplicationVersion>
     <IsWebBootstrapper>false</IsWebBootstrapper>
     <UseApplicationTrust>false</UseApplicationTrust>
     <BootstrapperEnabled>true</BootstrapperEnabled>
@@ -365,6 +365,10 @@
       <DependentUpon>MainWindow.cs</DependentUpon>
       <SubType>Form</SubType>
     </Compile>
+    <Compile Include="MainWindow.References.cs">
+      <DependentUpon>MainWindow.cs</DependentUpon>
+      <SubType>Form</SubType>
+    </Compile>
     <Compile Include="MainWindow.SaveNavigation.cs">
       <DependentUpon>MainWindow.cs</DependentUpon>
       <SubType>Form</SubType>
@@ -412,6 +416,7 @@
     <Compile Include="Models\Vector3f.cs" />
     <Compile Include="Models\ModelPickerPackageCacheEntry.cs" />
     <Compile Include="Models\QualityOption.cs" />
+    <Compile Include="Models\ReferenceUsage.cs" />
     <Compile Include="Models\ReplaceParameters.cs" />
     <Compile Include="Models\ReplaceResult.cs" />
     <Compile Include="Models\ReplacementSummary.cs" />
@@ -765,6 +770,7 @@
     <Compile Include="Services\PlaceholderTextService.cs" />
     <Compile Include="Services\PlaceholderValueService.cs" />
     <Compile Include="Services\ProbabilityValidationService.cs" />
+    <Compile Include="Services\ProbabilityDisplayService.cs" />
     <Compile Include="Services\PropertyValidationService.cs" />
     <Compile Include="Services\QuestOverflowUiService.cs" />
     <Compile Include="Services\SkillValidationService.cs" />
@@ -795,6 +801,7 @@
     <Compile Include="Services\ItemFieldClassifierService.cs" />
     <Compile Include="Services\ItemReferenceService.cs" />
     <Compile Include="Services\ItemTooltipService.cs" />
+    <Compile Include="Services\ReferenceIndexService.cs" />
     <Compile Include="Services\FieldValueValidationService.cs" />
     <Compile Include="Services\ValueCompatibilityService.cs" />
     <Compile Include="Services\DescriptionPreviewService.cs" />

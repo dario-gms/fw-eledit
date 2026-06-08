@@ -43,6 +43,8 @@ namespace FWEledit
                 UpdateDescriptionTabForSelection,
                 UpdatePickIconButtonState,
                 PersistNavigationState);
+
+            RefreshVisibleReferenceCounts();
 		}
 
 
@@ -116,6 +118,13 @@ namespace FWEledit
                 return;
             }
 
+            int currentListIndex = comboBox_lists != null ? comboBox_lists.SelectedIndex : -1;
+            int currentElementIndex = ResolveCurrentElementIndex();
+            string editedFieldName = (ea != null && ea.RowIndex >= 0 && ea.RowIndex < dataGridView_item.Rows.Count)
+                ? Convert.ToString(dataGridView_item.Rows[ea.RowIndex].Cells[0].Value)
+                : string.Empty;
+            bool shouldInvalidateReferenceState = ShouldInvalidateReferenceState(currentListIndex, currentElementIndex, editedFieldName);
+
             mainWindowSelectionCoordinatorService.HandleChangeValue(
                 mainWindowSelectionUiService,
                 valueChangeCommandService,
@@ -187,6 +196,25 @@ namespace FWEledit
 
             RefreshLiveModelPreviewFromCurrentRow(false);
             UpdateRawValueEditorFromCurrentCell();
+            if (string.Equals(editedFieldName, "id", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(editedFieldName, "ID", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(editedFieldName, "name", StringComparison.OrdinalIgnoreCase))
+            {
+                searchSuggestionService.ClearCache();
+            }
+            if (string.Equals(editedFieldName, "id", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(editedFieldName, "ID", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(editedFieldName, "name", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(editedFieldName, "file_icon", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(editedFieldName, "file_icon1", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(editedFieldName, "item_quality", StringComparison.OrdinalIgnoreCase))
+            {
+                InvalidateItemReferenceOptionCaches();
+            }
+            if (shouldInvalidateReferenceState)
+            {
+                InvalidateReferenceIndexAndDisplays();
+            }
         }
     }
 }
