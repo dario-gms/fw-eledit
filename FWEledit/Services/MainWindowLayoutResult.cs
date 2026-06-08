@@ -13,6 +13,8 @@ namespace FWEledit
         public TabPage EquipmentTabRefine { get; set; }
         public TabPage EquipmentTabDecompose { get; set; }
         public TabPage EquipmentTabOther { get; set; }
+        public TabPage ReferencesTab { get; set; }
+        public DataGridView ReferencesGrid { get; set; }
         public TabPage DescriptionTab { get; set; }
         public TextBox DescriptionEditor { get; set; }
         public RichTextBox DescriptionPreview { get; set; }

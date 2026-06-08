@@ -5,6 +5,11 @@ namespace FWEledit
 {
     public sealed class SearchSuggestionService
     {
+        private const int CacheLimit = 96;
+        private eListCollection cachedListCollection;
+        private readonly Dictionary<string, List<SearchSuggestion>> cache = new Dictionary<string, List<SearchSuggestion>>(StringComparer.Ordinal);
+        private readonly LinkedList<string> cacheOrder = new LinkedList<string>();
+
         public List<SearchSuggestion> BuildSuggestions(
             eListCollection listCollection,
             string query,
@@ -25,8 +30,17 @@ namespace FWEledit
                 return suggestions;
             }
 
+            EnsureCacheContext(listCollection);
+
             string queryCompare = matchCase ? trimmed : trimmed.ToLowerInvariant();
             bool queryIsNumeric = int.TryParse(trimmed, out _);
+            string cacheKey = queryCompare + "|" + matchCase.ToString() + "|" + maxResults.ToString();
+            List<SearchSuggestion> cached;
+            if (cache.TryGetValue(cacheKey, out cached))
+            {
+                Touch(cacheKey);
+                return CloneSuggestions(cached);
+            }
 
             for (int listIndex = 0; listIndex < listCollection.Lists.Length; listIndex++)
             {
@@ -81,13 +95,81 @@ namespace FWEledit
 
                         if (suggestions.Count >= maxResults)
                         {
+                            Store(cacheKey, suggestions);
                             return suggestions;
                         }
                     }
                 }
             }
 
+            Store(cacheKey, suggestions);
             return suggestions;
+        }
+
+        public void ClearCache()
+        {
+            cachedListCollection = null;
+            cache.Clear();
+            cacheOrder.Clear();
+        }
+
+        private void EnsureCacheContext(eListCollection listCollection)
+        {
+            if (!object.ReferenceEquals(cachedListCollection, listCollection))
+            {
+                ClearCache();
+                cachedListCollection = listCollection;
+            }
+        }
+
+        private void Store(string key, List<SearchSuggestion> suggestions)
+        {
+            cache[key] = CloneSuggestions(suggestions);
+            Touch(key);
+            while (cache.Count > CacheLimit && cacheOrder.First != null)
+            {
+                string oldest = cacheOrder.First.Value;
+                cacheOrder.RemoveFirst();
+                cache.Remove(oldest);
+            }
+        }
+
+        private void Touch(string key)
+        {
+            LinkedListNode<string> existing = cacheOrder.Find(key);
+            if (existing != null)
+            {
+                cacheOrder.Remove(existing);
+            }
+            cacheOrder.AddLast(key);
+        }
+
+        private static List<SearchSuggestion> CloneSuggestions(List<SearchSuggestion> source)
+        {
+            List<SearchSuggestion> clone = new List<SearchSuggestion>();
+            if (source == null)
+            {
+                return clone;
+            }
+
+            for (int i = 0; i < source.Count; i++)
+            {
+                SearchSuggestion suggestion = source[i];
+                if (suggestion == null)
+                {
+                    continue;
+                }
+
+                clone.Add(new SearchSuggestion
+                {
+                    ListIndex = suggestion.ListIndex,
+                    ElementIndex = suggestion.ElementIndex,
+                    IdText = suggestion.IdText,
+                    NameText = suggestion.NameText
+                });
+            }
+
+            return clone;
         }
     }
 }

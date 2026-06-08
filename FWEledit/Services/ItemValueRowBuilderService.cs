@@ -168,14 +168,18 @@ namespace FWEledit
                 {
                     fieldValue = GenderTypeCatalog.FormatDisplay(fieldValue);
                 }
+                else if (ProbabilityDisplayService.IsProbabilityFieldName(fieldName))
+                {
+                    fieldValue = ProbabilityDisplayService.FormatDisplay(fieldValue);
+                }
                 else if (modelPickerService != null && isModelFieldName != null && isModelFieldName(fieldName))
                 {
                     string listName = listCollection.Lists[listIndex].listName ?? string.Empty;
                     fieldValue = modelPickerService.FormatModelPathIdDisplay(database, fieldValue, fieldName, listName);
                 }
-                else if (itemReferenceService != null && itemReferenceService.IsReferenceField(listCollection, listIndex, fieldName))
+                else if (itemReferenceService != null && itemReferenceService.IsReferenceField(listCollection, listIndex, elementIndex, fieldName))
                 {
-                    fieldValue = itemReferenceService.FormatReferenceValue(listCollection, listIndex, fieldName, fieldValue);
+                    fieldValue = itemReferenceService.FormatReferenceValue(listCollection, listIndex, elementIndex, fieldName, fieldValue);
                 }
 
                 ValueRowDisplay row = new ValueRowDisplay

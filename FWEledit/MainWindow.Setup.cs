@@ -59,6 +59,10 @@ namespace FWEledit
             itemSelectionWorkflowService = assetSetup.ItemSelectionWorkflowService;
             valueCompatibilityService = assetSetup.ValueCompatibilityService;
             valueChangeService = assetSetup.ValueChangeService;
+            if (listRowBuilderService != null)
+            {
+                listRowBuilderService.ReferenceCountResolver = GetReferenceCountForElement;
+            }
             navigationPersistTimer = bootstrap.NavigationPersistTimer
                 ?? mainWindowNavigationTimerService.CreateTimer(700, FlushNavigationStateToDisk);
 
@@ -86,7 +90,7 @@ namespace FWEledit
                 assembly,
                 label_Version,
                 navigationStateService,
-                "0.9.5.1");
+                "0.9.5.5");
 
             fwDarkMode = Properties.Settings.Default.UseDarkMode;
             cpb2.Value = 0;
@@ -140,6 +144,8 @@ namespace FWEledit
             fwEquipmentTabRefine = layout.EquipmentTabRefine;
             fwEquipmentTabDecompose = layout.EquipmentTabDecompose;
             fwEquipmentTabOther = layout.EquipmentTabOther;
+            fwReferencesTab = layout.ReferencesTab;
+            fwReferencesGrid = layout.ReferencesGrid;
             fwDescriptionTab = layout.DescriptionTab;
             fwDescriptionEditor = layout.DescriptionEditor;
             fwDescriptionPreview = layout.DescriptionPreview;
@@ -157,6 +163,22 @@ namespace FWEledit
             fwForwardButton = layout.ForwardButton;
             fwThemeToggleButton = layout.ThemeToggleButton;
             searchSuggestionList = layout.SearchSuggestionList;
+            if (dataGridView_elems != null)
+            {
+                dataGridView_elems.Scroll += (s, e) => RefreshVisibleReferenceCounts();
+                dataGridView_elems.SizeChanged += (s, e) => RefreshVisibleReferenceCounts();
+            }
+            if (fwRightTabs != null)
+            {
+                fwRightTabs.SelectedIndexChanged += (s, e) =>
+                {
+                    if (IsReferencesTabActive())
+                    {
+                        UpdateReferencesTabForSelection();
+                    }
+                };
+            }
+            RemoveReferencesTabFromMainView();
             InitializeElementContextActions();
             InitializeDescriptionFormattingActions();
             InitializeRawValueEditor();
@@ -213,12 +235,35 @@ namespace FWEledit
                 contextMenuStrip_items.Items.Insert(insertIndex, previewItem);
             }
 
+            if (!contextMenuStrip_items.Items.ContainsKey("showReferencesToolStripMenuItem"))
+            {
+                ToolStripMenuItem referencesItem = new ToolStripMenuItem();
+                referencesItem.Name = "showReferencesToolStripMenuItem";
+                referencesItem.Text = "Show references";
+                referencesItem.Click += click_context_show_references;
+                int insertIndex = contextMenuStrip_items.Items.ContainsKey("previewElementToolStripMenuItem") ? 2 : 1;
+                contextMenuStrip_items.Items.Insert(insertIndex, referencesItem);
+            }
+
             if (!contextMenuStrip_items.Items.ContainsKey("elementContextSeparator"))
             {
                 ToolStripSeparator separator = new ToolStripSeparator();
                 separator.Name = "elementContextSeparator";
-                int insertIndex = contextMenuStrip_items.Items.ContainsKey("previewElementToolStripMenuItem") ? 2 : 0;
+                int insertIndex = contextMenuStrip_items.Items.ContainsKey("showReferencesToolStripMenuItem") ? 3 : 0;
                 contextMenuStrip_items.Items.Insert(insertIndex, separator);
+            }
+        }
+
+        private void RemoveReferencesTabFromMainView()
+        {
+            if (fwRightTabs == null || fwReferencesTab == null)
+            {
+                return;
+            }
+
+            if (fwRightTabs.TabPages.Contains(fwReferencesTab))
+            {
+                fwRightTabs.TabPages.Remove(fwReferencesTab);
             }
         }
 
@@ -265,6 +310,11 @@ namespace FWEledit
             }
 
             OpenModelPreviewForValueRow(modelRow);
+        }
+
+        private void click_context_show_references(object sender, EventArgs e)
+        {
+            ShowReferencesViewerForCurrentSelection();
         }
 
         private void click_navigation_back(object sender, EventArgs e)
@@ -450,6 +500,7 @@ namespace FWEledit
                 searchSuggestionList,
                 dataGridView_elems,
                 dataGridView_item,
+                fwReferencesGrid,
                 button_search,
                 button_SetValue,
                 fwInlinePickIconButton,
@@ -462,6 +513,11 @@ namespace FWEledit
                 itemListThemeService,
                 fwDarkMode);
             UpdateThemeToggleButton();
+            ApplyReferencesViewerTheme();
+            if (fwReferencesGrid != null)
+            {
+                fwReferencesGrid.Invalidate();
+            }
         }
 
         private void click_toggle_theme(object sender, EventArgs e)
@@ -472,6 +528,11 @@ namespace FWEledit
             colorTheme();
             dataGridView_item.Invalidate();
             dataGridView_elems.Invalidate();
+            if (fwReferencesGrid != null)
+            {
+                fwReferencesGrid.Invalidate();
+            }
+            ApplyReferencesViewerTheme();
         }
 
         private void UpdateThemeToggleButton()
@@ -522,6 +583,8 @@ namespace FWEledit
                 () =>
                 {
                     dirtyStateTracker.Clear();
+                    ResetReferenceCaches();
+                    listDisplayService.ClearListDisplayCache();
                     selectionHistory.Clear();
                     selectionHistoryIndex = -1;
                     UpdateSelectionHistoryButtons();
@@ -542,6 +605,8 @@ namespace FWEledit
                     sessionService.ConversationList = result.ConversationList;
                     sessionService.Xrefs = result.Xrefs;
                     viewModel.ElementsPath = result.ElementsPath ?? string.Empty;
+                    ConfigureReferenceCachePersistence(viewModel.ElementsPath);
+                    StartReferenceCacheWarmup();
                 },
                 listDisplayService,
                 listComboPopulationService,

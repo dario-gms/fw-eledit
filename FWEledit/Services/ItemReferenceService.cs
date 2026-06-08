@@ -38,18 +38,79 @@ namespace FWEledit
             searchableItemOptionsByName = null;
         }
 
+        public Dictionary<int, List<ItemReferenceOption>> ExportOptionsCache(
+            eListCollection listCollection,
+            CacheSave database,
+            IconResolutionService iconResolutionService)
+        {
+            EnsureCacheContext(listCollection, database, iconResolutionService);
+
+            Dictionary<int, List<ItemReferenceOption>> clone = new Dictionary<int, List<ItemReferenceOption>>();
+            foreach (KeyValuePair<int, List<ItemReferenceOption>> pair in optionsByListIndex)
+            {
+                clone[pair.Key] = CloneOptions(pair.Value);
+            }
+
+            return clone;
+        }
+
+        public void ImportOptionsCache(
+            eListCollection listCollection,
+            CacheSave database,
+            IconResolutionService iconResolutionService,
+            Dictionary<int, List<ItemReferenceOption>> cache)
+        {
+            EnsureCacheContext(listCollection, database, iconResolutionService);
+            optionsByListIndex.Clear();
+            optionsByIdByListIndex.Clear();
+            optionsByNameByListIndex.Clear();
+            searchableOptions = null;
+            searchableOptionsById = null;
+            searchableOptionsByName = null;
+            searchableItemOptions = null;
+            searchableItemOptionsById = null;
+            searchableItemOptionsByName = null;
+
+            if (cache == null)
+            {
+                return;
+            }
+
+            foreach (KeyValuePair<int, List<ItemReferenceOption>> pair in cache)
+            {
+                List<ItemReferenceOption> cloned = CloneOptions(pair.Value);
+                optionsByListIndex[pair.Key] = cloned;
+                IndexOptions(pair.Key, cloned);
+            }
+        }
+
         public bool IsItemListTargetIndex(int targetListIndex)
         {
             return targetListIndex == ItemListsTargetIndex;
         }
 
+        public bool IsItemBearingList(eListCollection listCollection, int listIndex)
+        {
+            return IsItemList(listCollection, listIndex);
+        }
+
         public bool IsReferenceField(eListCollection listCollection, int listIndex, string fieldName)
         {
+            return IsReferenceField(listCollection, listIndex, -1, fieldName);
+        }
+
+        public bool IsReferenceField(eListCollection listCollection, int listIndex, int elementIndex, string fieldName)
+        {
             int targetListIndex;
-            return TryGetTargetListIndex(listCollection, listIndex, fieldName, out targetListIndex);
+            return TryGetTargetListIndex(listCollection, listIndex, elementIndex, fieldName, out targetListIndex);
         }
 
         public bool TryGetTargetListIndex(eListCollection listCollection, int listIndex, string fieldName, out int targetListIndex)
+        {
+            return TryGetTargetListIndex(listCollection, listIndex, -1, fieldName, out targetListIndex);
+        }
+
+        public bool TryGetTargetListIndex(eListCollection listCollection, int listIndex, int elementIndex, string fieldName, out int targetListIndex)
         {
             targetListIndex = -1;
             if (listCollection == null || listIndex < 0 || listIndex >= listCollection.Lists.Length || string.IsNullOrWhiteSpace(fieldName))
@@ -94,6 +155,18 @@ namespace FWEledit
             {
                 targetListName = "EQUIPMENT_PROPERTY_RANDOM_CONFIG";
             }
+            else if (string.Equals(sourceListName, "DROPTABLE_ESSENCE", StringComparison.OrdinalIgnoreCase)
+                && name.StartsWith("drops_", StringComparison.OrdinalIgnoreCase)
+                && name.EndsWith("_id_obj", StringComparison.OrdinalIgnoreCase))
+            {
+                if (IsDropTableCategoryRow(listCollection, listIndex, elementIndex))
+                {
+                    return TryFindListIndexByName(listCollection, "DROPTABLE_ESSENCE", out targetListIndex);
+                }
+
+                targetListIndex = ItemListsTargetIndex;
+                return true;
+            }
             else if (TryGetMappedTargetListName(sourceListName, normalizedName, out targetListName))
             {
             }
@@ -113,6 +186,11 @@ namespace FWEledit
 
         public string FormatReferenceValue(eListCollection listCollection, int listIndex, string fieldName, string rawValue)
         {
+            return FormatReferenceValue(listCollection, listIndex, -1, fieldName, rawValue);
+        }
+
+        public string FormatReferenceValue(eListCollection listCollection, int listIndex, int elementIndex, string fieldName, string rawValue)
+        {
             int id;
             if (!int.TryParse(rawValue, out id) || id <= 0)
             {
@@ -120,13 +198,13 @@ namespace FWEledit
             }
 
             ItemReferenceOption preferredOption;
-            if (TryGetPreferredReferenceOption(listIndex, fieldName, id, out preferredOption))
+            if (TryGetPreferredReferenceOption(listIndex, elementIndex, fieldName, id, out preferredOption))
             {
                 return string.IsNullOrWhiteSpace(preferredOption.Name) ? rawValue : preferredOption.Name;
             }
 
             int targetListIndex;
-            if (!TryGetTargetListIndex(listCollection, listIndex, fieldName, out targetListIndex))
+            if (!TryGetTargetListIndex(listCollection, listIndex, elementIndex, fieldName, out targetListIndex))
             {
                 return rawValue ?? string.Empty;
             }
@@ -154,6 +232,11 @@ namespace FWEledit
 
         public bool TryResolveReferenceOption(eListCollection listCollection, int listIndex, string fieldName, string rawValue, CacheSave database, IconResolutionService iconResolutionService, out ItemReferenceOption option)
         {
+            return TryResolveReferenceOption(listCollection, listIndex, -1, fieldName, rawValue, database, iconResolutionService, out option);
+        }
+
+        public bool TryResolveReferenceOption(eListCollection listCollection, int listIndex, int elementIndex, string fieldName, string rawValue, CacheSave database, IconResolutionService iconResolutionService, out ItemReferenceOption option)
+        {
             option = null;
             int id;
             if (!int.TryParse(rawValue, out id) || id <= 0)
@@ -162,12 +245,12 @@ namespace FWEledit
             }
 
             int targetListIndex;
-            if (!TryGetTargetListIndex(listCollection, listIndex, fieldName, out targetListIndex))
+            if (!TryGetTargetListIndex(listCollection, listIndex, elementIndex, fieldName, out targetListIndex))
             {
                 return false;
             }
 
-            if (TryGetPreferredReferenceOption(listIndex, fieldName, id, out option))
+            if (TryGetPreferredReferenceOption(listIndex, elementIndex, fieldName, id, out option))
             {
                 return true;
             }
@@ -187,6 +270,11 @@ namespace FWEledit
 
         public string NormalizeReferenceInput(eListCollection listCollection, int listIndex, string fieldName, string value)
         {
+            return NormalizeReferenceInput(listCollection, listIndex, -1, fieldName, value);
+        }
+
+        public string NormalizeReferenceInput(eListCollection listCollection, int listIndex, int elementIndex, string fieldName, string value)
+        {
             if (string.IsNullOrWhiteSpace(value))
             {
                 return string.Empty;
@@ -199,7 +287,7 @@ namespace FWEledit
             }
 
             int targetListIndex;
-            if (!TryGetTargetListIndex(listCollection, listIndex, fieldName, out targetListIndex))
+            if (!TryGetTargetListIndex(listCollection, listIndex, elementIndex, fieldName, out targetListIndex))
             {
                 return value;
             }
@@ -223,18 +311,18 @@ namespace FWEledit
             return value;
         }
 
-        public void RememberReferenceOverride(int sourceListIndex, string fieldName, ItemReferenceOption option)
+        public void RememberReferenceOverride(int sourceListIndex, int sourceElementIndex, string fieldName, ItemReferenceOption option)
         {
             if (option == null || option.Id <= 0)
             {
                 return;
             }
 
-            string key = BuildPreferredReferenceKey(sourceListIndex, fieldName, option.Id);
+            string key = BuildPreferredReferenceKey(sourceListIndex, sourceElementIndex, fieldName, option.Id);
             preferredOptionsByFieldAndId[key] = option;
         }
 
-        private bool TryGetPreferredReferenceOption(int sourceListIndex, string fieldName, int id, out ItemReferenceOption option)
+        private bool TryGetPreferredReferenceOption(int sourceListIndex, int sourceElementIndex, string fieldName, int id, out ItemReferenceOption option)
         {
             option = null;
             if (id <= 0)
@@ -242,12 +330,23 @@ namespace FWEledit
                 return false;
             }
 
-            return preferredOptionsByFieldAndId.TryGetValue(BuildPreferredReferenceKey(sourceListIndex, fieldName, id), out option);
+            if (preferredOptionsByFieldAndId.TryGetValue(BuildPreferredReferenceKey(sourceListIndex, sourceElementIndex, fieldName, id), out option))
+            {
+                return true;
+            }
+
+            return preferredOptionsByFieldAndId.TryGetValue(BuildPreferredReferenceKey(sourceListIndex, -1, fieldName, id), out option);
         }
 
-        private static string BuildPreferredReferenceKey(int sourceListIndex, string fieldName, int id)
+        private static string BuildPreferredReferenceKey(int sourceListIndex, int sourceElementIndex, string fieldName, int id)
         {
-            return sourceListIndex.ToString() + "|" + (fieldName ?? string.Empty).Trim().ToLowerInvariant() + "|" + id.ToString();
+            return sourceListIndex.ToString()
+                + "|"
+                + sourceElementIndex.ToString()
+                + "|"
+                + (fieldName ?? string.Empty).Trim().ToLowerInvariant()
+                + "|"
+                + id.ToString();
         }
 
         public List<ItemReferenceOption> BuildOptions(eListCollection listCollection, int targetListIndex)
@@ -703,6 +802,7 @@ namespace FWEledit
             }
 
             if ((fieldName.Contains("item") && HasIdToken(fieldName))
+                || fieldName.EndsWith("_id_obj", StringComparison.OrdinalIgnoreCase)
                 || fieldName.EndsWith("_tool_id", StringComparison.OrdinalIgnoreCase)
                 || fieldName.EndsWith("_ticket_id", StringComparison.OrdinalIgnoreCase)
                 || fieldName.EndsWith("_book_id", StringComparison.OrdinalIgnoreCase)
@@ -725,10 +825,45 @@ namespace FWEledit
                 return true;
             }
 
+            if (string.Equals(sourceListName, "DROPTABLE_ESSENCE", StringComparison.OrdinalIgnoreCase)
+                && fieldName.StartsWith("drops_", StringComparison.OrdinalIgnoreCase)
+                && fieldName.EndsWith("_id_obj", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
             if (string.Equals(sourceListName, "RECIPE_ESSENCE", StringComparison.OrdinalIgnoreCase)
                 && (IsNumberedIdField(fieldName, "materials_") || IsNumberedIdField(fieldName, "acquired_")))
             {
                 return true;
+            }
+
+            return false;
+        }
+
+        private static bool IsDropTableCategoryRow(eListCollection listCollection, int listIndex, int elementIndex)
+        {
+            if (listCollection == null
+                || listIndex < 0
+                || listIndex >= listCollection.Lists.Length
+                || elementIndex < 0
+                || listCollection.Lists[listIndex] == null
+                || listCollection.Lists[listIndex].elementFields == null
+                || listCollection.Lists[listIndex].elementValues == null
+                || elementIndex >= listCollection.Lists[listIndex].elementValues.Length)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < listCollection.Lists[listIndex].elementFields.Length; i++)
+            {
+                if (!string.Equals(listCollection.Lists[listIndex].elementFields[i], "is_category", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                int isCategory;
+                return int.TryParse(listCollection.GetValue(listIndex, elementIndex, i), out isCategory) && isCategory == 1;
             }
 
             return false;
@@ -860,6 +995,37 @@ namespace FWEledit
 
             string[] split = listName.Split(new string[] { " - " }, StringSplitOptions.None);
             return split.Length > 1 ? split[1].Trim() : listName.Trim();
+        }
+
+        private static List<ItemReferenceOption> CloneOptions(List<ItemReferenceOption> source)
+        {
+            List<ItemReferenceOption> clone = new List<ItemReferenceOption>();
+            if (source == null)
+            {
+                return clone;
+            }
+
+            for (int i = 0; i < source.Count; i++)
+            {
+                ItemReferenceOption option = source[i];
+                if (option == null)
+                {
+                    continue;
+                }
+
+                clone.Add(new ItemReferenceOption
+                {
+                    ListIndex = option.ListIndex,
+                    ElementIndex = option.ElementIndex,
+                    Id = option.Id,
+                    Name = option.Name,
+                    ListName = option.ListName,
+                    IconKey = option.IconKey,
+                    Quality = option.Quality
+                });
+            }
+
+            return clone;
         }
     }
 }

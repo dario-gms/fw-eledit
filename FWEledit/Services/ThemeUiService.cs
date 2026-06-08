@@ -38,6 +38,7 @@ namespace FWEledit
             ListBox searchSuggestionList,
             DataGridView elementGrid,
             DataGridView itemGrid,
+            DataGridView referencesGrid,
             Button searchButton,
             Button setValueButton,
             Button inlinePickIconButton,
@@ -133,6 +134,10 @@ namespace FWEledit
             if (itemGrid != null)
             {
                 ApplyInspectorGridTheme(itemGrid);
+            }
+            if (referencesGrid != null)
+            {
+                ApplyReferencesGridTheme(referencesGrid);
             }
 
             if (searchButton != null)
@@ -413,6 +418,41 @@ namespace FWEledit
                 valueColumn.DefaultCellStyle.SelectionForeColor = Color.White;
                 valueColumn.DefaultCellStyle.Font = new Font("Segoe UI", 9F, FontStyle.Regular, GraphicsUnit.Point, ((byte)(0)));
                 valueColumn.DefaultCellStyle.Padding = new Padding(10, 0, 8, 0);
+            }
+        }
+
+        private static void ApplyReferencesGridTheme(DataGridView grid)
+        {
+            Color valueBack = currentDarkMode ? Color.FromArgb(18, 21, 26) : Color.White;
+            Color valueAltBack = currentDarkMode ? Color.FromArgb(22, 26, 32) : Color.FromArgb(250, 251, 253);
+            Color valueSelection = Accent;
+
+            grid.BackgroundColor = GridBack;
+            grid.BorderStyle = BorderStyle.None;
+            grid.GridColor = currentDarkMode ? Color.FromArgb(38, 44, 54) : Color.FromArgb(224, 230, 237);
+            grid.EnableHeadersVisualStyles = false;
+            grid.CellBorderStyle = DataGridViewCellBorderStyle.SingleHorizontal;
+            grid.DefaultCellStyle.BackColor = valueBack;
+            grid.DefaultCellStyle.ForeColor = TextPrimary;
+            grid.DefaultCellStyle.SelectionBackColor = valueSelection;
+            grid.DefaultCellStyle.SelectionForeColor = Color.White;
+            grid.DefaultCellStyle.Font = new Font("Segoe UI", 9F, FontStyle.Regular, GraphicsUnit.Point, ((byte)(0)));
+            grid.DefaultCellStyle.Padding = new Padding(8, 0, 8, 0);
+            grid.AlternatingRowsDefaultCellStyle.BackColor = valueAltBack;
+            grid.ColumnHeadersDefaultCellStyle.BackColor = GridHeader;
+            grid.ColumnHeadersDefaultCellStyle.ForeColor = TextPrimary;
+            grid.ColumnHeadersDefaultCellStyle.SelectionBackColor = GridHeader;
+            grid.ColumnHeadersDefaultCellStyle.SelectionForeColor = TextPrimary;
+            grid.ColumnHeadersDefaultCellStyle.Font = new Font("Segoe UI", 9F, FontStyle.Bold, GraphicsUnit.Point, ((byte)(0)));
+            grid.ColumnHeadersDefaultCellStyle.Padding = new Padding(8, 0, 8, 0);
+            grid.RowHeadersVisible = false;
+
+            if (grid.Columns.Count > 2)
+            {
+                DataGridViewColumn iconColumn = grid.Columns[2];
+                iconColumn.DefaultCellStyle.BackColor = valueBack;
+                iconColumn.DefaultCellStyle.SelectionBackColor = valueSelection;
+                iconColumn.DefaultCellStyle.NullValue = null;
             }
         }
 

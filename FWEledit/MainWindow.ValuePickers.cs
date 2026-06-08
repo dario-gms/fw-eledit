@@ -98,6 +98,7 @@ namespace FWEledit
                 sessionService,
                 dataGridView_item,
                 comboBox_lists.SelectedIndex,
+                ResolveCurrentElementIndex(),
                 rowIndex,
                 itemReferenceService,
                 iconResolutionService,
@@ -326,6 +327,7 @@ namespace FWEledit
             if (!itemReferenceService.TryResolveReferenceOption(
                 sessionService.ListCollection,
                 listIndex,
+                elementIndex,
                 fieldName,
                 rawValue,
                 sessionService.Database,
@@ -942,7 +944,8 @@ namespace FWEledit
 
             int listIndex = comboBox_lists.SelectedIndex;
             string fieldName = Convert.ToString(dataGridView_item.Rows[rowIndex].Cells[0].Value);
-            if (!itemReferenceService.IsReferenceField(sessionService.ListCollection, listIndex, fieldName))
+            int elementIndex = ResolveCurrentElementIndex();
+            if (!itemReferenceService.IsReferenceField(sessionService.ListCollection, listIndex, elementIndex, fieldName))
             {
                 return false;
             }
@@ -951,6 +954,7 @@ namespace FWEledit
             return itemReferenceService.TryResolveReferenceOption(
                 sessionService.ListCollection,
                 listIndex,
+                elementIndex,
                 fieldName,
                 rawValue,
                 sessionService.Database,
