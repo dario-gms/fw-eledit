@@ -125,6 +125,52 @@ namespace FWEledit
                 owner);
         }
 
+        public void OpenProcTypePickerForValueRow(
+            MainWindowValueRowPickerUiService mainWindowValueRowPickerUiService,
+            ValueRowPickerUiService valueRowPickerUiService,
+            DataGridView valuesGrid,
+            int rowIndex,
+            ItemFieldClassifierService fieldClassifierService,
+            IWin32Window owner)
+        {
+            if (mainWindowValueRowPickerUiService == null)
+            {
+                return;
+            }
+
+            mainWindowValueRowPickerUiService.OpenProcTypePickerForValueRow(
+                valueRowPickerUiService,
+                valuesGrid,
+                rowIndex,
+                fieldClassifierService,
+                owner);
+        }
+
+        public void OpenCombinedServicesPickerForValueRow(
+            MainWindowValueRowPickerUiService mainWindowValueRowPickerUiService,
+            ValueRowPickerUiService valueRowPickerUiService,
+            ISessionService sessionService,
+            DataGridView valuesGrid,
+            int listIndex,
+            int rowIndex,
+            ItemFieldClassifierService fieldClassifierService,
+            IWin32Window owner)
+        {
+            if (mainWindowValueRowPickerUiService == null || sessionService == null)
+            {
+                return;
+            }
+
+            mainWindowValueRowPickerUiService.OpenCombinedServicesPickerForValueRow(
+                valueRowPickerUiService,
+                sessionService.ListCollection,
+                listIndex,
+                valuesGrid,
+                rowIndex,
+                fieldClassifierService,
+                owner);
+        }
+
         public void OpenItemReferencePickerForValueRow(
             MainWindowValueRowPickerUiService mainWindowValueRowPickerUiService,
             ValueRowPickerUiService valueRowPickerUiService,
@@ -231,16 +277,19 @@ namespace FWEledit
         public void UpdatePickIconButtonState(
             MainWindowValueRowPickerUiService mainWindowValueRowPickerUiService,
             ValueRowPickerUiService valueRowPickerUiService,
+            ISessionService sessionService,
             InlineIconButtonService inlineIconButtonService,
             Button inlineButton,
             DataGridView valuesGrid,
             TabControl rightTabs,
             TabPage valuesTab,
+            int listIndex,
             ItemFieldClassifierService fieldClassifierService,
+            ItemReferenceService itemReferenceService,
             ref int inlineRowIndex,
             bool suppressValuesUiRefresh)
         {
-            if (mainWindowValueRowPickerUiService == null)
+            if (mainWindowValueRowPickerUiService == null || sessionService == null)
             {
                 return;
             }
@@ -252,7 +301,10 @@ namespace FWEledit
                 valuesGrid,
                 rightTabs,
                 valuesTab,
+                sessionService.ListCollection,
+                listIndex,
                 fieldClassifierService,
+                itemReferenceService,
                 ref inlineRowIndex,
                 suppressValuesUiRefresh);
         }
@@ -289,6 +341,8 @@ namespace FWEledit
             Action<int> openAddonTypePickerForValueRow,
             Action<int> openItemQualityPickerForValueRow,
             Action<int> openGenderTypePickerForValueRow,
+            Action<int> openProcTypePickerForValueRow,
+            Action<int> openCombinedServicesPickerForValueRow,
             Action<int> openModelPickerForValueRow,
             Action<int> openItemReferencePickerForValueRow,
             Action updatePickIconButtonState,
@@ -311,6 +365,8 @@ namespace FWEledit
                 openAddonTypePickerForValueRow,
                 openItemQualityPickerForValueRow,
                 openGenderTypePickerForValueRow,
+                openProcTypePickerForValueRow,
+                openCombinedServicesPickerForValueRow,
                 openModelPickerForValueRow,
                 openItemReferencePickerForValueRow,
                 updatePickIconButtonState,

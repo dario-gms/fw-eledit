@@ -90,6 +90,30 @@ namespace FWEledit
                 this);
         }
 
+        private void OpenProcTypePickerForValueRow(int rowIndex)
+        {
+            mainWindowValuePickerCoordinatorService.OpenProcTypePickerForValueRow(
+                mainWindowValueRowPickerUiService,
+                valueRowPickerUiService,
+                dataGridView_item,
+                rowIndex,
+                itemFieldClassifierService,
+                this);
+        }
+
+        private void OpenCombinedServicesPickerForValueRow(int rowIndex)
+        {
+            mainWindowValuePickerCoordinatorService.OpenCombinedServicesPickerForValueRow(
+                mainWindowValueRowPickerUiService,
+                valueRowPickerUiService,
+                sessionService,
+                dataGridView_item,
+                comboBox_lists.SelectedIndex,
+                rowIndex,
+                itemFieldClassifierService,
+                this);
+        }
+
         private void OpenItemReferencePickerForValueRow(int rowIndex)
         {
             mainWindowValuePickerCoordinatorService.OpenItemReferencePickerForValueRow(
@@ -714,24 +738,68 @@ namespace FWEledit
             mainWindowValuePickerCoordinatorService.UpdatePickIconButtonState(
                 mainWindowValueRowPickerUiService,
                 valueRowPickerUiService,
+                sessionService,
                 inlineIconButtonService,
                 fwInlinePickIconButton,
                 dataGridView_item,
                 fwRightTabs,
                 fwValuesTab,
+                comboBox_lists.SelectedIndex,
                 itemFieldClassifierService,
+                itemReferenceService,
                 ref fwInlinePickIconRowIndex,
                 viewModel.SuppressValuesUiRefresh);
         }
 
         private void click_pick_icon(object sender, EventArgs e)
         {
-            mainWindowValuePickerCoordinatorService.HandleInlinePickIconClick(
-                mainWindowValueRowPickerUiService,
-                valueRowPickerUiService,
-                dataGridView_item,
-                fwInlinePickIconRowIndex,
-                OpenIconPickerForValueRow);
+            int targetRow = fwInlinePickIconRowIndex;
+            if (targetRow < 0 && dataGridView_item != null && dataGridView_item.CurrentCell != null)
+            {
+                targetRow = dataGridView_item.CurrentCell.RowIndex;
+            }
+            if (targetRow < 0 || dataGridView_item == null || targetRow >= dataGridView_item.Rows.Count)
+            {
+                return;
+            }
+
+            string fieldName = Convert.ToString(dataGridView_item.Rows[targetRow].Cells[0].Value);
+            int listIndex = comboBox_lists != null ? comboBox_lists.SelectedIndex : -1;
+
+            if (itemFieldClassifierService.IsIconFieldName(fieldName))
+            {
+                OpenIconPickerForValueRow(targetRow);
+            }
+            else if (itemFieldClassifierService.IsAddonTypeField(sessionService != null ? sessionService.ListCollection : null, listIndex, fieldName))
+            {
+                OpenAddonTypePickerForValueRow(targetRow);
+            }
+            else if (itemFieldClassifierService.IsItemQualityFieldName(fieldName))
+            {
+                OpenItemQualityPickerForValueRow(targetRow);
+            }
+            else if (itemFieldClassifierService.IsGenderTypeFieldName(fieldName))
+            {
+                OpenGenderTypePickerForValueRow(targetRow);
+            }
+            else if (itemFieldClassifierService.IsProcTypeFieldName(fieldName))
+            {
+                OpenProcTypePickerForValueRow(targetRow);
+            }
+            else if (itemFieldClassifierService.IsCombinedServicesFieldName(fieldName))
+            {
+                OpenCombinedServicesPickerForValueRow(targetRow);
+            }
+            else if (itemFieldClassifierService.IsModelFieldName(fieldName))
+            {
+                OpenModelPickerForValueRow(targetRow);
+            }
+            else if (sessionService != null
+                && itemReferenceService != null
+                && itemReferenceService.IsReferenceField(sessionService.ListCollection, listIndex, fieldName))
+            {
+                OpenItemReferencePickerForValueRow(targetRow);
+            }
         }
 
         private void dataGridView_item_CellDoubleClick(object sender, DataGridViewCellEventArgs e)
@@ -749,10 +817,16 @@ namespace FWEledit
                 OpenAddonTypePickerForValueRow,
                 OpenItemQualityPickerForValueRow,
                 OpenGenderTypePickerForValueRow,
+                OpenProcTypePickerForValueRow,
+                OpenCombinedServicesPickerForValueRow,
                 OpenModelPickerForValueRow,
                 OpenItemReferencePickerForValueRow,
                 UpdatePickIconButtonState,
-                message => MessageBox.Show(message));
+                message => MessageBox.Show(
+                    message,
+                    "Field action",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information));
         }
 
         protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
@@ -819,6 +893,7 @@ namespace FWEledit
                 && itemFieldClassifierService.IsAddonTypeField(sessionService.ListCollection, comboBox_lists.SelectedIndex, fieldName);
             bool isItemQualityField = itemFieldClassifierService != null && itemFieldClassifierService.IsItemQualityFieldName(fieldName);
             bool isGenderTypeField = itemFieldClassifierService != null && itemFieldClassifierService.IsGenderTypeFieldName(fieldName);
+            bool isCombinedServicesField = itemFieldClassifierService != null && itemFieldClassifierService.IsCombinedServicesFieldName(fieldName);
             bool isReferenceField = itemReferenceService != null
                 && sessionService != null
                 && sessionService.ListCollection != null
@@ -882,6 +957,15 @@ namespace FWEledit
                     menu.Items.Add(new ToolStripSeparator());
                 }
                 menu.Items.Add("Choose Gender Type...", null, (menuSender, args) => OpenGenderTypePickerForValueRow(rowIndex));
+            }
+
+            if (isCombinedServicesField)
+            {
+                if (menu.Items.Count > 0)
+                {
+                    menu.Items.Add(new ToolStripSeparator());
+                }
+                menu.Items.Add("Choose Portable Services...", null, (menuSender, args) => OpenCombinedServicesPickerForValueRow(rowIndex));
             }
 
             if (menu.Items.Count == 0)

@@ -56,7 +56,10 @@ namespace FWEledit
             DataGridView itemGrid,
             TabControl rightTabs,
             TabPage valuesTab,
+            eListCollection listCollection,
+            int listIndex,
             ItemFieldClassifierService fieldClassifier,
+            ItemReferenceService itemReferenceService,
             ref int inlineRowIndex,
             bool suppressValuesUiRefresh)
         {
@@ -70,7 +73,10 @@ namespace FWEledit
                 itemGrid,
                 rightTabs,
                 valuesTab,
+                listCollection,
+                listIndex,
                 fieldClassifier,
+                itemReferenceService,
                 ref inlineRowIndex,
                 suppressValuesUiRefresh);
         }
@@ -112,6 +118,8 @@ namespace FWEledit
             Action<int> openAddonTypePicker,
             Action<int> openItemQualityPicker,
             Action<int> openGenderTypePicker,
+            Action<int> openProcTypePicker,
+            Action<int> openCombinedServicesPicker,
             Action<int> openModelPicker,
             Action<int> openItemReferencePicker,
             Action updateInlineIconButton,
@@ -153,6 +161,20 @@ namespace FWEledit
                         openGenderTypePicker(e.RowIndex);
                     }
                 }
+                else if (fieldClassifier.IsProcTypeFieldName(fieldName))
+                {
+                    if (openProcTypePicker != null)
+                    {
+                        openProcTypePicker(e.RowIndex);
+                    }
+                }
+                else if (fieldClassifier.IsCombinedServicesFieldName(fieldName))
+                {
+                    if (openCombinedServicesPicker != null)
+                    {
+                        openCombinedServicesPicker(e.RowIndex);
+                    }
+                }
                 else if (fieldClassifier.IsModelFieldName(fieldName))
                 {
                     if (openModelPicker != null)
@@ -177,7 +199,7 @@ namespace FWEledit
             {
                 if (showError != null)
                 {
-                    showError("FIELD ACTION ERROR!\n" + ex.Message);
+                    showError("Nao foi possivel abrir o seletor deste campo agora.\n\nDetalhes: " + ex.Message);
                 }
             }
         }
@@ -635,6 +657,78 @@ namespace FWEledit
             }
         }
 
+        public void OpenProcTypePickerForValueRow(
+            DataGridView itemGrid,
+            int rowIndex,
+            ItemFieldClassifierService fieldClassifier,
+            IWin32Window owner)
+        {
+            if (itemGrid == null || rowIndex < 0 || rowIndex >= itemGrid.Rows.Count)
+            {
+                return;
+            }
+
+            string fieldName = Convert.ToString(itemGrid.Rows[rowIndex].Cells[0].Value);
+            if (fieldClassifier == null || !fieldClassifier.IsProcTypeFieldName(fieldName))
+            {
+                return;
+            }
+
+            uint currentValue = 0;
+            string rawValue = GetValueCellRawValue(itemGrid, rowIndex);
+            ProcTypeCatalog.TryParseValue(rawValue, out currentValue);
+
+            using (ProcTypePickerWindow picker = new ProcTypePickerWindow(currentValue))
+            {
+                if (picker.ShowDialog(owner) != DialogResult.OK)
+                {
+                    return;
+                }
+
+                SetValueCellRawValue(itemGrid, rowIndex, picker.SelectedValue.ToString(CultureInfo.InvariantCulture));
+            }
+        }
+
+        public void OpenCombinedServicesPickerForValueRow(
+            eListCollection listCollection,
+            int listIndex,
+            DataGridView itemGrid,
+            int rowIndex,
+            ItemFieldClassifierService fieldClassifier,
+            IWin32Window owner)
+        {
+            if (itemGrid == null || rowIndex < 0 || rowIndex >= itemGrid.Rows.Count)
+            {
+                return;
+            }
+
+            string fieldName = Convert.ToString(itemGrid.Rows[rowIndex].Cells[0].Value);
+            if (fieldClassifier == null || !fieldClassifier.IsCombinedServicesFieldName(fieldName))
+            {
+                return;
+            }
+
+            IList<CombinedServiceOption> options = CombinedServicesCatalog.GetOptions(listCollection, listIndex, fieldName);
+            if (options == null || options.Count == 0)
+            {
+                return;
+            }
+
+            uint currentValue = 0;
+            string rawValue = GetValueCellRawValue(itemGrid, rowIndex);
+            CombinedServicesCatalog.TryParseValue(rawValue, out currentValue);
+
+            using (CombinedServicesPickerWindow picker = new CombinedServicesPickerWindow(fieldName, options, currentValue))
+            {
+                if (picker.ShowDialog(owner) != DialogResult.OK)
+                {
+                    return;
+                }
+
+                SetValueCellRawValue(itemGrid, rowIndex, CombinedServicesCatalog.ToStorageString(picker.SelectedValue));
+            }
+        }
+
         public void OpenIconPickerForValueRow(
             eListCollection listCollection,
             CacheSave database,
@@ -741,6 +835,8 @@ namespace FWEledit
                 }
 
                 SetValueCellRawValue(itemGrid, rowIndex, selectedPathId.ToString());
+                IconResolutionService iconResolutionService = new IconResolutionService();
+                itemGrid.Rows[rowIndex].Cells[2].Value = iconResolutionService.FormatIconPathIdDisplay(database, selectedPathId.ToString());
             }
         }
 

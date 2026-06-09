@@ -11,7 +11,10 @@ namespace FWEledit
             DataGridView grid,
             TabControl rightTabs,
             TabPage valuesTab,
+            eListCollection listCollection,
+            int listIndex,
             ItemFieldClassifierService fieldClassifier,
+            ItemReferenceService itemReferenceService,
             ref int rowIndex,
             bool suppressValuesUiRefresh)
         {
@@ -32,38 +35,19 @@ namespace FWEledit
 
             if (grid.Rows != null && grid.Rows.Count > 0)
             {
-                int preferredRow = -1;
                 if (grid.CurrentCell != null && grid.CurrentCell.RowIndex >= 0)
                 {
                     int currentRow = grid.CurrentCell.RowIndex;
                     if (currentRow < grid.Rows.Count)
                     {
                         string currentField = Convert.ToString(grid.Rows[currentRow].Cells[0].Value);
-                        if (fieldClassifier.IsIconFieldName(currentField))
+                        if (fieldClassifier.IsPickerField(listCollection, listIndex, currentField, itemReferenceService))
                         {
-                            preferredRow = currentRow;
+                            enabled = true;
+                            rowIndex = currentRow;
+                            rect = grid.GetCellDisplayRectangle(2, currentRow, true);
                         }
                     }
-                }
-
-                if (preferredRow < 0)
-                {
-                    for (int row = 0; row < grid.Rows.Count; row++)
-                    {
-                        string fieldName = Convert.ToString(grid.Rows[row].Cells[0].Value);
-                        if (fieldClassifier.IsIconFieldName(fieldName))
-                        {
-                            preferredRow = row;
-                            break;
-                        }
-                    }
-                }
-
-                if (preferredRow >= 0 && preferredRow < grid.Rows.Count)
-                {
-                    enabled = true;
-                    rowIndex = preferredRow;
-                    rect = grid.GetCellDisplayRectangle(2, preferredRow, true);
                 }
             }
 

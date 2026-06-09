@@ -142,10 +142,16 @@ namespace FWEledit
             else if (name.StartsWith("enhanced_prop_package_", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(name, "id_sign_addon_package", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(name, "id_special_addon_package", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(name, "special_addon_package_id", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(name, "id_prefix_addon_package", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(name, "id_postfix_addon_package", StringComparison.OrdinalIgnoreCase))
             {
                 targetListName = "ADDON_PACKAGE_CONFIG";
+            }
+            else if (string.Equals(name, "id_special_status_package", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(name, "special_status_package_id", StringComparison.OrdinalIgnoreCase))
+            {
+                targetListName = "SPECIAL_STATUS_PACKAGE_CONFIG";
             }
             else if (string.Equals(name, "id_quality", StringComparison.OrdinalIgnoreCase))
             {

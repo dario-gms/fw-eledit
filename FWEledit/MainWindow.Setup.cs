@@ -90,7 +90,7 @@ namespace FWEledit
                 assembly,
                 label_Version,
                 navigationStateService,
-                "0.9.5.5");
+                "0.9.5.6");
 
             fwDarkMode = Properties.Settings.Default.UseDarkMode;
             cpb2.Value = 0;
@@ -163,10 +163,25 @@ namespace FWEledit
             fwForwardButton = layout.ForwardButton;
             fwThemeToggleButton = layout.ThemeToggleButton;
             searchSuggestionList = layout.SearchSuggestionList;
+            if (searchSuggestionList != null)
+            {
+                searchSuggestionList.DrawItem -= searchSuggestionList_DrawItem;
+                searchSuggestionList.DrawItem += searchSuggestionList_DrawItem;
+            }
+            if (referenceCountRefreshTimer == null)
+            {
+                referenceCountRefreshTimer = new System.Windows.Forms.Timer();
+                referenceCountRefreshTimer.Interval = 140;
+                referenceCountRefreshTimer.Tick += (s, e) =>
+                {
+                    referenceCountRefreshTimer.Stop();
+                    RefreshVisibleReferenceCounts();
+                };
+            }
             if (dataGridView_elems != null)
             {
-                dataGridView_elems.Scroll += (s, e) => RefreshVisibleReferenceCounts();
-                dataGridView_elems.SizeChanged += (s, e) => RefreshVisibleReferenceCounts();
+                dataGridView_elems.Scroll += (s, e) => ScheduleVisibleReferenceCountRefresh();
+                dataGridView_elems.SizeChanged += (s, e) => ScheduleVisibleReferenceCountRefresh();
             }
             if (fwRightTabs != null)
             {

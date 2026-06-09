@@ -120,6 +120,48 @@ namespace FWEledit
                 owner);
         }
 
+        public void OpenProcTypePickerForValueRow(
+            ValueRowPickerUiService valueRowPickerUiService,
+            DataGridView valuesGrid,
+            int rowIndex,
+            ItemFieldClassifierService fieldClassifierService,
+            IWin32Window owner)
+        {
+            if (valueRowPickerUiService == null)
+            {
+                return;
+            }
+
+            valueRowPickerUiService.OpenProcTypePickerForValueRow(
+                valuesGrid,
+                rowIndex,
+                fieldClassifierService,
+                owner);
+        }
+
+        public void OpenCombinedServicesPickerForValueRow(
+            ValueRowPickerUiService valueRowPickerUiService,
+            eListCollection listCollection,
+            int listIndex,
+            DataGridView valuesGrid,
+            int rowIndex,
+            ItemFieldClassifierService fieldClassifierService,
+            IWin32Window owner)
+        {
+            if (valueRowPickerUiService == null)
+            {
+                return;
+            }
+
+            valueRowPickerUiService.OpenCombinedServicesPickerForValueRow(
+                listCollection,
+                listIndex,
+                valuesGrid,
+                rowIndex,
+                fieldClassifierService,
+                owner);
+        }
+
         public void OpenItemReferencePickerForValueRow(
             ValueRowPickerUiService valueRowPickerUiService,
             eListCollection listCollection,
@@ -226,7 +268,10 @@ namespace FWEledit
             DataGridView valuesGrid,
             TabControl rightTabs,
             TabPage valuesTab,
+            eListCollection listCollection,
+            int listIndex,
             ItemFieldClassifierService fieldClassifierService,
+            ItemReferenceService itemReferenceService,
             ref int inlineRowIndex,
             bool suppressValuesUiRefresh)
         {
@@ -241,7 +286,10 @@ namespace FWEledit
                 valuesGrid,
                 rightTabs,
                 valuesTab,
+                listCollection,
+                listIndex,
                 fieldClassifierService,
+                itemReferenceService,
                 ref inlineRowIndex,
                 suppressValuesUiRefresh);
         }
@@ -275,6 +323,8 @@ namespace FWEledit
             Action<int> openAddonPicker,
             Action<int> openQualityPicker,
             Action<int> openGenderTypePicker,
+            Action<int> openProcTypePicker,
+            Action<int> openCombinedServicesPicker,
             Action<int> openModelPicker,
             Action<int> openItemReferencePicker,
             Action updateInlineButton,
@@ -296,6 +346,8 @@ namespace FWEledit
                 openAddonPicker,
                 openQualityPicker,
                 openGenderTypePicker,
+                openProcTypePicker,
+                openCombinedServicesPicker,
                 openModelPicker,
                 openItemReferencePicker,
                 updateInlineButton,

@@ -191,6 +191,70 @@ namespace FWEledit
             return cached;
         }
 
+        public string FormatIconPathIdDisplay(CacheSave database, string rawValue)
+        {
+            string value = (rawValue ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return string.Empty;
+            }
+
+            int pathId;
+            if (int.TryParse(value, out pathId))
+            {
+                string mappedPath = ResolveMappedPath(database, pathId);
+                if (!string.IsNullOrWhiteSpace(mappedPath))
+                {
+                    string fileName = Path.GetFileName(mappedPath);
+                    if (string.IsNullOrWhiteSpace(fileName))
+                    {
+                        fileName = mappedPath;
+                    }
+
+                    return fileName + " | " + mappedPath;
+                }
+
+                string iconKey = ResolveIconKeyFromPathId(database, pathId);
+                if (!string.IsNullOrWhiteSpace(iconKey))
+                {
+                    string fileName = Path.GetFileName(iconKey);
+                    if (string.IsNullOrWhiteSpace(fileName))
+                    {
+                        fileName = iconKey;
+                    }
+
+                    return fileName + " | " + iconKey;
+                }
+
+                return rawValue ?? string.Empty;
+            }
+
+            string resolved = ResolveIconKey(database, value);
+            if (!string.IsNullOrWhiteSpace(resolved) && !string.Equals(resolved, value, StringComparison.OrdinalIgnoreCase))
+            {
+                string resolvedName = Path.GetFileName(resolved);
+                if (string.IsNullOrWhiteSpace(resolvedName))
+                {
+                    resolvedName = resolved;
+                }
+
+                return resolvedName + " | " + resolved;
+            }
+
+            if (LooksLikePath(value))
+            {
+                string fileName = Path.GetFileName(value);
+                if (string.IsNullOrWhiteSpace(fileName))
+                {
+                    fileName = value;
+                }
+
+                return fileName + " | " + value;
+            }
+
+            return rawValue ?? string.Empty;
+        }
+
         public void ClearCache()
         {
             cachedDatabase = null;
@@ -206,6 +270,34 @@ namespace FWEledit
                 ClearCache();
                 cachedDatabase = database;
             }
+        }
+
+        private static string ResolveMappedPath(CacheSave database, int pathId)
+        {
+            if (database == null || database.pathById == null || database.pathById.Count == 0 || pathId <= 0)
+            {
+                return string.Empty;
+            }
+
+            int[] candidates = new int[] { pathId, pathId + 1, pathId - 1 };
+            for (int i = 0; i < candidates.Length; i++)
+            {
+                string mappedPath;
+                if (database.pathById.TryGetValue(candidates[i], out mappedPath) && !string.IsNullOrWhiteSpace(mappedPath))
+                {
+                    return mappedPath;
+                }
+            }
+
+            return string.Empty;
+        }
+
+        private static bool LooksLikePath(string value)
+        {
+            return !string.IsNullOrWhiteSpace(value)
+                && (value.IndexOf('\\') >= 0
+                    || value.IndexOf('/') >= 0
+                    || Path.HasExtension(value));
         }
     }
 }

@@ -838,10 +838,28 @@ namespace FWEledit
 
                         int count;
                         countsById.TryGetValue(target.Id, out count);
-                        dataGridView_elems.Rows[target.RowIndex].Cells[3].Value = count > 0 ? count.ToString() : string.Empty;
+                        string nextValue = count > 0 ? count.ToString() : string.Empty;
+                        object currentValue = dataGridView_elems.Rows[target.RowIndex].Cells[3].Value;
+                        string currentText = currentValue != null ? Convert.ToString(currentValue) : string.Empty;
+                        if (!string.Equals(currentText, nextValue, StringComparison.Ordinal))
+                        {
+                            dataGridView_elems.Rows[target.RowIndex].Cells[3].Value = nextValue;
+                        }
                     }
                 }));
             });
+        }
+
+        private void ScheduleVisibleReferenceCountRefresh()
+        {
+            if (referenceCountRefreshTimer == null)
+            {
+                RefreshVisibleReferenceCounts();
+                return;
+            }
+
+            referenceCountRefreshTimer.Stop();
+            referenceCountRefreshTimer.Start();
         }
 
         private void InvalidateReferenceIndexAndDisplays()
