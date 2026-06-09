@@ -229,6 +229,8 @@ namespace FWEledit
             searchSuggestionList.BorderStyle = BorderStyle.FixedSingle;
             searchSuggestionList.SelectionMode = SelectionMode.One;
             searchSuggestionList.TabStop = false;
+            searchSuggestionList.DrawMode = DrawMode.OwnerDrawFixed;
+            searchSuggestionList.ItemHeight = 42;
             if (suggestionMouseClick != null)
             {
                 searchSuggestionList.MouseClick += suggestionMouseClick;

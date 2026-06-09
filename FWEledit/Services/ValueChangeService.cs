@@ -83,6 +83,14 @@ namespace FWEledit
             {
                 valueToSet = GenderTypeCatalog.NormalizeInput(valueToSet);
             }
+            else if (ProcTypeCatalog.IsProcTypeFieldName(request.FieldName))
+            {
+                valueToSet = ProcTypeCatalog.NormalizeInput(valueToSet);
+            }
+            else if (CombinedServicesCatalog.IsCombinedServicesFieldName(request.FieldName))
+            {
+                valueToSet = CombinedServicesCatalog.NormalizeInput(valueToSet);
+            }
             else if (ProbabilityDisplayService.IsProbabilityFieldName(request.FieldName))
             {
                 valueToSet = ProbabilityDisplayService.NormalizeInput(valueToSet);
@@ -174,6 +182,14 @@ namespace FWEledit
             {
                 result.DisplayValue = GenderTypeCatalog.FormatDisplay(valueToSet);
             }
+            else if (ProcTypeCatalog.IsProcTypeFieldName(request.FieldName))
+            {
+                result.DisplayValue = ProcTypeCatalog.FormatDisplay(valueToSet);
+            }
+            else if (CombinedServicesCatalog.IsCombinedServicesFieldName(request.FieldName))
+            {
+                result.DisplayValue = CombinedServicesCatalog.FormatDisplay(request.ListCollection, request.ListIndex, request.FieldName, valueToSet);
+            }
             else if (ProbabilityDisplayService.IsProbabilityFieldName(request.FieldName))
             {
                 result.DisplayValue = ProbabilityDisplayService.FormatDisplay(valueToSet);
@@ -181,6 +197,11 @@ namespace FWEledit
             else if (creaturePortraitIconService.IsCreaturePortraitField(request.ListCollection, request.ListIndex, request.FieldName))
             {
                 result.DisplayValue = creaturePortraitIconService.FormatPortraitPathIdDisplay(request.Database, valueToSet);
+            }
+            else if (string.Equals(request.FieldName, "file_icon", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(request.FieldName, "file_icon1", StringComparison.OrdinalIgnoreCase))
+            {
+                result.DisplayValue = iconResolutionService.FormatIconPathIdDisplay(request.Database, valueToSet);
             }
             else if (itemReferenceService != null && itemReferenceService.IsReferenceField(request.ListCollection, request.ListIndex, request.FieldName))
             {

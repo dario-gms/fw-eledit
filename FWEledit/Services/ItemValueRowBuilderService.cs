@@ -7,6 +7,7 @@ namespace FWEledit
         private readonly AddonTypeDisplayService addonTypeDisplayService;
         private readonly AddonParamService addonParamService;
         private readonly ModelPickerService modelPickerService;
+        private readonly IconResolutionService iconResolutionService;
         private readonly ItemReferenceService itemReferenceService;
         private readonly CreaturePortraitIconService creaturePortraitIconService;
 
@@ -14,11 +15,13 @@ namespace FWEledit
             AddonTypeDisplayService addonTypeDisplayService,
             AddonParamService addonParamService,
             ModelPickerService modelPickerService,
+            IconResolutionService iconResolutionService,
             ItemReferenceService itemReferenceService)
         {
             this.addonTypeDisplayService = addonTypeDisplayService;
             this.addonParamService = addonParamService;
             this.modelPickerService = modelPickerService;
+            this.iconResolutionService = iconResolutionService;
             this.itemReferenceService = itemReferenceService;
             this.creaturePortraitIconService = new CreaturePortraitIconService();
         }
@@ -160,6 +163,12 @@ namespace FWEledit
                 {
                     fieldValue = creaturePortraitIconService.FormatPortraitPathIdDisplay(database, fieldValue);
                 }
+                else if (iconResolutionService != null
+                    && (string.Equals(fieldName, "file_icon", System.StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(fieldName, "file_icon1", System.StringComparison.OrdinalIgnoreCase)))
+                {
+                    fieldValue = iconResolutionService.FormatIconPathIdDisplay(database, fieldValue);
+                }
                 else if (string.Equals(fieldName, "item_quality", System.StringComparison.OrdinalIgnoreCase))
                 {
                     fieldValue = ItemQualityCatalog.FormatDisplay(fieldValue);
@@ -167,6 +176,14 @@ namespace FWEledit
                 else if (GenderTypeCatalog.IsGenderTypeFieldName(fieldName))
                 {
                     fieldValue = GenderTypeCatalog.FormatDisplay(fieldValue);
+                }
+                else if (ProcTypeCatalog.IsProcTypeFieldName(fieldName))
+                {
+                    fieldValue = ProcTypeCatalog.FormatDisplay(fieldValue);
+                }
+                else if (CombinedServicesCatalog.IsCombinedServicesFieldName(fieldName))
+                {
+                    fieldValue = CombinedServicesCatalog.FormatDisplay(listCollection, listIndex, fieldName, fieldValue);
                 }
                 else if (ProbabilityDisplayService.IsProbabilityFieldName(fieldName))
                 {

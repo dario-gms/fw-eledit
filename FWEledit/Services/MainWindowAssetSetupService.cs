@@ -30,6 +30,7 @@ namespace FWEledit
                 addonTypeDisplayService,
                 addonParamService,
                 modelPickerService,
+                iconResolutionService,
                 itemReferenceService);
             ItemSelectionWorkflowService itemSelectionWorkflowService = new ItemSelectionWorkflowService(itemValueRowBuilderService);
             ValueCompatibilityService valueCompatibilityService = new ValueCompatibilityService(fieldValueValidationService);

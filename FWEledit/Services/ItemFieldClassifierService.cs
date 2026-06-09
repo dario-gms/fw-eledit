@@ -20,6 +20,32 @@ namespace FWEledit
             return GenderTypeCatalog.IsGenderTypeFieldName(fieldName);
         }
 
+        public bool IsProcTypeFieldName(string fieldName)
+        {
+            return ProcTypeCatalog.IsProcTypeFieldName(fieldName);
+        }
+
+        public bool IsCombinedServicesFieldName(string fieldName)
+        {
+            return CombinedServicesCatalog.IsCombinedServicesFieldName(fieldName);
+        }
+
+        public bool IsPickerField(
+            eListCollection listCollection,
+            int listIndex,
+            string fieldName,
+            ItemReferenceService itemReferenceService)
+        {
+            return IsIconFieldName(fieldName)
+                || IsAddonTypeField(listCollection, listIndex, fieldName)
+                || IsItemQualityFieldName(fieldName)
+                || IsGenderTypeFieldName(fieldName)
+                || IsProcTypeFieldName(fieldName)
+                || IsCombinedServicesFieldName(fieldName)
+                || IsModelFieldName(fieldName)
+                || (itemReferenceService != null && itemReferenceService.IsReferenceField(listCollection, listIndex, fieldName));
+        }
+
         public bool IsModelFieldName(string fieldName)
         {
             if (string.IsNullOrWhiteSpace(fieldName))

@@ -56,6 +56,7 @@ namespace FWEledit
         private Button fwRawValueUpButton;
         private Button fwRawValueDownButton;
         private int referenceCountRefreshVersion;
+        private System.Windows.Forms.Timer referenceCountRefreshTimer;
         private int referencesTabLoadVersion;
         private System.Windows.Forms.Timer referencesTabRefreshTimer;
         private System.Threading.Tasks.Task referenceIndexBuildTask;
