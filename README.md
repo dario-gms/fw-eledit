@@ -12,6 +12,17 @@ FWEledit is based on [sELedit++ by Wrechid](https://github.com/Wrechid/sELedit-)
 
 ---
 
+## What's New in v0.9.5.6
+
+- Added human-readable parsing for `combined_services`, `combined_services2`, `combined_services3`, and `combined_services_*` fields used by portable service tables such as `HANDY_SIMPLE_SERVICE_ESSENCE`.
+- Added a dedicated portable-services picker with checkbox selection, raw bitmask preview, and friendly labels for the service flags stored in those fields.
+- Integrated portable-service fields into the same picker workflow as other structured values, including the inline `...` button, double-click, and right-click context actions.
+- Extended value rendering and save normalization so combined-service bitmasks keep their correct `int32` storage even when high bits produce negative signed values.
+- General picker affordance work from the recent UI pass now also covers these bitmask service fields consistently.
+- Project/app version metadata updated to `v0.9.5.6`.
+
+---
+
 ## What's New in v0.9.5.5
 
 - Replaced the always-on References tab with a lighter `Show references` context action on Elements rows, opening references in a dedicated window.
@@ -22,17 +33,6 @@ FWEledit is based on [sELedit++ by Wrechid](https://github.com/Wrechid/sELedit-)
 - Added cache layers for icon resolution, field-index lookups, and search suggestions to improve UI responsiveness across repeated navigation and search.
 - Corrected reference-window icon resolution so it follows the same path/icon logic as the main Elements panel.
 - Project/app version metadata updated to `v0.9.5.5`.
-
----
-
-## What's New in v0.9.5.6
-
-- Added human-readable parsing for `combined_services`, `combined_services2`, `combined_services3`, and `combined_services_*` fields used by portable service tables such as `HANDY_SIMPLE_SERVICE_ESSENCE`.
-- Added a dedicated portable-services picker with checkbox selection, raw bitmask preview, and friendly labels for the service flags stored in those fields.
-- Integrated portable-service fields into the same picker workflow as other structured values, including the inline `...` button, double-click, and right-click context actions.
-- Extended value rendering and save normalization so combined-service bitmasks keep their correct `int32` storage even when high bits produce negative signed values.
-- General picker affordance work from the recent UI pass now also covers these bitmask service fields consistently.
-- Project/app version metadata updated to `v0.9.5.6`.
 
 ---
 
