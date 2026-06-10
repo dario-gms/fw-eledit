@@ -120,6 +120,44 @@ namespace FWEledit
                 owner);
         }
 
+        public void OpenReputationPickerForValueRow(
+            ValueRowPickerUiService valueRowPickerUiService,
+            DataGridView valuesGrid,
+            int rowIndex,
+            ItemFieldClassifierService fieldClassifierService,
+            IWin32Window owner)
+        {
+            if (valueRowPickerUiService == null)
+            {
+                return;
+            }
+
+            valueRowPickerUiService.OpenReputationPickerForValueRow(
+                valuesGrid,
+                rowIndex,
+                fieldClassifierService,
+                owner);
+        }
+
+        public void OpenSoulToolRewardTypePickerForValueRow(
+            ValueRowPickerUiService valueRowPickerUiService,
+            DataGridView valuesGrid,
+            int rowIndex,
+            ItemFieldClassifierService fieldClassifierService,
+            IWin32Window owner)
+        {
+            if (valueRowPickerUiService == null)
+            {
+                return;
+            }
+
+            valueRowPickerUiService.OpenSoulToolRewardTypePickerForValueRow(
+                valuesGrid,
+                rowIndex,
+                fieldClassifierService,
+                owner);
+        }
+
         public void OpenProcTypePickerForValueRow(
             ValueRowPickerUiService valueRowPickerUiService,
             DataGridView valuesGrid,
@@ -133,6 +171,25 @@ namespace FWEledit
             }
 
             valueRowPickerUiService.OpenProcTypePickerForValueRow(
+                valuesGrid,
+                rowIndex,
+                fieldClassifierService,
+                owner);
+        }
+
+        public void OpenProfessionMaskPickerForValueRow(
+            ValueRowPickerUiService valueRowPickerUiService,
+            DataGridView valuesGrid,
+            int rowIndex,
+            ItemFieldClassifierService fieldClassifierService,
+            IWin32Window owner)
+        {
+            if (valueRowPickerUiService == null)
+            {
+                return;
+            }
+
+            valueRowPickerUiService.OpenProfessionMaskPickerForValueRow(
                 valuesGrid,
                 rowIndex,
                 fieldClassifierService,
@@ -160,6 +217,29 @@ namespace FWEledit
                 rowIndex,
                 fieldClassifierService,
                 owner);
+        }
+
+        public void OpenSkillPickerForValueRow(
+            ValueRowPickerUiService valueRowPickerUiService,
+            CacheSave database,
+            DataGridView valuesGrid,
+            int rowIndex,
+            ItemFieldClassifierService fieldClassifierService,
+            IWin32Window owner,
+            Action<string> showMessage)
+        {
+            if (valueRowPickerUiService == null)
+            {
+                return;
+            }
+
+            valueRowPickerUiService.OpenSkillPickerForValueRow(
+                database,
+                valuesGrid,
+                rowIndex,
+                fieldClassifierService,
+                owner,
+                showMessage);
         }
 
         public void OpenItemReferencePickerForValueRow(
@@ -323,8 +403,12 @@ namespace FWEledit
             Action<int> openAddonPicker,
             Action<int> openQualityPicker,
             Action<int> openGenderTypePicker,
+            Action<int> openReputationPicker,
+            Action<int> openSoulToolRewardTypePicker,
             Action<int> openProcTypePicker,
+            Action<int> openProfessionMaskPicker,
             Action<int> openCombinedServicesPicker,
+            Action<int> openSkillPicker,
             Action<int> openModelPicker,
             Action<int> openItemReferencePicker,
             Action updateInlineButton,
@@ -346,8 +430,12 @@ namespace FWEledit
                 openAddonPicker,
                 openQualityPicker,
                 openGenderTypePicker,
+                openReputationPicker,
+                openSoulToolRewardTypePicker,
                 openProcTypePicker,
+                openProfessionMaskPicker,
                 openCombinedServicesPicker,
+                openSkillPicker,
                 openModelPicker,
                 openItemReferencePicker,
                 updateInlineButton,

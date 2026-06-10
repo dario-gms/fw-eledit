@@ -125,6 +125,48 @@ namespace FWEledit
                 owner);
         }
 
+        public void OpenReputationPickerForValueRow(
+            MainWindowValueRowPickerUiService mainWindowValueRowPickerUiService,
+            ValueRowPickerUiService valueRowPickerUiService,
+            DataGridView valuesGrid,
+            int rowIndex,
+            ItemFieldClassifierService fieldClassifierService,
+            IWin32Window owner)
+        {
+            if (mainWindowValueRowPickerUiService == null)
+            {
+                return;
+            }
+
+            mainWindowValueRowPickerUiService.OpenReputationPickerForValueRow(
+                valueRowPickerUiService,
+                valuesGrid,
+                rowIndex,
+                fieldClassifierService,
+                owner);
+        }
+
+        public void OpenSoulToolRewardTypePickerForValueRow(
+            MainWindowValueRowPickerUiService mainWindowValueRowPickerUiService,
+            ValueRowPickerUiService valueRowPickerUiService,
+            DataGridView valuesGrid,
+            int rowIndex,
+            ItemFieldClassifierService fieldClassifierService,
+            IWin32Window owner)
+        {
+            if (mainWindowValueRowPickerUiService == null)
+            {
+                return;
+            }
+
+            mainWindowValueRowPickerUiService.OpenSoulToolRewardTypePickerForValueRow(
+                valueRowPickerUiService,
+                valuesGrid,
+                rowIndex,
+                fieldClassifierService,
+                owner);
+        }
+
         public void OpenProcTypePickerForValueRow(
             MainWindowValueRowPickerUiService mainWindowValueRowPickerUiService,
             ValueRowPickerUiService valueRowPickerUiService,
@@ -139,6 +181,27 @@ namespace FWEledit
             }
 
             mainWindowValueRowPickerUiService.OpenProcTypePickerForValueRow(
+                valueRowPickerUiService,
+                valuesGrid,
+                rowIndex,
+                fieldClassifierService,
+                owner);
+        }
+
+        public void OpenProfessionMaskPickerForValueRow(
+            MainWindowValueRowPickerUiService mainWindowValueRowPickerUiService,
+            ValueRowPickerUiService valueRowPickerUiService,
+            DataGridView valuesGrid,
+            int rowIndex,
+            ItemFieldClassifierService fieldClassifierService,
+            IWin32Window owner)
+        {
+            if (mainWindowValueRowPickerUiService == null)
+            {
+                return;
+            }
+
+            mainWindowValueRowPickerUiService.OpenProfessionMaskPickerForValueRow(
                 valueRowPickerUiService,
                 valuesGrid,
                 rowIndex,
@@ -169,6 +232,31 @@ namespace FWEledit
                 rowIndex,
                 fieldClassifierService,
                 owner);
+        }
+
+        public void OpenSkillPickerForValueRow(
+            MainWindowValueRowPickerUiService mainWindowValueRowPickerUiService,
+            ValueRowPickerUiService valueRowPickerUiService,
+            ISessionService sessionService,
+            DataGridView valuesGrid,
+            int rowIndex,
+            ItemFieldClassifierService fieldClassifierService,
+            IWin32Window owner,
+            Action<string> showMessage)
+        {
+            if (mainWindowValueRowPickerUiService == null || sessionService == null)
+            {
+                return;
+            }
+
+            mainWindowValueRowPickerUiService.OpenSkillPickerForValueRow(
+                valueRowPickerUiService,
+                sessionService.Database,
+                valuesGrid,
+                rowIndex,
+                fieldClassifierService,
+                owner,
+                showMessage);
         }
 
         public void OpenItemReferencePickerForValueRow(
@@ -341,8 +429,12 @@ namespace FWEledit
             Action<int> openAddonTypePickerForValueRow,
             Action<int> openItemQualityPickerForValueRow,
             Action<int> openGenderTypePickerForValueRow,
+            Action<int> openReputationPickerForValueRow,
+            Action<int> openSoulToolRewardTypePickerForValueRow,
             Action<int> openProcTypePickerForValueRow,
+            Action<int> openProfessionMaskPickerForValueRow,
             Action<int> openCombinedServicesPickerForValueRow,
+            Action<int> openSkillPickerForValueRow,
             Action<int> openModelPickerForValueRow,
             Action<int> openItemReferencePickerForValueRow,
             Action updatePickIconButtonState,
@@ -365,8 +457,12 @@ namespace FWEledit
                 openAddonTypePickerForValueRow,
                 openItemQualityPickerForValueRow,
                 openGenderTypePickerForValueRow,
+                openReputationPickerForValueRow,
+                openSoulToolRewardTypePickerForValueRow,
                 openProcTypePickerForValueRow,
+                openProfessionMaskPickerForValueRow,
                 openCombinedServicesPickerForValueRow,
+                openSkillPickerForValueRow,
                 openModelPickerForValueRow,
                 openItemReferencePickerForValueRow,
                 updatePickIconButtonState,

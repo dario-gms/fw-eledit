@@ -1,29 +1,26 @@
 using System;
-using System.Collections.Generic;
 using System.Drawing;
 using System.Globalization;
 using System.Windows.Forms;
 
 namespace FWEledit
 {
-    public sealed class CombinedServicesPickerWindow : Form
+    public sealed class ProfessionMaskPickerWindow : Form
     {
-        private readonly string fieldDisplayName;
         private readonly CheckedListBox checkedListBox;
         private readonly Label summaryLabel;
         private readonly TextBox descriptionTextBox;
 
         public uint SelectedValue { get; private set; }
 
-        public CombinedServicesPickerWindow(string fieldName, IList<CombinedServiceOption> options, uint currentValue)
+        public ProfessionMaskPickerWindow(uint currentValue)
         {
-            fieldDisplayName = string.IsNullOrWhiteSpace(fieldName) ? "combined_services" : fieldName.Trim();
             SelectedValue = currentValue;
 
-            Text = "Choose activated services...";
+            Text = "Choose allowed professions...";
             StartPosition = FormStartPosition.CenterParent;
-            MinimumSize = new Size(440, 460);
-            Size = new Size(560, 620);
+            MinimumSize = new Size(420, 430);
+            Size = new Size(520, 560);
             BackColor = Color.FromArgb(24, 24, 24);
             ForeColor = Color.White;
             Font = new Font("Segoe UI", 9.5F, FontStyle.Regular, GraphicsUnit.Point, ((byte)(0)));
@@ -35,7 +32,7 @@ namespace FWEledit
             root.Padding = new Padding(12);
             root.ColumnCount = 1;
             root.RowCount = 4;
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 54F));
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 46F));
             root.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
             root.RowStyles.Add(new RowStyle(SizeType.Absolute, 92F));
             root.RowStyles.Add(new RowStyle(SizeType.Absolute, 42F));
@@ -105,8 +102,8 @@ namespace FWEledit
             root.Controls.Add(buttonPanel, 0, 3);
             Controls.Add(root);
 
-            LoadOptions(options, currentValue);
-            UpdateSelectionDetails(fieldDisplayName, currentValue);
+            LoadOptions(currentValue);
+            UpdateSelectionDetails();
             Shown += (s, e) => checkedListBox.Focus();
         }
 
@@ -124,17 +121,12 @@ namespace FWEledit
             }
         }
 
-        private void LoadOptions(IList<CombinedServiceOption> options, uint currentValue)
+        private void LoadOptions(uint currentValue)
         {
             checkedListBox.Items.Clear();
-            if (options == null)
+            for (int i = 0; i < ProfessionMaskCatalog.Options.Count; i++)
             {
-                return;
-            }
-
-            for (int i = 0; i < options.Count; i++)
-            {
-                CombinedServiceOption option = options[i];
+                ProfessionMaskOption option = ProfessionMaskCatalog.Options[i];
                 if (option == null)
                 {
                     continue;
@@ -157,26 +149,15 @@ namespace FWEledit
 
         private void HandleItemCheck(object sender, ItemCheckEventArgs e)
         {
-            UpdateSelectionDetails(null, e.Index, e.NewValue);
+            UpdateSelectionDetails(e.Index, e.NewValue);
         }
 
         private void UpdateSelectionDetails()
         {
-            UpdateSelectionDetails(fieldDisplayName, -1, CheckState.Indeterminate);
+            UpdateSelectionDetails(-1, CheckState.Indeterminate);
         }
 
-        private void UpdateSelectionDetails(string fieldName, uint currentValue)
-        {
-            SelectedValue = currentValue;
-            summaryLabel.Text = BuildSummary(fieldName, currentValue);
-
-            CombinedServiceOption selected = checkedListBox.SelectedItem as CombinedServiceOption;
-            descriptionTextBox.Text = selected != null
-                ? selected.Label + Environment.NewLine + Environment.NewLine + (selected.Description ?? string.Empty)
-                : "Select one or more activated services.";
-        }
-
-        private void UpdateSelectionDetails(string fieldName, int pendingIndex, CheckState pendingState)
+        private void UpdateSelectionDetails(int pendingIndex, CheckState pendingState)
         {
             uint value = 0;
             for (int i = 0; i < checkedListBox.Items.Count; i++)
@@ -192,14 +173,20 @@ namespace FWEledit
                     continue;
                 }
 
-                CombinedServiceOption option = checkedListBox.Items[i] as CombinedServiceOption;
+                ProfessionMaskOption option = checkedListBox.Items[i] as ProfessionMaskOption;
                 if (option != null)
                 {
                     value |= option.Mask;
                 }
             }
 
-            UpdateSelectionDetails(fieldName, value);
+            SelectedValue = value;
+            summaryLabel.Text = "Raw value: " + value.ToString(CultureInfo.InvariantCulture) + " (0x" + value.ToString("X4", CultureInfo.InvariantCulture) + ")";
+
+            ProfessionMaskOption selected = checkedListBox.SelectedItem as ProfessionMaskOption;
+            descriptionTextBox.Text = selected != null
+                ? selected.Label + Environment.NewLine + Environment.NewLine + (selected.Description ?? string.Empty)
+                : "Select one or more professions.";
         }
 
         private void ConfirmSelection()
@@ -207,13 +194,6 @@ namespace FWEledit
             UpdateSelectionDetails();
             DialogResult = DialogResult.OK;
             Close();
-        }
-
-        private static string BuildSummary(string fieldName, uint value)
-        {
-            string signed = unchecked((int)value).ToString(CultureInfo.InvariantCulture);
-            string prefix = string.IsNullOrWhiteSpace(fieldName) ? "Raw value" : fieldName.Trim();
-            return prefix + ": " + signed + " (0x" + value.ToString("X8", CultureInfo.InvariantCulture) + ")";
         }
     }
 }

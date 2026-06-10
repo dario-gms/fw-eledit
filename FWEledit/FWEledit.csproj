@@ -22,7 +22,7 @@
     <UpdateRequired>false</UpdateRequired>
     <MapFileExtensions>true</MapFileExtensions>
     <ApplicationRevision>0</ApplicationRevision>
-    <ApplicationVersion>0.9.5.6</ApplicationVersion>
+    <ApplicationVersion>0.9.5.7</ApplicationVersion>
     <IsWebBootstrapper>false</IsWebBootstrapper>
     <UseApplicationTrust>false</UseApplicationTrust>
     <BootstrapperEnabled>true</BootstrapperEnabled>
@@ -144,6 +144,10 @@
     <Compile Include="Catalogs\ItemQualityCatalog.cs" />
     <Compile Include="Catalogs\CombinedServicesCatalog.cs" />
     <Compile Include="Catalogs\ProcTypeCatalog.cs" />
+    <Compile Include="Catalogs\ProfessionMaskCatalog.cs" />
+    <Compile Include="Catalogs\ReputationCatalog.cs" />
+    <Compile Include="Catalogs\SkillReferenceCatalog.cs" />
+    <Compile Include="Catalogs\SoulToolRewardTypeCatalog.cs" />
     <Compile Include="Catalogs\ModelPickerCatalog.cs" />
     <Compile Include="ClassMaskWindow.cs">
       <SubType>Form</SubType>
@@ -401,6 +405,7 @@
     <Compile Include="Models\IconEntryModel.cs" />
     <Compile Include="Models\IconPickerData.cs" />
     <Compile Include="Models\ItemReferenceOption.cs" />
+    <Compile Include="Models\ValueCellState.cs" />
     <Compile Include="Models\ItemTooltipResult.cs" />
     <Compile Include="Models\ItemSelectionRequest.cs" />
     <Compile Include="Models\ItemSelectionResult.cs" />
@@ -941,6 +946,8 @@
     <Compile Include="Services\ClosePromptUiService.cs" />
     <Compile Include="Services\ControlRedrawScope.cs" />
     <Compile Include="Services\CreaturePortraitIconService.cs" />
+    <Compile Include="Services\MonsterDropPortraitService.cs" />
+    <Compile Include="Services\NpcTradePortraitService.cs" />
     <Compile Include="Services\IconListAvailabilityService.cs" />
     <Compile Include="Services\WindowTitleService.cs" />
     <Compile Include="Services\InfoMessageService.cs" />
@@ -1006,7 +1013,13 @@
     <Compile Include="Views\ProcTypePickerWindow.cs">
       <SubType>Form</SubType>
     </Compile>
+    <Compile Include="Views\SkillReferencePickerWindow.cs">
+      <SubType>Form</SubType>
+    </Compile>
     <Compile Include="Views\CombinedServicesPickerWindow.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Views\ProfessionMaskPickerWindow.cs">
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="Views\TgaPortraitPickerWindow.cs">

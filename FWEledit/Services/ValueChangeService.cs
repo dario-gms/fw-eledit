@@ -83,13 +83,29 @@ namespace FWEledit
             {
                 valueToSet = GenderTypeCatalog.NormalizeInput(valueToSet);
             }
+            else if (ReputationCatalog.IsReputationIdFieldName(request.FieldName))
+            {
+                valueToSet = ReputationCatalog.NormalizeInput(valueToSet);
+            }
+            else if (SoulToolRewardTypeCatalog.IsRewardTypeFieldName(request.FieldName))
+            {
+                valueToSet = SoulToolRewardTypeCatalog.NormalizeInput(valueToSet);
+            }
             else if (ProcTypeCatalog.IsProcTypeFieldName(request.FieldName))
             {
                 valueToSet = ProcTypeCatalog.NormalizeInput(valueToSet);
             }
+            else if (ProfessionMaskCatalog.IsProfessionMaskFieldName(request.FieldName))
+            {
+                valueToSet = ProfessionMaskCatalog.NormalizeInput(valueToSet);
+            }
             else if (CombinedServicesCatalog.IsCombinedServicesFieldName(request.FieldName))
             {
                 valueToSet = CombinedServicesCatalog.NormalizeInput(valueToSet);
+            }
+            else if (SkillReferenceCatalog.IsSkillFieldName(request.FieldName))
+            {
+                valueToSet = SkillReferenceCatalog.NormalizeInput(request.Database, valueToSet);
             }
             else if (ProbabilityDisplayService.IsProbabilityFieldName(request.FieldName))
             {
@@ -182,13 +198,35 @@ namespace FWEledit
             {
                 result.DisplayValue = GenderTypeCatalog.FormatDisplay(valueToSet);
             }
+            else if (ReputationCatalog.IsReputationIdFieldName(request.FieldName))
+            {
+                result.DisplayValue = ReputationCatalog.FormatDisplay(valueToSet);
+            }
+            else if (SoulToolRewardTypeCatalog.IsRewardTypeFieldName(request.FieldName))
+            {
+                result.DisplayValue = SoulToolRewardTypeCatalog.FormatDisplay(valueToSet);
+            }
             else if (ProcTypeCatalog.IsProcTypeFieldName(request.FieldName))
             {
                 result.DisplayValue = ProcTypeCatalog.FormatDisplay(valueToSet);
             }
+            else if (ProfessionMaskCatalog.IsProfessionMaskFieldName(request.FieldName))
+            {
+                result.DisplayValue = ProfessionMaskCatalog.FormatDisplay(valueToSet);
+            }
             else if (CombinedServicesCatalog.IsCombinedServicesFieldName(request.FieldName))
             {
                 result.DisplayValue = CombinedServicesCatalog.FormatDisplay(request.ListCollection, request.ListIndex, request.FieldName, valueToSet);
+            }
+            else if (SkillReferenceCatalog.IsSkillFieldName(request.FieldName))
+            {
+                result.DisplayValue = SkillReferenceCatalog.FormatDisplay(
+                    request.ListCollection,
+                    request.ListIndex,
+                    request.CurrentElementIndex,
+                    request.FieldName,
+                    request.Database,
+                    valueToSet);
             }
             else if (ProbabilityDisplayService.IsProbabilityFieldName(request.FieldName))
             {
@@ -205,7 +243,14 @@ namespace FWEledit
             }
             else if (itemReferenceService != null && itemReferenceService.IsReferenceField(request.ListCollection, request.ListIndex, request.FieldName))
             {
-                result.DisplayValue = itemReferenceService.FormatReferenceValue(request.ListCollection, request.ListIndex, request.CurrentElementIndex, request.FieldName, valueToSet);
+                result.DisplayValue = itemReferenceService.FormatReferenceValue(
+                    request.ListCollection,
+                    request.ListIndex,
+                    request.CurrentElementIndex,
+                    request.FieldName,
+                    valueToSet,
+                    request.Database,
+                    iconResolutionService);
             }
             else if (request.ListIndex == 0 && addonParamService.IsAddonParamField(request.FieldName))
             {
@@ -302,7 +347,8 @@ namespace FWEledit
                 || string.Equals(fieldName, "name", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(fieldName, "file_icon", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(fieldName, "file_icon1", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(fieldName, "item_quality", StringComparison.OrdinalIgnoreCase);
+                || string.Equals(fieldName, "item_quality", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(fieldName, "id_item_trade_service", StringComparison.OrdinalIgnoreCase);
         }
 
         private ValueChangeResult ApplyConversationChange(ValueChangeRequest request)

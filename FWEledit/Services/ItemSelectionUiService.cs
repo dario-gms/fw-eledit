@@ -29,7 +29,13 @@ namespace FWEledit
                 DataGridViewRow row = (DataGridViewRow)itemGrid.RowTemplate.Clone();
                 row.CreateCells(itemGrid, new string[] { rowDisplay.FieldName, rowDisplay.FieldType, rowDisplay.DisplayValue });
                 row.Tag = rowDisplay.FieldIndex;
-                row.Cells[2].Tag = rowDisplay.RawValue ?? string.Empty;
+                row.Cells[2].Tag = rowDisplay.ResolvedReferenceOption != null
+                    ? new ValueCellState
+                    {
+                        RawValue = rowDisplay.RawValue ?? string.Empty,
+                        ReferenceOption = rowDisplay.ResolvedReferenceOption
+                    }
+                    : (object)(rowDisplay.RawValue ?? string.Empty);
                 if (rowDisplay.FieldIndex >= 0)
                 {
                     row.HeaderCell.Value = rowDisplay.FieldIndex.ToString();

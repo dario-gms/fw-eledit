@@ -90,9 +90,42 @@ namespace FWEledit
                 this);
         }
 
+        private void OpenReputationPickerForValueRow(int rowIndex)
+        {
+            mainWindowValuePickerCoordinatorService.OpenReputationPickerForValueRow(
+                mainWindowValueRowPickerUiService,
+                valueRowPickerUiService,
+                dataGridView_item,
+                rowIndex,
+                itemFieldClassifierService,
+                this);
+        }
+
+        private void OpenSoulToolRewardTypePickerForValueRow(int rowIndex)
+        {
+            mainWindowValuePickerCoordinatorService.OpenSoulToolRewardTypePickerForValueRow(
+                mainWindowValueRowPickerUiService,
+                valueRowPickerUiService,
+                dataGridView_item,
+                rowIndex,
+                itemFieldClassifierService,
+                this);
+        }
+
         private void OpenProcTypePickerForValueRow(int rowIndex)
         {
             mainWindowValuePickerCoordinatorService.OpenProcTypePickerForValueRow(
+                mainWindowValueRowPickerUiService,
+                valueRowPickerUiService,
+                dataGridView_item,
+                rowIndex,
+                itemFieldClassifierService,
+                this);
+        }
+
+        private void OpenProfessionMaskPickerForValueRow(int rowIndex)
+        {
+            mainWindowValuePickerCoordinatorService.OpenProfessionMaskPickerForValueRow(
                 mainWindowValueRowPickerUiService,
                 valueRowPickerUiService,
                 dataGridView_item,
@@ -112,6 +145,19 @@ namespace FWEledit
                 rowIndex,
                 itemFieldClassifierService,
                 this);
+        }
+
+        private void OpenSkillPickerForValueRow(int rowIndex)
+        {
+            mainWindowValuePickerCoordinatorService.OpenSkillPickerForValueRow(
+                mainWindowValueRowPickerUiService,
+                valueRowPickerUiService,
+                sessionService,
+                dataGridView_item,
+                rowIndex,
+                itemFieldClassifierService,
+                this,
+                message => MessageBox.Show(message, "Skill or buff", MessageBoxButtons.OK, MessageBoxIcon.Information));
         }
 
         private void OpenItemReferencePickerForValueRow(int rowIndex)
@@ -340,23 +386,28 @@ namespace FWEledit
                 return;
             }
 
-            string rawValue = sessionService.ListCollection.GetValue(listIndex, elementIndex, fieldIndex);
+            object cachedTag = dataGridView_item.Rows[e.RowIndex].Cells[2].Tag;
+            ValueCellState cachedState = cachedTag as ValueCellState;
+            string rawValue = cachedState != null
+                ? (cachedState.RawValue ?? string.Empty)
+                : sessionService.ListCollection.GetValue(listIndex, elementIndex, fieldIndex);
             if (creaturePortraitIconService.IsCreaturePortraitField(sessionService.ListCollection, listIndex, fieldName))
             {
                 PaintPortraitValueCell(e, creaturePortraitIconService, rawValue);
                 return;
             }
 
-            ItemReferenceOption option;
-            if (!itemReferenceService.TryResolveReferenceOption(
-                sessionService.ListCollection,
-                listIndex,
-                elementIndex,
-                fieldName,
-                rawValue,
-                sessionService.Database,
-                iconResolutionService,
-                out option))
+            ItemReferenceOption option = cachedState != null ? cachedState.ReferenceOption : null;
+            if (option == null
+                && !itemReferenceService.TryResolveReferenceOption(
+                    sessionService.ListCollection,
+                    listIndex,
+                    elementIndex,
+                    fieldName,
+                    rawValue,
+                    sessionService.Database,
+                    iconResolutionService,
+                    out option))
             {
                 return;
             }
@@ -454,12 +505,22 @@ namespace FWEledit
             Bitmap icon = Properties.Resources.NoIcon;
             if (sessionService != null
                 && sessionService.Database != null
-                && sessionService.Database.sourceBitmap != null
                 && option != null
-                && !string.IsNullOrWhiteSpace(option.IconKey)
-                && sessionService.Database.ContainsKey(option.IconKey))
+                && !string.IsNullOrWhiteSpace(option.IconKey))
             {
-                icon = sessionService.Database.images(option.IconKey);
+                if (sessionService.Database.sourceBitmap != null
+                    && sessionService.Database.ContainsKey(option.IconKey))
+                {
+                    icon = sessionService.Database.images(option.IconKey);
+                }
+                else
+                {
+                    Bitmap portrait = creaturePortraitIconService.TryLoadPortraitThumbnail(option.IconKey, 20);
+                    if (portrait != null)
+                    {
+                        icon = portrait;
+                    }
+                }
             }
 
             graphics.DrawImage(icon, bounds);
@@ -572,7 +633,9 @@ namespace FWEledit
             }
 
             object current = dataGridView_item.Rows[rowIndex].Cells[2].Tag ?? dataGridView_item.Rows[rowIndex].Cells[2].Value;
-            if (string.Equals(Convert.ToString(current), rawValue, StringComparison.Ordinal))
+            ValueCellState currentState = current as ValueCellState;
+            string currentRawValue = currentState != null ? (currentState.RawValue ?? string.Empty) : Convert.ToString(current);
+            if (string.Equals(currentRawValue, rawValue, StringComparison.Ordinal))
             {
                 return;
             }
@@ -782,13 +845,29 @@ namespace FWEledit
             {
                 OpenGenderTypePickerForValueRow(targetRow);
             }
+            else if (itemFieldClassifierService.IsReputationFieldName(fieldName))
+            {
+                OpenReputationPickerForValueRow(targetRow);
+            }
+            else if (itemFieldClassifierService.IsSoulToolRewardTypeFieldName(fieldName))
+            {
+                OpenSoulToolRewardTypePickerForValueRow(targetRow);
+            }
             else if (itemFieldClassifierService.IsProcTypeFieldName(fieldName))
             {
                 OpenProcTypePickerForValueRow(targetRow);
             }
+            else if (itemFieldClassifierService.IsProfessionMaskFieldName(fieldName))
+            {
+                OpenProfessionMaskPickerForValueRow(targetRow);
+            }
             else if (itemFieldClassifierService.IsCombinedServicesFieldName(fieldName))
             {
                 OpenCombinedServicesPickerForValueRow(targetRow);
+            }
+            else if (itemFieldClassifierService.IsSkillFieldName(fieldName))
+            {
+                OpenSkillPickerForValueRow(targetRow);
             }
             else if (itemFieldClassifierService.IsModelFieldName(fieldName))
             {
@@ -817,8 +896,12 @@ namespace FWEledit
                 OpenAddonTypePickerForValueRow,
                 OpenItemQualityPickerForValueRow,
                 OpenGenderTypePickerForValueRow,
+                OpenReputationPickerForValueRow,
+                OpenSoulToolRewardTypePickerForValueRow,
                 OpenProcTypePickerForValueRow,
+                OpenProfessionMaskPickerForValueRow,
                 OpenCombinedServicesPickerForValueRow,
+                OpenSkillPickerForValueRow,
                 OpenModelPickerForValueRow,
                 OpenItemReferencePickerForValueRow,
                 UpdatePickIconButtonState,
@@ -893,7 +976,11 @@ namespace FWEledit
                 && itemFieldClassifierService.IsAddonTypeField(sessionService.ListCollection, comboBox_lists.SelectedIndex, fieldName);
             bool isItemQualityField = itemFieldClassifierService != null && itemFieldClassifierService.IsItemQualityFieldName(fieldName);
             bool isGenderTypeField = itemFieldClassifierService != null && itemFieldClassifierService.IsGenderTypeFieldName(fieldName);
+            bool isReputationField = itemFieldClassifierService != null && itemFieldClassifierService.IsReputationFieldName(fieldName);
+            bool isSoulToolRewardTypeField = itemFieldClassifierService != null && itemFieldClassifierService.IsSoulToolRewardTypeFieldName(fieldName);
+            bool isProfessionMaskField = itemFieldClassifierService != null && itemFieldClassifierService.IsProfessionMaskFieldName(fieldName);
             bool isCombinedServicesField = itemFieldClassifierService != null && itemFieldClassifierService.IsCombinedServicesFieldName(fieldName);
+            bool isSkillField = itemFieldClassifierService != null && itemFieldClassifierService.IsSkillFieldName(fieldName);
             bool isReferenceField = itemReferenceService != null
                 && sessionService != null
                 && sessionService.ListCollection != null
@@ -959,6 +1046,33 @@ namespace FWEledit
                 menu.Items.Add("Choose Gender Type...", null, (menuSender, args) => OpenGenderTypePickerForValueRow(rowIndex));
             }
 
+            if (isReputationField)
+            {
+                if (menu.Items.Count > 0)
+                {
+                    menu.Items.Add(new ToolStripSeparator());
+                }
+                menu.Items.Add("Choose Reputation...", null, (menuSender, args) => OpenReputationPickerForValueRow(rowIndex));
+            }
+
+            if (isSoulToolRewardTypeField)
+            {
+                if (menu.Items.Count > 0)
+                {
+                    menu.Items.Add(new ToolStripSeparator());
+                }
+                menu.Items.Add("Choose Anima Reward Type...", null, (menuSender, args) => OpenSoulToolRewardTypePickerForValueRow(rowIndex));
+            }
+
+            if (isProfessionMaskField)
+            {
+                if (menu.Items.Count > 0)
+                {
+                    menu.Items.Add(new ToolStripSeparator());
+                }
+                menu.Items.Add("Choose Allowed Professions...", null, (menuSender, args) => OpenProfessionMaskPickerForValueRow(rowIndex));
+            }
+
             if (isCombinedServicesField)
             {
                 if (menu.Items.Count > 0)
@@ -966,6 +1080,15 @@ namespace FWEledit
                     menu.Items.Add(new ToolStripSeparator());
                 }
                 menu.Items.Add("Choose Portable Services...", null, (menuSender, args) => OpenCombinedServicesPickerForValueRow(rowIndex));
+            }
+
+            if (isSkillField)
+            {
+                if (menu.Items.Count > 0)
+                {
+                    menu.Items.Add(new ToolStripSeparator());
+                }
+                menu.Items.Add("Choose Skill / Buff...", null, (menuSender, args) => OpenSkillPickerForValueRow(rowIndex));
             }
 
             if (menu.Items.Count == 0)
@@ -1054,6 +1177,11 @@ namespace FWEledit
             }
 
             object raw = dataGridView_item.Rows[rowIndex].Cells[2].Tag;
+            ValueCellState state = raw as ValueCellState;
+            if (state != null)
+            {
+                return state.RawValue ?? string.Empty;
+            }
             if (raw != null)
             {
                 return Convert.ToString(raw);

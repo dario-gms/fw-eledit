@@ -12,6 +12,7 @@ namespace FWEledit
 
         private readonly List<ItemReferenceOption> allOptions;
         private readonly CacheSave database;
+        private readonly CreaturePortraitIconService portraitIconService = new CreaturePortraitIconService();
         private readonly ComboBox listComboBox;
         private readonly TextBox searchBox;
         private readonly ListBox listBox;
@@ -287,9 +288,20 @@ namespace FWEledit
         private void DrawIcon(Graphics graphics, ItemReferenceOption option, Rectangle bounds)
         {
             Bitmap icon = Properties.Resources.NoIcon;
-            if (database != null && database.sourceBitmap != null && !string.IsNullOrWhiteSpace(option.IconKey) && database.ContainsKey(option.IconKey))
+            if (database != null && !string.IsNullOrWhiteSpace(option.IconKey))
             {
-                icon = database.images(option.IconKey);
+                if (database.sourceBitmap != null && database.ContainsKey(option.IconKey))
+                {
+                    icon = database.images(option.IconKey);
+                }
+                else
+                {
+                    Bitmap portrait = portraitIconService.TryLoadPortraitThumbnail(option.IconKey, 32);
+                    if (portrait != null)
+                    {
+                        icon = portrait;
+                    }
+                }
             }
 
             graphics.DrawImage(icon, bounds);

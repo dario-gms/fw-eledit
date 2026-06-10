@@ -21,20 +21,20 @@ namespace FWEledit
         private static readonly List<ProcTypeOption> ProcTypeOptions = new List<ProcTypeOption>
         {
             new ProcTypeOption { Value = 0x0001, Label = "No drop on death", Description = "The item will not drop when the character dies." },
-            new ProcTypeOption { Value = 0x0002, Label = "Not droppable", Description = "The item cannot be thrown on the ground." },
-            new ProcTypeOption { Value = 0x0004, Label = "Not sellable", Description = "The item cannot be sold to NPCs." },
-            new ProcTypeOption { Value = 0x0008, Label = "Cash shop item", Description = "The item is treated as an RMB / cash-shop item." },
-            new ProcTypeOption { Value = 0x0010, Label = "Not tradeable", Description = "The item cannot be traded between players." },
-            new ProcTypeOption { Value = 0x0020, Label = "Quest item", Description = "The item is marked as quest-related." },
-            new ProcTypeOption { Value = 0x0040, Label = "Bind on equip", Description = "Item becomes bound when equipped." },
-            new ProcTypeOption { Value = 0x0080, Label = "Already bound", Description = "The item starts already bound." },
-            new ProcTypeOption { Value = 0x0100, Label = "Generate unique instance", Description = "The item generates its own GUID / unique instance." },
-            new ProcTypeOption { Value = 0x0200, Label = "No stack or split", Description = "The item cannot be stacked or split." },
-            new ProcTypeOption { Value = 0x0400, Label = "Not destroyable", Description = "The item cannot be destroyed." },
-            new ProcTypeOption { Value = 0x0800, Label = "Reserved flag 1", Description = "Reserved internal flag." },
-            new ProcTypeOption { Value = 0x1000, Label = "Reserved flag 2", Description = "Reserved internal flag." },
-            new ProcTypeOption { Value = 0x2000, Label = "Reserved flag 3", Description = "Reserved internal flag." },
-            new ProcTypeOption { Value = 0x4000, Label = "Keep after expiry", Description = "A timed item stays in place even after expiring." }
+            new ProcTypeOption { Value = 0x0002, Label = "Unable to discard", Description = "The item cannot be thrown on the ground." },
+            new ProcTypeOption { Value = 0x0004, Label = "Unable to sell", Description = "The item cannot be sold to NPCs." },
+            new ProcTypeOption { Value = 0x0008, Label = "Cash shop item", Description = "The client treats this as an RMB / boutique item." },
+            new ProcTypeOption { Value = 0x0010, Label = "Unable to trade", Description = "The item cannot be traded between players." },
+            new ProcTypeOption { Value = 0x0020, Label = "Quest item", Description = "The item is marked as a quest item." },
+            new ProcTypeOption { Value = 0x0040, Label = "Binds when equipped", Description = "The item becomes bound after it is equipped." },
+            new ProcTypeOption { Value = 0x0080, Label = "Bound", Description = "The item starts already bound." },
+            new ProcTypeOption { Value = 0x0100, Label = "Unique instance", Description = "The client generates a unique GUID for this item." },
+            new ProcTypeOption { Value = 0x0200, Label = "Cannot split or stack", Description = "The item cannot be split into stacks and cannot be stacked." },
+            new ProcTypeOption { Value = 0x0400, Label = "Unable to destroy", Description = "The item cannot be destroyed." },
+            new ProcTypeOption { Value = 0x0800, Label = "Reserved flag 1", Description = "Internal client flag with unknown gameplay text." },
+            new ProcTypeOption { Value = 0x1000, Label = "Reserved flag 2", Description = "Internal client flag with unknown gameplay text." },
+            new ProcTypeOption { Value = 0x2000, Label = "Reserved flag 3", Description = "Internal client flag with unknown gameplay text." },
+            new ProcTypeOption { Value = 0x4000, Label = "Does not disappear after expiry", Description = "A timed item stays in the inventory after its timer expires." }
         };
 
         public static List<ProcTypeOption> Options

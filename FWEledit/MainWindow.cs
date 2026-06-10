@@ -42,7 +42,9 @@ namespace FWEledit
         private DataGridView fwReferencesGrid;
         private Form referencesViewerForm;
         private Label referencesViewerLabel;
+        private TabControl referencesViewerTabs;
         private DataGridView referencesViewerGrid;
+        private readonly Dictionary<string, DataGridView> referencesViewerGridsByKey = new Dictionary<string, DataGridView>();
         private TabPage fwDescriptionTab;
         private TextBox fwDescriptionEditor;
         private RichTextBox fwDescriptionPreview;

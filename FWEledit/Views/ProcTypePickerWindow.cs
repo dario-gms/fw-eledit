@@ -17,7 +17,7 @@ namespace FWEledit
         {
             SelectedValue = currentValue;
 
-            Text = "Choose protections...";
+            Text = "Choose item protections...";
             StartPosition = FormStartPosition.CenterParent;
             MinimumSize = new Size(420, 430);
             Size = new Size(520, 560);
@@ -186,7 +186,7 @@ namespace FWEledit
             ProcTypeOption selected = checkedListBox.SelectedItem as ProcTypeOption;
             descriptionTextBox.Text = selected != null
                 ? selected.Label + Environment.NewLine + Environment.NewLine + (selected.Description ?? string.Empty)
-                : "Select one or more protections.";
+                : "Select one or more item protections.";
         }
 
         private void ConfirmSelection()

@@ -15,6 +15,11 @@ namespace FWEledit
             }
 
             object valueObj = grid.Rows[rowIndex].Cells[2].Tag ?? grid.Rows[rowIndex].Cells[2].Value;
+            ValueCellState state = valueObj as ValueCellState;
+            if (state != null)
+            {
+                valueObj = state.RawValue ?? string.Empty;
+            }
             int value;
             if (tryExtractPathId != null && tryExtractPathId(Convert.ToString(valueObj), out value))
             {

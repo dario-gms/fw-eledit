@@ -12,6 +12,21 @@ FWEledit is based on [sELedit++ by Wrechid](https://github.com/Wrechid/sELedit-)
 
 ---
 
+## What's New in v0.9.5.7
+
+- Added parser and picker support for skill/buff-style fields, including `SKILLMATTER_ESSENCE.id_skill`, backed by the game's `skillstr.txt` / `buff_str.txt` data instead of raw guesswork.
+- Improved `SKILLMATTER_ESSENCE` value display so skill-related rows now show contextual text such as skill usage, level, cast behavior, and item type instead of bare numeric values where possible.
+- Expanded portable-service parsing for `HANDY_SIMPLE_SERVICE_ESSENCE` so combined service flags render with game-style service names rather than generic placeholders.
+- Reworked `proc_type` display and picker labels to use much friendlier in-game style wording such as bind/trade/sell restrictions.
+- Added and refined profession-mask parsing/picking for FW-specific classes used by trade/NPC-related lists.
+- Improved NPC trade parsing so nested shop/trade page references render more accurately in pickers and related value fields.
+- Extended `ITEM_TRADE_PAGE_CONFIG` handling with better page-level parsing, icon resolution, profession-mask support, and reference integration.
+- Improved reference browsing by grouping results into tabs per source list and tightening icon/name rendering for those grouped results.
+- Continued performance work on reference/index-heavy workflows with more caching around repeated lookups and parser-heavy UI paths.
+- Project/app version metadata updated to `v0.9.5.7`.
+
+---
+
 ## What's New in v0.9.5.6
 
 - Added human-readable parsing for `combined_services`, `combined_services2`, `combined_services3`, and `combined_services_*` fields used by portable service tables such as `HANDY_SIMPLE_SERVICE_ESSENCE`.

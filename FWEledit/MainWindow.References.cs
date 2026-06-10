@@ -11,6 +11,8 @@ namespace FWEledit
 {
     public partial class MainWindow : Form
     {
+        private const string ReferenceCacheSchemaVersion = "references-v3";
+
         private sealed class VisibleReferenceTarget
         {
             public int RowIndex { get; set; }
@@ -99,7 +101,9 @@ namespace FWEledit
                 + "|"
                 + fileInfo.Length.ToString()
                 + "|"
-                + fileInfo.LastWriteTimeUtc.Ticks.ToString();
+                + fileInfo.LastWriteTimeUtc.Ticks.ToString()
+                + "|"
+                + ReferenceCacheSchemaVersion;
 
             string hash;
             using (MD5 md5 = MD5.Create())
@@ -479,12 +483,46 @@ namespace FWEledit
             referencesViewerLabel.Font = new Font("Segoe UI", 9F, FontStyle.Bold, GraphicsUnit.Point, ((byte)(0)));
             referencesViewerLabel.Text = "Referenced by";
 
+            referencesViewerTabs = new TabControl();
+            referencesViewerTabs.Dock = DockStyle.Fill;
+            referencesViewerTabs.Padding = new Point(18, 6);
+            referencesViewerTabs.Margin = new Padding(0);
+
             referencesViewerGrid = CreateReferencesViewerGrid();
+            SetReferencesViewerTabsLoadingState();
+
             referencesViewerForm.Controls.Add(referencesViewerLabel);
-            referencesViewerForm.Controls.Add(referencesViewerGrid);
-            referencesViewerGrid.BringToFront();
+            referencesViewerForm.Controls.Add(referencesViewerTabs);
+            referencesViewerTabs.BringToFront();
 
             ApplyReferencesViewerTheme();
+        }
+
+        private void SetReferencesViewerTabsLoadingState()
+        {
+            if (referencesViewerTabs == null || referencesViewerTabs.IsDisposed)
+            {
+                return;
+            }
+
+            referencesViewerTabs.SuspendLayout();
+            try
+            {
+                referencesViewerTabs.TabPages.Clear();
+                referencesViewerGridsByKey.Clear();
+
+                TabPage page = new TabPage("Loading");
+                DataGridView grid = CreateReferencesViewerGrid();
+                grid.Rows.Add(string.Empty, string.Empty, Properties.Resources.blank, "Loading references...", string.Empty, string.Empty);
+                page.Controls.Add(grid);
+                referencesViewerTabs.TabPages.Add(page);
+                referencesViewerGridsByKey["loading"] = grid;
+                referencesViewerGrid = grid;
+            }
+            finally
+            {
+                referencesViewerTabs.ResumeLayout();
+            }
         }
 
         private DataGridView CreateReferencesViewerGrid()
@@ -532,37 +570,57 @@ namespace FWEledit
                 return;
             }
 
-            NavigateToReferenceRow(e.RowIndex);
+            NavigateToReferenceRow(GetReferencesViewerGridFromSender(sender), e.RowIndex);
         }
 
         private void referencesViewerGrid_KeyDown(object sender, KeyEventArgs e)
         {
-            if (e == null || e.KeyCode != Keys.Enter || referencesViewerGrid == null || referencesViewerGrid.CurrentCell == null)
+            DataGridView sourceGrid = GetReferencesViewerGridFromSender(sender);
+            if (e == null || e.KeyCode != Keys.Enter || sourceGrid == null || sourceGrid.CurrentCell == null)
             {
                 return;
             }
 
             e.Handled = true;
             e.SuppressKeyPress = true;
-            NavigateToReferenceRow(referencesViewerGrid.CurrentCell.RowIndex);
+            NavigateToReferenceRow(sourceGrid, sourceGrid.CurrentCell.RowIndex);
         }
 
-        private void NavigateToReferenceRow(int rowIndex)
+        private void NavigateToReferenceRow(DataGridView sourceGrid, int rowIndex)
         {
-            if (referencesViewerGrid == null
+            if (sourceGrid == null
                 || rowIndex < 0
-                || rowIndex >= referencesViewerGrid.Rows.Count)
+                || rowIndex >= sourceGrid.Rows.Count)
             {
                 return;
             }
 
-            ReferenceGridRowData data = referencesViewerGrid.Rows[rowIndex].Tag as ReferenceGridRowData;
+            ReferenceGridRowData data = sourceGrid.Rows[rowIndex].Tag as ReferenceGridRowData;
             if (data == null)
             {
                 return;
             }
 
             NavigateToElement(data.SourceListIndex, data.SourceElementIndex);
+        }
+
+        private DataGridView GetReferencesViewerGridFromSender(object sender)
+        {
+            DataGridView grid = sender as DataGridView;
+            if (grid != null)
+            {
+                return grid;
+            }
+
+            if (referencesViewerTabs != null
+                && !referencesViewerTabs.IsDisposed
+                && referencesViewerTabs.SelectedTab != null
+                && referencesViewerTabs.SelectedTab.Controls.Count > 0)
+            {
+                return referencesViewerTabs.SelectedTab.Controls[0] as DataGridView;
+            }
+
+            return referencesViewerGrid;
         }
 
         private void ApplyReferencesViewerTheme()
@@ -586,22 +644,46 @@ namespace FWEledit
                 referencesViewerLabel.ForeColor = secondary;
             }
 
-            if (referencesViewerGrid != null && !referencesViewerGrid.IsDisposed)
+            if (referencesViewerTabs != null && !referencesViewerTabs.IsDisposed)
             {
-                referencesViewerGrid.BackgroundColor = surface;
-                referencesViewerGrid.GridColor = fwDarkMode ? Color.FromArgb(50, 58, 70) : Color.FromArgb(211, 218, 226);
-                referencesViewerGrid.DefaultCellStyle.BackColor = fwDarkMode ? Color.FromArgb(18, 21, 26) : Color.White;
-                referencesViewerGrid.DefaultCellStyle.ForeColor = text;
-                referencesViewerGrid.DefaultCellStyle.SelectionBackColor = fwDarkMode ? Color.FromArgb(47, 76, 112) : Color.FromArgb(84, 137, 196);
-                referencesViewerGrid.DefaultCellStyle.SelectionForeColor = text;
-                referencesViewerGrid.AlternatingRowsDefaultCellStyle.BackColor = fwDarkMode ? Color.FromArgb(22, 26, 32) : Color.FromArgb(247, 249, 252);
-                referencesViewerGrid.ColumnHeadersDefaultCellStyle.BackColor = fwDarkMode ? Color.FromArgb(38, 44, 53) : Color.FromArgb(225, 231, 238);
-                referencesViewerGrid.ColumnHeadersDefaultCellStyle.ForeColor = text;
-                referencesViewerGrid.ColumnHeadersDefaultCellStyle.SelectionBackColor = referencesViewerGrid.ColumnHeadersDefaultCellStyle.BackColor;
-                referencesViewerGrid.ColumnHeadersDefaultCellStyle.SelectionForeColor = text;
-                referencesViewerGrid.RowTemplate.Height = 38;
-                referencesViewerGrid.BorderStyle = BorderStyle.None;
-                referencesViewerGrid.Refresh();
+                referencesViewerTabs.BackColor = surface;
+                for (int i = 0; i < referencesViewerTabs.TabPages.Count; i++)
+                {
+                    TabPage page = referencesViewerTabs.TabPages[i];
+                    if (page == null)
+                    {
+                        continue;
+                    }
+
+                    page.BackColor = surface;
+                    page.ForeColor = text;
+                    if (page.Controls.Count == 0)
+                    {
+                        continue;
+                    }
+
+                    DataGridView grid = page.Controls[0] as DataGridView;
+                    if (grid == null || grid.IsDisposed)
+                    {
+                        continue;
+                    }
+
+                    grid.BackgroundColor = surface;
+                    grid.GridColor = fwDarkMode ? Color.FromArgb(50, 58, 70) : Color.FromArgb(211, 218, 226);
+                    grid.DefaultCellStyle.BackColor = fwDarkMode ? Color.FromArgb(18, 21, 26) : Color.White;
+                    grid.DefaultCellStyle.ForeColor = text;
+                    grid.DefaultCellStyle.SelectionBackColor = fwDarkMode ? Color.FromArgb(47, 76, 112) : Color.FromArgb(84, 137, 196);
+                    grid.DefaultCellStyle.SelectionForeColor = text;
+                    grid.AlternatingRowsDefaultCellStyle.BackColor = fwDarkMode ? Color.FromArgb(22, 26, 32) : Color.FromArgb(247, 249, 252);
+                    grid.ColumnHeadersDefaultCellStyle.BackColor = fwDarkMode ? Color.FromArgb(38, 44, 53) : Color.FromArgb(225, 231, 238);
+                    grid.ColumnHeadersDefaultCellStyle.ForeColor = text;
+                    grid.ColumnHeadersDefaultCellStyle.SelectionBackColor = grid.ColumnHeadersDefaultCellStyle.BackColor;
+                    grid.ColumnHeadersDefaultCellStyle.SelectionForeColor = text;
+                    grid.RowTemplate.Height = 38;
+                    grid.BorderStyle = BorderStyle.None;
+                    ReapplyReferenceRowStyles(grid);
+                    grid.Refresh();
+                }
             }
         }
 
@@ -640,7 +722,7 @@ namespace FWEledit
 
         private void ScheduleReferencesTabRefresh()
         {
-            if (referencesViewerGrid == null || referencesViewerForm == null || referencesViewerForm.IsDisposed || !referencesViewerForm.Visible)
+            if (referencesViewerTabs == null || referencesViewerForm == null || referencesViewerForm.IsDisposed || !referencesViewerForm.Visible)
             {
                 return;
             }
@@ -662,7 +744,7 @@ namespace FWEledit
 
         private void LoadReferencesViewerForSelectionAsync()
         {
-            if (referencesViewerGrid == null || referencesViewerForm == null || referencesViewerForm.IsDisposed || !referencesViewerForm.Visible)
+            if (referencesViewerTabs == null || referencesViewerForm == null || referencesViewerForm.IsDisposed || !referencesViewerForm.Visible)
             {
                 return;
             }
@@ -672,21 +754,12 @@ namespace FWEledit
             int id;
             if (!TryGetElementId(listIndex, elementIndex, out id))
             {
-                referencesViewerGrid.Rows.Clear();
+                referencesViewerTabs.TabPages.Clear();
                 return;
             }
 
             int loadVersion = ++referencesTabLoadVersion;
-            referencesViewerGrid.SuspendLayout();
-            try
-            {
-                referencesViewerGrid.Rows.Clear();
-                referencesViewerGrid.Rows.Add(string.Empty, string.Empty, Properties.Resources.blank, "Loading references...", string.Empty, string.Empty);
-            }
-            finally
-            {
-                referencesViewerGrid.ResumeLayout();
-            }
+            SetReferencesViewerTabsLoadingState();
 
             eListCollection listCollection = sessionService != null ? sessionService.ListCollection : null;
             CacheSave database = sessionService != null ? sessionService.Database : null;
@@ -708,7 +781,7 @@ namespace FWEledit
                 if (IsDisposed
                     || !IsHandleCreated
                     || loadVersion != referencesTabLoadVersion
-                    || referencesViewerGrid == null
+                    || referencesViewerTabs == null
                     || referencesViewerForm == null
                     || referencesViewerForm.IsDisposed
                     || !referencesViewerForm.Visible)
@@ -721,41 +794,131 @@ namespace FWEledit
                     return;
                 }
 
-                referencesViewerGrid.SuspendLayout();
+                referencesViewerTabs.SuspendLayout();
                 try
                 {
-                    referencesViewerGrid.Rows.Clear();
-                    if (task.Result.Count == 0)
-                    {
-                        return;
-                    }
-
-                    DataGridViewRow[] rows = new DataGridViewRow[task.Result.Count];
-                    for (int i = 0; i < task.Result.Count; i++)
-                    {
-                        ReferenceGridRowData data = task.Result[i];
-                        DataGridViewRow row = (DataGridViewRow)referencesViewerGrid.RowTemplate.Clone();
-                        row.CreateCells(referencesViewerGrid, new object[]
-                        {
-                            data.ListLabel ?? string.Empty,
-                            data.SourceId ?? string.Empty,
-                            data.Icon,
-                            data.Name ?? string.Empty,
-                            data.FieldLabel ?? string.Empty,
-                            data.RawValue ?? string.Empty
-                        });
-                        row.Tag = data;
-                        ApplyReferenceRowStyle(row, data.Quality, referencesViewerGrid);
-                        rows[i] = row;
-                    }
-
-                    referencesViewerGrid.Rows.AddRange(rows);
+                    PopulateReferencesViewerTabs(task.Result);
                 }
                 finally
                 {
-                    referencesViewerGrid.ResumeLayout();
+                    referencesViewerTabs.ResumeLayout();
                 }
             }, System.Threading.Tasks.TaskScheduler.FromCurrentSynchronizationContext());
+        }
+
+        private void PopulateReferencesViewerTabs(List<ReferenceGridRowData> rows)
+        {
+            if (referencesViewerTabs == null || referencesViewerTabs.IsDisposed)
+            {
+                return;
+            }
+
+            referencesViewerTabs.TabPages.Clear();
+            referencesViewerGridsByKey.Clear();
+
+            AddReferencesViewerTab("all", "All", rows ?? new List<ReferenceGridRowData>());
+
+            if (rows != null)
+            {
+                Dictionary<int, List<ReferenceGridRowData>> grouped = new Dictionary<int, List<ReferenceGridRowData>>();
+                for (int i = 0; i < rows.Count; i++)
+                {
+                    ReferenceGridRowData row = rows[i];
+                    List<ReferenceGridRowData> bucket;
+                    if (!grouped.TryGetValue(row.SourceListIndex, out bucket))
+                    {
+                        bucket = new List<ReferenceGridRowData>();
+                        grouped[row.SourceListIndex] = bucket;
+                    }
+
+                    bucket.Add(row);
+                }
+
+                List<int> keys = new List<int>(grouped.Keys);
+                keys.Sort();
+                for (int i = 0; i < keys.Count; i++)
+                {
+                    int sourceListIndex = keys[i];
+                    List<ReferenceGridRowData> bucket = grouped[sourceListIndex];
+                    string label = bucket.Count > 0 ? bucket[0].ListLabel : ("[" + sourceListIndex.ToString() + "]");
+                    AddReferencesViewerTab("list:" + sourceListIndex.ToString(), label, bucket);
+                }
+            }
+
+            if (referencesViewerTabs.TabPages.Count > 0)
+            {
+                referencesViewerTabs.SelectedIndex = 0;
+            }
+            ApplyReferencesViewerTheme();
+        }
+
+        private void AddReferencesViewerTab(string key, string label, List<ReferenceGridRowData> rows)
+        {
+            if (referencesViewerTabs == null || string.IsNullOrWhiteSpace(key))
+            {
+                return;
+            }
+
+            TabPage page = new TabPage(BuildReferencesTabTitle(label, rows != null ? rows.Count : 0));
+            DataGridView grid = CreateReferencesViewerGrid();
+
+            if (rows != null && rows.Count > 0)
+            {
+                DataGridViewRow[] gridRows = new DataGridViewRow[rows.Count];
+                for (int i = 0; i < rows.Count; i++)
+                {
+                    ReferenceGridRowData data = rows[i];
+                    DataGridViewRow row = (DataGridViewRow)grid.RowTemplate.Clone();
+                    row.CreateCells(grid, new object[]
+                    {
+                        data.ListLabel ?? string.Empty,
+                        data.SourceId ?? string.Empty,
+                        data.Icon,
+                        data.Name ?? string.Empty,
+                        data.FieldLabel ?? string.Empty,
+                        data.RawValue ?? string.Empty
+                    });
+                    row.Tag = data;
+                    ApplyReferenceRowStyle(row, data.Quality, grid);
+                    gridRows[i] = row;
+                }
+
+                grid.Rows.AddRange(gridRows);
+            }
+
+            page.Controls.Add(grid);
+            referencesViewerTabs.TabPages.Add(page);
+            referencesViewerGridsByKey[key] = grid;
+            if (referencesViewerGrid == null || key == "all")
+            {
+                referencesViewerGrid = grid;
+            }
+        }
+
+        private void ReapplyReferenceRowStyles(DataGridView grid)
+        {
+            if (grid == null || grid.IsDisposed)
+            {
+                return;
+            }
+
+            for (int i = 0; i < grid.Rows.Count; i++)
+            {
+                DataGridViewRow row = grid.Rows[i];
+                if (row == null)
+                {
+                    continue;
+                }
+
+                ReferenceGridRowData data = row.Tag as ReferenceGridRowData;
+                ApplyReferenceRowStyle(row, data != null ? data.Quality : -1, grid);
+            }
+        }
+
+        private static string BuildReferencesTabTitle(string label, int count)
+        {
+            string baseLabel = string.IsNullOrWhiteSpace(label) ? "References" : label;
+            return baseLabel + " (" + count.ToString() + ")";
         }
 
         private void RefreshVisibleReferenceCounts()
@@ -1161,6 +1324,12 @@ namespace FWEledit
         {
             if (usage != null && database != null && listCollection != null)
             {
+                Image inheritedIcon = TryResolveInheritedReferenceIcon(usage, listCollection, database, portraitService);
+                if (inheritedIcon != null)
+                {
+                    return inheritedIcon;
+                }
+
                 int iconFieldIndex = GetIconFieldIndex(usage.SourceListIndex, listCollection);
                 if (iconFieldIndex >= 0)
                 {
@@ -1202,6 +1371,317 @@ namespace FWEledit
             }
 
             return Properties.Resources.NoIcon;
+        }
+
+        private Image TryResolveInheritedReferenceIcon(
+            ReferenceUsage usage,
+            eListCollection listCollection,
+            CacheSave database,
+            CreaturePortraitIconService portraitService)
+        {
+            if (usage == null
+                || listCollection == null
+                || database == null
+                || usage.SourceListIndex < 0
+                || usage.SourceListIndex >= listCollection.Lists.Length
+                || listCollection.Lists[usage.SourceListIndex] == null)
+            {
+                return null;
+            }
+
+            string normalizedListName = NormalizeReferenceListName(listCollection.Lists[usage.SourceListIndex].listName);
+            if (string.Equals(normalizedListName, "ITEM_TRADE_ESSENCE", StringComparison.OrdinalIgnoreCase))
+            {
+                int tradeServiceId;
+                if (int.TryParse(usage.SourceItemId, out tradeServiceId))
+                {
+                    Bitmap portrait;
+                    NpcTradePortraitService portraitServiceHelper = new NpcTradePortraitService();
+                    if (portraitServiceHelper.TryResolveTradePortrait(listCollection, database, tradeServiceId, out portrait))
+                    {
+                        return portrait;
+                    }
+                }
+            }
+            else if (string.Equals(normalizedListName, "DROPTABLE_ESSENCE", StringComparison.OrdinalIgnoreCase))
+            {
+                int dropTableId;
+                if (int.TryParse(usage.SourceItemId, out dropTableId))
+                {
+                    Bitmap portrait;
+                    MonsterDropPortraitService monsterPortraitService = new MonsterDropPortraitService();
+                    if (monsterPortraitService.TryResolveDropPortrait(listCollection, database, dropTableId, out portrait))
+                    {
+                        return portrait;
+                    }
+                }
+
+                ItemReferenceOption option;
+                if (TryResolveDropTableInheritedReferenceOption(
+                    listCollection,
+                    usage.SourceListIndex,
+                    usage.SourceElementIndex,
+                    database,
+                    out option)
+                    && option != null)
+                {
+                    Image icon = TryLoadReferenceOptionIcon(option, database, portraitService);
+                    if (icon != null)
+                    {
+                        return icon;
+                    }
+                }
+            }
+            else if (string.Equals(normalizedListName, "ITEM_TRADE_PAGE_CONFIG", StringComparison.OrdinalIgnoreCase))
+            {
+                ItemReferenceOption option;
+                if (TryResolveFirstReferenceOptionByFieldPattern(
+                    listCollection,
+                    usage.SourceListIndex,
+                    usage.SourceElementIndex,
+                    database,
+                    "goods_",
+                    "_1_id_goods",
+                    out option)
+                    && option != null)
+                {
+                    Image icon = TryLoadReferenceOptionIcon(option, database, portraitService);
+                    if (icon != null)
+                    {
+                        return icon;
+                    }
+                }
+            }
+            else if (string.Equals(normalizedListName, "GIFT_BAG_CONFIG", StringComparison.OrdinalIgnoreCase))
+            {
+                ItemReferenceOption option;
+                if (TryResolveFirstReferenceOptionByFieldPattern(
+                    listCollection,
+                    usage.SourceListIndex,
+                    usage.SourceElementIndex,
+                    database,
+                    "gift_",
+                    "_1_id",
+                    out option)
+                    && option != null)
+                {
+                    Image icon = TryLoadReferenceOptionIcon(option, database, portraitService);
+                    if (icon != null)
+                    {
+                        return icon;
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        private Image TryLoadReferenceOptionIcon(ItemReferenceOption option, CacheSave database, CreaturePortraitIconService portraitService)
+        {
+            if (option == null || database == null || string.IsNullOrWhiteSpace(option.IconKey))
+            {
+                return null;
+            }
+
+            if (database.sourceBitmap != null && database.ContainsKey(option.IconKey))
+            {
+                return database.images(option.IconKey);
+            }
+
+            return portraitService != null
+                ? portraitService.TryLoadPortraitThumbnail(option.IconKey, 32)
+                : null;
+        }
+
+        private bool TryResolveFirstReferenceOptionByFieldPattern(
+            eListCollection listCollection,
+            int listIndex,
+            int elementIndex,
+            CacheSave database,
+            string prefix,
+            string marker,
+            out ItemReferenceOption option)
+        {
+            option = null;
+            if (itemReferenceService == null
+                || listCollection == null
+                || listIndex < 0
+                || listIndex >= listCollection.Lists.Length
+                || listCollection.Lists[listIndex] == null
+                || listCollection.Lists[listIndex].elementFields == null
+                || elementIndex < 0
+                || listCollection.Lists[listIndex].elementValues == null
+                || elementIndex >= listCollection.Lists[listIndex].elementValues.Length)
+            {
+                return false;
+            }
+
+            string[] fields = listCollection.Lists[listIndex].elementFields;
+            for (int i = 0; i < fields.Length; i++)
+            {
+                string fieldName = fields[i] ?? string.Empty;
+                if (!fieldName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+                    || fieldName.IndexOf(marker, StringComparison.OrdinalIgnoreCase) < 0)
+                {
+                    continue;
+                }
+
+                string rawValue = listCollection.GetValue(listIndex, elementIndex, i);
+                if (itemReferenceService.TryResolveReferenceOption(
+                    listCollection,
+                    listIndex,
+                    elementIndex,
+                    fieldName,
+                    rawValue,
+                    database,
+                    iconResolutionService,
+                    out option)
+                    && option != null)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private bool TryResolveDropTableInheritedReferenceOption(
+            eListCollection listCollection,
+            int listIndex,
+            int elementIndex,
+            CacheSave database,
+            out ItemReferenceOption option)
+        {
+            option = null;
+            if (itemReferenceService == null
+                || listCollection == null
+                || listIndex < 0
+                || listIndex >= listCollection.Lists.Length
+                || listCollection.Lists[listIndex] == null
+                || listCollection.Lists[listIndex].elementFields == null
+                || listCollection.Lists[listIndex].elementValues == null
+                || elementIndex < 0
+                || elementIndex >= listCollection.Lists[listIndex].elementValues.Length)
+            {
+                return false;
+            }
+
+            return TryResolveDropTableInheritedReferenceOptionInternal(
+                listCollection,
+                listIndex,
+                elementIndex,
+                database,
+                out option,
+                0);
+        }
+
+        private bool TryResolveDropTableInheritedReferenceOptionInternal(
+            eListCollection listCollection,
+            int listIndex,
+            int elementIndex,
+            CacheSave database,
+            out ItemReferenceOption option,
+            int depth)
+        {
+            option = null;
+            if (depth > 6)
+            {
+                return false;
+            }
+
+            string[] fields = listCollection.Lists[listIndex].elementFields;
+            int isCategoryFieldIndex = -1;
+            List<int> dropFieldIndexes = new List<int>();
+            for (int i = 0; i < fields.Length; i++)
+            {
+                string fieldName = fields[i] ?? string.Empty;
+                if (string.Equals(fieldName, "is_category", StringComparison.OrdinalIgnoreCase))
+                {
+                    isCategoryFieldIndex = i;
+                }
+                else if (fieldName.StartsWith("drops_", StringComparison.OrdinalIgnoreCase)
+                    && fieldName.EndsWith("_id_obj", StringComparison.OrdinalIgnoreCase))
+                {
+                    dropFieldIndexes.Add(i);
+                }
+            }
+
+            int firstDropId = 0;
+            int firstDropFieldIndex = -1;
+            for (int i = 0; i < dropFieldIndexes.Count; i++)
+            {
+                int candidateId;
+                if (int.TryParse(listCollection.GetValue(listIndex, elementIndex, dropFieldIndexes[i]), out candidateId) && candidateId > 0)
+                {
+                    firstDropId = candidateId;
+                    firstDropFieldIndex = dropFieldIndexes[i];
+                    break;
+                }
+            }
+
+            if (firstDropId <= 0)
+            {
+                return false;
+            }
+
+            int isCategory = 0;
+            if (isCategoryFieldIndex >= 0)
+            {
+                int.TryParse(listCollection.GetValue(listIndex, elementIndex, isCategoryFieldIndex), out isCategory);
+            }
+
+            if (isCategory == 1)
+            {
+                int childRowIndex = FindElementIndexById(listCollection, listIndex, firstDropId);
+                if (childRowIndex < 0)
+                {
+                    return false;
+                }
+
+                return TryResolveDropTableInheritedReferenceOptionInternal(
+                    listCollection,
+                    listIndex,
+                    childRowIndex,
+                    database,
+                    out option,
+                    depth + 1);
+            }
+
+            string fieldNameForLookup = fields[firstDropFieldIndex] ?? string.Empty;
+            string rawValue = listCollection.GetValue(listIndex, elementIndex, firstDropFieldIndex);
+            return itemReferenceService.TryResolveReferenceOption(
+                listCollection,
+                listIndex,
+                elementIndex,
+                fieldNameForLookup,
+                rawValue,
+                database,
+                iconResolutionService,
+                out option);
+        }
+
+        private static int FindElementIndexById(eListCollection listCollection, int listIndex, int id)
+        {
+            if (listCollection == null
+                || listIndex < 0
+                || listIndex >= listCollection.Lists.Length
+                || listCollection.Lists[listIndex] == null
+                || listCollection.Lists[listIndex].elementValues == null
+                || id <= 0)
+            {
+                return -1;
+            }
+
+            for (int i = 0; i < listCollection.Lists[listIndex].elementValues.Length; i++)
+            {
+                int candidateId;
+                if (int.TryParse(listCollection.GetValue(listIndex, i, 0), out candidateId) && candidateId == id)
+                {
+                    return i;
+                }
+            }
+
+            return -1;
         }
 
         private int ResolveReferenceQuality(
@@ -1256,6 +1736,17 @@ namespace FWEledit
             }
 
             return -1;
+        }
+
+        private static string NormalizeReferenceListName(string listName)
+        {
+            if (string.IsNullOrWhiteSpace(listName))
+            {
+                return string.Empty;
+            }
+
+            string[] split = listName.Split(new string[] { " - " }, StringSplitOptions.None);
+            return split.Length > 1 ? split[1].Trim() : listName.Trim();
         }
     }
 }
