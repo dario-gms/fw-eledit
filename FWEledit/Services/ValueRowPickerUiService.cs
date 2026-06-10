@@ -118,8 +118,12 @@ namespace FWEledit
             Action<int> openAddonTypePicker,
             Action<int> openItemQualityPicker,
             Action<int> openGenderTypePicker,
+            Action<int> openReputationPicker,
+            Action<int> openSoulToolRewardTypePicker,
             Action<int> openProcTypePicker,
+            Action<int> openProfessionMaskPicker,
             Action<int> openCombinedServicesPicker,
+            Action<int> openSkillPicker,
             Action<int> openModelPicker,
             Action<int> openItemReferencePicker,
             Action updateInlineIconButton,
@@ -161,6 +165,20 @@ namespace FWEledit
                         openGenderTypePicker(e.RowIndex);
                     }
                 }
+                else if (fieldClassifier.IsReputationFieldName(fieldName))
+                {
+                    if (openReputationPicker != null)
+                    {
+                        openReputationPicker(e.RowIndex);
+                    }
+                }
+                else if (fieldClassifier.IsSoulToolRewardTypeFieldName(fieldName))
+                {
+                    if (openSoulToolRewardTypePicker != null)
+                    {
+                        openSoulToolRewardTypePicker(e.RowIndex);
+                    }
+                }
                 else if (fieldClassifier.IsProcTypeFieldName(fieldName))
                 {
                     if (openProcTypePicker != null)
@@ -168,11 +186,25 @@ namespace FWEledit
                         openProcTypePicker(e.RowIndex);
                     }
                 }
+                else if (fieldClassifier.IsProfessionMaskFieldName(fieldName))
+                {
+                    if (openProfessionMaskPicker != null)
+                    {
+                        openProfessionMaskPicker(e.RowIndex);
+                    }
+                }
                 else if (fieldClassifier.IsCombinedServicesFieldName(fieldName))
                 {
                     if (openCombinedServicesPicker != null)
                     {
                         openCombinedServicesPicker(e.RowIndex);
+                    }
+                }
+                else if (fieldClassifier.IsSkillFieldName(fieldName))
+                {
+                    if (openSkillPicker != null)
+                    {
+                        openSkillPicker(e.RowIndex);
                     }
                 }
                 else if (fieldClassifier.IsModelFieldName(fieldName))
@@ -593,6 +625,72 @@ namespace FWEledit
             }
         }
 
+        public void OpenReputationPickerForValueRow(
+            DataGridView itemGrid,
+            int rowIndex,
+            ItemFieldClassifierService fieldClassifier,
+            IWin32Window owner)
+        {
+            if (itemGrid == null || rowIndex < 0 || rowIndex >= itemGrid.Rows.Count)
+            {
+                return;
+            }
+
+            string fieldName = Convert.ToString(itemGrid.Rows[rowIndex].Cells[0].Value);
+            if (fieldClassifier == null || !fieldClassifier.IsReputationFieldName(fieldName))
+            {
+                return;
+            }
+
+            int currentValue = 0;
+            string rawValue = GetValueCellRawValue(itemGrid, rowIndex);
+            int.TryParse(rawValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out currentValue);
+
+            using (QualityPickerWindow picker = new QualityPickerWindow(new List<QualityOption>(ReputationCatalog.Options), currentValue))
+            {
+                picker.Text = "Choose reputation...";
+                if (picker.ShowDialog(owner) != DialogResult.OK)
+                {
+                    return;
+                }
+
+                SetValueCellRawValue(itemGrid, rowIndex, picker.SelectedValue.ToString(CultureInfo.InvariantCulture));
+            }
+        }
+
+        public void OpenSoulToolRewardTypePickerForValueRow(
+            DataGridView itemGrid,
+            int rowIndex,
+            ItemFieldClassifierService fieldClassifier,
+            IWin32Window owner)
+        {
+            if (itemGrid == null || rowIndex < 0 || rowIndex >= itemGrid.Rows.Count)
+            {
+                return;
+            }
+
+            string fieldName = Convert.ToString(itemGrid.Rows[rowIndex].Cells[0].Value);
+            if (fieldClassifier == null || !fieldClassifier.IsSoulToolRewardTypeFieldName(fieldName))
+            {
+                return;
+            }
+
+            int currentValue = 0;
+            string rawValue = GetValueCellRawValue(itemGrid, rowIndex);
+            int.TryParse(rawValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out currentValue);
+
+            using (QualityPickerWindow picker = new QualityPickerWindow(new List<QualityOption>(SoulToolRewardTypeCatalog.Options), currentValue))
+            {
+                picker.Text = "Choose Anima reward type...";
+                if (picker.ShowDialog(owner) != DialogResult.OK)
+                {
+                    return;
+                }
+
+                SetValueCellRawValue(itemGrid, rowIndex, picker.SelectedValue.ToString(CultureInfo.InvariantCulture));
+            }
+        }
+
         public void OpenItemReferencePickerForValueRow(
             eListCollection listCollection,
             CacheSave database,
@@ -689,6 +787,38 @@ namespace FWEledit
             }
         }
 
+        public void OpenProfessionMaskPickerForValueRow(
+            DataGridView itemGrid,
+            int rowIndex,
+            ItemFieldClassifierService fieldClassifier,
+            IWin32Window owner)
+        {
+            if (itemGrid == null || rowIndex < 0 || rowIndex >= itemGrid.Rows.Count)
+            {
+                return;
+            }
+
+            string fieldName = Convert.ToString(itemGrid.Rows[rowIndex].Cells[0].Value);
+            if (fieldClassifier == null || !fieldClassifier.IsProfessionMaskFieldName(fieldName))
+            {
+                return;
+            }
+
+            uint currentValue = 0;
+            string rawValue = GetValueCellRawValue(itemGrid, rowIndex);
+            ProfessionMaskCatalog.TryParseValue(rawValue, out currentValue);
+
+            using (ProfessionMaskPickerWindow picker = new ProfessionMaskPickerWindow(currentValue))
+            {
+                if (picker.ShowDialog(owner) != DialogResult.OK)
+                {
+                    return;
+                }
+
+                SetValueCellRawValue(itemGrid, rowIndex, picker.SelectedValue.ToString(CultureInfo.InvariantCulture));
+            }
+        }
+
         public void OpenCombinedServicesPickerForValueRow(
             eListCollection listCollection,
             int listIndex,
@@ -726,6 +856,54 @@ namespace FWEledit
                 }
 
                 SetValueCellRawValue(itemGrid, rowIndex, CombinedServicesCatalog.ToStorageString(picker.SelectedValue));
+            }
+        }
+
+        public void OpenSkillPickerForValueRow(
+            CacheSave database,
+            DataGridView itemGrid,
+            int rowIndex,
+            ItemFieldClassifierService fieldClassifier,
+            IWin32Window owner,
+            Action<string> showMessage)
+        {
+            if (database == null || itemGrid == null || rowIndex < 0 || rowIndex >= itemGrid.Rows.Count)
+            {
+                return;
+            }
+
+            string fieldName = Convert.ToString(itemGrid.Rows[rowIndex].Cells[0].Value);
+            if (fieldClassifier == null || !fieldClassifier.IsSkillFieldName(fieldName))
+            {
+                return;
+            }
+
+            List<SkillReferenceOption> options = SkillReferenceCatalog.BuildOptions(database);
+            if (options == null || options.Count == 0)
+            {
+                if (showMessage != null)
+                {
+                    showMessage("No skill or buff entries were found in the game tables.");
+                }
+                return;
+            }
+
+            int currentValue = 0;
+            string rawValue = GetValueCellRawValue(itemGrid, rowIndex);
+            if (!int.TryParse(rawValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out currentValue))
+            {
+                string normalized = SkillReferenceCatalog.NormalizeInput(database, rawValue);
+                int.TryParse(normalized, NumberStyles.Integer, CultureInfo.InvariantCulture, out currentValue);
+            }
+
+            using (SkillReferencePickerWindow picker = new SkillReferencePickerWindow(options, currentValue, "Choose skill or buff..."))
+            {
+                if (picker.ShowDialog(owner) != DialogResult.OK)
+                {
+                    return;
+                }
+
+                SetValueCellRawValue(itemGrid, rowIndex, picker.SelectedValue.ToString(CultureInfo.InvariantCulture));
             }
         }
 
@@ -1129,6 +1307,11 @@ namespace FWEledit
             }
 
             object raw = itemGrid.Rows[rowIndex].Cells[2].Tag;
+            ValueCellState state = raw as ValueCellState;
+            if (state != null)
+            {
+                return state.RawValue ?? string.Empty;
+            }
             if (raw != null)
             {
                 return Convert.ToString(raw);

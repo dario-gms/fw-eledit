@@ -14,6 +14,8 @@ namespace FWEledit
 
         private readonly IconResolutionService iconResolutionService;
         private readonly CreaturePortraitIconService creaturePortraitIconService;
+        private readonly NpcTradePortraitService npcTradePortraitService;
+        private readonly MonsterDropPortraitService monsterDropPortraitService;
         private eListCollection cachedItemIconSourceCollection;
         private Dictionary<int, ItemIconSource> cachedItemIconSourcesById;
 
@@ -21,6 +23,8 @@ namespace FWEledit
         {
             this.iconResolutionService = iconResolutionService;
             this.creaturePortraitIconService = new CreaturePortraitIconService();
+            this.npcTradePortraitService = new NpcTradePortraitService();
+            this.monsterDropPortraitService = new MonsterDropPortraitService();
         }
 
         public System.Func<int, int, int> ReferenceCountResolver { get; set; }
@@ -79,11 +83,15 @@ namespace FWEledit
 
             string normalizedListName = NormalizeListName(listCollection.Lists[listIndex].listName);
             bool isDropTableList = string.Equals(normalizedListName, "DROPTABLE_ESSENCE", System.StringComparison.OrdinalIgnoreCase);
+            bool isItemTradeList = string.Equals(normalizedListName, "ITEM_TRADE_ESSENCE", System.StringComparison.OrdinalIgnoreCase);
+            bool isItemTradePageList = string.Equals(normalizedListName, "ITEM_TRADE_PAGE_CONFIG", System.StringComparison.OrdinalIgnoreCase);
             int isCategoryFieldIndex = isDropTableList ? GetFieldIndex(listCollection.Lists[listIndex].elementFields, "is_category") : -1;
             List<int> dropFieldIndexes = isDropTableList ? GetDropFieldIndexes(listCollection.Lists[listIndex].elementFields) : null;
+            List<int> tradePageGoodsFieldIndexes = isItemTradePageList ? GetTradePageGoodsFieldIndexes(listCollection.Lists[listIndex].elementFields) : null;
             Dictionary<int, int> dropTableRowById = isDropTableList ? BuildDropTableRowIndexMap(listCollection, listIndex) : null;
-            Dictionary<int, ItemIconSource> itemIconSourcesById = isDropTableList ? BuildItemIconSourceMap(listCollection) : null;
-            Dictionary<int, Bitmap> itemIconById = isDropTableList ? new Dictionary<int, Bitmap>() : null;
+            bool requiresInheritedItemIcons = isDropTableList || isItemTradePageList;
+            Dictionary<int, ItemIconSource> itemIconSourcesById = requiresInheritedItemIcons ? BuildItemIconSourceMap(listCollection) : null;
+            Dictionary<int, Bitmap> itemIconById = requiresInheritedItemIcons ? new Dictionary<int, Bitmap>() : null;
 
             for (int e = 0; e < listCollection.Lists[listIndex].elementValues.Length; e++)
             {
@@ -93,20 +101,61 @@ namespace FWEledit
                     Bitmap img = ResolveRowIcon(listCollection, database, listIndex, e, pos2);
                     if (isDropTableList)
                     {
-                        Bitmap dropTableIcon = ResolveDropTableIcon(
+                        int dropTableId;
+                        Bitmap monsterPortrait = null;
+                        if (int.TryParse(listCollection.GetValue(listIndex, e, 0), out dropTableId))
+                        {
+                            monsterDropPortraitService.TryResolveDropPortrait(listCollection, database, dropTableId, out monsterPortrait);
+                        }
+
+                        if (monsterPortrait != null)
+                        {
+                            img = monsterPortrait;
+                        }
+                        else
+                        {
+                            Bitmap dropTableIcon = ResolveDropTableIcon(
+                                listCollection,
+                                database,
+                                listIndex,
+                                e,
+                                isCategoryFieldIndex,
+                                dropFieldIndexes,
+                                dropTableRowById,
+                                itemIconSourcesById,
+                                itemIconById,
+                                0);
+                            if (dropTableIcon != null)
+                            {
+                                img = dropTableIcon;
+                            }
+                        }
+                    }
+                    else if (isItemTradeList)
+                    {
+                        int tradeServiceId;
+                        if (int.TryParse(listCollection.GetValue(listIndex, e, 0), out tradeServiceId))
+                        {
+                            Bitmap tradeIcon;
+                            if (npcTradePortraitService.TryResolveTradePortrait(listCollection, database, tradeServiceId, out tradeIcon) && tradeIcon != null)
+                            {
+                                img = tradeIcon;
+                            }
+                        }
+                    }
+                    else if (isItemTradePageList)
+                    {
+                        Bitmap tradePageIcon = ResolveTradePageIcon(
                             listCollection,
                             database,
                             listIndex,
                             e,
-                            isCategoryFieldIndex,
-                            dropFieldIndexes,
-                            dropTableRowById,
+                            tradePageGoodsFieldIndexes,
                             itemIconSourcesById,
-                            itemIconById,
-                            0);
-                        if (dropTableIcon != null)
+                            itemIconById);
+                        if (tradePageIcon != null)
                         {
-                            img = dropTableIcon;
+                            img = tradePageIcon;
                         }
                     }
                     rows.Add(new object[] { listCollection.GetValue(listIndex, e, 0), img, composeDisplayName(listIndex, e, pos), string.Empty });
@@ -177,6 +226,38 @@ namespace FWEledit
             if (TryResolveItemIconById(listCollection, database, firstDropId, itemIconSourcesById, itemIconById, out icon))
             {
                 return icon;
+            }
+
+            return null;
+        }
+
+        private Bitmap ResolveTradePageIcon(
+            eListCollection listCollection,
+            CacheSave database,
+            int listIndex,
+            int elementIndex,
+            List<int> goodsFieldIndexes,
+            Dictionary<int, ItemIconSource> itemIconSourcesById,
+            Dictionary<int, Bitmap> itemIconById)
+        {
+            if (listCollection == null || goodsFieldIndexes == null || goodsFieldIndexes.Count == 0)
+            {
+                return null;
+            }
+
+            for (int i = 0; i < goodsFieldIndexes.Count; i++)
+            {
+                int itemId;
+                if (!int.TryParse(listCollection.GetValue(listIndex, elementIndex, goodsFieldIndexes[i]), out itemId) || itemId <= 0)
+                {
+                    continue;
+                }
+
+                Bitmap icon;
+                if (TryResolveItemIconById(listCollection, database, itemId, itemIconSourcesById, itemIconById, out icon))
+                {
+                    return icon;
+                }
             }
 
             return null;
@@ -330,6 +411,27 @@ namespace FWEledit
                 string fieldName = fields[i] ?? string.Empty;
                 if (fieldName.StartsWith("drops_", System.StringComparison.OrdinalIgnoreCase)
                     && fieldName.EndsWith("_id_obj", System.StringComparison.OrdinalIgnoreCase))
+                {
+                    indexes.Add(i);
+                }
+            }
+
+            return indexes;
+        }
+
+        private static List<int> GetTradePageGoodsFieldIndexes(string[] fields)
+        {
+            List<int> indexes = new List<int>();
+            if (fields == null)
+            {
+                return indexes;
+            }
+
+            for (int i = 0; i < fields.Length; i++)
+            {
+                string fieldName = fields[i] ?? string.Empty;
+                if (fieldName.StartsWith("goods_", System.StringComparison.OrdinalIgnoreCase)
+                    && fieldName.IndexOf("_1_id_goods", System.StringComparison.OrdinalIgnoreCase) >= 0)
                 {
                     indexes.Add(i);
                 }

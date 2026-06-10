@@ -7,6 +7,8 @@ namespace FWEledit
     {
         private const int AllListsTargetIndex = -1;
         private const int ItemListsTargetIndex = -2;
+        private readonly NpcTradePortraitService npcTradePortraitService = new NpcTradePortraitService();
+        private readonly MonsterDropPortraitService monsterDropPortraitService = new MonsterDropPortraitService();
 
         private eListCollection cachedListCollection;
         private CacheSave cachedDatabase;
@@ -14,6 +16,7 @@ namespace FWEledit
         private readonly Dictionary<int, List<ItemReferenceOption>> optionsByListIndex = new Dictionary<int, List<ItemReferenceOption>>();
         private readonly Dictionary<int, Dictionary<int, ItemReferenceOption>> optionsByIdByListIndex = new Dictionary<int, Dictionary<int, ItemReferenceOption>>();
         private readonly Dictionary<int, Dictionary<string, ItemReferenceOption>> optionsByNameByListIndex = new Dictionary<int, Dictionary<string, ItemReferenceOption>>();
+        private readonly Dictionary<int, Dictionary<int, int>> elementIndexByIdByListIndex = new Dictionary<int, Dictionary<int, int>>();
         private List<ItemReferenceOption> searchableOptions;
         private Dictionary<int, ItemReferenceOption> searchableOptionsById;
         private Dictionary<string, ItemReferenceOption> searchableOptionsByName;
@@ -30,6 +33,7 @@ namespace FWEledit
             optionsByListIndex.Clear();
             optionsByIdByListIndex.Clear();
             optionsByNameByListIndex.Clear();
+            elementIndexByIdByListIndex.Clear();
             searchableOptions = null;
             searchableOptionsById = null;
             searchableOptionsByName = null;
@@ -64,6 +68,7 @@ namespace FWEledit
             optionsByListIndex.Clear();
             optionsByIdByListIndex.Clear();
             optionsByNameByListIndex.Clear();
+            elementIndexByIdByListIndex.Clear();
             searchableOptions = null;
             searchableOptionsById = null;
             searchableOptionsByName = null;
@@ -123,7 +128,16 @@ namespace FWEledit
             string normalizedName = name.ToLowerInvariant();
             string targetListName = null;
 
-            if (name.StartsWith("id_estone_", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(sourceListName, "NPC_ESSENCE", StringComparison.OrdinalIgnoreCase)
+                && TryGetNpcServiceTargetListName(name, out targetListName))
+            {
+            }
+            else if (string.Equals(sourceListName, "ITEM_TRADE_ESSENCE", StringComparison.OrdinalIgnoreCase)
+                && IsItemTradePageField(name))
+            {
+                targetListName = "ITEM_TRADE_PAGE_CONFIG";
+            }
+            else if (name.StartsWith("id_estone_", StringComparison.OrdinalIgnoreCase))
             {
                 targetListName = "ESTONE_ESSENCE";
             }
@@ -173,6 +187,12 @@ namespace FWEledit
                 targetListIndex = ItemListsTargetIndex;
                 return true;
             }
+            else if (string.Equals(sourceListName, "ITEM_TRADE_PAGE_CONFIG", StringComparison.OrdinalIgnoreCase)
+                && IsItemTradePageItemField(name))
+            {
+                targetListIndex = ItemListsTargetIndex;
+                return true;
+            }
             else if (TryGetMappedTargetListName(sourceListName, normalizedName, out targetListName))
             {
             }
@@ -192,10 +212,22 @@ namespace FWEledit
 
         public string FormatReferenceValue(eListCollection listCollection, int listIndex, string fieldName, string rawValue)
         {
-            return FormatReferenceValue(listCollection, listIndex, -1, fieldName, rawValue);
+            return FormatReferenceValue(listCollection, listIndex, -1, fieldName, rawValue, null, null);
         }
 
         public string FormatReferenceValue(eListCollection listCollection, int listIndex, int elementIndex, string fieldName, string rawValue)
+        {
+            return FormatReferenceValue(listCollection, listIndex, elementIndex, fieldName, rawValue, null, null);
+        }
+
+        public string FormatReferenceValue(
+            eListCollection listCollection,
+            int listIndex,
+            int elementIndex,
+            string fieldName,
+            string rawValue,
+            CacheSave database,
+            IconResolutionService iconResolutionService)
         {
             int id;
             if (!int.TryParse(rawValue, out id) || id <= 0)
@@ -215,20 +247,22 @@ namespace FWEledit
                 return rawValue ?? string.Empty;
             }
 
+            EnsureCacheContext(listCollection, database, iconResolutionService);
+
             ItemReferenceOption option;
-            if (targetListIndex >= 0 && TryFindOptionById(listCollection, targetListIndex, id, out option))
+            if (targetListIndex >= 0 && TryFindOptionById(listCollection, targetListIndex, id, database, iconResolutionService, out option))
             {
                 return string.IsNullOrWhiteSpace(option.Name) ? rawValue : option.Name;
             }
 
             if (targetListIndex == ItemListsTargetIndex)
             {
-                if (!TryFindItemOptionByIdAcrossLists(listCollection, id, null, null, out option))
+                if (!TryFindItemOptionByIdAcrossLists(listCollection, id, database, iconResolutionService, out option))
                 {
                     return rawValue ?? string.Empty;
                 }
             }
-            else if (!TryFindOptionByIdAcrossLists(listCollection, id, null, null, out option))
+            else if (!TryFindOptionByIdAcrossLists(listCollection, id, database, iconResolutionService, out option))
             {
                 return rawValue ?? string.Empty;
             }
@@ -392,6 +426,7 @@ namespace FWEledit
             int iconIndex = GetIconFieldIndex(listCollection, targetListIndex);
             int qualityIndex = GetQualityFieldIndex(listCollection, targetListIndex);
             string listName = listCollection.Lists[targetListIndex].listName ?? string.Empty;
+            string normalizedListName = NormalizeListName(listName);
             for (int i = 0; i < listCollection.Lists[targetListIndex].elementValues.Length; i++)
             {
                 int id;
@@ -401,6 +436,55 @@ namespace FWEledit
                 }
 
                 string name = nameIndex >= 0 ? listCollection.GetValue(targetListIndex, i, nameIndex) : string.Empty;
+                string iconKey = ResolveOptionIconKey(listCollection, database, iconResolutionService, targetListIndex, i, iconIndex);
+                int quality = ResolveOptionQuality(listCollection, targetListIndex, i, qualityIndex);
+                if (string.Equals(normalizedListName, "ITEM_TRADE_ESSENCE", StringComparison.OrdinalIgnoreCase))
+                {
+                    string tradePortraitPath;
+                    if (npcTradePortraitService.TryResolveTradePortraitPath(listCollection, database, id, out tradePortraitPath))
+                    {
+                        iconKey = tradePortraitPath;
+                    }
+                }
+                else if (string.Equals(normalizedListName, "DROPTABLE_ESSENCE", StringComparison.OrdinalIgnoreCase))
+                {
+                    string monsterPortraitPath;
+                    if (monsterDropPortraitService.TryResolveDropPortraitPath(listCollection, database, id, out monsterPortraitPath))
+                    {
+                        iconKey = monsterPortraitPath;
+                    }
+                    else
+                    {
+                        ItemReferenceOption primaryDropOption;
+                        if (TryResolvePrimaryDropTableItemOption(listCollection, targetListIndex, i, database, iconResolutionService, out primaryDropOption))
+                        {
+                            if (!string.IsNullOrWhiteSpace(primaryDropOption.IconKey))
+                            {
+                                iconKey = primaryDropOption.IconKey;
+                            }
+                            if (primaryDropOption.Quality >= 0)
+                            {
+                                quality = primaryDropOption.Quality;
+                            }
+                        }
+                    }
+                }
+                else if (string.Equals(normalizedListName, "ITEM_TRADE_PAGE_CONFIG", StringComparison.OrdinalIgnoreCase))
+                {
+                    ItemReferenceOption primaryItemOption;
+                    if (TryResolvePrimaryTradePageItemOption(listCollection, targetListIndex, i, database, iconResolutionService, out primaryItemOption))
+                    {
+                        if (!string.IsNullOrWhiteSpace(primaryItemOption.IconKey))
+                        {
+                            iconKey = primaryItemOption.IconKey;
+                        }
+                        if (primaryItemOption.Quality >= 0)
+                        {
+                            quality = primaryItemOption.Quality;
+                        }
+                    }
+                }
+
                 options.Add(new ItemReferenceOption
                 {
                     ListIndex = targetListIndex,
@@ -408,12 +492,219 @@ namespace FWEledit
                     Id = id,
                     Name = name,
                     ListName = listName,
-                    IconKey = ResolveOptionIconKey(listCollection, database, iconResolutionService, targetListIndex, i, iconIndex),
-                    Quality = ResolveOptionQuality(listCollection, targetListIndex, i, qualityIndex)
+                    IconKey = iconKey,
+                    Quality = quality
                 });
             }
 
             return options;
+        }
+
+        private bool TryResolvePrimaryDropTableItemOption(
+            eListCollection listCollection,
+            int listIndex,
+            int elementIndex,
+            CacheSave database,
+            IconResolutionService iconResolutionService,
+            out ItemReferenceOption option)
+        {
+            option = null;
+            if (listCollection == null
+                || listIndex < 0
+                || listIndex >= listCollection.Lists.Length
+                || listCollection.Lists[listIndex] == null
+                || listCollection.Lists[listIndex].elementFields == null
+                || listCollection.Lists[listIndex].elementValues == null
+                || elementIndex < 0
+                || elementIndex >= listCollection.Lists[listIndex].elementValues.Length)
+            {
+                return false;
+            }
+
+            string[] fields = listCollection.Lists[listIndex].elementFields;
+            int isCategoryFieldIndex = -1;
+            List<int> dropFieldIndexes = new List<int>();
+            for (int i = 0; i < fields.Length; i++)
+            {
+                string fieldName = fields[i] ?? string.Empty;
+                if (string.Equals(fieldName, "is_category", StringComparison.OrdinalIgnoreCase))
+                {
+                    isCategoryFieldIndex = i;
+                }
+                else if (fieldName.StartsWith("drops_", StringComparison.OrdinalIgnoreCase)
+                    && fieldName.EndsWith("_id_obj", StringComparison.OrdinalIgnoreCase))
+                {
+                    dropFieldIndexes.Add(i);
+                }
+            }
+
+            return TryResolvePrimaryDropTableItemOptionInternal(
+                listCollection,
+                listIndex,
+                elementIndex,
+                isCategoryFieldIndex,
+                dropFieldIndexes,
+                database,
+                iconResolutionService,
+                out option,
+                0);
+        }
+
+        private bool TryResolvePrimaryDropTableItemOptionInternal(
+            eListCollection listCollection,
+            int listIndex,
+            int elementIndex,
+            int isCategoryFieldIndex,
+            List<int> dropFieldIndexes,
+            CacheSave database,
+            IconResolutionService iconResolutionService,
+            out ItemReferenceOption option,
+            int depth)
+        {
+            option = null;
+            if (depth > 6 || dropFieldIndexes == null || dropFieldIndexes.Count == 0)
+            {
+                return false;
+            }
+
+            int firstDropId = 0;
+            for (int i = 0; i < dropFieldIndexes.Count; i++)
+            {
+                int candidateId;
+                if (int.TryParse(listCollection.GetValue(listIndex, elementIndex, dropFieldIndexes[i]), out candidateId) && candidateId > 0)
+                {
+                    firstDropId = candidateId;
+                    break;
+                }
+            }
+
+            if (firstDropId <= 0)
+            {
+                return false;
+            }
+
+            int isCategory = 0;
+            if (isCategoryFieldIndex >= 0)
+            {
+                int.TryParse(listCollection.GetValue(listIndex, elementIndex, isCategoryFieldIndex), out isCategory);
+            }
+
+            if (isCategory == 1)
+            {
+                int childRowIndex = FindElementIndexById(listCollection, listIndex, firstDropId);
+                if (childRowIndex < 0)
+                {
+                    return false;
+                }
+
+                return TryResolvePrimaryDropTableItemOptionInternal(
+                    listCollection,
+                    listIndex,
+                    childRowIndex,
+                    isCategoryFieldIndex,
+                    dropFieldIndexes,
+                    database,
+                    iconResolutionService,
+                    out option,
+                    depth + 1);
+            }
+
+            return TryFindItemOptionByIdAcrossLists(listCollection, firstDropId, database, iconResolutionService, out option);
+        }
+
+        private bool TryResolvePrimaryTradePageItemOption(
+            eListCollection listCollection,
+            int listIndex,
+            int elementIndex,
+            CacheSave database,
+            IconResolutionService iconResolutionService,
+            out ItemReferenceOption option)
+        {
+            option = null;
+            if (listCollection == null
+                || listIndex < 0
+                || listIndex >= listCollection.Lists.Length
+                || listCollection.Lists[listIndex] == null
+                || listCollection.Lists[listIndex].elementFields == null
+                || listCollection.Lists[listIndex].elementValues == null
+                || elementIndex < 0
+                || elementIndex >= listCollection.Lists[listIndex].elementValues.Length)
+            {
+                return false;
+            }
+
+            string[] fields = listCollection.Lists[listIndex].elementFields;
+            for (int fieldIndex = 0; fieldIndex < fields.Length; fieldIndex++)
+            {
+                if (!IsItemTradePagePrimaryGoodsField(fields[fieldIndex]))
+                {
+                    continue;
+                }
+
+                int itemId;
+                if (!int.TryParse(listCollection.GetValue(listIndex, elementIndex, fieldIndex), out itemId) || itemId <= 0)
+                {
+                    continue;
+                }
+
+                return TryFindItemOptionByIdAcrossLists(listCollection, itemId, database, iconResolutionService, out option);
+            }
+
+            return false;
+        }
+
+        private int FindElementIndexById(eListCollection listCollection, int listIndex, int id)
+        {
+            if (listCollection == null
+                || listIndex < 0
+                || listIndex >= listCollection.Lists.Length
+                || listCollection.Lists[listIndex] == null
+                || listCollection.Lists[listIndex].elementValues == null
+                || id <= 0)
+            {
+                return -1;
+            }
+
+            EnsureElementIndexLookup(listCollection, listIndex);
+
+            Dictionary<int, int> elementIndexesById;
+            if (elementIndexByIdByListIndex.TryGetValue(listIndex, out elementIndexesById))
+            {
+                int elementIndex;
+                if (elementIndexesById.TryGetValue(id, out elementIndex))
+                {
+                    return elementIndex;
+                }
+            }
+
+            return -1;
+        }
+
+        private void EnsureElementIndexLookup(eListCollection listCollection, int listIndex)
+        {
+            if (listCollection == null
+                || listIndex < 0
+                || listIndex >= listCollection.Lists.Length
+                || listCollection.Lists[listIndex] == null
+                || listCollection.Lists[listIndex].elementValues == null
+                || elementIndexByIdByListIndex.ContainsKey(listIndex))
+            {
+                return;
+            }
+
+            Dictionary<int, int> byId = new Dictionary<int, int>();
+            for (int i = 0; i < listCollection.Lists[listIndex].elementValues.Length; i++)
+            {
+                int candidateId;
+                if (int.TryParse(listCollection.GetValue(listIndex, i, 0), out candidateId)
+                    && candidateId > 0
+                    && !byId.ContainsKey(candidateId))
+                {
+                    byId[candidateId] = i;
+                }
+            }
+
+            elementIndexByIdByListIndex[listIndex] = byId;
         }
 
         public List<ItemReferenceOption> BuildSearchableOptions(eListCollection listCollection, CacheSave database, IconResolutionService iconResolutionService)
@@ -791,6 +1082,98 @@ namespace FWEledit
             return false;
         }
 
+        private static bool TryGetNpcServiceTargetListName(string fieldName, out string targetListName)
+        {
+            targetListName = null;
+            if (string.IsNullOrWhiteSpace(fieldName))
+            {
+                return false;
+            }
+
+            switch (fieldName.Trim().ToLowerInvariant())
+            {
+                case "id_kingdom_activity_service":
+                    targetListName = "KINGDOM_ACTIVITY_SERVICE";
+                    return true;
+                case "id_talk_service":
+                    targetListName = "NPC_TALK_SERVICE";
+                    return true;
+                case "id_sell_service":
+                    targetListName = "NPC_SELL_SERVICE";
+                    return true;
+                case "id_learn_produce":
+                    targetListName = "NPC_LEARN_PRODUCE_SERVICE";
+                    return true;
+                case "id_hotel_service":
+                    targetListName = "NPC_HOTEL_SERVICE";
+                    return true;
+                case "id_buy_service":
+                    targetListName = "NPC_BUY_SERVICE";
+                    return true;
+                case "id_task_out_service":
+                    targetListName = "NPC_TASK_OUT_SERVICE";
+                    return true;
+                case "id_task_in_service":
+                    targetListName = "NPC_TASK_IN_SERVICE";
+                    return true;
+                case "id_task_matter_service":
+                    targetListName = "NPC_TASK_MATTER_SERVICE";
+                    return true;
+                case "id_heal_service":
+                    targetListName = "NPC_HEAL_SERVICE";
+                    return true;
+                case "id_transmit_service":
+                    targetListName = "NPC_TRANSMIT_SERVICE";
+                    return true;
+                case "id_proxy_service":
+                    targetListName = "NPC_PROXY_SERVICE";
+                    return true;
+                case "id_storage_service":
+                    targetListName = "NPC_STORAGE_SERVICE";
+                    return true;
+                case "id_war_towerbuild_service":
+                    targetListName = "NPC_WAR_TOWERBUILD_SERVICE";
+                    return true;
+                case "id_resetprop_service":
+                    targetListName = "NPC_RESETPROP_SERVICE";
+                    return true;
+                case "id_equipbind_service":
+                    targetListName = "NPC_EQUIPBIND_SERVICE";
+                    return true;
+                case "id_equipdestroy_service":
+                    targetListName = "NPC_EQUIPDESTROY_SERVICE";
+                    return true;
+                case "id_equipundestroy_service":
+                    targetListName = "NPC_EQUIPUNDESTROY_SERVICE";
+                    return true;
+                case "id_item_trade_service":
+                    targetListName = "ITEM_TRADE_ESSENCE";
+                    return true;
+                case "id_skill_learn_service":
+                    targetListName = "NPC_LEARN_SKILL_SERVICE";
+                    return true;
+                case "id_news_service":
+                    targetListName = "NPC_NEWS_SERVICE";
+                    return true;
+                case "id_port_service1":
+                case "id_port_service2":
+                case "id_port_service3":
+                    targetListName = "NPC_TRADE_PORT_SERVICE";
+                    return true;
+                case "instance_service":
+                    targetListName = "INSTANCE_CONFIG";
+                    return true;
+                case "id_wedding_parade_service":
+                    targetListName = "WEDDING_PARADE_SERVICE";
+                    return true;
+                case "id_pet_unbind_service":
+                    targetListName = "PET_UNBIND_SERVICE";
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
         private static bool IsGenericItemReferenceField(string sourceListName, string fieldName)
         {
             if (string.IsNullOrWhiteSpace(fieldName))
@@ -845,6 +1228,33 @@ namespace FWEledit
             }
 
             return false;
+        }
+
+        private static bool IsItemTradePageField(string fieldName)
+        {
+            return !string.IsNullOrWhiteSpace(fieldName)
+                && fieldName.StartsWith("pages_", StringComparison.OrdinalIgnoreCase)
+                && fieldName.IndexOf("id_page", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static bool IsItemTradePageItemField(string fieldName)
+        {
+            if (string.IsNullOrWhiteSpace(fieldName))
+            {
+                return false;
+            }
+
+            string normalized = fieldName.Trim();
+            return IsItemTradePagePrimaryGoodsField(normalized)
+                || normalized.IndexOf("_2_item_required_1_value_1", StringComparison.OrdinalIgnoreCase) >= 0
+                || normalized.IndexOf("_4_item_required_2_value_1", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static bool IsItemTradePagePrimaryGoodsField(string fieldName)
+        {
+            return !string.IsNullOrWhiteSpace(fieldName)
+                && fieldName.StartsWith("goods_", StringComparison.OrdinalIgnoreCase)
+                && fieldName.IndexOf("_1_id_goods", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private static bool IsDropTableCategoryRow(eListCollection listCollection, int listIndex, int elementIndex)

@@ -25,9 +25,29 @@ namespace FWEledit
             return ProcTypeCatalog.IsProcTypeFieldName(fieldName);
         }
 
+        public bool IsProfessionMaskFieldName(string fieldName)
+        {
+            return ProfessionMaskCatalog.IsProfessionMaskFieldName(fieldName);
+        }
+
+        public bool IsReputationFieldName(string fieldName)
+        {
+            return ReputationCatalog.IsReputationIdFieldName(fieldName);
+        }
+
+        public bool IsSoulToolRewardTypeFieldName(string fieldName)
+        {
+            return SoulToolRewardTypeCatalog.IsRewardTypeFieldName(fieldName);
+        }
+
         public bool IsCombinedServicesFieldName(string fieldName)
         {
             return CombinedServicesCatalog.IsCombinedServicesFieldName(fieldName);
+        }
+
+        public bool IsSkillFieldName(string fieldName)
+        {
+            return SkillReferenceCatalog.IsSkillFieldName(fieldName);
         }
 
         public bool IsPickerField(
@@ -40,8 +60,12 @@ namespace FWEledit
                 || IsAddonTypeField(listCollection, listIndex, fieldName)
                 || IsItemQualityFieldName(fieldName)
                 || IsGenderTypeFieldName(fieldName)
+                || IsReputationFieldName(fieldName)
+                || IsSoulToolRewardTypeFieldName(fieldName)
                 || IsProcTypeFieldName(fieldName)
+                || IsProfessionMaskFieldName(fieldName)
                 || IsCombinedServicesFieldName(fieldName)
+                || IsSkillFieldName(fieldName)
                 || IsModelFieldName(fieldName)
                 || (itemReferenceService != null && itemReferenceService.IsReferenceField(listCollection, listIndex, fieldName));
         }

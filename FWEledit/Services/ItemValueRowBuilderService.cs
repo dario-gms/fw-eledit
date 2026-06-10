@@ -143,6 +143,7 @@ namespace FWEledit
 
                 string rawValue = listCollection.GetValue(listIndex, elementIndex, f);
                 string fieldValue = rawValue;
+                ItemReferenceOption resolvedReferenceOption = null;
                 if (listIndex == 0)
                 {
                     if (string.Equals(fieldName, "name", System.StringComparison.OrdinalIgnoreCase))
@@ -177,13 +178,29 @@ namespace FWEledit
                 {
                     fieldValue = GenderTypeCatalog.FormatDisplay(fieldValue);
                 }
+                else if (ReputationCatalog.IsReputationIdFieldName(fieldName))
+                {
+                    fieldValue = ReputationCatalog.FormatDisplay(fieldValue);
+                }
+                else if (SoulToolRewardTypeCatalog.IsRewardTypeFieldName(fieldName))
+                {
+                    fieldValue = SoulToolRewardTypeCatalog.FormatDisplay(fieldValue);
+                }
                 else if (ProcTypeCatalog.IsProcTypeFieldName(fieldName))
                 {
                     fieldValue = ProcTypeCatalog.FormatDisplay(fieldValue);
                 }
+                else if (ProfessionMaskCatalog.IsProfessionMaskFieldName(fieldName))
+                {
+                    fieldValue = ProfessionMaskCatalog.FormatDisplay(fieldValue);
+                }
                 else if (CombinedServicesCatalog.IsCombinedServicesFieldName(fieldName))
                 {
                     fieldValue = CombinedServicesCatalog.FormatDisplay(listCollection, listIndex, fieldName, fieldValue);
+                }
+                else if (SkillReferenceCatalog.IsSkillFieldName(fieldName))
+                {
+                    fieldValue = SkillReferenceCatalog.FormatDisplay(listCollection, listIndex, elementIndex, fieldName, database, fieldValue);
                 }
                 else if (ProbabilityDisplayService.IsProbabilityFieldName(fieldName))
                 {
@@ -196,7 +213,31 @@ namespace FWEledit
                 }
                 else if (itemReferenceService != null && itemReferenceService.IsReferenceField(listCollection, listIndex, elementIndex, fieldName))
                 {
-                    fieldValue = itemReferenceService.FormatReferenceValue(listCollection, listIndex, elementIndex, fieldName, fieldValue);
+                    if (itemReferenceService.TryResolveReferenceOption(
+                        listCollection,
+                        listIndex,
+                        elementIndex,
+                        fieldName,
+                        rawValue,
+                        database,
+                        iconResolutionService,
+                        out resolvedReferenceOption))
+                    {
+                        fieldValue = string.IsNullOrWhiteSpace(resolvedReferenceOption.Name)
+                            ? rawValue
+                            : resolvedReferenceOption.Name;
+                    }
+                    else
+                    {
+                        fieldValue = itemReferenceService.FormatReferenceValue(
+                            listCollection,
+                            listIndex,
+                            elementIndex,
+                            fieldName,
+                            fieldValue,
+                            database,
+                            iconResolutionService);
+                    }
                 }
 
                 ValueRowDisplay row = new ValueRowDisplay
@@ -206,6 +247,7 @@ namespace FWEledit
                     FieldType = listCollection.Lists[listIndex].elementTypes[f],
                     DisplayValue = fieldValue,
                     RawValue = rawValue,
+                    ResolvedReferenceOption = resolvedReferenceOption,
                     IsInvalid = isFieldInvalid != null && isFieldInvalid(listIndex, elementIndex, f),
                     IsDirty = isFieldDirty != null && isFieldDirty(listIndex, elementIndex, f)
                 };
