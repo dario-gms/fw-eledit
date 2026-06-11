@@ -10,7 +10,7 @@ namespace FWEledit
             eListConversation conversationList,
             CacheSave database,
             ItemSelectionContext context,
-            Func<int, string, bool> shouldIncludeField,
+            Func<int, int, string, bool> shouldIncludeField,
             Func<int, int, int, string> getDisplayEntryName,
             Func<System.Collections.Generic.Dictionary<int, string>> loadAddonTypeHints,
             Func<string, bool> isModelFieldName,

@@ -40,7 +40,7 @@ namespace FWEledit
                     int currentRow = grid.CurrentCell.RowIndex;
                     if (currentRow < grid.Rows.Count)
                     {
-                        string currentField = Convert.ToString(grid.Rows[currentRow].Cells[0].Value);
+                        string currentField = ValueGridFieldNameService.GetFieldName(grid, currentRow);
                         if (fieldClassifier.IsPickerField(listCollection, listIndex, currentField, itemReferenceService))
                         {
                             enabled = true;

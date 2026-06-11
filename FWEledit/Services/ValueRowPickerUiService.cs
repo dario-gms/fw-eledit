@@ -118,10 +118,18 @@ namespace FWEledit
             Action<int> openAddonTypePicker,
             Action<int> openItemQualityPicker,
             Action<int> openGenderTypePicker,
+            Action<int> openPetFoodTypePicker,
+            Action<int> openPetHeroPicker,
+            Action<int> openImmuneTypePicker,
+            Action<int> openBindFlagPicker,
+            Action<int> openNpcSellMoneyTypePicker,
             Action<int> openReputationPicker,
             Action<int> openSoulToolRewardTypePicker,
             Action<int> openProcTypePicker,
             Action<int> openProfessionMaskPicker,
+            Action<int> openRaceMaskPicker,
+            Action<int> openModelProfessionPicker,
+            Action<int> openModelRacePicker,
             Action<int> openCombinedServicesPicker,
             Action<int> openSkillPicker,
             Action<int> openModelPicker,
@@ -136,7 +144,7 @@ namespace FWEledit
 
             try
             {
-                string fieldName = Convert.ToString(itemGrid.Rows[e.RowIndex].Cells[0].Value);
+                string fieldName = ValueGridFieldNameService.GetFieldName(itemGrid, e.RowIndex);
                 if (fieldClassifier.IsIconFieldName(fieldName))
                 {
                     if (openIconPicker != null)
@@ -165,6 +173,45 @@ namespace FWEledit
                         openGenderTypePicker(e.RowIndex);
                     }
                 }
+                else if (fieldClassifier.IsPetFoodTypeFieldName(fieldName))
+                {
+                    if (openPetFoodTypePicker != null)
+                    {
+                        openPetFoodTypePicker(e.RowIndex);
+                    }
+                }
+                else if (fieldClassifier.IsPetHeroFieldName(fieldName))
+                {
+                    if (openPetHeroPicker != null)
+                    {
+                        openPetHeroPicker(e.RowIndex);
+                    }
+                }
+                else if (fieldClassifier.IsImmuneTypeFieldName(fieldName))
+                {
+                    if (openImmuneTypePicker != null)
+                    {
+                        openImmuneTypePicker(e.RowIndex);
+                    }
+                }
+                else if (fieldClassifier.IsBindFlagFieldName(fieldName))
+                {
+                    if (openBindFlagPicker != null)
+                    {
+                        openBindFlagPicker(e.RowIndex);
+                    }
+                }
+                else if (fieldClassifier.IsNpcSellMoneyTypeFieldName(
+                    listCollection,
+                    listIndex,
+                    ResolveFieldIndex(itemGrid, e.RowIndex),
+                    fieldName))
+                {
+                    if (openNpcSellMoneyTypePicker != null)
+                    {
+                        openNpcSellMoneyTypePicker(e.RowIndex);
+                    }
+                }
                 else if (fieldClassifier.IsReputationFieldName(fieldName))
                 {
                     if (openReputationPicker != null)
@@ -191,6 +238,27 @@ namespace FWEledit
                     if (openProfessionMaskPicker != null)
                     {
                         openProfessionMaskPicker(e.RowIndex);
+                    }
+                }
+                else if (fieldClassifier.IsRaceMaskFieldName(fieldName))
+                {
+                    if (openRaceMaskPicker != null)
+                    {
+                        openRaceMaskPicker(e.RowIndex);
+                    }
+                }
+                else if (fieldClassifier.IsModelProfessionFieldName(fieldName))
+                {
+                    if (openModelProfessionPicker != null)
+                    {
+                        openModelProfessionPicker(e.RowIndex);
+                    }
+                }
+                else if (fieldClassifier.IsModelRaceFieldName(fieldName))
+                {
+                    if (openModelRacePicker != null)
+                    {
+                        openModelRacePicker(e.RowIndex);
                     }
                 }
                 else if (fieldClassifier.IsCombinedServicesFieldName(fieldName))
@@ -231,7 +299,7 @@ namespace FWEledit
             {
                 if (showError != null)
                 {
-                    showError("Nao foi possivel abrir o seletor deste campo agora.\n\nDetalhes: " + ex.Message);
+                    showError("This field picker could not be opened right now.\n\nDetails: " + ex.Message);
                 }
             }
         }
@@ -260,7 +328,7 @@ namespace FWEledit
                 return;
             }
 
-            string fieldName = Convert.ToString(itemGrid.Rows[rowIndex].Cells[0].Value);
+            string fieldName = ValueGridFieldNameService.GetFieldName(itemGrid, rowIndex);
             if (fieldClassifier == null || !fieldClassifier.IsModelFieldName(fieldName))
             {
                 return;
@@ -508,7 +576,7 @@ namespace FWEledit
                 return;
             }
 
-            string fieldName = Convert.ToString(itemGrid.Rows[rowIndex].Cells[0].Value);
+            string fieldName = ValueGridFieldNameService.GetFieldName(itemGrid, rowIndex);
             if (fieldClassifier == null || !fieldClassifier.IsAddonTypeField(listCollection, listIndex, fieldName))
             {
                 return;
@@ -569,7 +637,7 @@ namespace FWEledit
                 return;
             }
 
-            string fieldName = Convert.ToString(itemGrid.Rows[rowIndex].Cells[0].Value);
+            string fieldName = ValueGridFieldNameService.GetFieldName(itemGrid, rowIndex);
             if (fieldClassifier == null || !fieldClassifier.IsItemQualityFieldName(fieldName))
             {
                 return;
@@ -604,7 +672,7 @@ namespace FWEledit
                 return;
             }
 
-            string fieldName = Convert.ToString(itemGrid.Rows[rowIndex].Cells[0].Value);
+            string fieldName = ValueGridFieldNameService.GetFieldName(itemGrid, rowIndex);
             if (fieldClassifier == null || !fieldClassifier.IsGenderTypeFieldName(fieldName))
             {
                 return;
@@ -625,6 +693,175 @@ namespace FWEledit
             }
         }
 
+        public void OpenPetFoodTypePickerForValueRow(
+            DataGridView itemGrid,
+            int rowIndex,
+            ItemFieldClassifierService fieldClassifier,
+            IWin32Window owner)
+        {
+            if (itemGrid == null || rowIndex < 0 || rowIndex >= itemGrid.Rows.Count)
+            {
+                return;
+            }
+
+            string fieldName = ValueGridFieldNameService.GetFieldName(itemGrid, rowIndex);
+            if (fieldClassifier == null || !fieldClassifier.IsPetFoodTypeFieldName(fieldName))
+            {
+                return;
+            }
+
+            int currentValue = 0;
+            string rawValue = GetValueCellRawValue(itemGrid, rowIndex);
+            int.TryParse(rawValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out currentValue);
+
+            using (QualityPickerWindow picker = new QualityPickerWindow(new List<QualityOption>(PetFoodTypeCatalog.Options), currentValue))
+            {
+                picker.Text = "Choose pet food type...";
+                if (picker.ShowDialog(owner) != DialogResult.OK)
+                {
+                    return;
+                }
+
+                SetValueCellRawValue(itemGrid, rowIndex, picker.SelectedValue.ToString(CultureInfo.InvariantCulture));
+            }
+        }
+
+        public void OpenPetHeroPickerForValueRow(
+            DataGridView itemGrid,
+            int rowIndex,
+            ItemFieldClassifierService fieldClassifier,
+            IWin32Window owner)
+        {
+            if (itemGrid == null || rowIndex < 0 || rowIndex >= itemGrid.Rows.Count)
+            {
+                return;
+            }
+
+            string fieldName = ValueGridFieldNameService.GetFieldName(itemGrid, rowIndex);
+            if (fieldClassifier == null || !fieldClassifier.IsPetHeroFieldName(fieldName))
+            {
+                return;
+            }
+
+            int currentValue = 0;
+            string rawValue = GetValueCellRawValue(itemGrid, rowIndex);
+            int.TryParse(rawValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out currentValue);
+
+            using (QualityPickerWindow picker = new QualityPickerWindow(new List<QualityOption>(PetHeroCatalog.Options), currentValue))
+            {
+                picker.Text = "Choose pet type...";
+                if (picker.ShowDialog(owner) != DialogResult.OK)
+                {
+                    return;
+                }
+
+                SetValueCellRawValue(itemGrid, rowIndex, picker.SelectedValue.ToString(CultureInfo.InvariantCulture));
+            }
+        }
+
+        public void OpenImmuneTypePickerForValueRow(
+            DataGridView itemGrid,
+            int rowIndex,
+            ItemFieldClassifierService fieldClassifier,
+            IWin32Window owner)
+        {
+            if (itemGrid == null || rowIndex < 0 || rowIndex >= itemGrid.Rows.Count)
+            {
+                return;
+            }
+
+            string fieldName = ValueGridFieldNameService.GetFieldName(itemGrid, rowIndex);
+            if (fieldClassifier == null || !fieldClassifier.IsImmuneTypeFieldName(fieldName))
+            {
+                return;
+            }
+
+            uint currentValue = 0;
+            string rawValue = GetValueCellRawValue(itemGrid, rowIndex);
+            ImmuneTypeCatalog.TryParseValue(rawValue, out currentValue);
+
+            using (ImmuneTypePickerWindow picker = new ImmuneTypePickerWindow(currentValue))
+            {
+                if (picker.ShowDialog(owner) != DialogResult.OK)
+                {
+                    return;
+                }
+
+                SetValueCellRawValue(itemGrid, rowIndex, picker.SelectedValue.ToString(CultureInfo.InvariantCulture));
+            }
+        }
+
+        public void OpenBindFlagPickerForValueRow(
+            DataGridView itemGrid,
+            int rowIndex,
+            ItemFieldClassifierService fieldClassifier,
+            IWin32Window owner)
+        {
+            if (itemGrid == null || rowIndex < 0 || rowIndex >= itemGrid.Rows.Count)
+            {
+                return;
+            }
+
+            string fieldName = ValueGridFieldNameService.GetFieldName(itemGrid, rowIndex);
+            if (fieldClassifier == null || !fieldClassifier.IsBindFlagFieldName(fieldName))
+            {
+                return;
+            }
+
+            int currentValue = 0;
+            string rawValue = GetValueCellRawValue(itemGrid, rowIndex);
+            int.TryParse(rawValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out currentValue);
+
+            using (QualityPickerWindow picker = new QualityPickerWindow(new List<QualityOption>(BindFlagCatalog.GetOptions(fieldName)), currentValue))
+            {
+                picker.Text = string.Equals(fieldName, "keep_bind_prop", StringComparison.OrdinalIgnoreCase)
+                    ? "Choose bind preservation..."
+                    : "Choose bind state...";
+                if (picker.ShowDialog(owner) != DialogResult.OK)
+                {
+                    return;
+                }
+
+                SetValueCellRawValue(itemGrid, rowIndex, picker.SelectedValue.ToString(CultureInfo.InvariantCulture));
+            }
+        }
+
+        public void OpenNpcSellMoneyTypePickerForValueRow(
+            eListCollection listCollection,
+            int listIndex,
+            DataGridView itemGrid,
+            int rowIndex,
+            ItemFieldClassifierService fieldClassifier,
+            IWin32Window owner)
+        {
+            if (itemGrid == null || rowIndex < 0 || rowIndex >= itemGrid.Rows.Count)
+            {
+                return;
+            }
+
+            string fieldName = ValueGridFieldNameService.GetFieldName(itemGrid, rowIndex);
+            int fieldIndex = ResolveFieldIndex(itemGrid, rowIndex);
+            if (fieldClassifier == null || !fieldClassifier.IsNpcSellMoneyTypeFieldName(listCollection, listIndex, fieldIndex, fieldName))
+            {
+                return;
+            }
+
+            int currentValue = 0;
+            string rawValue = GetValueCellRawValue(itemGrid, rowIndex);
+            int.TryParse(rawValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out currentValue);
+
+            using (QualityPickerWindow picker = new QualityPickerWindow(new List<QualityOption>(NpcSellMoneyTypeCatalog.Options), currentValue))
+            {
+                picker.Text = "Choose shop currency...";
+                if (picker.ShowDialog(owner) != DialogResult.OK)
+                {
+                    return;
+                }
+
+                SetValueCellRawValue(itemGrid, rowIndex, picker.SelectedValue.ToString(CultureInfo.InvariantCulture));
+            }
+        }
+
         public void OpenReputationPickerForValueRow(
             DataGridView itemGrid,
             int rowIndex,
@@ -636,7 +873,7 @@ namespace FWEledit
                 return;
             }
 
-            string fieldName = Convert.ToString(itemGrid.Rows[rowIndex].Cells[0].Value);
+            string fieldName = ValueGridFieldNameService.GetFieldName(itemGrid, rowIndex);
             if (fieldClassifier == null || !fieldClassifier.IsReputationFieldName(fieldName))
             {
                 return;
@@ -669,7 +906,7 @@ namespace FWEledit
                 return;
             }
 
-            string fieldName = Convert.ToString(itemGrid.Rows[rowIndex].Cells[0].Value);
+            string fieldName = ValueGridFieldNameService.GetFieldName(itemGrid, rowIndex);
             if (fieldClassifier == null || !fieldClassifier.IsSoulToolRewardTypeFieldName(fieldName))
             {
                 return;
@@ -712,7 +949,7 @@ namespace FWEledit
                 return;
             }
 
-            string fieldName = Convert.ToString(itemGrid.Rows[rowIndex].Cells[0].Value);
+            string fieldName = ValueGridFieldNameService.GetFieldName(itemGrid, rowIndex);
             int targetListIndex;
             if (!itemReferenceService.TryGetTargetListIndex(listCollection, listIndex, currentElementIndex, fieldName, out targetListIndex))
             {
@@ -766,7 +1003,7 @@ namespace FWEledit
                 return;
             }
 
-            string fieldName = Convert.ToString(itemGrid.Rows[rowIndex].Cells[0].Value);
+            string fieldName = ValueGridFieldNameService.GetFieldName(itemGrid, rowIndex);
             if (fieldClassifier == null || !fieldClassifier.IsProcTypeFieldName(fieldName))
             {
                 return;
@@ -798,7 +1035,7 @@ namespace FWEledit
                 return;
             }
 
-            string fieldName = Convert.ToString(itemGrid.Rows[rowIndex].Cells[0].Value);
+            string fieldName = ValueGridFieldNameService.GetFieldName(itemGrid, rowIndex);
             if (fieldClassifier == null || !fieldClassifier.IsProfessionMaskFieldName(fieldName))
             {
                 return;
@@ -832,7 +1069,7 @@ namespace FWEledit
                 return;
             }
 
-            string fieldName = Convert.ToString(itemGrid.Rows[rowIndex].Cells[0].Value);
+            string fieldName = ValueGridFieldNameService.GetFieldName(itemGrid, rowIndex);
             if (fieldClassifier == null || !fieldClassifier.IsCombinedServicesFieldName(fieldName))
             {
                 return;
@@ -872,7 +1109,7 @@ namespace FWEledit
                 return;
             }
 
-            string fieldName = Convert.ToString(itemGrid.Rows[rowIndex].Cells[0].Value);
+            string fieldName = ValueGridFieldNameService.GetFieldName(itemGrid, rowIndex);
             if (fieldClassifier == null || !fieldClassifier.IsSkillFieldName(fieldName))
             {
                 return;
@@ -907,6 +1144,104 @@ namespace FWEledit
             }
         }
 
+        public void OpenRaceMaskPickerForValueRow(
+            DataGridView itemGrid,
+            int rowIndex,
+            ItemFieldClassifierService fieldClassifier,
+            IWin32Window owner)
+        {
+            if (itemGrid == null || rowIndex < 0 || rowIndex >= itemGrid.Rows.Count)
+            {
+                return;
+            }
+
+            string fieldName = ValueGridFieldNameService.GetFieldName(itemGrid, rowIndex);
+            if (fieldClassifier == null || !fieldClassifier.IsRaceMaskFieldName(fieldName))
+            {
+                return;
+            }
+
+            uint currentValue = 0;
+            string rawValue = GetValueCellRawValue(itemGrid, rowIndex);
+            RaceMaskCatalog.TryParseValue(rawValue, out currentValue);
+
+            using (RaceMaskPickerWindow picker = new RaceMaskPickerWindow(currentValue))
+            {
+                if (picker.ShowDialog(owner) != DialogResult.OK)
+                {
+                    return;
+                }
+
+                SetValueCellRawValue(itemGrid, rowIndex, picker.SelectedValue.ToString(CultureInfo.InvariantCulture));
+            }
+        }
+
+        public void OpenModelProfessionPickerForValueRow(
+            DataGridView itemGrid,
+            int rowIndex,
+            ItemFieldClassifierService fieldClassifier,
+            IWin32Window owner)
+        {
+            if (itemGrid == null || rowIndex < 0 || rowIndex >= itemGrid.Rows.Count)
+            {
+                return;
+            }
+
+            string fieldName = ValueGridFieldNameService.GetFieldName(itemGrid, rowIndex);
+            if (fieldClassifier == null || !fieldClassifier.IsModelProfessionFieldName(fieldName))
+            {
+                return;
+            }
+
+            int currentValue = 0;
+            string rawValue = GetValueCellRawValue(itemGrid, rowIndex);
+            int.TryParse(rawValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out currentValue);
+
+            using (QualityPickerWindow picker = new QualityPickerWindow(new List<QualityOption>(ModelProfessionCatalog.Options), currentValue))
+            {
+                picker.Text = "Choose model profession...";
+                if (picker.ShowDialog(owner) != DialogResult.OK)
+                {
+                    return;
+                }
+
+                SetValueCellRawValue(itemGrid, rowIndex, picker.SelectedValue.ToString(CultureInfo.InvariantCulture));
+            }
+        }
+
+        public void OpenModelRacePickerForValueRow(
+            DataGridView itemGrid,
+            int rowIndex,
+            ItemFieldClassifierService fieldClassifier,
+            IWin32Window owner)
+        {
+            if (itemGrid == null || rowIndex < 0 || rowIndex >= itemGrid.Rows.Count)
+            {
+                return;
+            }
+
+            string fieldName = ValueGridFieldNameService.GetFieldName(itemGrid, rowIndex);
+            if (fieldClassifier == null || !fieldClassifier.IsModelRaceFieldName(fieldName))
+            {
+                return;
+            }
+
+            int currentValue = 0;
+            string rawValue = GetValueCellRawValue(itemGrid, rowIndex);
+            int.TryParse(rawValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out currentValue);
+
+            using (QualityPickerWindow picker = new QualityPickerWindow(new List<QualityOption>(ModelRaceCatalog.Options), currentValue))
+            {
+                picker.Text = "Choose model race...";
+                if (picker.ShowDialog(owner) != DialogResult.OK)
+                {
+                    return;
+                }
+
+                SetValueCellRawValue(itemGrid, rowIndex, picker.SelectedValue.ToString(CultureInfo.InvariantCulture));
+            }
+        }
+
         public void OpenIconPickerForValueRow(
             eListCollection listCollection,
             CacheSave database,
@@ -929,7 +1264,7 @@ namespace FWEledit
                 return;
             }
 
-            string fieldName = Convert.ToString(itemGrid.Rows[rowIndex].Cells[0].Value);
+            string fieldName = ValueGridFieldNameService.GetFieldName(itemGrid, rowIndex);
             if (fieldClassifier == null || !fieldClassifier.IsIconFieldName(fieldName))
             {
                 return;
@@ -1043,7 +1378,7 @@ namespace FWEledit
                 return;
             }
 
-            string fieldName = Convert.ToString(itemGrid.Rows[rowIndex].Cells[0].Value);
+            string fieldName = ValueGridFieldNameService.GetFieldName(itemGrid, rowIndex);
             if (fieldClassifier == null || !fieldClassifier.IsModelUsageFieldName(fieldName))
             {
                 return;
@@ -1320,6 +1655,22 @@ namespace FWEledit
             return Convert.ToString(itemGrid.Rows[rowIndex].Cells[2].Value);
         }
 
+        private static int ResolveFieldIndex(DataGridView itemGrid, int rowIndex)
+        {
+            if (itemGrid == null || rowIndex < 0 || rowIndex >= itemGrid.Rows.Count)
+            {
+                return -1;
+            }
+
+            object tag = itemGrid.Rows[rowIndex].Tag;
+            if (tag is int)
+            {
+                return (int)tag;
+            }
+
+            return -1;
+        }
+
         private static void SetValueCellRawValue(DataGridView itemGrid, int rowIndex, string rawValue)
         {
             if (itemGrid == null || rowIndex < 0 || rowIndex >= itemGrid.Rows.Count)
@@ -1349,7 +1700,7 @@ namespace FWEledit
             }
             for (int i = 0; i < itemGrid.Rows.Count; i++)
             {
-                string fieldName = Convert.ToString(itemGrid.Rows[i].Cells[0].Value);
+                string fieldName = ValueGridFieldNameService.GetFieldName(itemGrid, i);
                 if (!LooksLikeScaleFieldName(fieldName))
                 {
                     continue;
@@ -1387,7 +1738,7 @@ namespace FWEledit
             string normalizedModel = NormalizeFieldToken(modelFieldName);
             for (int i = 0; i < itemGrid.Rows.Count; i++)
             {
-                string fieldName = Convert.ToString(itemGrid.Rows[i].Cells[0].Value);
+                string fieldName = ValueGridFieldNameService.GetFieldName(itemGrid, i);
                 if (NormalizeFieldToken(fieldName) != normalizedModel)
                 {
                     continue;
@@ -1668,3 +2019,4 @@ namespace FWEledit
         }
     }
 }
+

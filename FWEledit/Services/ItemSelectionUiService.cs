@@ -27,8 +27,14 @@ namespace FWEledit
             {
                 ValueRowDisplay rowDisplay = selection.Rows[i];
                 DataGridViewRow row = (DataGridViewRow)itemGrid.RowTemplate.Clone();
-                row.CreateCells(itemGrid, new string[] { rowDisplay.FieldName, rowDisplay.FieldType, rowDisplay.DisplayValue });
+                row.CreateCells(itemGrid, new string[]
+                {
+                    string.IsNullOrWhiteSpace(rowDisplay.DisplayFieldName) ? rowDisplay.FieldName : rowDisplay.DisplayFieldName,
+                    rowDisplay.FieldType,
+                    rowDisplay.DisplayValue
+                });
                 row.Tag = rowDisplay.FieldIndex;
+                row.Cells[0].Tag = rowDisplay.FieldName;
                 row.Cells[2].Tag = rowDisplay.ResolvedReferenceOption != null
                     ? new ValueCellState
                     {

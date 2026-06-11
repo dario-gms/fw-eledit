@@ -2,6 +2,7 @@ using System;
 using System.Drawing;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
+using FWEledit.Controls;
 
 namespace FWEledit
 {
@@ -253,6 +254,10 @@ namespace FWEledit
                 else if (child is TabControl)
                 {
                     StyleTabControl((TabControl)child);
+                }
+                else if (child is ThemedActionButton)
+                {
+                    ((ThemedActionButton)child).ApplyTheme(currentDarkMode);
                 }
                 else if (child is TabPage)
                 {

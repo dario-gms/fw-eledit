@@ -7,7 +7,7 @@ namespace FWEledit
     {
         public void Show(string details)
         {
-            string message = "Salvamento conclu\u00eddo.";
+            string message = "Save completed.";
             if (!string.IsNullOrWhiteSpace(details))
             {
                 message += "\n" + details.Trim();

@@ -4,7 +4,7 @@ using System.Globalization;
 
 namespace FWEledit
 {
-    public sealed class ProfessionMaskOption
+    public sealed class RaceMaskOption
     {
         public uint Mask { get; set; }
         public string Label { get; set; }
@@ -16,48 +16,39 @@ namespace FWEledit
         }
     }
 
-    public static class ProfessionMaskCatalog
+    public static class RaceMaskCatalog
     {
-        private const uint MaskWarrior = 1u << 1;
-        private const uint MaskProtector = 1u << 2;
-        private const uint MaskAssassin = 1u << 3;
-        private const uint MaskMarksman = 1u << 4;
-        private const uint MaskMage = 1u << 5;
-        private const uint MaskPriest = 1u << 6;
-        private const uint MaskVampire = 1u << 7;
-        private const uint MaskBard = 1u << 8;
-        private const uint MaskBloodRaider = 1u << 9;
+        private const uint MaskHuman = 1u << 1;
+        private const uint MaskElf = 1u << 2;
+        private const uint MaskDwarf = 1u << 3;
+        private const uint MaskStoneman = 1u << 4;
+        private const uint MaskKindred = 1u << 5;
+        private const uint MaskLycan = 1u << 6;
 
-        private static readonly List<ProfessionMaskOption> professionOptions = new List<ProfessionMaskOption>
+        private static readonly List<RaceMaskOption> raceOptions = new List<RaceMaskOption>
         {
-            new ProfessionMaskOption { Mask = MaskWarrior, Label = "Warrior", Description = "Show this page to Warriors." },
-            new ProfessionMaskOption { Mask = MaskProtector, Label = "Protector", Description = "Show this page to Protectors." },
-            new ProfessionMaskOption { Mask = MaskAssassin, Label = "Assassin", Description = "Show this page to Assassins." },
-            new ProfessionMaskOption { Mask = MaskMarksman, Label = "Marksman", Description = "Show this page to Marksmen." },
-            new ProfessionMaskOption { Mask = MaskMage, Label = "Mage", Description = "Show this page to Mages." },
-            new ProfessionMaskOption { Mask = MaskPriest, Label = "Priest", Description = "Show this page to Priests." },
-            new ProfessionMaskOption { Mask = MaskVampire, Label = "Vampire", Description = "Show this page to Vampires." },
-            new ProfessionMaskOption { Mask = MaskBard, Label = "Bard", Description = "Show this page to Bards." },
-            new ProfessionMaskOption { Mask = MaskBloodRaider, Label = "Blood Raider", Description = "Show this page to Blood Raiders." }
+            new RaceMaskOption { Mask = MaskHuman, Label = "Human", Description = "Allow Human characters to use this." },
+            new RaceMaskOption { Mask = MaskElf, Label = "Elf", Description = "Allow Elf characters to use this." },
+            new RaceMaskOption { Mask = MaskDwarf, Label = "Dwarf", Description = "Allow Dwarf characters to use this." },
+            new RaceMaskOption { Mask = MaskStoneman, Label = "Stoneman", Description = "Allow Stoneman characters to use this." },
+            new RaceMaskOption { Mask = MaskKindred, Label = "Kindred", Description = "Allow Kindred characters to use this." },
+            new RaceMaskOption { Mask = MaskLycan, Label = "Lycan", Description = "Allow Lycan characters to use this." }
         };
 
-        private const uint AllProfessionsMask =
-            MaskWarrior
-            | MaskProtector
-            | MaskAssassin
-            | MaskMarksman
-            | MaskMage
-            | MaskPriest
-            | MaskVampire
-            | MaskBard
-            | MaskBloodRaider;
+        private const uint AllKnownRacesMask =
+            MaskHuman
+            | MaskElf
+            | MaskDwarf
+            | MaskStoneman
+            | MaskKindred
+            | MaskLycan;
 
-        public static IList<ProfessionMaskOption> Options
+        public static IList<RaceMaskOption> Options
         {
-            get { return professionOptions; }
+            get { return raceOptions; }
         }
 
-        public static bool IsProfessionMaskFieldName(string fieldName)
+        public static bool IsRaceMaskFieldName(string fieldName)
         {
             if (string.IsNullOrWhiteSpace(fieldName))
             {
@@ -65,10 +56,8 @@ namespace FWEledit
             }
 
             string normalized = fieldName.Trim();
-            return normalized.IndexOf("mask_profession", StringComparison.OrdinalIgnoreCase) >= 0
-                || normalized.IndexOf("profession_mask", StringComparison.OrdinalIgnoreCase) >= 0
-                || normalized.EndsWith("prof_mask", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(normalized, "character_combo_id", StringComparison.OrdinalIgnoreCase);
+            return normalized.IndexOf("mask_race", StringComparison.OrdinalIgnoreCase) >= 0
+                || normalized.IndexOf("race_mask", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         public static bool TryParseValue(string text, out uint value)
@@ -125,19 +114,19 @@ namespace FWEledit
 
             if (value == 0)
             {
-                return "No professions";
+                return "No races";
             }
 
-            if ((value & AllProfessionsMask) == AllProfessionsMask)
+            if ((value & AllKnownRacesMask) == AllKnownRacesMask)
             {
-                return "All professions";
+                return "All races";
             }
 
             List<string> labels = new List<string>();
             uint remaining = value;
-            for (int i = 0; i < professionOptions.Count; i++)
+            for (int i = 0; i < raceOptions.Count; i++)
             {
-                ProfessionMaskOption option = professionOptions[i];
+                RaceMaskOption option = raceOptions[i];
                 if (option == null || (value & option.Mask) != option.Mask)
                 {
                     continue;
@@ -153,7 +142,7 @@ namespace FWEledit
             }
 
             return labels.Count == 0
-                ? "No professions"
+                ? "No races"
                 : string.Join(", ", labels.ToArray());
         }
 
@@ -175,7 +164,7 @@ namespace FWEledit
                     continue;
                 }
 
-                ProfessionMaskOption option = FindOption(token);
+                RaceMaskOption option = FindOption(token);
                 if (option == null)
                 {
                     return false;
@@ -188,23 +177,49 @@ namespace FWEledit
             return matchedAny;
         }
 
-        private static ProfessionMaskOption FindOption(string token)
+        private static RaceMaskOption FindOption(string token)
         {
-            for (int i = 0; i < professionOptions.Count; i++)
+            string normalized = NormalizeAlias(token);
+            for (int i = 0; i < raceOptions.Count; i++)
             {
-                ProfessionMaskOption option = professionOptions[i];
+                RaceMaskOption option = raceOptions[i];
                 if (option == null)
                 {
                     continue;
                 }
 
-                if (string.Equals(option.Label, token, StringComparison.OrdinalIgnoreCase))
+                if (string.Equals(NormalizeAlias(option.Label), normalized, StringComparison.OrdinalIgnoreCase))
                 {
                     return option;
                 }
             }
 
+            if (normalized == "giant")
+            {
+                return FindOption("Stoneman");
+            }
+
+            if (normalized == "vampire")
+            {
+                return FindOption("Kindred");
+            }
+
+            if (normalized == "werewolf")
+            {
+                return FindOption("Lycan");
+            }
+
             return null;
+        }
+
+        private static string NormalizeAlias(string value)
+        {
+            return (value ?? string.Empty)
+                .Replace(" ", string.Empty)
+                .Replace("_", string.Empty)
+                .Replace("-", string.Empty)
+                .Replace("&", string.Empty)
+                .ToLowerInvariant();
         }
     }
 }

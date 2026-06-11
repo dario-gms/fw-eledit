@@ -11,7 +11,7 @@ namespace FWEledit
         public CacheSave Database { get; set; }
         public int ListIndex { get; set; }
         public int ElementIndex { get; set; }
-        public Func<int, string, bool> ShouldIncludeField { get; set; }
+        public Func<int, int, string, bool> ShouldIncludeField { get; set; }
         public Func<int, int, int, string> GetDisplayEntryName { get; set; }
         public Func<Dictionary<int, string>> LoadAddonTypeHints { get; set; }
         public Func<string, bool> IsModelFieldName { get; set; }

@@ -67,7 +67,9 @@ namespace FWEledit
             }
 
             return string.Equals(fieldName, "file_icon", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(fieldName, "file_icon1", StringComparison.OrdinalIgnoreCase);
+                || string.Equals(fieldName, "file_icon1", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(fieldName, "file_head_icon", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(fieldName, "file_self_head_icon", StringComparison.OrdinalIgnoreCase);
         }
 
         public string FormatPortraitPathIdDisplay(CacheSave database, string rawValue)
@@ -188,7 +190,8 @@ namespace FWEledit
 
             string listName = listCollection.Lists[listIndex].listName ?? string.Empty;
             return listName.IndexOf("MONSTER_ESSENCE", StringComparison.OrdinalIgnoreCase) >= 0
-                || listName.IndexOf("NPC_ESSENCE", StringComparison.OrdinalIgnoreCase) >= 0;
+                || listName.IndexOf("NPC_ESSENCE", StringComparison.OrdinalIgnoreCase) >= 0
+                || listName.IndexOf("PET_BEDGE_ESSENCE", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private static string ResolveMappedPath(CacheSave database, string rawValue)

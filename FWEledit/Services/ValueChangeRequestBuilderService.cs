@@ -53,7 +53,7 @@ namespace FWEledit
                 }
             }
 
-            string editedField = Convert.ToString(itemGrid.Rows[gridRow].Cells[0].Value);
+            string editedField = ValueGridFieldNameService.GetFieldName(itemGrid, gridRow);
             string fieldType = string.Empty;
             if (listIndex >= 0
                 && listIndex < listCollection.Lists.Length

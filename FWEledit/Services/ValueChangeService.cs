@@ -83,6 +83,26 @@ namespace FWEledit
             {
                 valueToSet = GenderTypeCatalog.NormalizeInput(valueToSet);
             }
+            else if (PetFoodTypeCatalog.IsPetFoodTypeFieldName(request.FieldName))
+            {
+                valueToSet = PetFoodTypeCatalog.NormalizeInput(valueToSet);
+            }
+            else if (PetHeroCatalog.IsPetHeroFieldName(request.FieldName))
+            {
+                valueToSet = PetHeroCatalog.NormalizeInput(valueToSet);
+            }
+            else if (ImmuneTypeCatalog.IsImmuneTypeFieldName(request.FieldName))
+            {
+                valueToSet = ImmuneTypeCatalog.NormalizeInput(valueToSet);
+            }
+            else if (BindFlagCatalog.IsBindFlagFieldName(request.FieldName))
+            {
+                valueToSet = BindFlagCatalog.NormalizeInput(request.FieldName, valueToSet);
+            }
+            else if (NpcSellMoneyTypeCatalog.IsMoneyTypeField(request.ListCollection, request.ListIndex, request.FieldIndex, request.FieldName))
+            {
+                valueToSet = NpcSellMoneyTypeCatalog.NormalizeInput(valueToSet);
+            }
             else if (ReputationCatalog.IsReputationIdFieldName(request.FieldName))
             {
                 valueToSet = ReputationCatalog.NormalizeInput(valueToSet);
@@ -99,6 +119,18 @@ namespace FWEledit
             {
                 valueToSet = ProfessionMaskCatalog.NormalizeInput(valueToSet);
             }
+            else if (RaceMaskCatalog.IsRaceMaskFieldName(request.FieldName))
+            {
+                valueToSet = RaceMaskCatalog.NormalizeInput(valueToSet);
+            }
+            else if (ModelProfessionCatalog.IsModelProfessionFieldName(request.FieldName))
+            {
+                valueToSet = ModelProfessionCatalog.NormalizeInput(valueToSet);
+            }
+            else if (ModelRaceCatalog.IsModelRaceFieldName(request.FieldName))
+            {
+                valueToSet = ModelRaceCatalog.NormalizeInput(valueToSet);
+            }
             else if (CombinedServicesCatalog.IsCombinedServicesFieldName(request.FieldName))
             {
                 valueToSet = CombinedServicesCatalog.NormalizeInput(valueToSet);
@@ -109,7 +141,7 @@ namespace FWEledit
             }
             else if (ProbabilityDisplayService.IsProbabilityFieldName(request.FieldName))
             {
-                valueToSet = ProbabilityDisplayService.NormalizeInput(valueToSet);
+                valueToSet = ProbabilityDisplayService.NormalizeInput(request.FieldName, request.FieldType, valueToSet);
             }
 
             if (request.IsIdEdit)
@@ -198,6 +230,26 @@ namespace FWEledit
             {
                 result.DisplayValue = GenderTypeCatalog.FormatDisplay(valueToSet);
             }
+            else if (PetFoodTypeCatalog.IsPetFoodTypeFieldName(request.FieldName))
+            {
+                result.DisplayValue = PetFoodTypeCatalog.FormatDisplay(valueToSet);
+            }
+            else if (PetHeroCatalog.IsPetHeroFieldName(request.FieldName))
+            {
+                result.DisplayValue = PetHeroCatalog.FormatDisplay(valueToSet);
+            }
+            else if (ImmuneTypeCatalog.IsImmuneTypeFieldName(request.FieldName))
+            {
+                result.DisplayValue = ImmuneTypeCatalog.FormatDisplay(valueToSet);
+            }
+            else if (BindFlagCatalog.IsBindFlagFieldName(request.FieldName))
+            {
+                result.DisplayValue = BindFlagCatalog.FormatDisplay(request.FieldName, valueToSet);
+            }
+            else if (NpcSellMoneyTypeCatalog.IsMoneyTypeField(request.ListCollection, request.ListIndex, request.FieldIndex, request.FieldName))
+            {
+                result.DisplayValue = NpcSellMoneyTypeCatalog.FormatDisplay(valueToSet);
+            }
             else if (ReputationCatalog.IsReputationIdFieldName(request.FieldName))
             {
                 result.DisplayValue = ReputationCatalog.FormatDisplay(valueToSet);
@@ -213,6 +265,18 @@ namespace FWEledit
             else if (ProfessionMaskCatalog.IsProfessionMaskFieldName(request.FieldName))
             {
                 result.DisplayValue = ProfessionMaskCatalog.FormatDisplay(valueToSet);
+            }
+            else if (RaceMaskCatalog.IsRaceMaskFieldName(request.FieldName))
+            {
+                result.DisplayValue = RaceMaskCatalog.FormatDisplay(valueToSet);
+            }
+            else if (ModelProfessionCatalog.IsModelProfessionFieldName(request.FieldName))
+            {
+                result.DisplayValue = ModelProfessionCatalog.FormatDisplay(valueToSet);
+            }
+            else if (ModelRaceCatalog.IsModelRaceFieldName(request.FieldName))
+            {
+                result.DisplayValue = ModelRaceCatalog.FormatDisplay(valueToSet);
             }
             else if (CombinedServicesCatalog.IsCombinedServicesFieldName(request.FieldName))
             {
@@ -230,7 +294,7 @@ namespace FWEledit
             }
             else if (ProbabilityDisplayService.IsProbabilityFieldName(request.FieldName))
             {
-                result.DisplayValue = ProbabilityDisplayService.FormatDisplay(valueToSet);
+                result.DisplayValue = ProbabilityDisplayService.FormatDisplay(request.FieldName, request.FieldType, valueToSet);
             }
             else if (creaturePortraitIconService.IsCreaturePortraitField(request.ListCollection, request.ListIndex, request.FieldName))
             {
@@ -348,7 +412,8 @@ namespace FWEledit
                 || string.Equals(fieldName, "file_icon", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(fieldName, "file_icon1", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(fieldName, "item_quality", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(fieldName, "id_item_trade_service", StringComparison.OrdinalIgnoreCase);
+                || string.Equals(fieldName, "id_item_trade_service", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(fieldName, "id_sell_service", StringComparison.OrdinalIgnoreCase);
         }
 
         private ValueChangeResult ApplyConversationChange(ValueChangeRequest request)

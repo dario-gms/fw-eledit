@@ -33,7 +33,7 @@ namespace FWEledit
             CacheSave database,
             int listIndex,
             int elementIndex,
-            System.Func<int, string, bool> shouldIncludeField,
+            System.Func<int, int, string, bool> shouldIncludeField,
             System.Func<int, int, int, string> getDisplayEntryName,
             System.Func<System.Collections.Generic.Dictionary<int, string>> loadAddonTypeHints,
             System.Func<string, bool> isModelFieldName,
@@ -136,7 +136,7 @@ namespace FWEledit
             for (int f = 0; f < listCollection.Lists[listIndex].elementValues[elementIndex].Length; f++)
             {
                 string fieldName = listCollection.Lists[listIndex].elementFields[f];
-                if (shouldIncludeField != null && !shouldIncludeField(listIndex, fieldName))
+                if (shouldIncludeField != null && !shouldIncludeField(listIndex, f, fieldName))
                 {
                     continue;
                 }
@@ -178,6 +178,26 @@ namespace FWEledit
                 {
                     fieldValue = GenderTypeCatalog.FormatDisplay(fieldValue);
                 }
+                else if (PetFoodTypeCatalog.IsPetFoodTypeFieldName(fieldName))
+                {
+                    fieldValue = PetFoodTypeCatalog.FormatDisplay(fieldValue);
+                }
+                else if (PetHeroCatalog.IsPetHeroFieldName(fieldName))
+                {
+                    fieldValue = PetHeroCatalog.FormatDisplay(fieldValue);
+                }
+                else if (ImmuneTypeCatalog.IsImmuneTypeFieldName(fieldName))
+                {
+                    fieldValue = ImmuneTypeCatalog.FormatDisplay(fieldValue);
+                }
+                else if (BindFlagCatalog.IsBindFlagFieldName(fieldName))
+                {
+                    fieldValue = BindFlagCatalog.FormatDisplay(fieldName, fieldValue);
+                }
+                else if (NpcSellMoneyTypeCatalog.IsMoneyTypeField(listCollection, listIndex, f, fieldName))
+                {
+                    fieldValue = NpcSellMoneyTypeCatalog.FormatDisplay(fieldValue);
+                }
                 else if (ReputationCatalog.IsReputationIdFieldName(fieldName))
                 {
                     fieldValue = ReputationCatalog.FormatDisplay(fieldValue);
@@ -194,6 +214,18 @@ namespace FWEledit
                 {
                     fieldValue = ProfessionMaskCatalog.FormatDisplay(fieldValue);
                 }
+                else if (RaceMaskCatalog.IsRaceMaskFieldName(fieldName))
+                {
+                    fieldValue = RaceMaskCatalog.FormatDisplay(fieldValue);
+                }
+                else if (ModelProfessionCatalog.IsModelProfessionFieldName(fieldName))
+                {
+                    fieldValue = ModelProfessionCatalog.FormatDisplay(fieldValue);
+                }
+                else if (ModelRaceCatalog.IsModelRaceFieldName(fieldName))
+                {
+                    fieldValue = ModelRaceCatalog.FormatDisplay(fieldValue);
+                }
                 else if (CombinedServicesCatalog.IsCombinedServicesFieldName(fieldName))
                 {
                     fieldValue = CombinedServicesCatalog.FormatDisplay(listCollection, listIndex, fieldName, fieldValue);
@@ -204,7 +236,10 @@ namespace FWEledit
                 }
                 else if (ProbabilityDisplayService.IsProbabilityFieldName(fieldName))
                 {
-                    fieldValue = ProbabilityDisplayService.FormatDisplay(fieldValue);
+                    fieldValue = ProbabilityDisplayService.FormatDisplay(
+                        fieldName,
+                        listCollection.Lists[listIndex].elementTypes[f],
+                        fieldValue);
                 }
                 else if (modelPickerService != null && isModelFieldName != null && isModelFieldName(fieldName))
                 {
@@ -244,6 +279,12 @@ namespace FWEledit
                 {
                     FieldIndex = f,
                     FieldName = fieldName,
+                    DisplayFieldName = ModelFieldLabelCatalog.GetDisplayFieldName(
+                        listCollection,
+                        listCollection.Lists[listIndex].listName,
+                        listIndex,
+                        f,
+                        fieldName),
                     FieldType = listCollection.Lists[listIndex].elementTypes[f],
                     DisplayValue = fieldValue,
                     RawValue = rawValue,

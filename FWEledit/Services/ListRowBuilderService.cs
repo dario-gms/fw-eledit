@@ -15,6 +15,7 @@ namespace FWEledit
         private readonly IconResolutionService iconResolutionService;
         private readonly CreaturePortraitIconService creaturePortraitIconService;
         private readonly NpcTradePortraitService npcTradePortraitService;
+        private readonly NpcSellPortraitService npcSellPortraitService;
         private readonly MonsterDropPortraitService monsterDropPortraitService;
         private eListCollection cachedItemIconSourceCollection;
         private Dictionary<int, ItemIconSource> cachedItemIconSourcesById;
@@ -24,6 +25,7 @@ namespace FWEledit
             this.iconResolutionService = iconResolutionService;
             this.creaturePortraitIconService = new CreaturePortraitIconService();
             this.npcTradePortraitService = new NpcTradePortraitService();
+            this.npcSellPortraitService = new NpcSellPortraitService();
             this.monsterDropPortraitService = new MonsterDropPortraitService();
         }
 
@@ -85,6 +87,7 @@ namespace FWEledit
             bool isDropTableList = string.Equals(normalizedListName, "DROPTABLE_ESSENCE", System.StringComparison.OrdinalIgnoreCase);
             bool isItemTradeList = string.Equals(normalizedListName, "ITEM_TRADE_ESSENCE", System.StringComparison.OrdinalIgnoreCase);
             bool isItemTradePageList = string.Equals(normalizedListName, "ITEM_TRADE_PAGE_CONFIG", System.StringComparison.OrdinalIgnoreCase);
+            bool isNpcSellServiceList = string.Equals(normalizedListName, "NPC_SELL_SERVICE", System.StringComparison.OrdinalIgnoreCase);
             int isCategoryFieldIndex = isDropTableList ? GetFieldIndex(listCollection.Lists[listIndex].elementFields, "is_category") : -1;
             List<int> dropFieldIndexes = isDropTableList ? GetDropFieldIndexes(listCollection.Lists[listIndex].elementFields) : null;
             List<int> tradePageGoodsFieldIndexes = isItemTradePageList ? GetTradePageGoodsFieldIndexes(listCollection.Lists[listIndex].elementFields) : null;
@@ -156,6 +159,17 @@ namespace FWEledit
                         if (tradePageIcon != null)
                         {
                             img = tradePageIcon;
+                        }
+                    }
+                    else if (isNpcSellServiceList)
+                    {
+                        if (int.TryParse(listCollection.GetValue(listIndex, e, 0), out int sellServiceId))
+                        {
+                            if (npcSellPortraitService.TryResolveSellPortrait(listCollection, database, sellServiceId, out Bitmap sellIcon)
+                                && sellIcon != null)
+                            {
+                                img = sellIcon;
+                            }
                         }
                     }
                     rows.Add(new object[] { listCollection.GetValue(listIndex, e, 0), img, composeDisplayName(listIndex, e, pos), string.Empty });

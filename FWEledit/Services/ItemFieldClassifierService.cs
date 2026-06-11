@@ -7,7 +7,9 @@ namespace FWEledit
         public bool IsIconFieldName(string fieldName)
         {
             return string.Equals(fieldName, "file_icon", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(fieldName, "file_icon1", StringComparison.OrdinalIgnoreCase);
+                || string.Equals(fieldName, "file_icon1", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(fieldName, "file_head_icon", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(fieldName, "file_self_head_icon", StringComparison.OrdinalIgnoreCase);
         }
 
         public bool IsItemQualityFieldName(string fieldName)
@@ -20,6 +22,26 @@ namespace FWEledit
             return GenderTypeCatalog.IsGenderTypeFieldName(fieldName);
         }
 
+        public bool IsPetFoodTypeFieldName(string fieldName)
+        {
+            return PetFoodTypeCatalog.IsPetFoodTypeFieldName(fieldName);
+        }
+
+        public bool IsPetHeroFieldName(string fieldName)
+        {
+            return PetHeroCatalog.IsPetHeroFieldName(fieldName);
+        }
+
+        public bool IsImmuneTypeFieldName(string fieldName)
+        {
+            return ImmuneTypeCatalog.IsImmuneTypeFieldName(fieldName);
+        }
+
+        public bool IsBindFlagFieldName(string fieldName)
+        {
+            return BindFlagCatalog.IsBindFlagFieldName(fieldName);
+        }
+
         public bool IsProcTypeFieldName(string fieldName)
         {
             return ProcTypeCatalog.IsProcTypeFieldName(fieldName);
@@ -28,6 +50,21 @@ namespace FWEledit
         public bool IsProfessionMaskFieldName(string fieldName)
         {
             return ProfessionMaskCatalog.IsProfessionMaskFieldName(fieldName);
+        }
+
+        public bool IsRaceMaskFieldName(string fieldName)
+        {
+            return RaceMaskCatalog.IsRaceMaskFieldName(fieldName);
+        }
+
+        public bool IsModelProfessionFieldName(string fieldName)
+        {
+            return ModelProfessionCatalog.IsModelProfessionFieldName(fieldName);
+        }
+
+        public bool IsModelRaceFieldName(string fieldName)
+        {
+            return ModelRaceCatalog.IsModelRaceFieldName(fieldName);
         }
 
         public bool IsReputationFieldName(string fieldName)
@@ -50,6 +87,11 @@ namespace FWEledit
             return SkillReferenceCatalog.IsSkillFieldName(fieldName);
         }
 
+        public bool IsNpcSellMoneyTypeFieldName(eListCollection listCollection, int listIndex, int fieldIndex, string fieldName)
+        {
+            return NpcSellMoneyTypeCatalog.IsMoneyTypeField(listCollection, listIndex, fieldIndex, fieldName);
+        }
+
         public bool IsPickerField(
             eListCollection listCollection,
             int listIndex,
@@ -60,10 +102,18 @@ namespace FWEledit
                 || IsAddonTypeField(listCollection, listIndex, fieldName)
                 || IsItemQualityFieldName(fieldName)
                 || IsGenderTypeFieldName(fieldName)
+                || IsPetFoodTypeFieldName(fieldName)
+                || IsPetHeroFieldName(fieldName)
+                || IsImmuneTypeFieldName(fieldName)
+                || IsBindFlagFieldName(fieldName)
+                || IsNpcSellMoneyTypeFieldName(listCollection, listIndex, -1, fieldName)
                 || IsReputationFieldName(fieldName)
                 || IsSoulToolRewardTypeFieldName(fieldName)
                 || IsProcTypeFieldName(fieldName)
                 || IsProfessionMaskFieldName(fieldName)
+                || IsRaceMaskFieldName(fieldName)
+                || IsModelProfessionFieldName(fieldName)
+                || IsModelRaceFieldName(fieldName)
                 || IsCombinedServicesFieldName(fieldName)
                 || IsSkillFieldName(fieldName)
                 || IsModelFieldName(fieldName)

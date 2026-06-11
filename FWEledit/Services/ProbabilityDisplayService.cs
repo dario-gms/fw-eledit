@@ -5,17 +5,30 @@ namespace FWEledit
 {
     public static class ProbabilityDisplayService
     {
-        public static bool IsProbabilityFieldName(string fieldName)
+        private enum PercentageStorageScale
         {
-            return !string.IsNullOrWhiteSpace(fieldName)
-                && fieldName.IndexOf("probability", StringComparison.OrdinalIgnoreCase) >= 0;
+            UnitFraction,
+            WholePercent,
+            BasisPoints
         }
 
-        public static string FormatDisplay(string rawValue)
+        public static bool IsProbabilityFieldName(string fieldName)
+        {
+            PercentageStorageScale scale;
+            return TryResolveScale(fieldName, null, null, out scale);
+        }
+
+        public static string FormatDisplay(string fieldName, string fieldType, string rawValue)
         {
             if (string.IsNullOrWhiteSpace(rawValue))
             {
                 return string.Empty;
+            }
+
+            PercentageStorageScale scale;
+            if (!TryResolveScale(fieldName, fieldType, rawValue, out scale))
+            {
+                return rawValue;
             }
 
             double value;
@@ -24,15 +37,21 @@ namespace FWEledit
                 return rawValue;
             }
 
-            double percentage = value * 100d;
+            double percentage = ToPercentage(value, scale);
             return percentage.ToString("0.##", CultureInfo.CurrentCulture) + "%";
         }
 
-        public static string NormalizeInput(string value)
+        public static string NormalizeInput(string fieldName, string fieldType, string value)
         {
             if (string.IsNullOrWhiteSpace(value))
             {
                 return string.Empty;
+            }
+
+            PercentageStorageScale scale;
+            if (!TryResolveScale(fieldName, fieldType, value, out scale))
+            {
+                return value;
             }
 
             string trimmed = value.Trim();
@@ -48,9 +67,21 @@ namespace FWEledit
                 return value;
             }
 
-            double normalized = isPercent
-                ? parsed / 100d
-                : (Math.Abs(parsed) > 1d ? parsed / 100d : parsed);
+            double normalized;
+            if (isPercent)
+            {
+                normalized = FromPercentage(parsed, scale);
+            }
+            else
+            {
+                normalized = NormalizeNonPercentInput(parsed, scale);
+            }
+
+            if (IsIntegralFieldType(fieldType))
+            {
+                return Math.Round(normalized).ToString("0", CultureInfo.CurrentCulture);
+            }
+
             return normalized.ToString("0.000000", CultureInfo.CurrentCulture);
         }
 
@@ -58,6 +89,122 @@ namespace FWEledit
         {
             return double.TryParse(text, NumberStyles.Float, CultureInfo.CurrentCulture, out value)
                 || double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out value);
+        }
+
+        private static bool TryResolveScale(string fieldName, string fieldType, string rawValue, out PercentageStorageScale scale)
+        {
+            scale = PercentageStorageScale.UnitFraction;
+            if (string.IsNullOrWhiteSpace(fieldName))
+            {
+                return false;
+            }
+
+            string normalized = fieldName.Trim();
+            bool looksLikeProbability = normalized.IndexOf("probability", StringComparison.OrdinalIgnoreCase) >= 0;
+            bool looksLikePercent = normalized.IndexOf("percent", StringComparison.OrdinalIgnoreCase) >= 0;
+            bool looksLikeRatio = normalized.EndsWith("_ratio", StringComparison.OrdinalIgnoreCase)
+                || normalized.IndexOf("_ratio_", StringComparison.OrdinalIgnoreCase) >= 0
+                || normalized.StartsWith("quality_ratio_", StringComparison.OrdinalIgnoreCase);
+
+            if (!looksLikeProbability && !looksLikePercent && !looksLikeRatio)
+            {
+                return false;
+            }
+
+            if (looksLikePercent)
+            {
+                scale = PercentageStorageScale.WholePercent;
+                return true;
+            }
+
+            if (looksLikeRatio)
+            {
+                scale = IsIntegralFieldType(fieldType)
+                    ? PercentageStorageScale.BasisPoints
+                    : PercentageStorageScale.UnitFraction;
+                return true;
+            }
+
+            if (looksLikeProbability)
+            {
+                if (IsIntegralFieldType(fieldType))
+                {
+                    scale = PercentageStorageScale.BasisPoints;
+                    return true;
+                }
+
+                if (IsFloatingFieldType(fieldType))
+                {
+                    scale = PercentageStorageScale.UnitFraction;
+                    return true;
+                }
+
+                double numericValue;
+                if (TryParseNumber(rawValue ?? string.Empty, out numericValue))
+                {
+                    scale = Math.Abs(numericValue) > 1d
+                        ? PercentageStorageScale.BasisPoints
+                        : PercentageStorageScale.UnitFraction;
+                    return true;
+                }
+
+                scale = PercentageStorageScale.UnitFraction;
+                return true;
+            }
+
+            return false;
+        }
+
+        private static bool IsIntegralFieldType(string fieldType)
+        {
+            return string.Equals(fieldType, "int16", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(fieldType, "int32", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(fieldType, "int64", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsFloatingFieldType(string fieldType)
+        {
+            return string.Equals(fieldType, "float", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(fieldType, "double", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static double ToPercentage(double value, PercentageStorageScale scale)
+        {
+            switch (scale)
+            {
+                case PercentageStorageScale.WholePercent:
+                    return value;
+                case PercentageStorageScale.BasisPoints:
+                    return value / 100d;
+                default:
+                    return value * 100d;
+            }
+        }
+
+        private static double FromPercentage(double percentage, PercentageStorageScale scale)
+        {
+            switch (scale)
+            {
+                case PercentageStorageScale.WholePercent:
+                    return percentage;
+                case PercentageStorageScale.BasisPoints:
+                    return percentage * 100d;
+                default:
+                    return percentage / 100d;
+            }
+        }
+
+        private static double NormalizeNonPercentInput(double parsed, PercentageStorageScale scale)
+        {
+            switch (scale)
+            {
+                case PercentageStorageScale.WholePercent:
+                    return parsed;
+                case PercentageStorageScale.BasisPoints:
+                    return Math.Abs(parsed) <= 1d ? parsed * 10000d : parsed * 100d;
+                default:
+                    return Math.Abs(parsed) > 1d ? parsed / 100d : parsed;
+            }
         }
     }
 }

@@ -31,6 +31,7 @@ namespace FWEledit
         public Button BackButton { get; set; }
         public Button ForwardButton { get; set; }
         public Button ThemeToggleButton { get; set; }
+        public Panel NpcSellEditorHostPanel { get; set; }
         public ListBox SearchSuggestionList { get; set; }
     }
 }
