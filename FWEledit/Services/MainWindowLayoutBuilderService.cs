@@ -297,11 +297,12 @@ namespace FWEledit
             TableLayoutPanel rawValuePanel = new TableLayoutPanel();
             rawValuePanel.Dock = DockStyle.Fill;
             rawValuePanel.Margin = new Padding(0);
-            rawValuePanel.ColumnCount = 5;
+            rawValuePanel.ColumnCount = 6;
             rawValuePanel.RowCount = 1;
             rawValuePanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 58F));
             rawValuePanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
             rawValuePanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 48F));
+            rawValuePanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 128F));
             rawValuePanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 30F));
             rawValuePanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 30F));
             rawValuePanel.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
@@ -332,10 +333,16 @@ namespace FWEledit
                 rawValuePanel.Controls.Add(setValueButton, 2, 0);
             }
 
+            Panel npcSellEditorHostPanel = new Panel();
+            npcSellEditorHostPanel.Dock = DockStyle.Fill;
+            npcSellEditorHostPanel.Margin = new Padding(0, 0, 6, 4);
+            npcSellEditorHostPanel.Visible = false;
+            rawValuePanel.Controls.Add(npcSellEditorHostPanel, 3, 0);
+
             Button rawValueUpButton = CreateStepperButton("^");
             Button rawValueDownButton = CreateStepperButton("v");
-            rawValuePanel.Controls.Add(rawValueUpButton, 3, 0);
-            rawValuePanel.Controls.Add(rawValueDownButton, 4, 0);
+            rawValuePanel.Controls.Add(rawValueUpButton, 4, 0);
+            rawValuePanel.Controls.Add(rawValueDownButton, 5, 0);
             rightLayout.Controls.Add(rawValuePanel, 0, 2);
             rightLayout.SetColumnSpan(rawValuePanel, 2);
 
@@ -638,6 +645,7 @@ namespace FWEledit
                 BackButton = backButton,
                 ForwardButton = forwardButton,
                 ThemeToggleButton = themeToggleButton,
+                NpcSellEditorHostPanel = npcSellEditorHostPanel,
                 SearchSuggestionList = searchSuggestionList
             };
         }

@@ -26,6 +26,7 @@ namespace FWEledit
         private Button fwBackButton;
         private Button fwForwardButton;
         private Button fwThemeToggleButton;
+        private Panel fwNpcSellEditorHostPanel;
         private int fwInlinePickIconRowIndex = -1;
         private bool fwDarkMode;
         private bool suppressSelectionHistory;

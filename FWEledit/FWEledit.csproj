@@ -22,7 +22,7 @@
     <UpdateRequired>false</UpdateRequired>
     <MapFileExtensions>true</MapFileExtensions>
     <ApplicationRevision>0</ApplicationRevision>
-    <ApplicationVersion>0.9.5.7</ApplicationVersion>
+    <ApplicationVersion>0.9.5.8</ApplicationVersion>
     <IsWebBootstrapper>false</IsWebBootstrapper>
     <UseApplicationTrust>false</UseApplicationTrust>
     <BootstrapperEnabled>true</BootstrapperEnabled>
@@ -143,12 +143,23 @@
     <Compile Include="AssetManager.cs" />
     <Compile Include="Catalogs\ItemQualityCatalog.cs" />
     <Compile Include="Catalogs\CombinedServicesCatalog.cs" />
+    <Compile Include="Catalogs\BindFlagCatalog.cs" />
+    <Compile Include="Catalogs\ImmuneTypeCatalog.cs" />
     <Compile Include="Catalogs\ProcTypeCatalog.cs" />
+    <Compile Include="Catalogs\PetFoodTypeCatalog.cs" />
+    <Compile Include="Catalogs\PetHeroCatalog.cs" />
     <Compile Include="Catalogs\ProfessionMaskCatalog.cs" />
+    <Compile Include="Catalogs\RaceMaskCatalog.cs" />
     <Compile Include="Catalogs\ReputationCatalog.cs" />
     <Compile Include="Catalogs\SkillReferenceCatalog.cs" />
     <Compile Include="Catalogs\SoulToolRewardTypeCatalog.cs" />
+    <Compile Include="Catalogs\NpcSellMoneyTypeCatalog.cs" />
+    <Compile Include="Catalogs\NpcSellPriceCatalog.cs" />
+    <Compile Include="Catalogs\NpcSellServiceCatalog.cs" />
     <Compile Include="Catalogs\ModelPickerCatalog.cs" />
+    <Compile Include="Catalogs\ModelFieldLabelCatalog.cs" />
+    <Compile Include="Catalogs\ModelProfessionCatalog.cs" />
+    <Compile Include="Catalogs\ModelRaceCatalog.cs" />
     <Compile Include="ClassMaskWindow.cs">
       <SubType>Form</SubType>
     </Compile>
@@ -232,6 +243,7 @@
     <Compile Include="ConfigWindow.Designer.cs">
       <DependentUpon>ConfigWindow.cs</DependentUpon>
     </Compile>
+    <Compile Include="Controls\ThemedActionButton.cs" />
     <Compile Include="DDSReader\DDS.cs" />
     <Compile Include="DDSReader\DDSImage.cs" />
     <Compile Include="DDSReader\Decompressor.cs" />
@@ -332,6 +344,10 @@
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="MainWindow.Description.cs">
+      <DependentUpon>MainWindow.cs</DependentUpon>
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="MainWindow.NpcSellService.cs">
       <DependentUpon>MainWindow.cs</DependentUpon>
       <SubType>Form</SubType>
     </Compile>
@@ -753,6 +769,7 @@
     <Compile Include="Services\GridDoubleBufferService.cs" />
     <Compile Include="Services\IconUsageLookupService.cs" />
     <Compile Include="Services\InlineIconButtonService.cs" />
+    <Compile Include="Services\ValueGridFieldNameService.cs" />
     <Compile Include="Services\ItemQualityColorService.cs" />
     <Compile Include="Services\ItemQualityRowStyleService.cs" />
     <Compile Include="Services\ItemSelectionUiService.cs" />
@@ -947,6 +964,7 @@
     <Compile Include="Services\ControlRedrawScope.cs" />
     <Compile Include="Services\CreaturePortraitIconService.cs" />
     <Compile Include="Services\MonsterDropPortraitService.cs" />
+    <Compile Include="Services\NpcSellPortraitService.cs" />
     <Compile Include="Services\NpcTradePortraitService.cs" />
     <Compile Include="Services\IconListAvailabilityService.cs" />
     <Compile Include="Services\WindowTitleService.cs" />
@@ -1007,7 +1025,13 @@
     <Compile Include="Views\ModelPreviewWindow.cs">
       <SubType>Form</SubType>
     </Compile>
+    <Compile Include="Views\NpcSellServicePriceEditorWindow.cs">
+      <SubType>Form</SubType>
+    </Compile>
     <Compile Include="Views\QualityPickerWindow.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Views\ImmuneTypePickerWindow.cs">
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="Views\ProcTypePickerWindow.cs">
@@ -1020,6 +1044,9 @@
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="Views\ProfessionMaskPickerWindow.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Views\RaceMaskPickerWindow.cs">
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="Views\TgaPortraitPickerWindow.cs">

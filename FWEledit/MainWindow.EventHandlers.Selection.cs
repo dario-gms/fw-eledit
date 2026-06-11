@@ -45,6 +45,7 @@ namespace FWEledit
                 PersistNavigationState);
 
             RefreshVisibleReferenceCounts();
+            UpdateNpcSellServiceUiForSelection();
 		}
 
 
@@ -93,6 +94,7 @@ namespace FWEledit
             UpdateRawValueEditorFromCurrentCell();
             RefreshLiveModelPreviewFromCurrentRow(true);
             RecordSelectionHistory();
+            UpdateNpcSellServiceUiForSelection();
 		}
 
 
@@ -121,7 +123,7 @@ namespace FWEledit
             int currentListIndex = comboBox_lists != null ? comboBox_lists.SelectedIndex : -1;
             int currentElementIndex = ResolveCurrentElementIndex();
             string editedFieldName = (ea != null && ea.RowIndex >= 0 && ea.RowIndex < dataGridView_item.Rows.Count)
-                ? Convert.ToString(dataGridView_item.Rows[ea.RowIndex].Cells[0].Value)
+                ? ValueGridFieldNameService.GetFieldName(dataGridView_item, ea.RowIndex)
                 : string.Empty;
             bool shouldInvalidateReferenceState = ShouldInvalidateReferenceState(currentListIndex, currentElementIndex, editedFieldName);
 
@@ -215,6 +217,7 @@ namespace FWEledit
             {
                 InvalidateReferenceIndexAndDisplays();
             }
+            UpdateNpcSellServiceUiForSelection();
         }
     }
 }

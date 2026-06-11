@@ -12,6 +12,18 @@ FWEledit is based on [sELedit++ by Wrechid](https://github.com/Wrechid/sELedit-)
 
 ---
 
+## What's New in v0.9.5.8
+
+- Added a much deeper parser pass across several FW-heavy tables, including class/race/bind restrictions, pet-related lists, model race labels, and additional item-reference fields that now render as human-readable values instead of raw IDs.
+- Added and refined structured pickers for more gameplay-facing fields, including FW profession masks, race masks, bind flags, NPC sell currency types, shop item selection, and other reference-driven value editors.
+- Introduced a full `NPC_SELL_SERVICE` workflow with page-aware tabs, NPC portrait icons, page item parsing, currency parsing, and a dedicated Shop Editor for editing page inventory and prices with item icons and value controls.
+- Improved cross-list parsing/reference behavior so duplicate IDs, nested trade/drop-style lists, and shop/page references resolve more reliably to the intended FW records.
+- Continued UI polish and usability cleanup around value editing, picker affordances, tooltip wording, and the placement/visibility of the Shop Editor action.
+- Standardized additional user-facing messages into English, including save confirmation and picker error prompts.
+- Project/app version metadata updated to `v0.9.5.8`.
+
+---
+
 ## What's New in v0.9.5.7
 
 - Added parser and picker support for skill/buff-style fields, including `SKILLMATTER_ESSENCE.id_skill`, backed by the game's `skillstr.txt` / `buff_str.txt` data instead of raw guesswork.

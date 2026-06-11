@@ -8,6 +8,7 @@ namespace FWEledit
         private const int AllListsTargetIndex = -1;
         private const int ItemListsTargetIndex = -2;
         private readonly NpcTradePortraitService npcTradePortraitService = new NpcTradePortraitService();
+        private readonly NpcSellPortraitService npcSellPortraitService = new NpcSellPortraitService();
         private readonly MonsterDropPortraitService monsterDropPortraitService = new MonsterDropPortraitService();
 
         private eListCollection cachedListCollection;
@@ -141,6 +142,18 @@ namespace FWEledit
             {
                 targetListName = "ESTONE_ESSENCE";
             }
+            else if (string.Equals(name, "default_pet_egg_id", StringComparison.OrdinalIgnoreCase))
+            {
+                targetListName = "PET_EGG_ESSENCE";
+            }
+            else if (string.Equals(name, "id_pet_bedge", StringComparison.OrdinalIgnoreCase))
+            {
+                targetListName = "PET_BEDGE_ESSENCE";
+            }
+            else if (string.Equals(name, "id_level_exp", StringComparison.OrdinalIgnoreCase))
+            {
+                targetListName = "PLAYER_SUB_PROF_LEVEL_EXP_CONFIG";
+            }
             else if (string.Equals(name, "basic_show_level", StringComparison.OrdinalIgnoreCase))
             {
                 targetListName = "TASKNORMALMATTER_ESSENCE";
@@ -189,6 +202,12 @@ namespace FWEledit
             }
             else if (string.Equals(sourceListName, "ITEM_TRADE_PAGE_CONFIG", StringComparison.OrdinalIgnoreCase)
                 && IsItemTradePageItemField(name))
+            {
+                targetListIndex = ItemListsTargetIndex;
+                return true;
+            }
+            else if (string.Equals(sourceListName, "NPC_SELL_SERVICE", StringComparison.OrdinalIgnoreCase)
+                && IsNpcSellGoodsField(name))
             {
                 targetListIndex = ItemListsTargetIndex;
                 return true;
@@ -444,6 +463,14 @@ namespace FWEledit
                     if (npcTradePortraitService.TryResolveTradePortraitPath(listCollection, database, id, out tradePortraitPath))
                     {
                         iconKey = tradePortraitPath;
+                    }
+                }
+                else if (string.Equals(normalizedListName, "NPC_SELL_SERVICE", StringComparison.OrdinalIgnoreCase))
+                {
+                    string sellPortraitPath;
+                    if (npcSellPortraitService.TryResolveSellPortraitPath(listCollection, database, id, out sellPortraitPath))
+                    {
+                        iconKey = sellPortraitPath;
                     }
                 }
                 else if (string.Equals(normalizedListName, "DROPTABLE_ESSENCE", StringComparison.OrdinalIgnoreCase))
@@ -1248,6 +1275,13 @@ namespace FWEledit
             return IsItemTradePagePrimaryGoodsField(normalized)
                 || normalized.IndexOf("_2_item_required_1_value_1", StringComparison.OrdinalIgnoreCase) >= 0
                 || normalized.IndexOf("_4_item_required_2_value_1", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static bool IsNpcSellGoodsField(string fieldName)
+        {
+            return !string.IsNullOrWhiteSpace(fieldName)
+                && fieldName.StartsWith("pages_", StringComparison.OrdinalIgnoreCase)
+                && fieldName.IndexOf("_id_goods_", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private static bool IsItemTradePagePrimaryGoodsField(string fieldName)

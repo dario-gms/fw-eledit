@@ -78,7 +78,7 @@ namespace FWEledit
             eListCollection listCollection,
             eListConversation conversationList,
             CacheSave database,
-            Func<int, string, bool> shouldIncludeField,
+            Func<int, int, string, bool> shouldIncludeField,
             Func<int, int, int, string> getDisplayEntryName,
             Func<Dictionary<int, string>> loadAddonTypeHints,
             Func<string, bool> isModelFieldName,

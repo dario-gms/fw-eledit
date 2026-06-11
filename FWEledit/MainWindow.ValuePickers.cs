@@ -7,8 +7,18 @@ namespace FWEledit
 {
     public partial class MainWindow : Form
     {
-        private bool ShouldIncludeFieldInValuesTab(int listIndex, string fieldName)
+        private bool ShouldIncludeFieldInValuesTab(int listIndex, int fieldIndex, string fieldName)
         {
+            if (ShouldIncludeNpcSellFieldInValuesTab(listIndex, fieldIndex, fieldName))
+            {
+                return true;
+            }
+
+            if (NpcSellServiceCatalog.IsNpcSellServiceList(sessionService.ListCollection, listIndex))
+            {
+                return false;
+            }
+
             EquipmentValuesTab tab = equipmentTabService.GetSelectedTab(fwEquipmentTabs);
             return equipmentTabService.ShouldIncludeField(equipmentFieldService, sessionService.ListCollection, listIndex, fieldName, tab);
         }
@@ -90,6 +100,63 @@ namespace FWEledit
                 this);
         }
 
+        private void OpenPetFoodTypePickerForValueRow(int rowIndex)
+        {
+            mainWindowValuePickerCoordinatorService.OpenPetFoodTypePickerForValueRow(
+                mainWindowValueRowPickerUiService,
+                valueRowPickerUiService,
+                dataGridView_item,
+                rowIndex,
+                itemFieldClassifierService,
+                this);
+        }
+
+        private void OpenPetHeroPickerForValueRow(int rowIndex)
+        {
+            mainWindowValuePickerCoordinatorService.OpenPetHeroPickerForValueRow(
+                mainWindowValueRowPickerUiService,
+                valueRowPickerUiService,
+                dataGridView_item,
+                rowIndex,
+                itemFieldClassifierService,
+                this);
+        }
+
+        private void OpenImmuneTypePickerForValueRow(int rowIndex)
+        {
+            mainWindowValuePickerCoordinatorService.OpenImmuneTypePickerForValueRow(
+                mainWindowValueRowPickerUiService,
+                valueRowPickerUiService,
+                dataGridView_item,
+                rowIndex,
+                itemFieldClassifierService,
+                this);
+        }
+
+        private void OpenBindFlagPickerForValueRow(int rowIndex)
+        {
+            mainWindowValuePickerCoordinatorService.OpenBindFlagPickerForValueRow(
+                mainWindowValueRowPickerUiService,
+                valueRowPickerUiService,
+                dataGridView_item,
+                rowIndex,
+                itemFieldClassifierService,
+                this);
+        }
+
+        private void OpenNpcSellMoneyTypePickerForValueRow(int rowIndex)
+        {
+            mainWindowValuePickerCoordinatorService.OpenNpcSellMoneyTypePickerForValueRow(
+                mainWindowValueRowPickerUiService,
+                valueRowPickerUiService,
+                sessionService.ListCollection,
+                comboBox_lists.SelectedIndex,
+                dataGridView_item,
+                rowIndex,
+                itemFieldClassifierService,
+                this);
+        }
+
         private void OpenReputationPickerForValueRow(int rowIndex)
         {
             mainWindowValuePickerCoordinatorService.OpenReputationPickerForValueRow(
@@ -126,6 +193,39 @@ namespace FWEledit
         private void OpenProfessionMaskPickerForValueRow(int rowIndex)
         {
             mainWindowValuePickerCoordinatorService.OpenProfessionMaskPickerForValueRow(
+                mainWindowValueRowPickerUiService,
+                valueRowPickerUiService,
+                dataGridView_item,
+                rowIndex,
+                itemFieldClassifierService,
+                this);
+        }
+
+        private void OpenRaceMaskPickerForValueRow(int rowIndex)
+        {
+            mainWindowValuePickerCoordinatorService.OpenRaceMaskPickerForValueRow(
+                mainWindowValueRowPickerUiService,
+                valueRowPickerUiService,
+                dataGridView_item,
+                rowIndex,
+                itemFieldClassifierService,
+                this);
+        }
+
+        private void OpenModelProfessionPickerForValueRow(int rowIndex)
+        {
+            mainWindowValuePickerCoordinatorService.OpenModelProfessionPickerForValueRow(
+                mainWindowValueRowPickerUiService,
+                valueRowPickerUiService,
+                dataGridView_item,
+                rowIndex,
+                itemFieldClassifierService,
+                this);
+        }
+
+        private void OpenModelRacePickerForValueRow(int rowIndex)
+        {
+            mainWindowValuePickerCoordinatorService.OpenModelRacePickerForValueRow(
                 mainWindowValueRowPickerUiService,
                 valueRowPickerUiService,
                 dataGridView_item,
@@ -377,7 +477,7 @@ namespace FWEledit
                 return;
             }
 
-            string fieldName = Convert.ToString(dataGridView_item.Rows[e.RowIndex].Cells[0].Value);
+            string fieldName = ValueGridFieldNameService.GetFieldName(dataGridView_item, e.RowIndex);
             int listIndex = comboBox_lists != null ? comboBox_lists.SelectedIndex : -1;
             int fieldIndex = valueRowIndexService.GetFieldIndexForValueRow(dataGridView_item, e.RowIndex);
             int elementIndex = ResolveCurrentElementIndex();
@@ -773,7 +873,7 @@ namespace FWEledit
                 return false;
             }
 
-            string fieldName = Convert.ToString(dataGridView_item.Rows[rowIndex].Cells[0].Value);
+            string fieldName = ValueGridFieldNameService.GetFieldName(dataGridView_item, rowIndex);
             return itemFieldClassifierService.IsModelUsageFieldName(fieldName);
         }
 
@@ -786,7 +886,7 @@ namespace FWEledit
 
             for (int i = 0; i < dataGridView_item.Rows.Count; i++)
             {
-                string fieldName = Convert.ToString(dataGridView_item.Rows[i].Cells[0].Value);
+                string fieldName = ValueGridFieldNameService.GetFieldName(dataGridView_item, i);
                 if (itemFieldClassifierService.IsModelUsageFieldName(fieldName))
                 {
                     return i;
@@ -826,7 +926,7 @@ namespace FWEledit
                 return;
             }
 
-            string fieldName = Convert.ToString(dataGridView_item.Rows[targetRow].Cells[0].Value);
+            string fieldName = ValueGridFieldNameService.GetFieldName(dataGridView_item, targetRow);
             int listIndex = comboBox_lists != null ? comboBox_lists.SelectedIndex : -1;
 
             if (itemFieldClassifierService.IsIconFieldName(fieldName))
@@ -845,6 +945,30 @@ namespace FWEledit
             {
                 OpenGenderTypePickerForValueRow(targetRow);
             }
+            else if (itemFieldClassifierService.IsPetFoodTypeFieldName(fieldName))
+            {
+                OpenPetFoodTypePickerForValueRow(targetRow);
+            }
+            else if (itemFieldClassifierService.IsPetHeroFieldName(fieldName))
+            {
+                OpenPetHeroPickerForValueRow(targetRow);
+            }
+            else if (itemFieldClassifierService.IsImmuneTypeFieldName(fieldName))
+            {
+                OpenImmuneTypePickerForValueRow(targetRow);
+            }
+            else if (itemFieldClassifierService.IsBindFlagFieldName(fieldName))
+            {
+                OpenBindFlagPickerForValueRow(targetRow);
+            }
+            else if (itemFieldClassifierService.IsNpcSellMoneyTypeFieldName(
+                sessionService != null ? sessionService.ListCollection : null,
+                listIndex,
+                valueRowIndexService.GetFieldIndexForValueRow(dataGridView_item, targetRow),
+                fieldName))
+            {
+                OpenNpcSellMoneyTypePickerForValueRow(targetRow);
+            }
             else if (itemFieldClassifierService.IsReputationFieldName(fieldName))
             {
                 OpenReputationPickerForValueRow(targetRow);
@@ -860,6 +984,18 @@ namespace FWEledit
             else if (itemFieldClassifierService.IsProfessionMaskFieldName(fieldName))
             {
                 OpenProfessionMaskPickerForValueRow(targetRow);
+            }
+            else if (itemFieldClassifierService.IsRaceMaskFieldName(fieldName))
+            {
+                OpenRaceMaskPickerForValueRow(targetRow);
+            }
+            else if (itemFieldClassifierService.IsModelProfessionFieldName(fieldName))
+            {
+                OpenModelProfessionPickerForValueRow(targetRow);
+            }
+            else if (itemFieldClassifierService.IsModelRaceFieldName(fieldName))
+            {
+                OpenModelRacePickerForValueRow(targetRow);
             }
             else if (itemFieldClassifierService.IsCombinedServicesFieldName(fieldName))
             {
@@ -896,10 +1032,18 @@ namespace FWEledit
                 OpenAddonTypePickerForValueRow,
                 OpenItemQualityPickerForValueRow,
                 OpenGenderTypePickerForValueRow,
+                OpenPetFoodTypePickerForValueRow,
+                OpenPetHeroPickerForValueRow,
+                OpenImmuneTypePickerForValueRow,
+                OpenBindFlagPickerForValueRow,
+                OpenNpcSellMoneyTypePickerForValueRow,
                 OpenReputationPickerForValueRow,
                 OpenSoulToolRewardTypePickerForValueRow,
                 OpenProcTypePickerForValueRow,
                 OpenProfessionMaskPickerForValueRow,
+                OpenRaceMaskPickerForValueRow,
+                OpenModelProfessionPickerForValueRow,
+                OpenModelRacePickerForValueRow,
                 OpenCombinedServicesPickerForValueRow,
                 OpenSkillPickerForValueRow,
                 OpenModelPickerForValueRow,
@@ -965,7 +1109,7 @@ namespace FWEledit
                 return;
             }
 
-            string fieldName = Convert.ToString(dataGridView_item.Rows[rowIndex].Cells[0].Value);
+            string fieldName = ValueGridFieldNameService.GetFieldName(dataGridView_item, rowIndex);
             bool isModelField = itemFieldClassifierService != null && itemFieldClassifierService.IsModelFieldName(fieldName);
             bool isModelPreviewField = itemFieldClassifierService != null && itemFieldClassifierService.IsModelUsageFieldName(fieldName);
             bool isIconField = itemFieldClassifierService != null && itemFieldClassifierService.IsIconFieldName(fieldName);
@@ -976,9 +1120,21 @@ namespace FWEledit
                 && itemFieldClassifierService.IsAddonTypeField(sessionService.ListCollection, comboBox_lists.SelectedIndex, fieldName);
             bool isItemQualityField = itemFieldClassifierService != null && itemFieldClassifierService.IsItemQualityFieldName(fieldName);
             bool isGenderTypeField = itemFieldClassifierService != null && itemFieldClassifierService.IsGenderTypeFieldName(fieldName);
+            bool isPetFoodTypeField = itemFieldClassifierService != null && itemFieldClassifierService.IsPetFoodTypeFieldName(fieldName);
+            bool isPetHeroField = itemFieldClassifierService != null && itemFieldClassifierService.IsPetHeroFieldName(fieldName);
+            bool isImmuneTypeField = itemFieldClassifierService != null && itemFieldClassifierService.IsImmuneTypeFieldName(fieldName);
+            bool isBindFlagField = itemFieldClassifierService != null && itemFieldClassifierService.IsBindFlagFieldName(fieldName);
+            int fieldIndex = valueRowIndexService.GetFieldIndexForValueRow(dataGridView_item, rowIndex);
+            bool isNpcSellMoneyTypeField = itemFieldClassifierService != null
+                && sessionService != null
+                && sessionService.ListCollection != null
+                && itemFieldClassifierService.IsNpcSellMoneyTypeFieldName(sessionService.ListCollection, comboBox_lists.SelectedIndex, fieldIndex, fieldName);
             bool isReputationField = itemFieldClassifierService != null && itemFieldClassifierService.IsReputationFieldName(fieldName);
             bool isSoulToolRewardTypeField = itemFieldClassifierService != null && itemFieldClassifierService.IsSoulToolRewardTypeFieldName(fieldName);
             bool isProfessionMaskField = itemFieldClassifierService != null && itemFieldClassifierService.IsProfessionMaskFieldName(fieldName);
+            bool isRaceMaskField = itemFieldClassifierService != null && itemFieldClassifierService.IsRaceMaskFieldName(fieldName);
+            bool isModelProfessionField = itemFieldClassifierService != null && itemFieldClassifierService.IsModelProfessionFieldName(fieldName);
+            bool isModelRaceField = itemFieldClassifierService != null && itemFieldClassifierService.IsModelRaceFieldName(fieldName);
             bool isCombinedServicesField = itemFieldClassifierService != null && itemFieldClassifierService.IsCombinedServicesFieldName(fieldName);
             bool isSkillField = itemFieldClassifierService != null && itemFieldClassifierService.IsSkillFieldName(fieldName);
             bool isReferenceField = itemReferenceService != null
@@ -1046,6 +1202,42 @@ namespace FWEledit
                 menu.Items.Add("Choose Gender Type...", null, (menuSender, args) => OpenGenderTypePickerForValueRow(rowIndex));
             }
 
+            if (isPetFoodTypeField)
+            {
+                if (menu.Items.Count > 0)
+                {
+                    menu.Items.Add(new ToolStripSeparator());
+                }
+                menu.Items.Add("Choose Pet Food Type...", null, (menuSender, args) => OpenPetFoodTypePickerForValueRow(rowIndex));
+            }
+
+            if (isPetHeroField)
+            {
+                if (menu.Items.Count > 0)
+                {
+                    menu.Items.Add(new ToolStripSeparator());
+                }
+                menu.Items.Add("Choose Pet Type...", null, (menuSender, args) => OpenPetHeroPickerForValueRow(rowIndex));
+            }
+
+            if (isImmuneTypeField)
+            {
+                if (menu.Items.Count > 0)
+                {
+                    menu.Items.Add(new ToolStripSeparator());
+                }
+                menu.Items.Add("Choose Immunity Flags...", null, (menuSender, args) => OpenImmuneTypePickerForValueRow(rowIndex));
+            }
+
+            if (isBindFlagField)
+            {
+                if (menu.Items.Count > 0)
+                {
+                    menu.Items.Add(new ToolStripSeparator());
+                }
+                menu.Items.Add("Choose Bind State...", null, (menuSender, args) => OpenBindFlagPickerForValueRow(rowIndex));
+            }
+
             if (isReputationField)
             {
                 if (menu.Items.Count > 0)
@@ -1053,6 +1245,15 @@ namespace FWEledit
                     menu.Items.Add(new ToolStripSeparator());
                 }
                 menu.Items.Add("Choose Reputation...", null, (menuSender, args) => OpenReputationPickerForValueRow(rowIndex));
+            }
+
+            if (isNpcSellMoneyTypeField)
+            {
+                if (menu.Items.Count > 0)
+                {
+                    menu.Items.Add(new ToolStripSeparator());
+                }
+                menu.Items.Add("Choose Shop Currency...", null, (menuSender, args) => OpenNpcSellMoneyTypePickerForValueRow(rowIndex));
             }
 
             if (isSoulToolRewardTypeField)
@@ -1071,6 +1272,33 @@ namespace FWEledit
                     menu.Items.Add(new ToolStripSeparator());
                 }
                 menu.Items.Add("Choose Allowed Professions...", null, (menuSender, args) => OpenProfessionMaskPickerForValueRow(rowIndex));
+            }
+
+            if (isRaceMaskField)
+            {
+                if (menu.Items.Count > 0)
+                {
+                    menu.Items.Add(new ToolStripSeparator());
+                }
+                menu.Items.Add("Choose Allowed Races...", null, (menuSender, args) => OpenRaceMaskPickerForValueRow(rowIndex));
+            }
+
+            if (isModelProfessionField)
+            {
+                if (menu.Items.Count > 0)
+                {
+                    menu.Items.Add(new ToolStripSeparator());
+                }
+                menu.Items.Add("Choose Model Profession...", null, (menuSender, args) => OpenModelProfessionPickerForValueRow(rowIndex));
+            }
+
+            if (isModelRaceField)
+            {
+                if (menu.Items.Count > 0)
+                {
+                    menu.Items.Add(new ToolStripSeparator());
+                }
+                menu.Items.Add("Choose Model Race...", null, (menuSender, args) => OpenModelRacePickerForValueRow(rowIndex));
             }
 
             if (isCombinedServicesField)
@@ -1150,7 +1378,7 @@ namespace FWEledit
             }
 
             int listIndex = comboBox_lists.SelectedIndex;
-            string fieldName = Convert.ToString(dataGridView_item.Rows[rowIndex].Cells[0].Value);
+            string fieldName = ValueGridFieldNameService.GetFieldName(dataGridView_item, rowIndex);
             int elementIndex = ResolveCurrentElementIndex();
             if (!itemReferenceService.IsReferenceField(sessionService.ListCollection, listIndex, elementIndex, fieldName))
             {
@@ -1222,6 +1450,11 @@ namespace FWEledit
             if (listIndex < comboBox_lists.Items.Count && comboBox_lists.SelectedIndex != listIndex)
             {
                 comboBox_lists.SelectedIndex = listIndex;
+                if (IsHandleCreated)
+                {
+                    BeginInvoke(new Action(() => NavigateToElement(listIndex, elementIndex)));
+                }
+                return;
             }
 
             if (elementIndex >= dataGridView_elems.Rows.Count)
@@ -1239,10 +1472,12 @@ namespace FWEledit
             catch
             {
             }
+            change_item(null, null);
             PersistNavigationState();
         }
 
     }
 }
+
 
 

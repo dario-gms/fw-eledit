@@ -6,6 +6,7 @@ namespace FWEledit
     {
         public int FieldIndex { get; set; }
         public string FieldName { get; set; } = string.Empty;
+        public string DisplayFieldName { get; set; } = string.Empty;
         public string FieldType { get; set; } = string.Empty;
         public string DisplayValue { get; set; } = string.Empty;
         public string RawValue { get; set; } = string.Empty;

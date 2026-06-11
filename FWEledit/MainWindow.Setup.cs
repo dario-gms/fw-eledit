@@ -90,7 +90,7 @@ namespace FWEledit
                 assembly,
                 label_Version,
                 navigationStateService,
-                "0.9.5.7");
+                "0.9.5.8");
 
             fwDarkMode = Properties.Settings.Default.UseDarkMode;
             cpb2.Value = 0;
@@ -162,6 +162,7 @@ namespace FWEledit
             fwBackButton = layout.BackButton;
             fwForwardButton = layout.ForwardButton;
             fwThemeToggleButton = layout.ThemeToggleButton;
+            fwNpcSellEditorHostPanel = layout.NpcSellEditorHostPanel;
             searchSuggestionList = layout.SearchSuggestionList;
             if (searchSuggestionList != null)
             {
@@ -197,6 +198,7 @@ namespace FWEledit
             InitializeElementContextActions();
             InitializeDescriptionFormattingActions();
             InitializeRawValueEditor();
+            InitializeNpcSellServicePageUi();
             UpdateThemeToggleButton();
             fwLayoutInitialized = true;
         }
@@ -532,6 +534,14 @@ namespace FWEledit
             if (fwReferencesGrid != null)
             {
                 fwReferencesGrid.Invalidate();
+            }
+            if (fwNpcSellPageTabs != null)
+            {
+                fwNpcSellPageTabs.Invalidate();
+            }
+            if (fwNpcSellPriceEditorButton != null)
+            {
+                fwNpcSellPriceEditorButton.Invalidate();
             }
         }
 

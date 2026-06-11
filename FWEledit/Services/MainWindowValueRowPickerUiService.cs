@@ -120,6 +120,105 @@ namespace FWEledit
                 owner);
         }
 
+        public void OpenPetFoodTypePickerForValueRow(
+            ValueRowPickerUiService valueRowPickerUiService,
+            DataGridView valuesGrid,
+            int rowIndex,
+            ItemFieldClassifierService fieldClassifierService,
+            IWin32Window owner)
+        {
+            if (valueRowPickerUiService == null)
+            {
+                return;
+            }
+
+            valueRowPickerUiService.OpenPetFoodTypePickerForValueRow(
+                valuesGrid,
+                rowIndex,
+                fieldClassifierService,
+                owner);
+        }
+
+        public void OpenPetHeroPickerForValueRow(
+            ValueRowPickerUiService valueRowPickerUiService,
+            DataGridView valuesGrid,
+            int rowIndex,
+            ItemFieldClassifierService fieldClassifierService,
+            IWin32Window owner)
+        {
+            if (valueRowPickerUiService == null)
+            {
+                return;
+            }
+
+            valueRowPickerUiService.OpenPetHeroPickerForValueRow(
+                valuesGrid,
+                rowIndex,
+                fieldClassifierService,
+                owner);
+        }
+
+        public void OpenImmuneTypePickerForValueRow(
+            ValueRowPickerUiService valueRowPickerUiService,
+            DataGridView valuesGrid,
+            int rowIndex,
+            ItemFieldClassifierService fieldClassifierService,
+            IWin32Window owner)
+        {
+            if (valueRowPickerUiService == null)
+            {
+                return;
+            }
+
+            valueRowPickerUiService.OpenImmuneTypePickerForValueRow(
+                valuesGrid,
+                rowIndex,
+                fieldClassifierService,
+                owner);
+        }
+
+        public void OpenBindFlagPickerForValueRow(
+            ValueRowPickerUiService valueRowPickerUiService,
+            DataGridView valuesGrid,
+            int rowIndex,
+            ItemFieldClassifierService fieldClassifierService,
+            IWin32Window owner)
+        {
+            if (valueRowPickerUiService == null)
+            {
+                return;
+            }
+
+            valueRowPickerUiService.OpenBindFlagPickerForValueRow(
+                valuesGrid,
+                rowIndex,
+                fieldClassifierService,
+                owner);
+        }
+
+        public void OpenNpcSellMoneyTypePickerForValueRow(
+            ValueRowPickerUiService valueRowPickerUiService,
+            eListCollection listCollection,
+            int listIndex,
+            DataGridView valuesGrid,
+            int rowIndex,
+            ItemFieldClassifierService fieldClassifierService,
+            IWin32Window owner)
+        {
+            if (valueRowPickerUiService == null)
+            {
+                return;
+            }
+
+            valueRowPickerUiService.OpenNpcSellMoneyTypePickerForValueRow(
+                listCollection,
+                listIndex,
+                valuesGrid,
+                rowIndex,
+                fieldClassifierService,
+                owner);
+        }
+
         public void OpenReputationPickerForValueRow(
             ValueRowPickerUiService valueRowPickerUiService,
             DataGridView valuesGrid,
@@ -213,6 +312,63 @@ namespace FWEledit
             valueRowPickerUiService.OpenCombinedServicesPickerForValueRow(
                 listCollection,
                 listIndex,
+                valuesGrid,
+                rowIndex,
+                fieldClassifierService,
+                owner);
+        }
+
+        public void OpenRaceMaskPickerForValueRow(
+            ValueRowPickerUiService valueRowPickerUiService,
+            DataGridView valuesGrid,
+            int rowIndex,
+            ItemFieldClassifierService fieldClassifierService,
+            IWin32Window owner)
+        {
+            if (valueRowPickerUiService == null)
+            {
+                return;
+            }
+
+            valueRowPickerUiService.OpenRaceMaskPickerForValueRow(
+                valuesGrid,
+                rowIndex,
+                fieldClassifierService,
+                owner);
+        }
+
+        public void OpenModelProfessionPickerForValueRow(
+            ValueRowPickerUiService valueRowPickerUiService,
+            DataGridView valuesGrid,
+            int rowIndex,
+            ItemFieldClassifierService fieldClassifierService,
+            IWin32Window owner)
+        {
+            if (valueRowPickerUiService == null)
+            {
+                return;
+            }
+
+            valueRowPickerUiService.OpenModelProfessionPickerForValueRow(
+                valuesGrid,
+                rowIndex,
+                fieldClassifierService,
+                owner);
+        }
+
+        public void OpenModelRacePickerForValueRow(
+            ValueRowPickerUiService valueRowPickerUiService,
+            DataGridView valuesGrid,
+            int rowIndex,
+            ItemFieldClassifierService fieldClassifierService,
+            IWin32Window owner)
+        {
+            if (valueRowPickerUiService == null)
+            {
+                return;
+            }
+
+            valueRowPickerUiService.OpenModelRacePickerForValueRow(
                 valuesGrid,
                 rowIndex,
                 fieldClassifierService,
@@ -403,10 +559,18 @@ namespace FWEledit
             Action<int> openAddonPicker,
             Action<int> openQualityPicker,
             Action<int> openGenderTypePicker,
+            Action<int> openPetFoodTypePicker,
+            Action<int> openPetHeroPicker,
+            Action<int> openImmuneTypePicker,
+            Action<int> openBindFlagPicker,
+            Action<int> openNpcSellMoneyTypePicker,
             Action<int> openReputationPicker,
             Action<int> openSoulToolRewardTypePicker,
             Action<int> openProcTypePicker,
             Action<int> openProfessionMaskPicker,
+            Action<int> openRaceMaskPicker,
+            Action<int> openModelProfessionPicker,
+            Action<int> openModelRacePicker,
             Action<int> openCombinedServicesPicker,
             Action<int> openSkillPicker,
             Action<int> openModelPicker,
@@ -430,10 +594,18 @@ namespace FWEledit
                 openAddonPicker,
                 openQualityPicker,
                 openGenderTypePicker,
+                openPetFoodTypePicker,
+                openPetHeroPicker,
+                openImmuneTypePicker,
+                openBindFlagPicker,
+                openNpcSellMoneyTypePicker,
                 openReputationPicker,
                 openSoulToolRewardTypePicker,
                 openProcTypePicker,
                 openProfessionMaskPicker,
+                openRaceMaskPicker,
+                openModelProfessionPicker,
+                openModelRacePicker,
                 openCombinedServicesPicker,
                 openSkillPicker,
                 openModelPicker,

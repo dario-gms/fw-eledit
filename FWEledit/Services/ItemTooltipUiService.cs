@@ -23,9 +23,7 @@ namespace FWEledit
                 return;
             }
 
-            string fieldName = itemGrid.Rows[e.RowIndex].Cells[0].Value != null
-                ? itemGrid.Rows[e.RowIndex].Cells[0].Value.ToString()
-                : string.Empty;
+            string fieldName = ValueGridFieldNameService.GetFieldName(itemGrid, e.RowIndex);
 
             ItemTooltipResult result = tooltipService.BuildTooltip(
                 listCollection,
