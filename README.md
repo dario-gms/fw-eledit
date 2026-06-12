@@ -14,15 +14,21 @@ FWEledit is based on [sELedit++ by Wrechid](https://github.com/Wrechid/sELedit-)
 
 ## What's New in v0.9.5.9
 
-- Added a native title-definition pipeline backed directly by `script.pck`, including in-app parsing of `title_def_u.lua` and richer title metadata for title-facing fields instead of raw IDs.
-- Added a dedicated Title editor inside the title picker, with editable name, color, graphic path, description, bonus lines, live preview, and direct apply/save support from the picker itself.
-- Bundled the Lua tooling needed by the editor so title parsing/saving can decompile and recompile the title definition script as part of the normal FWEledit workflow.
-- Added automatic `script.pck` backup creation before title edits are applied, matching the project's existing safety model for other critical game files.
-- Improved title-aware parsing across other tables, including reward/title references and title-property related fields, with better icon, color, and display-name resolution.
-- Expanded picker/result rendering so title and reference rows can show accent colors, richer secondary info, and graphic-title context instead of flat text-only entries.
-- Improved the title picker UX with a visible Apply action, unsaved-change protection, background save execution, and fixes for false-positive change prompts while browsing.
-- Fixed the `script.pck` extraction/apply path so title saves no longer fail on valid installs because of an early extraction abort.
-- Continued parser and value-resolution improvements across item-reference driven fields touched by this work, including safer normalization and better display for title-related and reward-related values.
+- Added a full title-definition pipeline backed directly by `script.pck`, so title data is now read from the real game package instead of depending on extracted development files or loose-script fallbacks.
+- Added native parsing of `config/title_def_u.lua` from `script.pck`, allowing title-related fields to resolve to real title names, colors, descriptions, bonuses, and graphic-title metadata instead of raw IDs.
+- Added a dedicated Title editor inside the title picker, with editable title name, color, graphic path, description, bonus lines, and live preview directly inside FWEledit.
+- Added direct Apply/Save support for title editing from the picker itself, so title changes can be written back into `script.pck` without leaving the normal item-editing workflow.
+- Bundled the Lua tooling needed by the editor so FWEledit can decompile, edit, and rebuild the title-definition script as part of the app's own save pipeline.
+- Added automatic `script.pck` backup creation before title edits are applied, mirroring the existing safety model already used for `elements.data`, `configs.pck`, and related files.
+- Fixed the `script.pck` extraction/apply flow so title saves no longer fail on valid installs because of premature extraction errors or package-apply edge cases.
+- Improved the title picker UX with better dirty-state tracking, a visible Apply flow, safer navigation prompts, and fixes for false “unsaved changes” warnings while simply browsing titles.
+- Expanded picker/result rendering so title rows can show accent colors, richer secondary text, and graphic-title context instead of looking like flat ID/name pairs.
+- Added title-aware parsing to `RANDOM_GIFT_BAG_ESSENCE` reward fields, including reward-type handling for title rewards, so title bundles and title-box style items resolve correctly.
+- Added title-aware parsing to `TITLE_PROP_CONFIG`-style fields and related title-property references, so title bonus/config rows now display with much better context.
+- Improved title-related reference browsing so title-bearing fields participate more naturally in the shared reference/picker workflow.
+- Continued the shift toward reading gameplay-facing metadata directly from packaged game resources, including the newer skill/title-oriented lookups that now rely on PCK-backed data rather than local extracted assets.
+- Improved skill/buff/title display quality in parser-heavy fields touched by this work, so users see more game-meaningful text and less opaque raw data while editing.
+- Continued parser normalization and reference-resolution cleanup for title-driven and reward-driven fields, reducing wrong-list lookups and improving consistency across pickers and rendered values.
 - Project/app version metadata updated to `v0.9.5.9`.
 
 ---
