@@ -206,6 +206,10 @@ namespace FWEledit
                 {
                     fieldValue = SoulToolRewardTypeCatalog.FormatDisplay(fieldValue);
                 }
+                else if (RandomGiftBagRewardTypeCatalog.IsRewardTypeFieldName(listCollection, listIndex, fieldName))
+                {
+                    fieldValue = RandomGiftBagRewardTypeCatalog.FormatDisplay(fieldValue);
+                }
                 else if (ProcTypeCatalog.IsProcTypeFieldName(fieldName))
                 {
                     fieldValue = ProcTypeCatalog.FormatDisplay(fieldValue);

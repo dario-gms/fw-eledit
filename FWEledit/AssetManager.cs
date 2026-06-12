@@ -229,10 +229,6 @@ namespace FWEledit
                     }
                     if (!Directory.Exists(extractedDir))
                     {
-                        return false;
-                    }
-                    if (!Directory.Exists(extractedDir))
-                    {
                         // Some spck builds extract next to the game pck path or spck working directory.
                         string altGame = Path.Combine(Path.GetDirectoryName(gamePck), Path.GetFileName(workspacePck) + ".files");
                         if (Directory.Exists(altGame))
@@ -279,6 +275,11 @@ namespace FWEledit
                                 }
                             }
                         }
+                    }
+
+                    if (!Directory.Exists(extractedDir))
+                    {
+                        return false;
                     }
                 }
 
@@ -375,6 +376,7 @@ namespace FWEledit
                 {
                     string configsRoot = Path.Combine(workspaceResources, "configs.pck.files") + "\\";
                     string surfacesRoot = Path.Combine(workspaceResources, "surfaces.pck.files") + "\\";
+                    string scriptRoot = Path.Combine(workspaceResources, "script.pck.files") + "\\";
 
                     if (full.StartsWith(configsRoot, StringComparison.OrdinalIgnoreCase))
                     {
@@ -386,6 +388,11 @@ namespace FWEledit
                         dirtyPackages.Add("surfaces");
                         return;
                     }
+                    if (full.StartsWith(scriptRoot, StringComparison.OrdinalIgnoreCase))
+                    {
+                        dirtyPackages.Add("script");
+                        return;
+                    }
                 }
 
                 string workspacePathData = GetWorkspacePathDataFile();
@@ -394,6 +401,21 @@ namespace FWEledit
                 {
                     pathDataDirty = true;
                 }
+            }
+            catch
+            { }
+        }
+
+        public void MarkWorkspacePackageDirty(string packageName)
+        {
+            if (string.IsNullOrWhiteSpace(packageName))
+            {
+                return;
+            }
+
+            try
+            {
+                dirtyPackages.Add(packageName.Trim());
             }
             catch
             { }
@@ -686,6 +708,11 @@ namespace FWEledit
                             string backupDir = Path.Combine(GameRootPath, "backup_configs");
                             CreateTimestampedZipBackup(gamePck, backupDir, "configs");
                         }
+                        else if (string.Equals(package, "script", StringComparison.OrdinalIgnoreCase))
+                        {
+                            string backupDir = Path.Combine(GameRootPath, "backup_script");
+                            CreateTimestampedZipBackup(gamePck, backupDir, "script");
+                        }
                         File.Copy(gamePck, gamePck + ".bak", true);
                     }
                     File.Copy(workspacePck, gamePck, true);
@@ -719,6 +746,80 @@ namespace FWEledit
                 {
                     summary = "Updated: " + string.Join(", ", actions.ToArray());
                 }
+                return true;
+            }
+            catch (Exception ex)
+            {
+                summary = ex.Message;
+                return false;
+            }
+        }
+
+        public bool ApplyWorkspacePackageToGame(string packageName, out string summary)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(packageName))
+                {
+                    summary = "Package name not set.";
+                    return false;
+                }
+
+                if (string.IsNullOrWhiteSpace(GameRootPath) || !Directory.Exists(GameRootPath))
+                {
+                    summary = "Game folder not set.";
+                    return false;
+                }
+
+                EnsureWorkspaceReady();
+                if (!TryPersistPendingPathDataEntries(out string pendingPathError))
+                {
+                    summary = "Failed to update path.data: " + pendingPathError;
+                    return false;
+                }
+
+                string package = packageName.Trim();
+                string workspaceResources = GetWorkspaceResourcesRoot();
+                string gameResources = Path.Combine(GameRootPath, "resources");
+                string extracted = Path.Combine(workspaceResources, package + ".pck.files");
+                string workspacePck = Path.Combine(workspaceResources, package + ".pck");
+                string gamePck = Path.Combine(gameResources, package + ".pck");
+
+                if (!Directory.Exists(extracted))
+                {
+                    summary = "Extracted package not found: " + package + ".pck.files";
+                    return false;
+                }
+
+                if (!RunPckCompress(extracted, 1))
+                {
+                    summary = "Failed to repack " + package + ".pck";
+                    return false;
+                }
+                if (!File.Exists(workspacePck))
+                {
+                    summary = "Repack finished but output not found for " + package + ".pck";
+                    return false;
+                }
+
+                if (File.Exists(gamePck))
+                {
+                    if (string.Equals(package, "configs", StringComparison.OrdinalIgnoreCase))
+                    {
+                        string backupDir = Path.Combine(GameRootPath, "backup_configs");
+                        CreateTimestampedZipBackup(gamePck, backupDir, "configs");
+                    }
+                    else if (string.Equals(package, "script", StringComparison.OrdinalIgnoreCase))
+                    {
+                        string backupDir = Path.Combine(GameRootPath, "backup_script");
+                        CreateTimestampedZipBackup(gamePck, backupDir, "script");
+                    }
+                    File.Copy(gamePck, gamePck + ".bak", true);
+                }
+
+                File.Copy(workspacePck, gamePck, true);
+                dirtyPackages.Remove(package);
+                summary = "Updated " + package + ".pck";
                 return true;
             }
             catch (Exception ex)

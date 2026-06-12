@@ -48,6 +48,7 @@ namespace FWEledit
         {
             ValueChangeResult result = new ValueChangeResult();
             string valueToSet = request.NewValue ?? string.Empty;
+            ItemReferenceOption resolvedReferenceOption = null;
             if (request.ListIndex < 0 || request.FieldIndex < 0)
             {
                 result.ErrorMessage = "Invalid selection.";
@@ -110,6 +111,10 @@ namespace FWEledit
             else if (SoulToolRewardTypeCatalog.IsRewardTypeFieldName(request.FieldName))
             {
                 valueToSet = SoulToolRewardTypeCatalog.NormalizeInput(valueToSet);
+            }
+            else if (RandomGiftBagRewardTypeCatalog.IsRewardTypeFieldName(request.ListCollection, request.ListIndex, request.FieldName))
+            {
+                valueToSet = RandomGiftBagRewardTypeCatalog.NormalizeInput(valueToSet);
             }
             else if (ProcTypeCatalog.IsProcTypeFieldName(request.FieldName))
             {
@@ -258,6 +263,10 @@ namespace FWEledit
             {
                 result.DisplayValue = SoulToolRewardTypeCatalog.FormatDisplay(valueToSet);
             }
+            else if (RandomGiftBagRewardTypeCatalog.IsRewardTypeFieldName(request.ListCollection, request.ListIndex, request.FieldName))
+            {
+                result.DisplayValue = RandomGiftBagRewardTypeCatalog.FormatDisplay(valueToSet);
+            }
             else if (ProcTypeCatalog.IsProcTypeFieldName(request.FieldName))
             {
                 result.DisplayValue = ProcTypeCatalog.FormatDisplay(valueToSet);
@@ -307,14 +316,31 @@ namespace FWEledit
             }
             else if (itemReferenceService != null && itemReferenceService.IsReferenceField(request.ListCollection, request.ListIndex, request.FieldName))
             {
-                result.DisplayValue = itemReferenceService.FormatReferenceValue(
+                if (itemReferenceService.TryResolveReferenceOption(
                     request.ListCollection,
                     request.ListIndex,
                     request.CurrentElementIndex,
                     request.FieldName,
                     valueToSet,
                     request.Database,
-                    iconResolutionService);
+                    iconResolutionService,
+                    out resolvedReferenceOption))
+                {
+                    result.DisplayValue = string.IsNullOrWhiteSpace(resolvedReferenceOption.Name)
+                        ? valueToSet
+                        : resolvedReferenceOption.Name;
+                }
+                else
+                {
+                    result.DisplayValue = itemReferenceService.FormatReferenceValue(
+                        request.ListCollection,
+                        request.ListIndex,
+                        request.CurrentElementIndex,
+                        request.FieldName,
+                        valueToSet,
+                        request.Database,
+                        iconResolutionService);
+                }
             }
             else if (request.ListIndex == 0 && addonParamService.IsAddonParamField(request.FieldName))
             {
@@ -401,6 +427,7 @@ namespace FWEledit
             }
 
             result.Success = true;
+            result.ReferenceOption = resolvedReferenceOption;
             return result;
         }
 

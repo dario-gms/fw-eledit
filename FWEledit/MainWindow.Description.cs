@@ -39,6 +39,40 @@ namespace FWEledit
 
         private void UpdateDescriptionTabForSelection()
         {
+            bool supportsDescriptions = CurrentListSupportsItemDescriptions();
+            if (fwDescriptionEditor != null)
+            {
+                fwDescriptionEditor.ReadOnly = !supportsDescriptions;
+            }
+
+            if (!supportsDescriptions)
+            {
+                if (viewModel != null)
+                {
+                    viewModel.IsUpdatingDescriptionUi = true;
+                    try
+                    {
+                        if (viewModel.DescriptionViewModel != null)
+                        {
+                            viewModel.DescriptionViewModel.GetEditorTextForItem(0, null);
+                        }
+
+                        if (fwDescriptionEditor != null)
+                        {
+                            fwDescriptionEditor.Text = string.Empty;
+                        }
+
+                        RenderDescriptionPreview(string.Empty);
+                    }
+                    finally
+                    {
+                        viewModel.IsUpdatingDescriptionUi = false;
+                    }
+                }
+
+                return;
+            }
+
             mainWindowDescriptionCoordinatorService.UpdateDescriptionTabForSelection(
                 mainWindowDescriptionUiService,
                 sessionService.ListCollection,
@@ -50,6 +84,27 @@ namespace FWEledit
                 descriptionWorkflowService,
                 id => Extensions.ItemDesc(sessionService, id),
                 RenderDescriptionPreview);
+        }
+
+        private bool CurrentListSupportsItemDescriptions()
+        {
+            if (sessionService == null || sessionService.ListCollection == null || comboBox_lists == null)
+            {
+                return false;
+            }
+
+            int listIndex = comboBox_lists.SelectedIndex;
+            if (listIndex < 0 || listIndex >= sessionService.ListCollection.Lists.Length)
+            {
+                return false;
+            }
+
+            if (listIndex == sessionService.ListCollection.ConversationListIndex)
+            {
+                return false;
+            }
+
+            return listIndex != 0;
         }
 
         private void fw_description_changed(object sender, EventArgs e)

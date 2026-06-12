@@ -215,7 +215,15 @@ namespace FWEledit
             }
             if (shouldInvalidateReferenceState)
             {
-                InvalidateReferenceIndexAndDisplays();
+                if (string.Equals(editedFieldName, "id", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(editedFieldName, "ID", StringComparison.OrdinalIgnoreCase))
+                {
+                    InvalidateReferenceIndexAndDisplays();
+                }
+                else
+                {
+                    UpdateReferenceIndexForEditedElement(currentListIndex, currentElementIndex);
+                }
             }
             UpdateNpcSellServiceUiForSelection();
         }

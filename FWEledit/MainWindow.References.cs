@@ -11,7 +11,7 @@ namespace FWEledit
 {
     public partial class MainWindow : Form
     {
-        private const string ReferenceCacheSchemaVersion = "references-v3";
+        private const string ReferenceCacheSchemaVersion = "references-v4";
 
         private sealed class VisibleReferenceTarget
         {
@@ -68,6 +68,17 @@ namespace FWEledit
             itemReferenceService.ClearCache();
             itemReferenceOptionsReady = false;
             itemReferenceOptionsWarmupTask = null;
+            lock (referenceRowsCacheSync)
+            {
+                referenceRowsCache.Clear();
+            }
+        }
+
+        private void ResetReferenceIndexCache()
+        {
+            referenceIndexService.Clear();
+            referenceIndexReady = false;
+            referenceIndexBuildTask = null;
             lock (referenceRowsCacheSync)
             {
                 referenceRowsCache.Clear();
@@ -1027,13 +1038,53 @@ namespace FWEledit
 
         private void InvalidateReferenceIndexAndDisplays()
         {
-            ResetReferenceCaches();
+            ResetReferenceIndexCache();
             if (listDisplayService != null)
             {
                 listDisplayService.ClearListDisplayCache();
             }
 
-            RefreshVisibleReferenceCounts();
+            ScheduleVisibleReferenceCountRefresh();
+            if (referencesViewerForm != null && !referencesViewerForm.IsDisposed && referencesViewerForm.Visible)
+            {
+                ScheduleReferencesTabRefresh();
+            }
+        }
+
+        private void UpdateReferenceIndexForEditedElement(int listIndex, int elementIndex)
+        {
+            lock (referenceRowsCacheSync)
+            {
+                referenceRowsCache.Clear();
+            }
+
+            if (listDisplayService != null)
+            {
+                listDisplayService.ClearListDisplayCache();
+            }
+
+            if (!referenceIndexReady
+                || referenceIndexService == null
+                || itemReferenceService == null
+                || sessionService == null
+                || sessionService.ListCollection == null)
+            {
+                ScheduleVisibleReferenceCountRefresh();
+                if (referencesViewerForm != null && !referencesViewerForm.IsDisposed && referencesViewerForm.Visible)
+                {
+                    ScheduleReferencesTabRefresh();
+                }
+
+                return;
+            }
+
+            referenceIndexService.RebuildSourceElement(
+                sessionService.ListCollection,
+                itemReferenceService,
+                listIndex,
+                elementIndex);
+
+            ScheduleVisibleReferenceCountRefresh();
             if (referencesViewerForm != null && !referencesViewerForm.IsDisposed && referencesViewerForm.Visible)
             {
                 ScheduleReferencesTabRefresh();

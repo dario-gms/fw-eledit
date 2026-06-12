@@ -1,6 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Diagnostics;
+using System.IO;
+using System.Text;
+using System.Text.RegularExpressions;
 
 namespace FWEledit
 {
@@ -24,7 +28,15 @@ namespace FWEledit
         private static string[] cachedBuffSource = new string[0];
         private static List<SkillReferenceOption> cachedOptions = new List<SkillReferenceOption>();
         private static Dictionary<int, SkillReferenceOption> cachedOptionsById = new Dictionary<int, SkillReferenceOption>();
-
+        private static string cachedClientGameRoot = string.Empty;
+        private static Dictionary<int, string> cachedClientSkillNames = new Dictionary<int, string>();
+        private static Dictionary<int, string> cachedClientSkillDescriptions = new Dictionary<int, string>();
+        private static readonly Regex ClientSkillNameRegex = new Regex(
+            "SkillDesc\\[(?<id>\\d+)\\]\\.strname\\s*=\\s*\"(?<value>.*)\"",
+            RegexOptions.Compiled);
+        private static readonly Regex ClientSkillDescriptionRegex = new Regex(
+            "SkillDesc\\[(?<id>\\d+)\\]\\.strUsedesc\\s*=\\s*\"(?<value>.*)\"",
+            RegexOptions.Compiled);
         public static bool IsSkillFieldName(string fieldName)
         {
             if (string.IsNullOrWhiteSpace(fieldName))
@@ -196,6 +208,9 @@ namespace FWEledit
                     && object.ReferenceEquals(cachedBuffSource, buffSource)
                     && cachedOptions.Count > 0)
                 {
+                    EnsureClientSkillOverrides();
+                    ApplyClientSkillOverrides();
+                    SortCachedOptions();
                     return;
                 }
 
@@ -293,20 +308,347 @@ namespace FWEledit
                     }
                 }
 
-                cachedOptions.Sort(delegate (SkillReferenceOption left, SkillReferenceOption right)
+                EnsureClientSkillOverrides();
+                ApplyClientSkillOverrides();
+                SortCachedOptions();
+            }
+        }
+
+        private static void EnsureClientSkillOverrides()
+        {
+            string gameRoot = AssetManager.GameRootPath ?? string.Empty;
+            if (string.Equals(cachedClientGameRoot, gameRoot, StringComparison.OrdinalIgnoreCase)
+                && (cachedClientSkillNames.Count > 0 || cachedClientSkillDescriptions.Count > 0))
+            {
+                return;
+            }
+
+            cachedClientGameRoot = gameRoot;
+            cachedClientSkillNames = new Dictionary<int, string>();
+            cachedClientSkillDescriptions = new Dictionary<int, string>();
+
+            if (string.IsNullOrWhiteSpace(gameRoot))
+            {
+                return;
+            }
+
+            LoadClientSkillOverridesFromScriptPackage(cachedClientSkillNames, cachedClientSkillDescriptions);
+        }
+
+        private static void LoadClientSkillOverridesFromLuaBytecode(
+            string bytecodePath,
+            Dictionary<int, string> names,
+            Dictionary<int, string> descriptions)
+        {
+            if (string.IsNullOrWhiteSpace(bytecodePath) || !File.Exists(bytecodePath))
+            {
+                return;
+            }
+
+            string cacheDirectory = Path.Combine(Path.GetTempPath(), "FWEledit", "lua-cache");
+            string cacheFileName = Path.GetFileName(bytecodePath) + ".decrypted.lua";
+            string cacheKey = Math.Abs(bytecodePath.ToLowerInvariant().GetHashCode()).ToString(CultureInfo.InvariantCulture);
+            string decryptedPath = Path.Combine(cacheDirectory, cacheKey + "_" + cacheFileName);
+
+            try
+            {
+                Directory.CreateDirectory(cacheDirectory);
+            }
+            catch
+            {
+            }
+
+            if (!TryEnsureDecryptedLua(bytecodePath, decryptedPath))
+            {
+                return;
+            }
+
+            string[] lines = ReadAllLinesBestEffort(decryptedPath);
+            for (int i = 0; i < lines.Length; i++)
+            {
+                string line = lines[i] ?? string.Empty;
+
+                Match nameMatch = ClientSkillNameRegex.Match(line);
+                if (nameMatch.Success)
                 {
-                    string leftLabel = left != null ? left.Label ?? string.Empty : string.Empty;
-                    string rightLabel = right != null ? right.Label ?? string.Empty : string.Empty;
-                    int compare = string.Compare(leftLabel, rightLabel, StringComparison.OrdinalIgnoreCase);
-                    if (compare != 0)
+                    int skillId;
+                    if (TryParseClientSkillId(nameMatch, out skillId) && skillId > 0)
                     {
-                        return compare;
+                        string value = CleanScriptText(nameMatch.Groups["value"].Value);
+                        if (!string.IsNullOrWhiteSpace(value) && !names.ContainsKey(skillId))
+                        {
+                            names[skillId] = value;
+                        }
                     }
 
-                    int leftValue = left != null ? left.Value : 0;
-                    int rightValue = right != null ? right.Value : 0;
-                    return leftValue.CompareTo(rightValue);
-                });
+                    continue;
+                }
+
+                Match descriptionMatch = ClientSkillDescriptionRegex.Match(line);
+                if (!descriptionMatch.Success)
+                {
+                    continue;
+                }
+
+                int descSkillId;
+                if (!TryParseClientSkillId(descriptionMatch, out descSkillId) || descSkillId <= 0)
+                {
+                    continue;
+                }
+
+                string descriptionValue = CleanScriptText(descriptionMatch.Groups["value"].Value);
+                if (!string.IsNullOrWhiteSpace(descriptionValue) && !descriptions.ContainsKey(descSkillId))
+                {
+                    descriptions[descSkillId] = descriptionValue;
+                }
+            }
+        }
+
+        private static void LoadClientSkillOverridesFromScriptPackage(
+            Dictionary<int, string> names,
+            Dictionary<int, string> descriptions)
+        {
+            try
+            {
+                PckEntryReaderService reader = new PckEntryReaderService();
+                string[] candidates = new[]
+                {
+                    "skill\\skillstr.lua",
+                    "skillstr\\skillstr.lua",
+                    "skillstr.lua"
+                };
+
+                string cacheDirectory = Path.Combine(Path.GetTempPath(), "FWEledit", "lua-cache");
+                Directory.CreateDirectory(cacheDirectory);
+
+                for (int i = 0; i < candidates.Length; i++)
+                {
+                    byte[] payload;
+                    string error;
+                    if (!reader.TryReadFile("script", candidates[i], out payload, out error)
+                        || payload == null
+                        || payload.Length == 0)
+                    {
+                        continue;
+                    }
+
+                    string fileName = "script_pck_" + candidates[i].Replace('\\', '_').Replace('/', '_');
+                    string tempPath = Path.Combine(cacheDirectory, fileName);
+                    File.WriteAllBytes(tempPath, payload);
+                    LoadClientSkillOverridesFromLuaBytecode(tempPath, names, descriptions);
+                    if (names.Count > 0)
+                    {
+                        break;
+                    }
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        private static bool TryParseClientSkillId(Match match, out int skillId)
+        {
+            skillId = 0;
+            if (match == null)
+            {
+                return false;
+            }
+
+            Group idGroup = match.Groups["id"];
+            return idGroup != null
+                && int.TryParse(idGroup.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out skillId);
+        }
+
+        private static void ApplyClientSkillOverrides()
+        {
+            if (cachedClientSkillNames.Count == 0 && cachedClientSkillDescriptions.Count == 0)
+            {
+                return;
+            }
+
+            foreach (KeyValuePair<int, string> entry in cachedClientSkillNames)
+            {
+                SkillReferenceOption option;
+                if (!cachedOptionsById.TryGetValue(entry.Key, out option))
+                {
+                    option = new SkillReferenceOption
+                    {
+                        Value = entry.Key,
+                        Label = entry.Value,
+                        Description = string.Empty,
+                        Kind = "Skill"
+                    };
+                    cachedOptionsById[entry.Key] = option;
+                    cachedOptions.Add(option);
+                }
+                else if (!string.IsNullOrWhiteSpace(entry.Value))
+                {
+                    option.Label = entry.Value;
+                }
+            }
+
+            foreach (KeyValuePair<int, string> entry in cachedClientSkillDescriptions)
+            {
+                SkillReferenceOption option;
+                if (!cachedOptionsById.TryGetValue(entry.Key, out option))
+                {
+                    option = new SkillReferenceOption
+                    {
+                        Value = entry.Key,
+                        Label = "Skill " + entry.Key.ToString(CultureInfo.InvariantCulture),
+                        Description = entry.Value,
+                        Kind = "Skill"
+                    };
+                    cachedOptionsById[entry.Key] = option;
+                    cachedOptions.Add(option);
+                }
+                else if (!string.IsNullOrWhiteSpace(entry.Value))
+                {
+                    option.Description = entry.Value;
+                }
+            }
+        }
+
+        private static void SortCachedOptions()
+        {
+            cachedOptions.Sort(delegate (SkillReferenceOption left, SkillReferenceOption right)
+            {
+                string leftLabel = left != null ? left.Label ?? string.Empty : string.Empty;
+                string rightLabel = right != null ? right.Label ?? string.Empty : string.Empty;
+                int compare = string.Compare(leftLabel, rightLabel, StringComparison.OrdinalIgnoreCase);
+                if (compare != 0)
+                {
+                    return compare;
+                }
+
+                int leftValue = left != null ? left.Value : 0;
+                int rightValue = right != null ? right.Value : 0;
+                return leftValue.CompareTo(rightValue);
+            });
+        }
+
+        private static bool TryEnsureDecryptedLua(string sourcePath, string outputPath)
+        {
+            try
+            {
+                if (File.Exists(outputPath))
+                {
+                    DateTime sourceWriteTime = File.GetLastWriteTimeUtc(sourcePath);
+                    DateTime outputWriteTime = File.GetLastWriteTimeUtc(outputPath);
+                    if (outputWriteTime >= sourceWriteTime)
+                    {
+                        return true;
+                    }
+                }
+            }
+            catch
+            {
+            }
+
+            string bundledUnluacJar = FindBundledUnluacJar();
+            if (string.IsNullOrWhiteSpace(bundledUnluacJar) || !File.Exists(bundledUnluacJar))
+            {
+                return false;
+            }
+
+            string javaExe = "java";
+            string toolRoot = Path.GetDirectoryName(bundledUnluacJar) ?? string.Empty;
+            if (File.Exists(bundledUnluacJar))
+            {
+                string tempText = ExecuteProcessCaptureOutput(
+                    javaExe,
+                    "-jar \"" + bundledUnluacJar + "\" \"" + sourcePath + "\"",
+                    toolRoot);
+                if (!string.IsNullOrWhiteSpace(tempText))
+                {
+                    try
+                    {
+                        File.WriteAllText(outputPath, tempText, new UTF8Encoding(false));
+                        return true;
+                    }
+                    catch
+                    {
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        private static string FindBundledUnluacJar()
+        {
+            string baseDirectory = AppDomain.CurrentDomain.BaseDirectory ?? string.Empty;
+            string[] directCandidates = new[]
+            {
+                Path.Combine(baseDirectory, "tools", "lua", "unluac.jar"),
+                Path.Combine(baseDirectory, "unluac.jar")
+            };
+
+            for (int i = 0; i < directCandidates.Length; i++)
+            {
+                if (File.Exists(directCandidates[i]))
+                {
+                    return directCandidates[i];
+                }
+            }
+
+            string current = baseDirectory;
+            for (int depth = 0; depth < 8 && !string.IsNullOrWhiteSpace(current); depth++)
+            {
+                string solutionCandidate = Path.Combine(current, "FWEledit.sln");
+                if (File.Exists(solutionCandidate))
+                {
+                    string repoCandidate = Path.Combine(current, "tools", "lua", "unluac.jar");
+                    if (File.Exists(repoCandidate))
+                    {
+                        return repoCandidate;
+                    }
+                }
+
+                DirectoryInfo parentInfo = Directory.GetParent(current);
+                current = parentInfo != null ? parentInfo.FullName : string.Empty;
+            }
+
+            return string.Empty;
+        }
+
+        private static string ExecuteProcessCaptureOutput(string fileName, string arguments, string workingDirectory)
+        {
+            ProcessStartInfo startInfo = new ProcessStartInfo
+            {
+                FileName = fileName,
+                Arguments = arguments,
+                WorkingDirectory = string.IsNullOrWhiteSpace(workingDirectory) ? string.Empty : workingDirectory,
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true,
+                WindowStyle = ProcessWindowStyle.Hidden
+            };
+
+            try
+            {
+                using (Process process = Process.Start(startInfo))
+                {
+                    if (process == null)
+                    {
+                        return string.Empty;
+                    }
+
+                    string output = process.StandardOutput.ReadToEnd();
+                    process.WaitForExit(30000);
+                    if (!process.HasExited || process.ExitCode != 0)
+                    {
+                        return string.Empty;
+                    }
+
+                    return decodeLuaEscapedUtf8(output);
+                }
+            }
+            catch
+            {
+                return string.Empty;
             }
         }
 
@@ -330,6 +672,80 @@ namespace FWEledit
                 .Trim();
 
             return cleaned;
+        }
+
+        private static string CleanScriptText(string text)
+        {
+            string cleaned = CleanText(text);
+            while (cleaned.StartsWith("%s", StringComparison.Ordinal))
+            {
+                cleaned = cleaned.Substring(2).TrimStart();
+            }
+
+            cleaned = cleaned.Replace("\\\"", "\"");
+            return cleaned.Trim();
+        }
+
+        private static string decodeLuaEscapedUtf8(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                return string.Empty;
+            }
+
+            return Regex.Replace(
+                text,
+                "(?:\\\\\\d{1,3})+",
+                delegate (Match match)
+                {
+                    try
+                    {
+                        MatchCollection digits = Regex.Matches(match.Value, "\\\\(\\d{1,3})");
+                        byte[] bytes = new byte[digits.Count];
+                        for (int i = 0; i < digits.Count; i++)
+                        {
+                            bytes[i] = byte.Parse(digits[i].Groups[1].Value, CultureInfo.InvariantCulture);
+                        }
+
+                        return Encoding.UTF8.GetString(bytes);
+                    }
+                    catch
+                    {
+                        return match.Value;
+                    }
+                });
+        }
+
+        private static string[] ReadAllLinesBestEffort(string path)
+        {
+            Encoding[] encodings = new[]
+            {
+                new UTF8Encoding(false, true),
+                Encoding.UTF8,
+                Encoding.Unicode,
+                Encoding.GetEncoding("GBK"),
+                Encoding.Default
+            };
+
+            for (int i = 0; i < encodings.Length; i++)
+            {
+                try
+                {
+                    return File.ReadAllLines(path, encodings[i]);
+                }
+                catch
+                {
+                }
+            }
+
+            try
+            {
+                return File.ReadAllLines(path);
+            }
+            catch
+            {
+                return new string[0];
+            }
         }
 
         private static bool TryParseLeadingId(string text, out int value)
@@ -373,7 +789,7 @@ namespace FWEledit
             int level = TryGetSiblingIntValue(listCollection, listIndex, elementIndex, "level_skill");
             int castSkill = TryGetSiblingIntValue(listCollection, listIndex, elementIndex, "cast_skill");
 
-            string prefix = castSkill != 0 ? "Use skill" : "Linked skill";
+            string prefix = castSkill != 0 ? "Casts on use" : "Linked skill";
             if (string.IsNullOrWhiteSpace(label) || string.Equals(label, rawValue ?? string.Empty, StringComparison.Ordinal))
             {
                 label = "ID " + (rawValue ?? "0");
@@ -406,7 +822,7 @@ namespace FWEledit
                 return rawValue ?? string.Empty;
             }
 
-            return value != 0 ? "Casts the configured skill on use" : "Passive or linked effect only";
+            return value != 0 ? "Cast the configured skill when used" : "Passive or linked effect only";
         }
 
         private static string FormatSkillMatterType(string rawValue)

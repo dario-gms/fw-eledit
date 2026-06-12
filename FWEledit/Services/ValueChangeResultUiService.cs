@@ -37,7 +37,13 @@ namespace FWEledit
 
             if (result.MarkDirty)
             {
-                itemGrid.Rows[context.GridRow].Cells[2].Tag = result.RawValue ?? string.Empty;
+                itemGrid.Rows[context.GridRow].Cells[2].Tag = result.ReferenceOption != null
+                    ? (object)new ValueCellState
+                    {
+                        RawValue = result.RawValue ?? string.Empty,
+                        ReferenceOption = result.ReferenceOption
+                    }
+                    : (object)(result.RawValue ?? string.Empty);
             }
             if (!string.IsNullOrWhiteSpace(result.DisplayValue))
             {
