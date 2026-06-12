@@ -44,12 +44,17 @@ namespace FWEledit
                 if (infoTool == null)
                 {
                     string text = Extensions.GetItemProps(sessionService, itemId, 0);
-                    text += Extensions.ItemDesc(sessionService, itemId);
+                    if (listIndex != 0)
+                    {
+                        text += Extensions.ItemDesc(sessionService, itemId);
+                    }
                     tooltipText = text;
                     return true;
                 }
 
-                infoTool.description = Extensions.ColorClean(Extensions.ItemDesc(sessionService, itemId));
+                infoTool.description = listIndex == 0
+                    ? string.Empty
+                    : Extensions.ColorClean(Extensions.ItemDesc(sessionService, itemId));
                 return true;
             }
             catch

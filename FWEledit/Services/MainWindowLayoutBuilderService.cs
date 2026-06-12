@@ -262,7 +262,7 @@ namespace FWEledit
             rightLayout.RowCount = 4;
             rightLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
             rightLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 190F));
-            rightLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 28F));
+            rightLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 30F));
             rightLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 26F));
             rightLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 34F));
             rightLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
@@ -274,8 +274,8 @@ namespace FWEledit
             themeToggleButton.Text = "Dark mode";
             themeToggleButton.Dock = DockStyle.Right;
             themeToggleButton.Width = 92;
-            themeToggleButton.Height = 22;
-            themeToggleButton.Margin = new Padding(0, 0, 0, 6);
+            themeToggleButton.Height = 24;
+            themeToggleButton.Margin = new Padding(0, 2, 0, 2);
             themeToggleButton.FlatStyle = FlatStyle.Flat;
             themeToggleButton.TabStop = false;
             if (themeToggleClick != null)
@@ -286,12 +286,7 @@ namespace FWEledit
 
             if (versionLabel != null)
             {
-                versionLabel.Parent = rightLayout;
-                versionLabel.Dock = DockStyle.Fill;
-                versionLabel.TextAlign = ContentAlignment.MiddleRight;
-                versionLabel.Margin = new Padding(0);
-                versionLabel.Font = new Font(owner.Font, FontStyle.Regular);
-                rightLayout.Controls.Add(versionLabel, 1, 1);
+                versionLabel.Visible = false;
             }
 
             TableLayoutPanel rawValuePanel = new TableLayoutPanel();

@@ -10,6 +10,7 @@ namespace FWEledit
         public string RawValue { get; set; } = string.Empty;
         public bool MarkInvalid { get; set; }
         public bool MarkDirty { get; set; }
+        public ItemReferenceOption ReferenceOption { get; set; }
         public List<ListRowUpdate> ListRowUpdates { get; } = new List<ListRowUpdate>();
     }
 }

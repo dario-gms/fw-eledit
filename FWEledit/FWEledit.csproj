@@ -22,7 +22,7 @@
     <UpdateRequired>false</UpdateRequired>
     <MapFileExtensions>true</MapFileExtensions>
     <ApplicationRevision>0</ApplicationRevision>
-    <ApplicationVersion>0.9.5.8</ApplicationVersion>
+    <ApplicationVersion>0.9.5.9</ApplicationVersion>
     <IsWebBootstrapper>false</IsWebBootstrapper>
     <UseApplicationTrust>false</UseApplicationTrust>
     <BootstrapperEnabled>true</BootstrapperEnabled>
@@ -151,8 +151,10 @@
     <Compile Include="Catalogs\ProfessionMaskCatalog.cs" />
     <Compile Include="Catalogs\RaceMaskCatalog.cs" />
     <Compile Include="Catalogs\ReputationCatalog.cs" />
+    <Compile Include="Catalogs\RandomGiftBagRewardTypeCatalog.cs" />
     <Compile Include="Catalogs\SkillReferenceCatalog.cs" />
     <Compile Include="Catalogs\SoulToolRewardTypeCatalog.cs" />
+    <Compile Include="Catalogs\TitleDefinitionCatalog.cs" />
     <Compile Include="Catalogs\NpcSellMoneyTypeCatalog.cs" />
     <Compile Include="Catalogs\NpcSellPriceCatalog.cs" />
     <Compile Include="Catalogs\NpcSellServiceCatalog.cs" />
@@ -1171,6 +1173,22 @@
     <Content Include="..\tools\7za.exe">
       <Link>tools\7za.exe</Link>
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\tools\lua\unluac.jar">
+      <Link>tools\lua\unluac.jar</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\tools\lua\luac.exe">
+      <Link>tools\lua\luac.exe</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\tools\lua\lua51.dll">
+      <Link>tools\lua\lua51.dll</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\tools\lua\lua5.1.dll">
+      <Link>tools\lua\lua5.1.dll</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <Content Include="..\tools\Pfim.dll">
       <Link>Pfim.dll</Link>

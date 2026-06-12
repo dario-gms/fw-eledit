@@ -12,6 +12,21 @@ FWEledit is based on [sELedit++ by Wrechid](https://github.com/Wrechid/sELedit-)
 
 ---
 
+## What's New in v0.9.5.9
+
+- Added a native title-definition pipeline backed directly by `script.pck`, including in-app parsing of `title_def_u.lua` and richer title metadata for title-facing fields instead of raw IDs.
+- Added a dedicated Title editor inside the title picker, with editable name, color, graphic path, description, bonus lines, live preview, and direct apply/save support from the picker itself.
+- Bundled the Lua tooling needed by the editor so title parsing/saving can decompile and recompile the title definition script as part of the normal FWEledit workflow.
+- Added automatic `script.pck` backup creation before title edits are applied, matching the project's existing safety model for other critical game files.
+- Improved title-aware parsing across other tables, including reward/title references and title-property related fields, with better icon, color, and display-name resolution.
+- Expanded picker/result rendering so title and reference rows can show accent colors, richer secondary info, and graphic-title context instead of flat text-only entries.
+- Improved the title picker UX with a visible Apply action, unsaved-change protection, background save execution, and fixes for false-positive change prompts while browsing.
+- Fixed the `script.pck` extraction/apply path so title saves no longer fail on valid installs because of an early extraction abort.
+- Continued parser and value-resolution improvements across item-reference driven fields touched by this work, including safer normalization and better display for title-related and reward-related values.
+- Project/app version metadata updated to `v0.9.5.9`.
+
+---
+
 ## What's New in v0.9.5.8
 
 - Added a much deeper parser pass across several FW-heavy tables, including class/race/bind restrictions, pet-related lists, model race labels, and additional item-reference fields that now render as human-readable values instead of raw IDs.

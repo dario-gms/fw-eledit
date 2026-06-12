@@ -173,6 +173,8 @@ namespace FWEledit
             mainWindowValuePickerCoordinatorService.OpenSoulToolRewardTypePickerForValueRow(
                 mainWindowValueRowPickerUiService,
                 valueRowPickerUiService,
+                sessionService != null ? sessionService.ListCollection : null,
+                comboBox_lists.SelectedIndex,
                 dataGridView_item,
                 rowIndex,
                 itemFieldClassifierService,
@@ -272,6 +274,7 @@ namespace FWEledit
                 rowIndex,
                 itemReferenceService,
                 iconResolutionService,
+                sessionService.AssetManager,
                 this,
                 message => MessageBox.Show(message, "Item Reference", MessageBoxButtons.OK, MessageBoxIcon.Information));
         }
@@ -519,7 +522,7 @@ namespace FWEledit
         {
             bool selected = (e.State & DataGridViewElementStates.Selected) == DataGridViewElementStates.Selected;
             Color backColor = selected ? e.CellStyle.SelectionBackColor : e.CellStyle.BackColor;
-            Color textColor = ResolveReferenceValueTextColor(option.Quality, selected, e.CellStyle.ForeColor);
+            Color textColor = ResolveReferenceValueTextColor(option, selected, e.CellStyle.ForeColor);
 
             using (SolidBrush brush = new SolidBrush(backColor))
             {
@@ -626,8 +629,15 @@ namespace FWEledit
             graphics.DrawImage(icon, bounds);
         }
 
-        private Color ResolveReferenceValueTextColor(int quality, bool selected, Color fallback)
+        private Color ResolveReferenceValueTextColor(ItemReferenceOption option, bool selected, Color fallback)
         {
+            Color accentColor;
+            if (TryParseReferenceAccentColor(option != null ? option.AccentHex : string.Empty, out accentColor))
+            {
+                return accentColor;
+            }
+
+            int quality = option != null ? option.Quality : -1;
             Color color;
             if (ItemQualityCatalog.TryGetColor(quality, out color))
             {
@@ -638,6 +648,34 @@ namespace FWEledit
                 return color;
             }
             return selected ? Color.White : fallback;
+        }
+
+        private static bool TryParseReferenceAccentColor(string accentHex, out Color color)
+        {
+            color = Color.Empty;
+            if (string.IsNullOrWhiteSpace(accentHex))
+            {
+                return false;
+            }
+
+            string normalized = accentHex.Trim().TrimStart('#');
+            if (normalized.Length != 6)
+            {
+                return false;
+            }
+
+            int rgb;
+            if (!int.TryParse(
+                normalized,
+                System.Globalization.NumberStyles.HexNumber,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out rgb))
+            {
+                return false;
+            }
+
+            color = Color.FromArgb((rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
+            return true;
         }
 
         private void UpdateRawValueEditorFromCurrentCell()
@@ -973,7 +1011,10 @@ namespace FWEledit
             {
                 OpenReputationPickerForValueRow(targetRow);
             }
-            else if (itemFieldClassifierService.IsSoulToolRewardTypeFieldName(fieldName))
+            else if (itemFieldClassifierService.IsRewardTypeFieldName(
+                sessionService != null ? sessionService.ListCollection : null,
+                listIndex,
+                fieldName))
             {
                 OpenSoulToolRewardTypePickerForValueRow(targetRow);
             }
@@ -1130,7 +1171,11 @@ namespace FWEledit
                 && sessionService.ListCollection != null
                 && itemFieldClassifierService.IsNpcSellMoneyTypeFieldName(sessionService.ListCollection, comboBox_lists.SelectedIndex, fieldIndex, fieldName);
             bool isReputationField = itemFieldClassifierService != null && itemFieldClassifierService.IsReputationFieldName(fieldName);
-            bool isSoulToolRewardTypeField = itemFieldClassifierService != null && itemFieldClassifierService.IsSoulToolRewardTypeFieldName(fieldName);
+            bool isSoulToolRewardTypeField = itemFieldClassifierService != null
+                && itemFieldClassifierService.IsRewardTypeFieldName(
+                    sessionService != null ? sessionService.ListCollection : null,
+                    comboBox_lists.SelectedIndex,
+                    fieldName);
             bool isProfessionMaskField = itemFieldClassifierService != null && itemFieldClassifierService.IsProfessionMaskFieldName(fieldName);
             bool isRaceMaskField = itemFieldClassifierService != null && itemFieldClassifierService.IsRaceMaskFieldName(fieldName);
             bool isModelProfessionField = itemFieldClassifierService != null && itemFieldClassifierService.IsModelProfessionFieldName(fieldName);
@@ -1262,7 +1307,7 @@ namespace FWEledit
                 {
                     menu.Items.Add(new ToolStripSeparator());
                 }
-                menu.Items.Add("Choose Anima Reward Type...", null, (menuSender, args) => OpenSoulToolRewardTypePickerForValueRow(rowIndex));
+                menu.Items.Add("Choose Reward Type...", null, (menuSender, args) => OpenSoulToolRewardTypePickerForValueRow(rowIndex));
             }
 
             if (isProfessionMaskField)

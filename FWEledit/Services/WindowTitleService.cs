@@ -17,9 +17,10 @@ namespace FWEledit
 
         public string BuildTitle(eListCollection listCollection, string elementsFile)
         {
+            string appTitle = BuildAppTitle();
             if (listCollection == null || listCollection.Lists == null || listCollection.Lists.Length == 0)
             {
-                return "FWEledit";
+                return appTitle;
             }
 
             string timestamp = string.Empty;
@@ -29,7 +30,23 @@ namespace FWEledit
                 timestamp = ", Timestamp: " + FormatTimestamp(rawTimestamp);
             }
 
-            return "FWEledit (" + elementsFile + " [Version: " + listCollection.Version.ToString() + timestamp + "])";
+            return appTitle + " (" + elementsFile + " [Version: " + listCollection.Version.ToString() + timestamp + "])";
+        }
+
+        private static string BuildAppTitle()
+        {
+            string version = string.Empty;
+            try
+            {
+                version = Application.ProductVersion;
+            }
+            catch
+            {
+            }
+
+            return string.IsNullOrWhiteSpace(version)
+                ? "FWEledit"
+                : "FWEledit v" + version.Trim();
         }
 
         private string FormatTimestamp(uint timestamp)

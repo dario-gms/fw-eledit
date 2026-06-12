@@ -75,7 +75,8 @@ namespace FWEledit
                     }
                     result.ShowTooltip = true;
                     result.ShowCellTooltips = false;
-                    result.Text = "In Game Price: " + tmp;
+                    result.Text = "Stored shop_price: " + shopPrice + Environment.NewLine
+                        + "Estimated in-game price: " + tmp;
                     return result;
                 }
                 catch

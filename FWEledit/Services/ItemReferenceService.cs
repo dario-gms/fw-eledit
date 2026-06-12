@@ -7,6 +7,7 @@ namespace FWEledit
     {
         private const int AllListsTargetIndex = -1;
         private const int ItemListsTargetIndex = -2;
+        private const int TitleDefinitionsTargetIndex = TitleDefinitionCatalog.TargetListIndex;
         private readonly NpcTradePortraitService npcTradePortraitService = new NpcTradePortraitService();
         private readonly NpcSellPortraitService npcSellPortraitService = new NpcSellPortraitService();
         private readonly MonsterDropPortraitService monsterDropPortraitService = new MonsterDropPortraitService();
@@ -95,6 +96,11 @@ namespace FWEledit
             return targetListIndex == ItemListsTargetIndex;
         }
 
+        public bool IsTitleDefinitionTargetIndex(int targetListIndex)
+        {
+            return targetListIndex == TitleDefinitionsTargetIndex;
+        }
+
         public bool IsItemBearingList(eListCollection listCollection, int listIndex)
         {
             return IsItemList(listCollection, listIndex);
@@ -138,6 +144,12 @@ namespace FWEledit
             {
                 targetListName = "ITEM_TRADE_PAGE_CONFIG";
             }
+            else if (string.Equals(name, "id_title", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(name, "title_id", StringComparison.OrdinalIgnoreCase))
+            {
+                targetListIndex = TitleDefinitionsTargetIndex;
+                return true;
+            }
             else if (name.StartsWith("id_estone_", StringComparison.OrdinalIgnoreCase))
             {
                 targetListName = "ESTONE_ESSENCE";
@@ -158,6 +170,12 @@ namespace FWEledit
             {
                 targetListName = "TASKNORMALMATTER_ESSENCE";
             }
+            else if (string.Equals(name, "id_uninstall", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(sourceListName, "PSTONE_ESSENCE", StringComparison.OrdinalIgnoreCase))
+            {
+                targetListIndex = ItemListsTargetIndex;
+                return true;
+            }
             else if (name.StartsWith("id_pstone_", StringComparison.OrdinalIgnoreCase))
             {
                 targetListName = "PSTONE_ESSENCE";
@@ -165,6 +183,13 @@ namespace FWEledit
             else if (name.StartsWith("id_sstone_", StringComparison.OrdinalIgnoreCase))
             {
                 targetListName = "SSTONE_ESSENCE";
+            }
+            else if (string.Equals(name, "id_addon_package", StringComparison.OrdinalIgnoreCase)
+                && (string.Equals(sourceListName, "PSTONE_ESSENCE", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(sourceListName, "RUNE_CHAIN_ESSENCE", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(sourceListName, "SOUL_TOOL_SKILL_RANDOM_TABLE_CONFIG", StringComparison.OrdinalIgnoreCase)))
+            {
+                targetListName = "ADDON_PACKAGE_CONFIG";
             }
             else if (name.StartsWith("enhanced_prop_package_", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(name, "id_sign_addon_package", StringComparison.OrdinalIgnoreCase)
@@ -203,6 +228,20 @@ namespace FWEledit
             else if (string.Equals(sourceListName, "ITEM_TRADE_PAGE_CONFIG", StringComparison.OrdinalIgnoreCase)
                 && IsItemTradePageItemField(name))
             {
+                targetListIndex = ItemListsTargetIndex;
+                return true;
+            }
+            else if (RandomGiftBagRewardTypeCatalog.IsRewardIdFieldName(listCollection, listIndex, name))
+            {
+                int rewardType;
+                if (elementIndex >= 0
+                    && TryGetRandomGiftBagRewardType(listCollection, listIndex, elementIndex, name, out rewardType)
+                    && rewardType == RandomGiftBagRewardTypeCatalog.TitleValue)
+                {
+                    targetListIndex = TitleDefinitionsTargetIndex;
+                    return true;
+                }
+
                 targetListIndex = ItemListsTargetIndex;
                 return true;
             }
@@ -269,6 +308,11 @@ namespace FWEledit
             EnsureCacheContext(listCollection, database, iconResolutionService);
 
             ItemReferenceOption option;
+            if (targetListIndex == TitleDefinitionsTargetIndex && TitleDefinitionCatalog.TryGetOptionById(id, out option))
+            {
+                return string.IsNullOrWhiteSpace(option.Name) ? rawValue : option.Name;
+            }
+
             if (targetListIndex >= 0 && TryFindOptionById(listCollection, targetListIndex, id, database, iconResolutionService, out option))
             {
                 return string.IsNullOrWhiteSpace(option.Name) ? rawValue : option.Name;
@@ -314,6 +358,11 @@ namespace FWEledit
                 return true;
             }
 
+            if (targetListIndex == TitleDefinitionsTargetIndex && TitleDefinitionCatalog.TryGetOptionById(id, out option))
+            {
+                return true;
+            }
+
             if (targetListIndex >= 0 && TryFindOptionById(listCollection, targetListIndex, id, database, iconResolutionService, out option))
             {
                 return true;
@@ -352,6 +401,11 @@ namespace FWEledit
             }
 
             ItemReferenceOption option;
+            if (targetListIndex == TitleDefinitionsTargetIndex && TitleDefinitionCatalog.TryGetOptionByName(value.Trim(), out option))
+            {
+                return option.Id.ToString();
+            }
+
             if (targetListIndex >= 0 && TryFindOptionByName(listCollection, targetListIndex, value.Trim(), out option))
             {
                 return option.Id.ToString();
@@ -415,6 +469,11 @@ namespace FWEledit
 
         public List<ItemReferenceOption> BuildOptions(eListCollection listCollection, int targetListIndex, CacheSave database, IconResolutionService iconResolutionService)
         {
+            if (targetListIndex == TitleDefinitionsTargetIndex)
+            {
+                return BuildTitleDefinitionOptions();
+            }
+
             if (listCollection == null || targetListIndex < 0 || targetListIndex >= listCollection.Lists.Length)
             {
                 return new List<ItemReferenceOption>();
@@ -433,6 +492,11 @@ namespace FWEledit
             return options;
         }
 
+        public List<ItemReferenceOption> BuildTitleDefinitionOptions()
+        {
+            return TitleDefinitionCatalog.BuildOptions();
+        }
+
         private List<ItemReferenceOption> BuildOptionsUncached(eListCollection listCollection, int targetListIndex, CacheSave database, IconResolutionService iconResolutionService)
         {
             List<ItemReferenceOption> options = new List<ItemReferenceOption>();
@@ -446,6 +510,9 @@ namespace FWEledit
             int qualityIndex = GetQualityFieldIndex(listCollection, targetListIndex);
             string listName = listCollection.Lists[targetListIndex].listName ?? string.Empty;
             string normalizedListName = NormalizeListName(listName);
+            Dictionary<int, ItemReferenceOption> addonPackageUsageMap = string.Equals(normalizedListName, "ADDON_PACKAGE_CONFIG", StringComparison.OrdinalIgnoreCase)
+                ? BuildAddonPackageUsageMap(listCollection, targetListIndex, database, iconResolutionService)
+                : null;
             for (int i = 0; i < listCollection.Lists[targetListIndex].elementValues.Length; i++)
             {
                 int id;
@@ -457,7 +524,15 @@ namespace FWEledit
                 string name = nameIndex >= 0 ? listCollection.GetValue(targetListIndex, i, nameIndex) : string.Empty;
                 string iconKey = ResolveOptionIconKey(listCollection, database, iconResolutionService, targetListIndex, i, iconIndex);
                 int quality = ResolveOptionQuality(listCollection, targetListIndex, i, qualityIndex);
-                if (string.Equals(normalizedListName, "ITEM_TRADE_ESSENCE", StringComparison.OrdinalIgnoreCase))
+                if (string.Equals(normalizedListName, "EQUIPMENT_ADDON", StringComparison.OrdinalIgnoreCase))
+                {
+                    string decodedName = DecodeEquipmentAddonName(listCollection, database, id);
+                    if (!string.IsNullOrWhiteSpace(decodedName))
+                    {
+                        name = decodedName;
+                    }
+                }
+                else if (string.Equals(normalizedListName, "ITEM_TRADE_ESSENCE", StringComparison.OrdinalIgnoreCase))
                 {
                     string tradePortraitPath;
                     if (npcTradePortraitService.TryResolveTradePortraitPath(listCollection, database, id, out tradePortraitPath))
@@ -511,6 +586,22 @@ namespace FWEledit
                         }
                     }
                 }
+                else if (string.Equals(normalizedListName, "ADDON_PACKAGE_CONFIG", StringComparison.OrdinalIgnoreCase))
+                {
+                    ItemReferenceOption sourceEquipmentOption;
+                    if (addonPackageUsageMap != null && addonPackageUsageMap.TryGetValue(id, out sourceEquipmentOption) && sourceEquipmentOption != null)
+                    {
+                        if (!string.IsNullOrWhiteSpace(sourceEquipmentOption.IconKey))
+                        {
+                            iconKey = sourceEquipmentOption.IconKey;
+                        }
+
+                        if (sourceEquipmentOption.Quality >= 0)
+                        {
+                            quality = sourceEquipmentOption.Quality;
+                        }
+                    }
+                }
 
                 options.Add(new ItemReferenceOption
                 {
@@ -525,6 +616,125 @@ namespace FWEledit
             }
 
             return options;
+        }
+
+        private Dictionary<int, ItemReferenceOption> BuildAddonPackageUsageMap(
+            eListCollection listCollection,
+            int targetListIndex,
+            CacheSave database,
+            IconResolutionService iconResolutionService)
+        {
+            Dictionary<int, ItemReferenceOption> map = new Dictionary<int, ItemReferenceOption>();
+            if (listCollection == null || targetListIndex < 0 || targetListIndex >= listCollection.Lists.Length)
+            {
+                return map;
+            }
+
+            for (int listIndex = 0; listIndex < listCollection.Lists.Length; listIndex++)
+            {
+                if (!IsItemList(listCollection, listIndex))
+                {
+                    continue;
+                }
+
+                string[] fields = listCollection.Lists[listIndex].elementFields;
+                if (fields == null || fields.Length == 0)
+                {
+                    continue;
+                }
+
+                List<int> packageFieldIndexes = new List<int>();
+                for (int fieldIndex = 0; fieldIndex < fields.Length; fieldIndex++)
+                {
+                    int resolvedTargetListIndex;
+                    if (TryGetTargetListIndex(listCollection, listIndex, -1, fields[fieldIndex], out resolvedTargetListIndex)
+                        && resolvedTargetListIndex == targetListIndex)
+                    {
+                        packageFieldIndexes.Add(fieldIndex);
+                    }
+                }
+
+                if (packageFieldIndexes.Count == 0)
+                {
+                    continue;
+                }
+
+                int nameIndex = GetNameFieldIndex(listCollection, listIndex);
+                int iconIndex = GetIconFieldIndex(listCollection, listIndex);
+                int qualityIndex = GetQualityFieldIndex(listCollection, listIndex);
+                string sourceListName = listCollection.Lists[listIndex].listName ?? string.Empty;
+
+                for (int elementIndex = 0; elementIndex < listCollection.Lists[listIndex].elementValues.Length; elementIndex++)
+                {
+                    string sourceName = nameIndex >= 0 ? listCollection.GetValue(listIndex, elementIndex, nameIndex) : string.Empty;
+                    string sourceIconKey = ResolveOptionIconKey(listCollection, database, iconResolutionService, listIndex, elementIndex, iconIndex);
+                    int sourceQuality = ResolveOptionQuality(listCollection, listIndex, elementIndex, qualityIndex);
+
+                    foreach (int fieldIndex in packageFieldIndexes)
+                    {
+                        int packageId;
+                        if (!int.TryParse(listCollection.GetValue(listIndex, elementIndex, fieldIndex), out packageId) || packageId <= 0)
+                        {
+                            continue;
+                        }
+
+                        if (map.ContainsKey(packageId))
+                        {
+                            continue;
+                        }
+
+                        map[packageId] = new ItemReferenceOption
+                        {
+                            ListIndex = listIndex,
+                            ElementIndex = elementIndex,
+                            Id = packageId,
+                            Name = sourceName,
+                            ListName = sourceListName,
+                            IconKey = sourceIconKey,
+                            Quality = sourceQuality
+                        };
+                    }
+                }
+            }
+
+            return map;
+        }
+
+        private static string DecodeEquipmentAddonName(
+            eListCollection listCollection,
+            CacheSave database,
+            int addonId)
+        {
+            if (addonId <= 0 || listCollection == null)
+            {
+                return string.Empty;
+            }
+
+            try
+            {
+                SessionService session = new SessionService
+                {
+                    ListCollection = listCollection,
+                    Database = database,
+                    SkillStr = database != null ? database.skillstr : null,
+                    BuffStr = database != null ? database.buff_str : null,
+                    AddonsList = database != null ? database.addonslist : null,
+                    InstanceList = database != null ? database.InstanceList : null,
+                    LocalizationText = database != null ? database.LocalizationText : null
+                };
+
+                string decoded = EQUIPMENT_ADDON.GetAddon(session, addonId.ToString());
+                if (string.IsNullOrWhiteSpace(decoded))
+                {
+                    return string.Empty;
+                }
+
+                return decoded.Replace("\r", " ").Replace("\n", " / ").Trim();
+            }
+            catch
+            {
+                return string.Empty;
+            }
         }
 
         private bool TryResolvePrimaryDropTableItemOption(
@@ -828,6 +1038,11 @@ namespace FWEledit
         public bool TryFindOptionById(eListCollection listCollection, int targetListIndex, int id, CacheSave database, IconResolutionService iconResolutionService, out ItemReferenceOption option)
         {
             option = null;
+            if (targetListIndex == TitleDefinitionsTargetIndex)
+            {
+                return TitleDefinitionCatalog.TryGetOptionById(id, out option);
+            }
+
             BuildOptions(listCollection, targetListIndex, database, iconResolutionService);
 
             Dictionary<int, ItemReferenceOption> byId;
@@ -842,6 +1057,11 @@ namespace FWEledit
         private bool TryFindOptionByName(eListCollection listCollection, int targetListIndex, string name, out ItemReferenceOption option)
         {
             option = null;
+            if (targetListIndex == TitleDefinitionsTargetIndex)
+            {
+                return TitleDefinitionCatalog.TryGetOptionByName(name, out option);
+            }
+
             BuildOptions(listCollection, targetListIndex);
 
             Dictionary<string, ItemReferenceOption> byName;
@@ -930,6 +1150,50 @@ namespace FWEledit
 
             optionsByIdByListIndex[listIndex] = byId;
             optionsByNameByListIndex[listIndex] = byName;
+        }
+
+        private bool TryGetRandomGiftBagRewardType(
+            eListCollection listCollection,
+            int listIndex,
+            int elementIndex,
+            string rewardIdFieldName,
+            out int rewardType)
+        {
+            rewardType = 0;
+            if (listCollection == null
+                || listIndex < 0
+                || listIndex >= listCollection.Lists.Length
+                || elementIndex < 0
+                || elementIndex >= listCollection.Lists[listIndex].elementValues.Length)
+            {
+                return false;
+            }
+
+            string typeFieldName;
+            if (!RandomGiftBagRewardTypeCatalog.TryGetRewardTypeFieldNameForIdField(rewardIdFieldName, out typeFieldName))
+            {
+                return false;
+            }
+
+            string[] fields = listCollection.Lists[listIndex].elementFields;
+            if (fields == null)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < fields.Length; i++)
+            {
+                if (!string.Equals(fields[i], typeFieldName, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                return int.TryParse(
+                    listCollection.GetValue(listIndex, elementIndex, i),
+                    out rewardType);
+            }
+
+            return false;
         }
 
         private static bool TryFindListIndexByName(eListCollection listCollection, string targetListName, out int targetListIndex)
@@ -1057,7 +1321,8 @@ namespace FWEledit
                 return true;
             }
 
-            if (fieldName.Contains("pet_skill") && fieldName.EndsWith("_id", StringComparison.OrdinalIgnoreCase))
+            if (!string.Equals(fieldName, "catch_pet_skill_id", StringComparison.OrdinalIgnoreCase)
+                && fieldName.Contains("pet_skill") && fieldName.EndsWith("_id", StringComparison.OrdinalIgnoreCase))
             {
                 targetListName = "PET_SKILL_ESSENCE";
                 return true;
@@ -1234,6 +1499,8 @@ namespace FWEledit
                 || IsNumberedIdField(fieldName, "reward_")
                 || IsNumberedIdField(fieldName, "materials_")
                 || IsNumberedIdField(fieldName, "acquired_")
+                || IsNumberedIdField(fieldName, "decompose_main_result_")
+                || IsNumberedIdField(fieldName, "decompose_sub_result_")
                 || IsNumberedIdField(fieldName, "stone_")
                 || IsNumberedIdField(fieldName, "tools_")
                 || IsNumberedIdField(fieldName, "tool_"))
@@ -1471,7 +1738,11 @@ namespace FWEledit
                     Name = option.Name,
                     ListName = option.ListName,
                     IconKey = option.IconKey,
-                    Quality = option.Quality
+                    Quality = option.Quality,
+                    Description = option.Description,
+                    SecondaryText = option.SecondaryText,
+                    AccentHex = option.AccentHex,
+                    Kind = option.Kind
                 });
             }
 

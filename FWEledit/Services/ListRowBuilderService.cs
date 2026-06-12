@@ -88,10 +88,12 @@ namespace FWEledit
             bool isItemTradeList = string.Equals(normalizedListName, "ITEM_TRADE_ESSENCE", System.StringComparison.OrdinalIgnoreCase);
             bool isItemTradePageList = string.Equals(normalizedListName, "ITEM_TRADE_PAGE_CONFIG", System.StringComparison.OrdinalIgnoreCase);
             bool isNpcSellServiceList = string.Equals(normalizedListName, "NPC_SELL_SERVICE", System.StringComparison.OrdinalIgnoreCase);
+            bool isAddonPackageList = string.Equals(normalizedListName, "ADDON_PACKAGE_CONFIG", System.StringComparison.OrdinalIgnoreCase);
             int isCategoryFieldIndex = isDropTableList ? GetFieldIndex(listCollection.Lists[listIndex].elementFields, "is_category") : -1;
             List<int> dropFieldIndexes = isDropTableList ? GetDropFieldIndexes(listCollection.Lists[listIndex].elementFields) : null;
             List<int> tradePageGoodsFieldIndexes = isItemTradePageList ? GetTradePageGoodsFieldIndexes(listCollection.Lists[listIndex].elementFields) : null;
             Dictionary<int, int> dropTableRowById = isDropTableList ? BuildDropTableRowIndexMap(listCollection, listIndex) : null;
+            Dictionary<int, Bitmap> addonPackageIconById = isAddonPackageList ? BuildAddonPackageIconMap(listCollection, database) : null;
             bool requiresInheritedItemIcons = isDropTableList || isItemTradePageList;
             Dictionary<int, ItemIconSource> itemIconSourcesById = requiresInheritedItemIcons ? BuildItemIconSourceMap(listCollection) : null;
             Dictionary<int, Bitmap> itemIconById = requiresInheritedItemIcons ? new Dictionary<int, Bitmap>() : null;
@@ -170,6 +172,16 @@ namespace FWEledit
                             {
                                 img = sellIcon;
                             }
+                        }
+                    }
+                    else if (isAddonPackageList)
+                    {
+                        if (int.TryParse(listCollection.GetValue(listIndex, e, 0), out int addonPackageId)
+                            && addonPackageIconById != null
+                            && addonPackageIconById.TryGetValue(addonPackageId, out Bitmap addonPackageIcon)
+                            && addonPackageIcon != null)
+                        {
+                            img = addonPackageIcon;
                         }
                     }
                     rows.Add(new object[] { listCollection.GetValue(listIndex, e, 0), img, composeDisplayName(listIndex, e, pos), string.Empty });
@@ -395,6 +407,84 @@ namespace FWEledit
             }
 
             return img;
+        }
+
+        private Dictionary<int, Bitmap> BuildAddonPackageIconMap(eListCollection listCollection, CacheSave database)
+        {
+            Dictionary<int, Bitmap> map = new Dictionary<int, Bitmap>();
+            if (listCollection == null || listCollection.Lists == null)
+            {
+                return map;
+            }
+
+            for (int listIndex = 0; listIndex < listCollection.Lists.Length; listIndex++)
+            {
+                eList list = listCollection.Lists[listIndex];
+                if (list == null || list.elementFields == null || list.elementValues == null)
+                {
+                    continue;
+                }
+
+                string[] fields = list.elementFields;
+                List<int> packageFieldIndexes = new List<int>();
+                for (int fieldIndex = 0; fieldIndex < fields.Length; fieldIndex++)
+                {
+                    if (IsAddonPackageReferenceField(fields[fieldIndex]))
+                    {
+                        packageFieldIndexes.Add(fieldIndex);
+                    }
+                }
+
+                if (packageFieldIndexes.Count == 0)
+                {
+                    continue;
+                }
+
+                int iconFieldIndex = GetIconFieldIndex(fields);
+                if (iconFieldIndex < 0)
+                {
+                    continue;
+                }
+
+                for (int elementIndex = 0; elementIndex < list.elementValues.Length; elementIndex++)
+                {
+                    Bitmap sourceIcon = null;
+                    foreach (int fieldIndex in packageFieldIndexes)
+                    {
+                        int packageId;
+                        if (!int.TryParse(listCollection.GetValue(listIndex, elementIndex, fieldIndex), out packageId)
+                            || packageId <= 0
+                            || map.ContainsKey(packageId))
+                        {
+                            continue;
+                        }
+
+                        if (sourceIcon == null)
+                        {
+                            sourceIcon = ResolveRowIcon(listCollection, database, listIndex, elementIndex, iconFieldIndex);
+                        }
+
+                        if (sourceIcon != null)
+                        {
+                            map[packageId] = sourceIcon;
+                        }
+                    }
+                }
+            }
+
+            return map;
+        }
+
+        private static bool IsAddonPackageReferenceField(string fieldName)
+        {
+            string normalized = fieldName ?? string.Empty;
+            return string.Equals(normalized, "id_addon_package", System.StringComparison.OrdinalIgnoreCase)
+                || string.Equals(normalized, "id_prefix_addon_package", System.StringComparison.OrdinalIgnoreCase)
+                || string.Equals(normalized, "id_postfix_addon_package", System.StringComparison.OrdinalIgnoreCase)
+                || string.Equals(normalized, "id_special_addon_package", System.StringComparison.OrdinalIgnoreCase)
+                || string.Equals(normalized, "id_sign_addon_package", System.StringComparison.OrdinalIgnoreCase)
+                || string.Equals(normalized, "special_addon_package_id", System.StringComparison.OrdinalIgnoreCase)
+                || normalized.StartsWith("enhanced_prop_package_", System.StringComparison.OrdinalIgnoreCase);
         }
 
         private static Dictionary<int, int> BuildDropTableRowIndexMap(eListCollection listCollection, int listIndex)

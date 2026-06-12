@@ -9,7 +9,9 @@ namespace FWEledit
         {
             UnitFraction,
             WholePercent,
-            BasisPoints
+            BasisPoints,
+            MillionthFraction,
+            EncodedFloatFraction
         }
 
         public static bool IsProbabilityFieldName(string fieldName)
@@ -100,6 +102,27 @@ namespace FWEledit
             }
 
             string normalized = fieldName.Trim();
+            if (string.Equals(normalized, "catch_pet_success_factor", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(normalized, "catch_pet_hp_limit", StringComparison.OrdinalIgnoreCase))
+            {
+                scale = PercentageStorageScale.UnitFraction;
+                return true;
+            }
+
+            if (normalized.StartsWith("catch_pet_reward_item_", StringComparison.OrdinalIgnoreCase)
+                && normalized.EndsWith("_probability", StringComparison.OrdinalIgnoreCase))
+            {
+                scale = PercentageStorageScale.EncodedFloatFraction;
+                return true;
+            }
+
+            if (normalized.StartsWith("decompose_sub_result_", StringComparison.OrdinalIgnoreCase)
+                && normalized.EndsWith("_ratio", StringComparison.OrdinalIgnoreCase))
+            {
+                scale = PercentageStorageScale.EncodedFloatFraction;
+                return true;
+            }
+
             bool looksLikeProbability = normalized.IndexOf("probability", StringComparison.OrdinalIgnoreCase) >= 0;
             bool looksLikePercent = normalized.IndexOf("percent", StringComparison.OrdinalIgnoreCase) >= 0;
             bool looksLikeRatio = normalized.EndsWith("_ratio", StringComparison.OrdinalIgnoreCase)
@@ -176,6 +199,10 @@ namespace FWEledit
                     return value;
                 case PercentageStorageScale.BasisPoints:
                     return value / 100d;
+                case PercentageStorageScale.MillionthFraction:
+                    return value / 10000d;
+                case PercentageStorageScale.EncodedFloatFraction:
+                    return DecodeEncodedFloatFraction(value) * 100d;
                 default:
                     return value * 100d;
             }
@@ -189,6 +216,10 @@ namespace FWEledit
                     return percentage;
                 case PercentageStorageScale.BasisPoints:
                     return percentage * 100d;
+                case PercentageStorageScale.MillionthFraction:
+                    return percentage * 10000d;
+                case PercentageStorageScale.EncodedFloatFraction:
+                    return EncodeEncodedFloatFraction(percentage / 100d);
                 default:
                     return percentage / 100d;
             }
@@ -202,9 +233,25 @@ namespace FWEledit
                     return parsed;
                 case PercentageStorageScale.BasisPoints:
                     return Math.Abs(parsed) <= 1d ? parsed * 10000d : parsed * 100d;
+                case PercentageStorageScale.MillionthFraction:
+                    return Math.Abs(parsed) <= 1d ? parsed * 1000000d : parsed * 10000d;
+                case PercentageStorageScale.EncodedFloatFraction:
+                    return EncodeEncodedFloatFraction(Math.Abs(parsed) > 1d ? parsed / 100d : parsed);
                 default:
                     return Math.Abs(parsed) > 1d ? parsed / 100d : parsed;
             }
+        }
+
+        private static float DecodeEncodedFloatFraction(double encoded)
+        {
+            int bits = Convert.ToInt32(Math.Round(encoded));
+            return BitConverter.ToSingle(BitConverter.GetBytes(bits), 0);
+        }
+
+        private static int EncodeEncodedFloatFraction(double fraction)
+        {
+            float bounded = (float)fraction;
+            return BitConverter.ToInt32(BitConverter.GetBytes(bounded), 0);
         }
     }
 }

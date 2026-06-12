@@ -219,7 +219,7 @@ namespace FWEledit
                         openReputationPicker(e.RowIndex);
                     }
                 }
-                else if (fieldClassifier.IsSoulToolRewardTypeFieldName(fieldName))
+                else if (fieldClassifier.IsRewardTypeFieldName(listCollection, listIndex, fieldName))
                 {
                     if (openSoulToolRewardTypePicker != null)
                     {
@@ -896,6 +896,8 @@ namespace FWEledit
         }
 
         public void OpenSoulToolRewardTypePickerForValueRow(
+            eListCollection listCollection,
+            int listIndex,
             DataGridView itemGrid,
             int rowIndex,
             ItemFieldClassifierService fieldClassifier,
@@ -907,7 +909,7 @@ namespace FWEledit
             }
 
             string fieldName = ValueGridFieldNameService.GetFieldName(itemGrid, rowIndex);
-            if (fieldClassifier == null || !fieldClassifier.IsSoulToolRewardTypeFieldName(fieldName))
+            if (fieldClassifier == null || !fieldClassifier.IsRewardTypeFieldName(listCollection, listIndex, fieldName))
             {
                 return;
             }
@@ -916,9 +918,16 @@ namespace FWEledit
             string rawValue = GetValueCellRawValue(itemGrid, rowIndex);
             int.TryParse(rawValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out currentValue);
 
-            using (QualityPickerWindow picker = new QualityPickerWindow(new List<QualityOption>(SoulToolRewardTypeCatalog.Options), currentValue))
+            List<QualityOption> options = SoulToolRewardTypeCatalog.IsRewardTypeFieldName(fieldName)
+                ? new List<QualityOption>(SoulToolRewardTypeCatalog.Options)
+                : new List<QualityOption>(RandomGiftBagRewardTypeCatalog.Options);
+            string pickerTitle = SoulToolRewardTypeCatalog.IsRewardTypeFieldName(fieldName)
+                ? "Choose Anima reward type..."
+                : "Choose gift bag reward type...";
+
+            using (QualityPickerWindow picker = new QualityPickerWindow(options, currentValue))
             {
-                picker.Text = "Choose Anima reward type...";
+                picker.Text = pickerTitle;
                 if (picker.ShowDialog(owner) != DialogResult.OK)
                 {
                     return;
@@ -937,6 +946,7 @@ namespace FWEledit
             int rowIndex,
             ItemReferenceService itemReferenceService,
             IconResolutionService iconResolutionService,
+            AssetManager assetManager,
             IWin32Window owner,
             Action<string> showMessage)
         {
@@ -965,9 +975,11 @@ namespace FWEledit
                 int.TryParse(normalized, out currentId);
             }
 
-            List<ItemReferenceOption> options = itemReferenceService.IsItemListTargetIndex(targetListIndex)
-                ? itemReferenceService.BuildSearchableItemOptions(listCollection, database, iconResolutionService)
-                : itemReferenceService.BuildSearchableOptions(listCollection, database, iconResolutionService);
+            List<ItemReferenceOption> options = itemReferenceService.IsTitleDefinitionTargetIndex(targetListIndex)
+                ? itemReferenceService.BuildTitleDefinitionOptions()
+                : itemReferenceService.IsItemListTargetIndex(targetListIndex)
+                    ? itemReferenceService.BuildSearchableItemOptions(listCollection, database, iconResolutionService)
+                    : itemReferenceService.BuildSearchableOptions(listCollection, database, iconResolutionService);
             if (options.Count == 0)
             {
                 if (showMessage != null)
@@ -977,10 +989,12 @@ namespace FWEledit
                 return;
             }
 
-            string targetName = targetListIndex >= 0 && targetListIndex < listCollection.Lists.Length
+            string targetName = itemReferenceService.IsTitleDefinitionTargetIndex(targetListIndex)
+                ? "title"
+                : targetListIndex >= 0 && targetListIndex < listCollection.Lists.Length
                 ? listCollection.Lists[targetListIndex].listName ?? "Item"
                 : "item";
-            using (ItemReferencePickerWindow picker = new ItemReferencePickerWindow(options, currentId, targetListIndex, database, "Choose " + targetName))
+            using (ItemReferencePickerWindow picker = new ItemReferencePickerWindow(options, currentId, targetListIndex, database, "Choose " + targetName, assetManager))
             {
                 if (picker.ShowDialog(owner) != DialogResult.OK)
                 {
@@ -988,7 +1002,11 @@ namespace FWEledit
                 }
 
                 itemReferenceService.RememberReferenceOverride(listIndex, currentElementIndex, fieldName, picker.SelectedOption);
-                SetValueCellRawValue(itemGrid, rowIndex, picker.SelectedId.ToString(CultureInfo.InvariantCulture));
+                SetValueCellRawValue(
+                    itemGrid,
+                    rowIndex,
+                    picker.SelectedId.ToString(CultureInfo.InvariantCulture),
+                    picker.SelectedOption);
             }
         }
 
@@ -1671,7 +1689,7 @@ namespace FWEledit
             return -1;
         }
 
-        private static void SetValueCellRawValue(DataGridView itemGrid, int rowIndex, string rawValue)
+        private static void SetValueCellRawValue(DataGridView itemGrid, int rowIndex, string rawValue, ItemReferenceOption referenceOption = null)
         {
             if (itemGrid == null || rowIndex < 0 || rowIndex >= itemGrid.Rows.Count)
             {
@@ -1679,7 +1697,13 @@ namespace FWEledit
             }
 
             string safeValue = rawValue ?? string.Empty;
-            itemGrid.Rows[rowIndex].Cells[2].Tag = safeValue;
+            itemGrid.Rows[rowIndex].Cells[2].Tag = referenceOption != null
+                ? (object)new ValueCellState
+                {
+                    RawValue = safeValue,
+                    ReferenceOption = referenceOption
+                }
+                : (object)safeValue;
             itemGrid.Rows[rowIndex].Cells[2].Value = safeValue;
         }
 

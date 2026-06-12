@@ -401,7 +401,7 @@ namespace FWEledit
                 return;
             }
 
-            using (ItemReferencePickerWindow picker = new ItemReferencePickerWindow(itemOptions, entry.ItemId, entry.ItemListIndex, database, "Choose shop item..."))
+            using (ItemReferencePickerWindow picker = new ItemReferencePickerWindow(itemOptions, entry.ItemId, entry.ItemListIndex, database, "Choose shop item...", null))
             {
                 if (picker.ShowDialog(this) != DialogResult.OK || picker.SelectedOption == null)
                 {

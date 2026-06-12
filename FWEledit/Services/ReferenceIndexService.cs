@@ -8,6 +8,7 @@ namespace FWEledit
         private eListCollection cachedListCollection;
         private ItemReferenceService cachedReferenceService;
         private readonly Dictionary<string, List<ReferenceUsage>> referencesByTarget = new Dictionary<string, List<ReferenceUsage>>();
+        private Dictionary<int, List<int>> itemListIndexesById = new Dictionary<int, List<int>>();
         private bool indexBuilt;
 
         public void Clear()
@@ -17,6 +18,7 @@ namespace FWEledit
                 cachedListCollection = null;
                 cachedReferenceService = null;
                 referencesByTarget.Clear();
+                itemListIndexesById.Clear();
                 indexBuilt = false;
             }
         }
@@ -60,7 +62,41 @@ namespace FWEledit
                     }
                 }
 
+                itemListIndexesById = BuildItemListIndexMap(listCollection, referenceService);
                 indexBuilt = true;
+            }
+        }
+
+        public void RebuildSourceElement(
+            eListCollection listCollection,
+            ItemReferenceService referenceService,
+            int sourceListIndex,
+            int sourceElementIndex)
+        {
+            lock (syncRoot)
+            {
+                EnsureIndex(listCollection, referenceService);
+                if (!indexBuilt)
+                {
+                    return;
+                }
+
+                if (listCollection == null
+                    || listCollection.Lists == null
+                    || sourceListIndex < 0
+                    || sourceListIndex >= listCollection.Lists.Length
+                    || sourceListIndex == listCollection.ConversationListIndex
+                    || listCollection.Lists[sourceListIndex] == null
+                    || listCollection.Lists[sourceListIndex].elementFields == null
+                    || listCollection.Lists[sourceListIndex].elementValues == null
+                    || sourceElementIndex < 0
+                    || sourceElementIndex >= listCollection.Lists[sourceListIndex].elementValues.Length)
+                {
+                    return;
+                }
+
+                RemoveUsagesForSourceElement(sourceListIndex, sourceElementIndex);
+                AddUsagesForSourceElement(listCollection, referenceService, sourceListIndex, sourceElementIndex);
             }
         }
 
@@ -114,6 +150,7 @@ namespace FWEledit
             cachedListCollection = listCollection;
             cachedReferenceService = referenceService;
             referencesByTarget.Clear();
+            itemListIndexesById = BuildItemListIndexMap(listCollection, referenceService);
             BuildIndex(listCollection, referenceService);
             indexBuilt = true;
         }
@@ -124,8 +161,6 @@ namespace FWEledit
             {
                 return;
             }
-
-            Dictionary<int, List<int>> itemListIndexesById = BuildItemListIndexMap(listCollection, referenceService);
 
             for (int sourceListIndex = 0; sourceListIndex < listCollection.Lists.Length; sourceListIndex++)
             {
@@ -140,32 +175,67 @@ namespace FWEledit
                 string[] fields = listCollection.Lists[sourceListIndex].elementFields;
                 for (int fieldIndex = 0; fieldIndex < fields.Length; fieldIndex++)
                 {
-                    string fieldName = fields[fieldIndex] ?? string.Empty;
                     for (int sourceElementIndex = 0; sourceElementIndex < listCollection.Lists[sourceListIndex].elementValues.Length; sourceElementIndex++)
                     {
-                        int targetListIndex;
-                        if (!referenceService.TryGetTargetListIndex(listCollection, sourceListIndex, sourceElementIndex, fieldName, out targetListIndex))
-                        {
-                            continue;
-                        }
-
-                        int targetId;
-                        if (!int.TryParse(listCollection.GetValue(sourceListIndex, sourceElementIndex, fieldIndex), out targetId) || targetId <= 0)
-                        {
-                            continue;
-                        }
-
-                        ReferenceUsage usage = BuildUsage(listCollection, sourceListIndex, sourceElementIndex, fieldIndex, fieldName, targetId);
-                        if (referenceService.IsItemListTargetIndex(targetListIndex))
-                        {
-                            AddUsageForItemTargets(itemListIndexesById, targetId, usage);
-                        }
-                        else
-                        {
-                            AddUsage(targetListIndex, targetId, usage);
-                        }
+                        AddUsageForField(
+                            listCollection,
+                            referenceService,
+                            sourceListIndex,
+                            sourceElementIndex,
+                            fieldIndex,
+                            fields[fieldIndex] ?? string.Empty);
                     }
                 }
+            }
+        }
+
+        private void AddUsagesForSourceElement(
+            eListCollection listCollection,
+            ItemReferenceService referenceService,
+            int sourceListIndex,
+            int sourceElementIndex)
+        {
+            string[] fields = listCollection.Lists[sourceListIndex].elementFields;
+            for (int fieldIndex = 0; fieldIndex < fields.Length; fieldIndex++)
+            {
+                AddUsageForField(
+                    listCollection,
+                    referenceService,
+                    sourceListIndex,
+                    sourceElementIndex,
+                    fieldIndex,
+                    fields[fieldIndex] ?? string.Empty);
+            }
+        }
+
+        private void AddUsageForField(
+            eListCollection listCollection,
+            ItemReferenceService referenceService,
+            int sourceListIndex,
+            int sourceElementIndex,
+            int fieldIndex,
+            string fieldName)
+        {
+            int targetListIndex;
+            if (!referenceService.TryGetTargetListIndex(listCollection, sourceListIndex, sourceElementIndex, fieldName, out targetListIndex))
+            {
+                return;
+            }
+
+            int targetId;
+            if (!int.TryParse(listCollection.GetValue(sourceListIndex, sourceElementIndex, fieldIndex), out targetId) || targetId <= 0)
+            {
+                return;
+            }
+
+            ReferenceUsage usage = BuildUsage(listCollection, sourceListIndex, sourceElementIndex, fieldIndex, fieldName, targetId);
+            if (referenceService.IsItemListTargetIndex(targetListIndex))
+            {
+                AddUsageForItemTargets(itemListIndexesById, targetId, usage);
+            }
+            else
+            {
+                AddUsage(targetListIndex, targetId, usage);
             }
         }
 
@@ -261,6 +331,38 @@ namespace FWEledit
                 referencesByTarget[key] = usages;
             }
             usages.Add(usage);
+        }
+
+        private void RemoveUsagesForSourceElement(int sourceListIndex, int sourceElementIndex)
+        {
+            List<string> emptyKeys = null;
+            foreach (KeyValuePair<string, List<ReferenceUsage>> pair in referencesByTarget)
+            {
+                pair.Value.RemoveAll(usage =>
+                    usage != null
+                    && usage.SourceListIndex == sourceListIndex
+                    && usage.SourceElementIndex == sourceElementIndex);
+
+                if (pair.Value.Count == 0)
+                {
+                    if (emptyKeys == null)
+                    {
+                        emptyKeys = new List<string>();
+                    }
+
+                    emptyKeys.Add(pair.Key);
+                }
+            }
+
+            if (emptyKeys == null)
+            {
+                return;
+            }
+
+            for (int i = 0; i < emptyKeys.Count; i++)
+            {
+                referencesByTarget.Remove(emptyKeys[i]);
+            }
         }
 
         private static int GetNameFieldIndex(eListCollection listCollection, int listIndex)

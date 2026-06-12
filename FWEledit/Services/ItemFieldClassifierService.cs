@@ -77,6 +77,12 @@ namespace FWEledit
             return SoulToolRewardTypeCatalog.IsRewardTypeFieldName(fieldName);
         }
 
+        public bool IsRewardTypeFieldName(eListCollection listCollection, int listIndex, string fieldName)
+        {
+            return SoulToolRewardTypeCatalog.IsRewardTypeFieldName(fieldName)
+                || RandomGiftBagRewardTypeCatalog.IsRewardTypeFieldName(listCollection, listIndex, fieldName);
+        }
+
         public bool IsCombinedServicesFieldName(string fieldName)
         {
             return CombinedServicesCatalog.IsCombinedServicesFieldName(fieldName);
@@ -108,7 +114,7 @@ namespace FWEledit
                 || IsBindFlagFieldName(fieldName)
                 || IsNpcSellMoneyTypeFieldName(listCollection, listIndex, -1, fieldName)
                 || IsReputationFieldName(fieldName)
-                || IsSoulToolRewardTypeFieldName(fieldName)
+                || IsRewardTypeFieldName(listCollection, listIndex, fieldName)
                 || IsProcTypeFieldName(fieldName)
                 || IsProfessionMaskFieldName(fieldName)
                 || IsRaceMaskFieldName(fieldName)

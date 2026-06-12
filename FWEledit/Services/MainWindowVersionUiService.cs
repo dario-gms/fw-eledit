@@ -43,6 +43,13 @@ namespace FWEledit
             if (versionLabel != null)
             {
                 versionLabel.Text = "FWEledit v" + displayVersion;
+                versionLabel.Visible = false;
+
+                Form owner = versionLabel.FindForm();
+                if (owner != null)
+                {
+                    owner.Text = versionLabel.Text;
+                }
             }
 
             if (navigationStateService != null)

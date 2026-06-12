@@ -258,6 +258,8 @@ namespace FWEledit
         public void OpenSoulToolRewardTypePickerForValueRow(
             MainWindowValueRowPickerUiService mainWindowValueRowPickerUiService,
             ValueRowPickerUiService valueRowPickerUiService,
+            eListCollection listCollection,
+            int listIndex,
             DataGridView valuesGrid,
             int rowIndex,
             ItemFieldClassifierService fieldClassifierService,
@@ -270,6 +272,8 @@ namespace FWEledit
 
             mainWindowValueRowPickerUiService.OpenSoulToolRewardTypePickerForValueRow(
                 valueRowPickerUiService,
+                listCollection,
+                listIndex,
                 valuesGrid,
                 rowIndex,
                 fieldClassifierService,
@@ -441,6 +445,7 @@ namespace FWEledit
             int rowIndex,
             ItemReferenceService itemReferenceService,
             IconResolutionService iconResolutionService,
+            AssetManager assetManager,
             IWin32Window owner,
             Action<string> showMessage)
         {
@@ -459,6 +464,7 @@ namespace FWEledit
                 rowIndex,
                 itemReferenceService,
                 iconResolutionService,
+                assetManager,
                 owner,
                 showMessage);
         }
