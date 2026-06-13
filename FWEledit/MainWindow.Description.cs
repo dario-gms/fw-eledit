@@ -121,7 +121,7 @@ namespace FWEledit
 
         private void StageCurrentDescriptionChange(bool updateStatus)
         {
-            mainWindowDescriptionCoordinatorService.StageCurrentDescriptionChange(
+            DescriptionChangeResult result = mainWindowDescriptionCoordinatorService.StageCurrentDescriptionChange(
                 mainWindowDescriptionUiService,
                 descriptionUiService,
                 viewModel,
@@ -130,16 +130,11 @@ namespace FWEledit
                 descriptionRuntimeService,
                 fwDescriptionEditor != null ? fwDescriptionEditor.Text : string.Empty,
                 ApplyItemDescriptionRuntime,
-                () => viewModel.HasUnsavedChanges = true,
+                null,
                 () => comboBox_lists.SelectedIndex,
                 GetSelectedDescriptionItemIds,
                 GetSelectedDescriptionElementIndices,
-                (listIndex, rowIndex) => mainWindowDirtyTrackingService.MarkRowDirty(
-                    dirtyStateTracker,
-                    listDisplayService,
-                    ref viewModel.HasUnsavedChanges,
-                    listIndex,
-                    rowIndex),
+                null,
                 updateStatus,
                 status =>
                 {
@@ -148,6 +143,13 @@ namespace FWEledit
                         fwDescriptionStatusLabel.Text = status;
                     }
                 });
+
+            if (result != null && result.Changed)
+            {
+                viewModel.HasUnsavedChanges = dirtyStateTracker.HasAnyDirtyEntries()
+                    || (viewModel.DescriptionViewModel != null && viewModel.DescriptionViewModel.HasPendingChanges);
+                RefreshDescriptionDirtyRows();
+            }
         }
 
         private int[] GetSelectedDescriptionItemIds()
@@ -223,6 +225,94 @@ namespace FWEledit
             }
 
             return elementIndices.ToArray();
+        }
+
+        private int[] GetSelectedDescriptionGridRows()
+        {
+            if (dataGridView_elems == null)
+            {
+                return new int[0];
+            }
+
+            int[] gridRows = gridSelectionService != null
+                ? gridSelectionService.GetSelectedIndices(dataGridView_elems)
+                : new int[0];
+            if ((gridRows == null || gridRows.Length == 0) && dataGridView_elems.CurrentCell != null)
+            {
+                gridRows = new int[] { dataGridView_elems.CurrentCell.RowIndex };
+            }
+
+            return gridRows ?? new int[0];
+        }
+
+        private void RefreshDescriptionDirtyRows()
+        {
+            if (sessionService == null
+                || sessionService.ListCollection == null
+                || comboBox_lists == null
+                || dataGridView_elems == null)
+            {
+                return;
+            }
+
+            int listIndex = comboBox_lists.SelectedIndex;
+            if (listIndex < 0 || listIndex >= sessionService.ListCollection.Lists.Length)
+            {
+                return;
+            }
+
+            int nameFieldIndex = fieldIndexLookupService.GetNameFieldIndex(sessionService.ListCollection, listIndex);
+            int[] gridRows = GetSelectedDescriptionGridRows();
+            for (int i = 0; i < gridRows.Length; i++)
+            {
+                int gridRow = gridRows[i];
+                if (gridRow < 0 || gridRow >= dataGridView_elems.Rows.Count)
+                {
+                    continue;
+                }
+
+                int elementIndex = elementIndexResolverService != null
+                    ? elementIndexResolverService.ResolveElementIndexFromGridRow(sessionService.ListCollection, listIndex, gridRow, dataGridView_elems)
+                    : gridRow;
+                if (elementIndex < 0 || elementIndex >= sessionService.ListCollection.Lists[listIndex].elementValues.Length)
+                {
+                    continue;
+                }
+
+                dataGridView_elems.Rows[gridRow].Cells[2].Value = listDisplayService.ComposeListDisplayName(
+                    sessionService,
+                    sessionService.ListCollection,
+                    listIndex,
+                    elementIndex,
+                    nameFieldIndex,
+                    IsElementMarkedDirty(listIndex, elementIndex));
+            }
+        }
+
+        private bool IsElementMarkedDirty(int listIndex, int elementIndex)
+        {
+            bool rowDirty = mainWindowDirtyTrackingService.IsRowDirty(dirtyStateTracker, listIndex, elementIndex);
+            if (rowDirty)
+            {
+                return true;
+            }
+
+            if (viewModel == null
+                || viewModel.DescriptionViewModel == null
+                || sessionService == null
+                || sessionService.ListCollection == null
+                || listIndex < 0
+                || listIndex >= sessionService.ListCollection.Lists.Length
+                || listIndex == sessionService.ListCollection.ConversationListIndex
+                || elementIndex < 0
+                || elementIndex >= sessionService.ListCollection.Lists[listIndex].elementValues.Length)
+            {
+                return false;
+            }
+
+            int itemId;
+            return int.TryParse(sessionService.ListCollection.GetValue(listIndex, elementIndex, 0), out itemId)
+                && viewModel.DescriptionViewModel.HasPendingChangeForItem(itemId);
         }
 
         private bool FlushPendingDescriptionsToDisk()

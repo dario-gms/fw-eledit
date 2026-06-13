@@ -209,6 +209,10 @@ namespace FWEledit
             {
                 targetListName = "EQUIPMENT_QUALITY_CONFIG";
             }
+            else if (string.Equals(name, "id_identify", StringComparison.OrdinalIgnoreCase))
+            {
+                targetListName = "IDENTIFY_SCROLL_ESSENCE";
+            }
             else if (string.Equals(name, "id_equip_prop", StringComparison.OrdinalIgnoreCase))
             {
                 targetListName = "EQUIPMENT_PROPERTY_RANDOM_CONFIG";
@@ -247,6 +251,13 @@ namespace FWEledit
             }
             else if (string.Equals(sourceListName, "NPC_SELL_SERVICE", StringComparison.OrdinalIgnoreCase)
                 && IsNpcSellGoodsField(name))
+            {
+                targetListIndex = ItemListsTargetIndex;
+                return true;
+            }
+            else if ((name.StartsWith("extend_identify_attr_tool_", StringComparison.OrdinalIgnoreCase)
+                    && name.EndsWith("_tool_id", StringComparison.OrdinalIgnoreCase))
+                || string.Equals(name, "reidentify_extend_identify_attr_tool_id", StringComparison.OrdinalIgnoreCase))
             {
                 targetListIndex = ItemListsTargetIndex;
                 return true;

@@ -90,7 +90,7 @@ namespace FWEledit
                 assembly,
                 label_Version,
                 navigationStateService,
-                "0.9.5.9");
+                "0.9.5.10");
 
             fwDarkMode = Properties.Settings.Default.UseDarkMode;
             cpb2.Value = 0;
@@ -301,9 +301,24 @@ namespace FWEledit
                 columnIndex = 0;
             }
 
-            dataGridView_elems.ClearSelection();
+            int[] selectedRows = gridSelectionService != null
+                ? gridSelectionService.GetSelectedIndices(dataGridView_elems)
+                : new int[0];
+            bool hasMultiSelection = selectedRows.Length > 1;
+            bool clickedRowWasAlreadySelected = dataGridView_elems.Rows[e.RowIndex].Selected;
+
+            if (hasMultiSelection)
+            {
+                return;
+            }
+
+            if (!clickedRowWasAlreadySelected)
+            {
+                dataGridView_elems.ClearSelection();
+                dataGridView_elems.Rows[e.RowIndex].Selected = true;
+            }
+
             dataGridView_elems.CurrentCell = dataGridView_elems.Rows[e.RowIndex].Cells[columnIndex];
-            dataGridView_elems.Rows[e.RowIndex].Selected = true;
         }
 
         private void click_context_search(object sender, EventArgs e)

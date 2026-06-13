@@ -376,7 +376,9 @@ namespace FWEledit
                     modelPackageNotificationService,
                     dialogService,
                     owner),
-                iconKey => database.images(iconKey)))
+                iconKey => database.images(iconKey),
+                assetManager,
+                database))
             {
                 if (picker.ShowDialog(owner) != DialogResult.OK)
                 {
@@ -979,7 +981,9 @@ namespace FWEledit
                 ? itemReferenceService.BuildTitleDefinitionOptions()
                 : itemReferenceService.IsItemListTargetIndex(targetListIndex)
                     ? itemReferenceService.BuildSearchableItemOptions(listCollection, database, iconResolutionService)
-                    : itemReferenceService.BuildSearchableOptions(listCollection, database, iconResolutionService);
+                    : targetListIndex >= 0
+                        ? itemReferenceService.BuildOptions(listCollection, targetListIndex, database, iconResolutionService)
+                        : itemReferenceService.BuildSearchableOptions(listCollection, database, iconResolutionService);
             if (options.Count == 0)
             {
                 if (showMessage != null)

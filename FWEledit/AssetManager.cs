@@ -964,6 +964,19 @@ namespace FWEledit
 
         public bool TryUpsertWorkspacePathDataEntry(int pathId, string mappedPath, out string error)
         {
+            int resolvedPathId;
+            return TryUpsertWorkspacePathDataEntry(pathId, mappedPath, pathId, mappedPath, out resolvedPathId, out error);
+        }
+
+        public bool TryUpsertWorkspacePathDataEntry(
+            int originalPathId,
+            string originalMappedPath,
+            int pathId,
+            string mappedPath,
+            out int resolvedPathId,
+            out string error)
+        {
+            resolvedPathId = 0;
             error = string.Empty;
             if (pathId <= 0)
             {
@@ -995,18 +1008,29 @@ namespace FWEledit
                     Directory.CreateDirectory(workspaceDir);
                 }
 
-                SortedList<int, string> entries = new SortedList<int, string>();
-                try
+                SortedList<int, string> entries = BuildCurrentPathDataEntries();
+                int existingPathOwnerId = FindPathIdByNormalizedPath(entries, normalizedPath);
+                if (existingPathOwnerId > 0
+                    && existingPathOwnerId != pathId
+                    && existingPathOwnerId != originalPathId)
                 {
-                    entries = LoadPathById();
-                    if (entries == null)
-                    {
-                        entries = new SortedList<int, string>();
-                    }
+                    resolvedPathId = existingPathOwnerId;
+                    database.pathById = entries;
+                    sessionService.Database = database;
+                    return true;
                 }
-                catch
+
+                bool originalMappingMatches = false;
+                if (originalPathId > 0 && entries.ContainsKey(originalPathId))
                 {
-                    entries = new SortedList<int, string>();
+                    string persistedOriginalPath = entries[originalPathId] ?? string.Empty;
+                    string persistedOriginalNormalized = NormalizePathDataLookupKey(persistedOriginalPath);
+                    string expectedOriginalNormalized = NormalizePathDataLookupKey(
+                        string.IsNullOrWhiteSpace(originalMappedPath) ? canonicalPath : originalMappedPath);
+                    originalMappingMatches = string.Equals(
+                        persistedOriginalNormalized,
+                        expectedOriginalNormalized,
+                        StringComparison.OrdinalIgnoreCase);
                 }
 
                 if (entries.ContainsKey(pathId))
@@ -1022,9 +1046,41 @@ namespace FWEledit
                         return false;
                     }
                 }
+
+                if (originalPathId > 0
+                    && originalPathId != pathId
+                    && originalMappingMatches
+                    && entries.ContainsKey(originalPathId))
+                {
+                    entries.Remove(originalPathId);
+                }
+
+                bool requiresWrite = true;
+                if (entries.ContainsKey(pathId))
+                {
+                    string currentPath = entries[pathId] ?? string.Empty;
+                    if (string.Equals(
+                            NormalizePathDataLookupKey(currentPath),
+                            normalizedPath,
+                            StringComparison.OrdinalIgnoreCase)
+                        && (originalPathId <= 0 || originalPathId == pathId || !originalMappingMatches))
+                    {
+                        requiresWrite = false;
+                    }
+
+                    entries[pathId] = canonicalPath;
+                }
                 else
                 {
                     entries.Add(pathId, canonicalPath);
+                }
+
+                resolvedPathId = pathId;
+                if (!requiresWrite)
+                {
+                    database.pathById = entries;
+                    sessionService.Database = database;
+                    return true;
                 }
 
                 byte[] workspaceOriginal = null;
@@ -1055,9 +1111,17 @@ namespace FWEledit
 
                 if (!string.IsNullOrWhiteSpace(gamePathData))
                 {
+                    if (gameExisted)
+                    {
+                        string backupDir = Path.Combine(GameRootPath, "backup_path");
+                        CreateTimestampedZipBackup(gamePathData, backupDir, "path");
+                        File.Copy(gamePathData, gamePathData + ".bak", true);
+                    }
+
                     if (!TryWritePathByIdFile(gamePathData, entries, out string writeGameError))
                     {
                         TryRestorePathDataFile(workspacePathData, workspaceExisted, workspaceOriginal);
+                        TryRestorePathDataFile(gamePathData, gameExisted, gameOriginal);
                         error = string.IsNullOrWhiteSpace(writeGameError)
                             ? "Failed to write game path.data."
                             : "Failed to write game path.data:\n" + writeGameError;
@@ -1069,6 +1133,9 @@ namespace FWEledit
                 // fELedit/resources/data/path.data instead of data/path.data.
                 TryWriteLegacyFelEditPathData(entries);
 
+                database.pathById = entries;
+                pendingPathDataEntries.Clear();
+                sessionService.Database = database;
                 MarkWorkspaceFileChanged(workspacePathData);
                 pathDataDirty = false;
                 return true;
@@ -1078,6 +1145,204 @@ namespace FWEledit
                 error = ex.Message;
                 return false;
             }
+        }
+
+        public bool TryRemoveWorkspacePathDataEntry(int pathId, string mappedPath, out string error)
+        {
+            error = string.Empty;
+            if (pathId <= 0)
+            {
+                return true;
+            }
+
+            string canonicalPath = (mappedPath ?? string.Empty).Replace('/', '\\').Trim().TrimStart('\\');
+            string normalizedPath = NormalizePathDataLookupKey(canonicalPath);
+
+            try
+            {
+                EnsureWorkspaceReady();
+                string workspacePathData = GetWorkspacePathDataFile();
+                if (string.IsNullOrWhiteSpace(workspacePathData))
+                {
+                    error = "Workspace path.data unavailable.";
+                    return false;
+                }
+
+                string workspaceDir = Path.GetDirectoryName(workspacePathData) ?? string.Empty;
+                if (!string.IsNullOrWhiteSpace(workspaceDir))
+                {
+                    Directory.CreateDirectory(workspaceDir);
+                }
+
+                SortedList<int, string> entries = BuildCurrentPathDataEntries();
+                if (!entries.ContainsKey(pathId))
+                {
+                    if (database.pathById != null && database.pathById.ContainsKey(pathId))
+                    {
+                        database.pathById.Remove(pathId);
+                    }
+                    pendingPathDataEntries.Remove(pathId);
+                    sessionService.Database = database;
+                    return true;
+                }
+
+                string existingPath = entries[pathId] ?? string.Empty;
+                string existingNormalized = NormalizePathDataLookupKey(existingPath);
+                if (!string.IsNullOrWhiteSpace(normalizedPath)
+                    && !string.Equals(existingNormalized, normalizedPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    error = "PathID is currently mapped to another path:\n"
+                        + pathId.ToString()
+                        + " => "
+                        + existingPath;
+                    return false;
+                }
+
+                entries.Remove(pathId);
+
+                byte[] workspaceOriginal = null;
+                bool workspaceExisted = File.Exists(workspacePathData);
+                if (workspaceExisted)
+                {
+                    workspaceOriginal = File.ReadAllBytes(workspacePathData);
+                }
+
+                string gamePathData = string.Empty;
+                byte[] gameOriginal = null;
+                bool gameExisted = false;
+                if (!string.IsNullOrWhiteSpace(GameRootPath))
+                {
+                    gamePathData = Path.Combine(GameRootPath, "data", "path.data");
+                    gameExisted = File.Exists(gamePathData);
+                    if (gameExisted)
+                    {
+                        gameOriginal = File.ReadAllBytes(gamePathData);
+                    }
+                }
+
+                if (!TryWritePathByIdFile(workspacePathData, entries, out string writeWorkspaceError))
+                {
+                    error = writeWorkspaceError;
+                    return false;
+                }
+
+                if (!string.IsNullOrWhiteSpace(gamePathData))
+                {
+                    if (gameExisted)
+                    {
+                        string backupDir = Path.Combine(GameRootPath, "backup_path");
+                        CreateTimestampedZipBackup(gamePathData, backupDir, "path");
+                        File.Copy(gamePathData, gamePathData + ".bak", true);
+                    }
+
+                    if (!TryWritePathByIdFile(gamePathData, entries, out string writeGameError))
+                    {
+                        TryRestorePathDataFile(workspacePathData, workspaceExisted, workspaceOriginal);
+                        TryRestorePathDataFile(gamePathData, gameExisted, gameOriginal);
+                        error = string.IsNullOrWhiteSpace(writeGameError)
+                            ? "Failed to write game path.data."
+                            : "Failed to write game path.data:\n" + writeGameError;
+                        return false;
+                    }
+                }
+
+                TryWriteLegacyFelEditPathData(entries);
+
+                if (database.pathById != null && database.pathById.ContainsKey(pathId))
+                {
+                    database.pathById.Remove(pathId);
+                }
+                database.pathById = entries;
+                pendingPathDataEntries.Remove(pathId);
+                sessionService.Database = database;
+                MarkWorkspaceFileChanged(workspacePathData);
+                pathDataDirty = false;
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = ex.Message;
+                return false;
+            }
+        }
+
+        private SortedList<int, string> BuildCurrentPathDataEntries()
+        {
+            SortedList<int, string> entries = new SortedList<int, string>();
+
+            try
+            {
+                SortedList<int, string> loaded = LoadPathById();
+                if (loaded != null)
+                {
+                    for (int i = 0; i < loaded.Count; i++)
+                    {
+                        int key = loaded.Keys[i];
+                        if (!entries.ContainsKey(key))
+                        {
+                            entries.Add(key, loaded.Values[i]);
+                        }
+                    }
+                }
+            }
+            catch
+            {
+            }
+
+            if (database.pathById != null)
+            {
+                for (int i = 0; i < database.pathById.Count; i++)
+                {
+                    int key = database.pathById.Keys[i];
+                    string value = database.pathById.Values[i];
+                    if (entries.ContainsKey(key))
+                    {
+                        entries[key] = value;
+                    }
+                    else
+                    {
+                        entries.Add(key, value);
+                    }
+                }
+            }
+
+            for (int i = 0; i < pendingPathDataEntries.Count; i++)
+            {
+                int key = pendingPathDataEntries.Keys[i];
+                string value = pendingPathDataEntries.Values[i];
+                if (entries.ContainsKey(key))
+                {
+                    entries[key] = value;
+                }
+                else
+                {
+                    entries.Add(key, value);
+                }
+            }
+
+            return entries;
+        }
+
+        private static int FindPathIdByNormalizedPath(SortedList<int, string> entries, string normalizedPath)
+        {
+            if (entries == null || entries.Count == 0 || string.IsNullOrWhiteSpace(normalizedPath))
+            {
+                return 0;
+            }
+
+            for (int i = 0; i < entries.Count; i++)
+            {
+                string value = entries.Values[i] ?? string.Empty;
+                if (string.Equals(
+                        NormalizePathDataLookupKey(value),
+                        normalizedPath,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    return entries.Keys[i];
+                }
+            }
+
+            return 0;
         }
 
         public bool QueuePathDataEntry(int pathId, string mappedPath, out string error)

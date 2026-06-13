@@ -12,6 +12,27 @@ FWEledit is based on [sELedit++ by Wrechid](https://github.com/Wrechid/sELedit-)
 
 ---
 
+## What's New in v0.9.5.10
+
+- Added a built-in Path Editor flow from the Choice Model window, including `Open with Path Editor`, direct `path.data` editing, manual or auto-generated PathID assignment, duplicate-ID safety checks, and backup-aware save support.
+- Added support for clearing selected value fields directly from the value grid, including multi-selection clearing, keyboard delete, and proper typed normalization when a cleared field needs to fall back to `0` or an empty value.
+- Added multi-field copy/paste and undo support in the value grid, including right-click actions plus `Ctrl+C`, `Ctrl+V`, `Ctrl+Z`, and sequence-aware paste behavior for repeated or downward-applied field values.
+- Improved value-grid multi-selection behavior so right-click actions preserve an existing interleaved field selection instead of collapsing it to the clicked row.
+- Added multi-item clone support for non-contiguous selections in the Elements list, instead of cloning only the active item.
+- Added same-list duplicate-ID highlighting while editing IDs, with bold red visual feedback before save whenever the candidate ID is already used in the current list.
+- Hardened item cloning and ID editing so duplicate IDs are rejected across the full dataset where uniqueness is required, including cases where another list already contains the same ID.
+- Fixed cloned-item reference refresh so `Refs` counts no longer disappear for long periods after clone operations and update more predictably without waiting for a slow full rebuild.
+- Improved reference-index performance by narrowing unnecessary cross-list checks and restoring smoother startup/open behavior after the recent reference and clone work.
+- Restored last-list / last-item startup navigation so the editor reopens at the user's previous working position instead of always jumping back to the first list entry.
+- Preserved the current value-row position after save, so saving no longer throws the right-side editor back to the top when you are working deeper in a field group.
+- Fixed description dirty tracking so description edits are detected reliably, and reverting a description back to its original content now clears the dirty state correctly instead of leaving a false modified flag behind.
+- Fixed the Equipment parser layout around `id_special_addon_package` / `color_*`, which exposed misplaced data and made some later fields appear under the wrong names.
+- Added parser/reference/picker support for `id_identify`, `id_special_addon_package`, and `extend_identify_attr_tool_*_tool_id`, so those fields now resolve against the correct target lists instead of wrong or overly broad lookups.
+- Added refine-tab parsing for `id_identify`, improving readability and edit safety for identify-scroll style equipment fields.
+- Project/app version metadata updated to `v0.9.5.10`.
+
+---
+
 ## What's New in v0.9.5.9
 
 - Added a full title-definition pipeline backed directly by `script.pck`, so title data is now read from the real game package instead of depending on extracted development files or loose-script fallbacks.

@@ -32,6 +32,19 @@ namespace FWEledit
             return dirtyRowsByList.TryGetValue(listIndex, out set) && set.Contains(rowIndex);
         }
 
+        public void ClearRowDirty(int listIndex, int rowIndex)
+        {
+            HashSet<int> set;
+            if (dirtyRowsByList.TryGetValue(listIndex, out set))
+            {
+                set.Remove(rowIndex);
+                if (set.Count == 0)
+                {
+                    dirtyRowsByList.Remove(listIndex);
+                }
+            }
+        }
+
         public void MarkFieldDirty(int listIndex, int rowIndex, int fieldIndex)
         {
             Dictionary<int, HashSet<int>> rows;
@@ -56,6 +69,25 @@ namespace FWEledit
             return dirtyFieldsByList.TryGetValue(listIndex, out rows)
                 && rows.TryGetValue(rowIndex, out fields)
                 && fields.Contains(fieldIndex);
+        }
+
+        public void ClearFieldDirty(int listIndex, int rowIndex, int fieldIndex)
+        {
+            Dictionary<int, HashSet<int>> rows;
+            HashSet<int> fields;
+            if (dirtyFieldsByList.TryGetValue(listIndex, out rows)
+                && rows.TryGetValue(rowIndex, out fields))
+            {
+                fields.Remove(fieldIndex);
+                if (fields.Count == 0)
+                {
+                    rows.Remove(rowIndex);
+                }
+                if (rows.Count == 0)
+                {
+                    dirtyFieldsByList.Remove(listIndex);
+                }
+            }
         }
 
         public void MarkFieldInvalid(int listIndex, int rowIndex, int fieldIndex)
@@ -101,6 +133,11 @@ namespace FWEledit
             return invalidFieldsByList.TryGetValue(listIndex, out rows)
                 && rows.TryGetValue(rowIndex, out fields)
                 && fields.Contains(fieldIndex);
+        }
+
+        public bool HasAnyDirtyEntries()
+        {
+            return dirtyRowsByList.Count > 0 || dirtyFieldsByList.Count > 0;
         }
     }
 }

@@ -29,6 +29,26 @@ namespace FWEledit
             return tracker != null && tracker.IsRowDirty(listIndex, rowIndex);
         }
 
+        public void ClearRowDirty(
+            DirtyStateTracker tracker,
+            ListDisplayService listDisplayService,
+            ref bool hasUnsavedChanges,
+            int listIndex,
+            int rowIndex)
+        {
+            if (tracker == null)
+            {
+                return;
+            }
+
+            tracker.ClearRowDirty(listIndex, rowIndex);
+            if (listDisplayService != null)
+            {
+                listDisplayService.InvalidateListDisplayCache(listIndex);
+            }
+            hasUnsavedChanges = tracker.HasAnyDirtyEntries();
+        }
+
         public void MarkFieldDirty(
             DirtyStateTracker tracker,
             ref bool hasUnsavedChanges,
@@ -48,6 +68,22 @@ namespace FWEledit
         public bool IsFieldDirty(DirtyStateTracker tracker, int listIndex, int rowIndex, int fieldIndex)
         {
             return tracker != null && tracker.IsFieldDirty(listIndex, rowIndex, fieldIndex);
+        }
+
+        public void ClearFieldDirty(
+            DirtyStateTracker tracker,
+            ref bool hasUnsavedChanges,
+            int listIndex,
+            int rowIndex,
+            int fieldIndex)
+        {
+            if (tracker == null)
+            {
+                return;
+            }
+
+            tracker.ClearFieldDirty(listIndex, rowIndex, fieldIndex);
+            hasUnsavedChanges = tracker.HasAnyDirtyEntries();
         }
 
         public void MarkFieldInvalid(

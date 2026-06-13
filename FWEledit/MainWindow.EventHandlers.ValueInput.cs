@@ -39,6 +39,7 @@ namespace FWEledit
 
         private void raw_value_editor_changed(object sender, EventArgs e)
         {
+            UpdateCurrentIdUsageIndicator();
         }
     }
 }

@@ -47,7 +47,7 @@ namespace FWEledit
         private ValueChangeResult ApplyListChange(ValueChangeRequest request)
         {
             ValueChangeResult result = new ValueChangeResult();
-            string valueToSet = request.NewValue ?? string.Empty;
+            string valueToSet = NormalizeClearedValue(request != null ? request.FieldType : null, request != null ? request.NewValue : null);
             ItemReferenceOption resolvedReferenceOption = null;
             if (request.ListIndex < 0 || request.FieldIndex < 0)
             {
@@ -441,6 +441,56 @@ namespace FWEledit
                 || string.Equals(fieldName, "item_quality", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(fieldName, "id_item_trade_service", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(fieldName, "id_sell_service", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string NormalizeClearedValue(string fieldType, string value)
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                return value;
+            }
+
+            if (string.IsNullOrWhiteSpace(fieldType))
+            {
+                return string.Empty;
+            }
+
+            if (string.Equals(fieldType, "int16", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(fieldType, "int32", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(fieldType, "int64", StringComparison.OrdinalIgnoreCase))
+            {
+                return "0";
+            }
+
+            if (string.Equals(fieldType, "float", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(fieldType, "double", StringComparison.OrdinalIgnoreCase))
+            {
+                return "0";
+            }
+
+            if (fieldType.StartsWith("byte:", StringComparison.OrdinalIgnoreCase))
+            {
+                int byteCount;
+                if (int.TryParse(fieldType.Substring(5), out byteCount) && byteCount > 0)
+                {
+                    System.Text.StringBuilder builder = new System.Text.StringBuilder(byteCount * 3);
+                    for (int i = 0; i < byteCount; i++)
+                    {
+                        if (i > 0)
+                        {
+                            builder.Append("-");
+                        }
+
+                        builder.Append("00");
+                    }
+
+                    return builder.ToString();
+                }
+
+                return "00";
+            }
+
+            return string.Empty;
         }
 
         private ValueChangeResult ApplyConversationChange(ValueChangeRequest request)
