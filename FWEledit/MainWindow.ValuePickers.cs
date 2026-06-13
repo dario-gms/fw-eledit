@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -702,6 +703,8 @@ namespace FWEledit
             {
                 button_SetValue.Enabled = enabled;
             }
+
+            UpdateCurrentIdUsageIndicator();
         }
 
         private bool TryGetRawValueForCurrentCell(out string rawValue)
@@ -765,10 +768,6 @@ namespace FWEledit
             }
 
             string rawValue = textBox_SetValue.Text ?? string.Empty;
-            if (string.IsNullOrWhiteSpace(rawValue))
-            {
-                return;
-            }
 
             object current = dataGridView_item.Rows[rowIndex].Cells[2].Tag ?? dataGridView_item.Rows[rowIndex].Cells[2].Value;
             ValueCellState currentState = current as ValueCellState;
@@ -791,6 +790,151 @@ namespace FWEledit
             if (button_SetValue != null)
             {
                 button_SetValue.Enabled = true;
+            }
+
+            UpdateCurrentIdUsageIndicator();
+        }
+
+        private void UpdateCurrentIdUsageIndicator()
+        {
+            RestoreIdValueEditorStyle();
+
+            if (textBox_SetValue == null
+                || dataGridView_item == null
+                || dataGridView_item.CurrentCell == null
+                || comboBox_lists == null
+                || sessionService == null
+                || sessionService.ListCollection == null)
+            {
+                return;
+            }
+
+            int valueRowIndex = dataGridView_item.CurrentCell.RowIndex;
+            if (valueRowIndex < 0 || valueRowIndex >= dataGridView_item.Rows.Count)
+            {
+                return;
+            }
+
+            string fieldName = ValueGridFieldNameService.GetFieldName(dataGridView_item, valueRowIndex);
+            if (!string.Equals(fieldName, "id", StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            int listIndex = comboBox_lists.SelectedIndex;
+            int elementIndex = ResolveCurrentElementIndex();
+            int fieldIndex = valueRowIndexService.GetFieldIndexForValueRow(dataGridView_item, valueRowIndex);
+            if (listIndex < 0 || elementIndex < 0 || fieldIndex < 0)
+            {
+                return;
+            }
+
+            string candidateRawValue = textBox_SetValue.Text ?? string.Empty;
+            int candidateId;
+            if (!int.TryParse(candidateRawValue, out candidateId) || candidateId <= 0)
+            {
+                return;
+            }
+
+            int currentStoredId = 0;
+            int.TryParse(sessionService.ListCollection.GetValue(listIndex, elementIndex, fieldIndex), out currentStoredId);
+
+            int duplicateCount = CountIdOccurrencesInList(sessionService.ListCollection, listIndex, candidateId);
+            bool hasDuplicateId = candidateId == currentStoredId
+                ? duplicateCount > 1
+                : duplicateCount > 0;
+
+            if (!hasDuplicateId)
+            {
+                return;
+            }
+
+            DataGridViewCell valueCell = dataGridView_item.Rows[valueRowIndex].Cells[2];
+            Font baseFont = dataGridView_item.DefaultCellStyle.Font ?? dataGridView_item.Font ?? textBox_SetValue.Font;
+            if (baseFont == null)
+            {
+                baseFont = valueCell.InheritedStyle.Font;
+            }
+
+            valueCell.Style.ForeColor = Color.Red;
+            valueCell.Style.SelectionForeColor = Color.Red;
+            if (baseFont != null)
+            {
+                valueCell.Style.Font = new Font(baseFont, FontStyle.Bold);
+                textBox_SetValue.Font = new Font(baseFont, FontStyle.Bold);
+            }
+
+            textBox_SetValue.ForeColor = Color.Red;
+        }
+
+        private void RestoreIdValueEditorStyle()
+        {
+            if (textBox_SetValue == null)
+            {
+                return;
+            }
+
+            Font baseFont = null;
+            if (dataGridView_item != null)
+            {
+                baseFont = dataGridView_item.DefaultCellStyle.Font ?? dataGridView_item.Font;
+            }
+
+            textBox_SetValue.ForeColor = dataGridView_item != null
+                ? dataGridView_item.DefaultCellStyle.ForeColor
+                : SystemColors.WindowText;
+            if (baseFont != null)
+            {
+                textBox_SetValue.Font = baseFont;
+            }
+
+            if (dataGridView_item == null
+                || comboBox_lists == null
+                || sessionService == null
+                || sessionService.ListCollection == null)
+            {
+                return;
+            }
+
+            int listIndex = comboBox_lists.SelectedIndex;
+            int elementIndex = ResolveCurrentElementIndex();
+            if (listIndex < 0 || elementIndex < 0)
+            {
+                return;
+            }
+
+            for (int rowIndex = 0; rowIndex < dataGridView_item.Rows.Count; rowIndex++)
+            {
+                if (!string.Equals(ValueGridFieldNameService.GetFieldName(dataGridView_item, rowIndex), "id", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                int fieldIndex = valueRowIndexService.GetFieldIndexForValueRow(dataGridView_item, rowIndex);
+                if (fieldIndex < 0)
+                {
+                    continue;
+                }
+
+                DataGridViewCell valueCell = dataGridView_item.Rows[rowIndex].Cells[2];
+                Font cellBaseFont = dataGridView_item.DefaultCellStyle.Font ?? dataGridView_item.Font ?? valueCell.InheritedStyle.Font;
+                valueCell.Style.Font = cellBaseFont;
+
+                if (mainWindowDirtyTrackingService.IsFieldInvalid(dirtyStateTracker, listIndex, elementIndex, fieldIndex))
+                {
+                    valueCell.Style.ForeColor = Color.Red;
+                    valueCell.Style.SelectionForeColor = Color.Red;
+                }
+                else if (mainWindowDirtyTrackingService.IsFieldDirty(dirtyStateTracker, listIndex, elementIndex, fieldIndex))
+                {
+                    valueCell.Style.ForeColor = Color.DeepSkyBlue;
+                    valueCell.Style.SelectionForeColor = Color.DeepSkyBlue;
+                }
+                else
+                {
+                    valueCell.Style.ForeColor = dataGridView_item.DefaultCellStyle.ForeColor;
+                    valueCell.Style.SelectionForeColor = dataGridView_item.DefaultCellStyle.SelectionForeColor;
+                }
             }
         }
 
@@ -1105,6 +1249,26 @@ namespace FWEledit
                 return true;
             }
 
+            if (keyData == (Keys.Control | Keys.C) && IsValueGridShortcutTarget())
+            {
+                return TryCopyCurrentValueRowToClipboard();
+            }
+
+            if (keyData == (Keys.Control | Keys.V) && IsValueGridShortcutTarget())
+            {
+                return TryPasteClipboardIntoCurrentValueRow();
+            }
+
+            if (keyData == (Keys.Control | Keys.Z) && IsValueGridShortcutTarget())
+            {
+                return UndoLastValueEdit();
+            }
+
+            if (keyData == Keys.Delete && IsValueGridShortcutTarget())
+            {
+                return TryClearCurrentValueRows();
+            }
+
             return base.ProcessCmdKey(ref msg, keyData);
         }
 
@@ -1119,6 +1283,11 @@ namespace FWEledit
                 return;
             }
 
+            bool preserveSelection = e.ColumnIndex >= 0
+                && e.ColumnIndex < dataGridView_item.Columns.Count
+                && dataGridView_item.Rows[e.RowIndex].Cells[e.ColumnIndex].Selected;
+            List<Point> selectedCells = preserveSelection ? CaptureSelectedValueCells() : null;
+
             if (e.ColumnIndex >= 0 && e.ColumnIndex < dataGridView_item.Columns.Count)
             {
                 dataGridView_item.CurrentCell = dataGridView_item.Rows[e.RowIndex].Cells[e.ColumnIndex];
@@ -1126,6 +1295,16 @@ namespace FWEledit
             else if (dataGridView_item.Columns.Count > 2)
             {
                 dataGridView_item.CurrentCell = dataGridView_item.Rows[e.RowIndex].Cells[2];
+            }
+
+            if (preserveSelection)
+            {
+                RestoreSelectedValueCells(selectedCells, e.RowIndex, e.ColumnIndex);
+            }
+            else if (e.ColumnIndex >= 0 && e.ColumnIndex < dataGridView_item.Columns.Count)
+            {
+                dataGridView_item.ClearSelection();
+                dataGridView_item.Rows[e.RowIndex].Cells[e.ColumnIndex].Selected = true;
             }
 
             Point screenLocation;
@@ -1189,8 +1368,34 @@ namespace FWEledit
 
             ContextMenuStrip menu = new ContextMenuStrip();
 
+            int[] selectedValueRows = GetSelectedValueRowIndices(rowIndex);
+            bool hasMultipleValueRows = selectedValueRows.Length > 1;
+
+            ToolStripMenuItem copyFieldItem = new ToolStripMenuItem(hasMultipleValueRows ? "Copy Fields" : "Copy Field");
+            copyFieldItem.ShortcutKeyDisplayString = "Ctrl+C";
+            copyFieldItem.Click += (menuSender, args) => CopyValueRowsToClipboard(selectedValueRows);
+            menu.Items.Add(copyFieldItem);
+
+            ToolStripMenuItem pasteFieldItem = new ToolStripMenuItem(hasMultipleValueRows ? "Paste Fields" : "Paste Field");
+            pasteFieldItem.ShortcutKeyDisplayString = "Ctrl+V";
+            pasteFieldItem.Enabled = ClipboardHasText();
+            pasteFieldItem.Click += (menuSender, args) => PasteClipboardIntoValueRows(selectedValueRows);
+            menu.Items.Add(pasteFieldItem);
+
+            ToolStripMenuItem undoFieldItem = new ToolStripMenuItem("Undo Field Change");
+            undoFieldItem.ShortcutKeyDisplayString = "Ctrl+Z";
+            undoFieldItem.Enabled = valueEditUndoStack.Count > 0;
+            undoFieldItem.Click += (menuSender, args) => UndoLastValueEdit();
+            menu.Items.Add(undoFieldItem);
+
+            ToolStripMenuItem clearFieldItem = new ToolStripMenuItem(hasMultipleValueRows ? "Clear Fields" : "Clear Field");
+            clearFieldItem.ShortcutKeyDisplayString = "Del";
+            clearFieldItem.Click += (menuSender, args) => ClearValueRows(selectedValueRows);
+            menu.Items.Add(clearFieldItem);
+
             if (isReferenceField && CanResolveReferencedItemForValueRow(rowIndex))
             {
+                menu.Items.Add(new ToolStripSeparator());
                 ToolStripMenuItem goToItem = new ToolStripMenuItem("Go to referenced item");
                 goToItem.ShortcutKeyDisplayString = "Ctrl+Shift+G";
                 goToItem.Click += (menuSender, args) => GoToReferencedItemFromValueRow(rowIndex, true);
@@ -1371,6 +1576,720 @@ namespace FWEledit
             }
 
             menu.Show(screenLocation);
+        }
+
+        private bool IsValueGridShortcutTarget()
+        {
+            return dataGridView_item != null
+                && dataGridView_item.ContainsFocus
+                && dataGridView_item.CurrentCell != null
+                && dataGridView_item.CurrentCell.RowIndex >= 0;
+        }
+
+        private bool TryCopyCurrentValueRowToClipboard()
+        {
+            if (dataGridView_item == null || dataGridView_item.CurrentCell == null)
+            {
+                return false;
+            }
+
+            return CopyValueRowsToClipboard(GetSelectedValueRowIndices(dataGridView_item.CurrentCell.RowIndex));
+        }
+
+        private bool CopyValueRowsToClipboard(int[] rowIndices)
+        {
+            if (rowIndices == null || rowIndices.Length == 0)
+            {
+                return false;
+            }
+
+            try
+            {
+                string[] rawValues = new string[rowIndices.Length];
+                for (int i = 0; i < rowIndices.Length; i++)
+                {
+                    rawValues[i] = GetRawValueForValueRow(rowIndices[i]) ?? string.Empty;
+                }
+
+                DataObject dataObject = new DataObject();
+                dataObject.SetData(ValueRowsClipboardFormat, false, rawValues);
+                dataObject.SetText(string.Join(Environment.NewLine, rawValues));
+                Clipboard.SetDataObject(dataObject, true);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private bool TryPasteClipboardIntoCurrentValueRow()
+        {
+            if (dataGridView_item == null || dataGridView_item.CurrentCell == null)
+            {
+                return false;
+            }
+
+            return PasteClipboardIntoValueRows(GetSelectedValueRowIndices(dataGridView_item.CurrentCell.RowIndex));
+        }
+
+        private bool TryClearCurrentValueRows()
+        {
+            if (dataGridView_item == null || dataGridView_item.CurrentCell == null)
+            {
+                return false;
+            }
+
+            return ClearValueRows(GetSelectedValueRowIndices(dataGridView_item.CurrentCell.RowIndex));
+        }
+
+        private bool PasteClipboardIntoValueRows(int[] rowIndices)
+        {
+            if (dataGridView_item == null
+                || rowIndices == null
+                || rowIndices.Length == 0
+                || textBox_SetValue == null)
+            {
+                return false;
+            }
+
+            string[] clipboardValues;
+            if (!TryGetClipboardValues(out clipboardValues) || clipboardValues.Length == 0)
+            {
+                return false;
+            }
+
+            string[] valuesToApply;
+            if (clipboardValues.Length == 1)
+            {
+                valuesToApply = new string[rowIndices.Length];
+                for (int i = 0; i < rowIndices.Length; i++)
+                {
+                    valuesToApply[i] = clipboardValues[0];
+                }
+            }
+            else if (clipboardValues.Length == rowIndices.Length)
+            {
+                valuesToApply = clipboardValues;
+            }
+            else if (clipboardValues.Length > 1 && rowIndices.Length == 1)
+            {
+                int startRow = rowIndices[0];
+                if (startRow < 0 || startRow + clipboardValues.Length > dataGridView_item.Rows.Count)
+                {
+                    MessageBox.Show(
+                        "There are not enough rows below the selected field to paste the copied sequence.",
+                        "Paste fields",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Information);
+                    return false;
+                }
+
+                rowIndices = BuildSequentialValueRowIndices(startRow, clipboardValues.Length);
+                valuesToApply = clipboardValues;
+            }
+            else
+            {
+                MessageBox.Show(
+                    "Select the same number of fields you copied, copy a single field to repeat it, or select the first destination field to paste the sequence downward.",
+                    "Paste fields",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+                return false;
+            }
+
+            BeginValueEditUndoGroup(rowIndices);
+            try
+            {
+                bool applied = false;
+                for (int i = 0; i < rowIndices.Length; i++)
+                {
+                    applied |= ApplyRawValueToValueRow(rowIndices[i], valuesToApply[i]);
+                }
+
+                if (!applied)
+                {
+                    DiscardPendingValueEditUndoGroup();
+                }
+            }
+            finally
+            {
+                EndValueEditUndoGroup();
+            }
+
+            return true;
+        }
+
+        private bool ClearValueRows(int[] rowIndices)
+        {
+            if (dataGridView_item == null
+                || rowIndices == null
+                || rowIndices.Length == 0
+                || textBox_SetValue == null)
+            {
+                return false;
+            }
+
+            BeginValueEditUndoGroup(rowIndices);
+            try
+            {
+                bool applied = false;
+                for (int i = 0; i < rowIndices.Length; i++)
+                {
+                    applied |= ApplyRawValueToValueRow(rowIndices[i], string.Empty);
+                }
+
+                if (!applied)
+                {
+                    DiscardPendingValueEditUndoGroup();
+                }
+
+                return applied;
+            }
+            finally
+            {
+                EndValueEditUndoGroup();
+            }
+        }
+
+        private bool ApplyRawValueToValueRow(int rowIndex, string rawValue)
+        {
+            if (dataGridView_item == null
+                || textBox_SetValue == null
+                || rowIndex < 0
+                || rowIndex >= dataGridView_item.Rows.Count)
+            {
+                return false;
+            }
+
+            string previousRawValue = GetRawValueForValueRow(rowIndex);
+            if (dataGridView_item.CurrentCell == null || dataGridView_item.CurrentCell.RowIndex != rowIndex)
+            {
+                dataGridView_item.CurrentCell = dataGridView_item.Rows[rowIndex].Cells[2];
+            }
+
+            textBox_SetValue.Text = rawValue ?? string.Empty;
+            ApplyRawValueEditorToCurrentCell();
+            return !string.Equals(previousRawValue, GetRawValueForValueRow(rowIndex), StringComparison.Ordinal);
+        }
+
+        private int[] GetSelectedValueRowIndices(int fallbackRowIndex)
+        {
+            int[] selectedRows = gridCellSelectionService != null
+                ? gridCellSelectionService.GetSelectedRowIndices(dataGridView_item)
+                : new int[0];
+
+            if (selectedRows.Length == 0 && fallbackRowIndex >= 0)
+            {
+                return new int[] { fallbackRowIndex };
+            }
+
+            if (fallbackRowIndex >= 0)
+            {
+                bool containsFallback = false;
+                for (int i = 0; i < selectedRows.Length; i++)
+                {
+                    if (selectedRows[i] == fallbackRowIndex)
+                    {
+                        containsFallback = true;
+                        break;
+                    }
+                }
+
+                if (!containsFallback)
+                {
+                    int[] merged = new int[selectedRows.Length + 1];
+                    Array.Copy(selectedRows, merged, selectedRows.Length);
+                    merged[merged.Length - 1] = fallbackRowIndex;
+                    Array.Sort(merged);
+                    return merged;
+                }
+            }
+
+            return selectedRows;
+        }
+
+        private static int[] BuildSequentialValueRowIndices(int startRow, int count)
+        {
+            int[] rows = new int[count];
+            for (int i = 0; i < count; i++)
+            {
+                rows[i] = startRow + i;
+            }
+
+            return rows;
+        }
+
+        private List<Point> CaptureSelectedValueCells()
+        {
+            List<Point> selectedCells = new List<Point>();
+            if (dataGridView_item == null || dataGridView_item.SelectedCells == null)
+            {
+                return selectedCells;
+            }
+
+            for (int i = 0; i < dataGridView_item.SelectedCells.Count; i++)
+            {
+                DataGridViewCell cell = dataGridView_item.SelectedCells[i];
+                if (cell != null && cell.RowIndex >= 0 && cell.ColumnIndex >= 0)
+                {
+                    selectedCells.Add(new Point(cell.ColumnIndex, cell.RowIndex));
+                }
+            }
+
+            return selectedCells;
+        }
+
+        private void RestoreSelectedValueCells(List<Point> selectedCells, int clickedRowIndex, int clickedColumnIndex)
+        {
+            if (dataGridView_item == null || selectedCells == null || selectedCells.Count == 0)
+            {
+                return;
+            }
+
+            dataGridView_item.ClearSelection();
+            for (int i = 0; i < selectedCells.Count; i++)
+            {
+                Point cellPoint = selectedCells[i];
+                if (cellPoint.Y >= 0
+                    && cellPoint.Y < dataGridView_item.Rows.Count
+                    && cellPoint.X >= 0
+                    && cellPoint.X < dataGridView_item.Columns.Count)
+                {
+                    dataGridView_item.Rows[cellPoint.Y].Cells[cellPoint.X].Selected = true;
+                }
+            }
+
+            if (clickedRowIndex >= 0
+                && clickedRowIndex < dataGridView_item.Rows.Count
+                && clickedColumnIndex >= 0
+                && clickedColumnIndex < dataGridView_item.Columns.Count)
+            {
+                dataGridView_item.Rows[clickedRowIndex].Cells[clickedColumnIndex].Selected = true;
+            }
+        }
+
+        private static bool ClipboardHasText()
+        {
+            try
+            {
+                return Clipboard.ContainsText();
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool TryGetClipboardValues(out string[] clipboardValues)
+        {
+            clipboardValues = null;
+            try
+            {
+                IDataObject dataObject = Clipboard.GetDataObject();
+                if (dataObject != null && dataObject.GetDataPresent(ValueRowsClipboardFormat))
+                {
+                    string[] storedValues = dataObject.GetData(ValueRowsClipboardFormat) as string[];
+                    if (storedValues != null && storedValues.Length > 0)
+                    {
+                        clipboardValues = storedValues;
+                        return true;
+                    }
+                }
+
+                if (!Clipboard.ContainsText())
+                {
+                    return false;
+                }
+
+                string clipboardText = Clipboard.GetText();
+                clipboardValues = NormalizeClipboardTextToValues(clipboardText);
+                return true;
+            }
+            catch
+            {
+                clipboardValues = null;
+                return false;
+            }
+        }
+
+        private static string[] NormalizeClipboardTextToValues(string clipboardText)
+        {
+            if (clipboardText == null)
+            {
+                return new string[] { string.Empty };
+            }
+
+            string normalized = clipboardText.Replace("\r\n", "\n");
+            if (normalized.IndexOf('\n') < 0)
+            {
+                return new string[] { clipboardText };
+            }
+
+            return normalized.Split(new[] { '\n' }, StringSplitOptions.None);
+        }
+
+        private ValueEditUndoCandidate CaptureValueEditUndoCandidate(DataGridViewCellEventArgs ea)
+        {
+            if (suppressValueEditUndoCapture
+                || ea == null
+                || sessionService == null
+                || sessionService.ListCollection == null
+                || comboBox_lists == null
+                || dataGridView_item == null
+                || dataGridView_elems == null)
+            {
+                return null;
+            }
+
+            int listIndex = comboBox_lists.SelectedIndex;
+            int fieldIndex = valueRowIndexService.GetFieldIndexForValueRow(dataGridView_item, ea.RowIndex);
+            if (listIndex < 0 || fieldIndex < 0)
+            {
+                return null;
+            }
+
+            int[] selectedGridRows = gridSelectionService.GetSelectedIndices(dataGridView_elems);
+            int activeGridRow = gridActiveRowService.GetActiveRowIndex(dataGridView_elems, gridSelectionService);
+            if (selectedGridRows == null || selectedGridRows.Length == 0)
+            {
+                if (activeGridRow < 0)
+                {
+                    return null;
+                }
+
+                selectedGridRows = new int[] { activeGridRow };
+            }
+
+            int[] selectedElementIndices = new int[selectedGridRows.Length];
+            string[] oldValues = new string[selectedGridRows.Length];
+            bool[] rowWasDirty = new bool[selectedGridRows.Length];
+            bool[] fieldWasDirty = new bool[selectedGridRows.Length];
+            for (int i = 0; i < selectedGridRows.Length; i++)
+            {
+                int elementIndex = elementIndexResolverService.ResolveElementIndexFromGridRow(
+                    sessionService.ListCollection,
+                    listIndex,
+                    selectedGridRows[i],
+                    dataGridView_elems);
+                if (elementIndex < 0)
+                {
+                    return null;
+                }
+
+                selectedElementIndices[i] = elementIndex;
+                oldValues[i] = sessionService.ListCollection.GetValue(listIndex, elementIndex, fieldIndex);
+                rowWasDirty[i] = mainWindowDirtyTrackingService.IsRowDirty(dirtyStateTracker, listIndex, elementIndex);
+                fieldWasDirty[i] = mainWindowDirtyTrackingService.IsFieldDirty(dirtyStateTracker, listIndex, elementIndex, fieldIndex);
+            }
+
+            return new ValueEditUndoCandidate
+            {
+                ListIndex = listIndex,
+                FieldIndex = fieldIndex,
+                FieldName = ValueGridFieldNameService.GetFieldName(dataGridView_item, ea.RowIndex),
+                ValueRowIndex = ea.RowIndex,
+                ActiveGridRow = activeGridRow,
+                SelectedGridRows = selectedGridRows,
+                SelectedElementIndices = selectedElementIndices,
+                OldValues = oldValues,
+                RowWasDirty = rowWasDirty,
+                FieldWasDirty = fieldWasDirty,
+                PreviousHasUnsavedChanges = viewModel != null && viewModel.HasUnsavedChanges
+            };
+        }
+
+        private void CommitValueEditUndoCandidate(ValueEditUndoCandidate candidate)
+        {
+            if (candidate == null
+                || suppressValueEditUndoCapture
+                || sessionService == null
+                || sessionService.ListCollection == null)
+            {
+                return;
+            }
+
+            string[] newValues = new string[candidate.SelectedElementIndices.Length];
+            bool changed = false;
+            for (int i = 0; i < candidate.SelectedElementIndices.Length; i++)
+            {
+                int elementIndex = candidate.SelectedElementIndices[i];
+                string newValue = sessionService.ListCollection.GetValue(candidate.ListIndex, elementIndex, candidate.FieldIndex);
+                newValues[i] = newValue;
+                if (!string.Equals(candidate.OldValues[i], newValue, StringComparison.Ordinal))
+                {
+                    changed = true;
+                }
+            }
+
+            if (!changed)
+            {
+                return;
+            }
+
+            ValueEditUndoChange change = new ValueEditUndoChange
+            {
+                FieldIndex = candidate.FieldIndex,
+                FieldName = candidate.FieldName ?? string.Empty,
+                ValueRowIndex = candidate.ValueRowIndex,
+                SelectedElementIndices = candidate.SelectedElementIndices,
+                OldValues = candidate.OldValues,
+                NewValues = newValues,
+                RowWasDirty = candidate.RowWasDirty,
+                FieldWasDirty = candidate.FieldWasDirty
+            };
+
+            if (valueEditUndoGroupDepth > 0)
+            {
+                if (pendingValueEditUndoBatch == null)
+                {
+                    pendingValueEditUndoBatch = new ValueEditUndoBatch
+                    {
+                        ListIndex = candidate.ListIndex,
+                        ActiveGridRow = candidate.ActiveGridRow,
+                        SelectedGridRows = candidate.SelectedGridRows,
+                        PreviousHasUnsavedChanges = candidate.PreviousHasUnsavedChanges
+                    };
+                }
+
+                pendingValueEditUndoBatch.Changes.Add(change);
+                return;
+            }
+
+            ValueEditUndoBatch batch = new ValueEditUndoBatch
+            {
+                ListIndex = candidate.ListIndex,
+                ActiveGridRow = candidate.ActiveGridRow,
+                SelectedGridRows = candidate.SelectedGridRows,
+                PreviousHasUnsavedChanges = candidate.PreviousHasUnsavedChanges
+            };
+            batch.Changes.Add(change);
+            valueEditUndoStack.Push(batch);
+        }
+
+        private void BeginValueEditUndoGroup(int[] selectedValueRows)
+        {
+            valueEditUndoGroupDepth++;
+            if (valueEditUndoGroupDepth == 1)
+            {
+                pendingValueEditUndoBatch = null;
+            }
+        }
+
+        private void DiscardPendingValueEditUndoGroup()
+        {
+            pendingValueEditUndoBatch = null;
+        }
+
+        private void EndValueEditUndoGroup()
+        {
+            if (valueEditUndoGroupDepth <= 0)
+            {
+                return;
+            }
+
+            valueEditUndoGroupDepth--;
+            if (valueEditUndoGroupDepth == 0)
+            {
+                if (pendingValueEditUndoBatch != null && pendingValueEditUndoBatch.Changes.Count > 0)
+                {
+                    valueEditUndoStack.Push(pendingValueEditUndoBatch);
+                }
+
+                pendingValueEditUndoBatch = null;
+            }
+        }
+
+        private bool UndoLastValueEdit()
+        {
+            if (valueEditUndoStack.Count == 0 || sessionService == null || sessionService.ListCollection == null || comboBox_lists == null)
+            {
+                return false;
+            }
+
+            ValueEditUndoBatch batch = valueEditUndoStack.Pop();
+            if (batch == null || batch.Changes.Count == 0)
+            {
+                return false;
+            }
+
+            suppressValueEditUndoCapture = true;
+            try
+            {
+                for (int changeIndex = 0; changeIndex < batch.Changes.Count; changeIndex++)
+                {
+                    ValueEditUndoChange change = batch.Changes[changeIndex];
+                    if (change == null)
+                    {
+                        continue;
+                    }
+
+                    for (int i = 0; i < change.SelectedElementIndices.Length; i++)
+                    {
+                        int elementIndex = change.SelectedElementIndices[i];
+                        string valueToRestore = change.OldValues != null && i < change.OldValues.Length
+                            ? change.OldValues[i]
+                            : string.Empty;
+
+                        if (string.Equals(change.FieldName, "id", StringComparison.OrdinalIgnoreCase)
+                            || string.Equals(change.FieldName, "ID", StringComparison.OrdinalIgnoreCase))
+                        {
+                            int oldId;
+                            int newId;
+                            if (change.NewValues != null
+                                && i < change.NewValues.Length
+                                && int.TryParse(change.NewValues[i], out newId)
+                                && int.TryParse(valueToRestore, out oldId)
+                                && newId > 0
+                                && oldId > 0
+                                && newId != oldId)
+                            {
+                                RemapDescriptionIdIfNeeded(newId, oldId);
+                            }
+                        }
+
+                        sessionService.ListCollection.SetValue(batch.ListIndex, elementIndex, change.FieldIndex, valueToRestore);
+                        bool rowWasDirty = change.RowWasDirty != null
+                            && i < change.RowWasDirty.Length
+                            && change.RowWasDirty[i];
+                        bool fieldWasDirty = change.FieldWasDirty != null
+                            && i < change.FieldWasDirty.Length
+                            && change.FieldWasDirty[i];
+
+                        if (rowWasDirty)
+                        {
+                            mainWindowDirtyTrackingService.MarkRowDirty(
+                                dirtyStateTracker,
+                                listDisplayService,
+                                ref viewModel.HasUnsavedChanges,
+                                batch.ListIndex,
+                                elementIndex);
+                        }
+                        else
+                        {
+                            mainWindowDirtyTrackingService.ClearRowDirty(
+                                dirtyStateTracker,
+                                listDisplayService,
+                                ref viewModel.HasUnsavedChanges,
+                                batch.ListIndex,
+                                elementIndex);
+                        }
+
+                        if (fieldWasDirty)
+                        {
+                            mainWindowDirtyTrackingService.MarkFieldDirty(
+                                dirtyStateTracker,
+                                ref viewModel.HasUnsavedChanges,
+                                batch.ListIndex,
+                                elementIndex,
+                                change.FieldIndex);
+                        }
+                        else
+                        {
+                            mainWindowDirtyTrackingService.ClearFieldDirty(
+                                dirtyStateTracker,
+                                ref viewModel.HasUnsavedChanges,
+                                batch.ListIndex,
+                                elementIndex,
+                                change.FieldIndex);
+                        }
+                        mainWindowDirtyTrackingService.ClearFieldInvalid(
+                            dirtyStateTracker,
+                            batch.ListIndex,
+                            elementIndex,
+                            change.FieldIndex);
+                    }
+                }
+
+                searchSuggestionService.ClearCache();
+                InvalidateItemReferenceOptionCaches();
+                InvalidateReferenceIndexAndDisplays();
+
+                if (comboBox_lists.SelectedIndex != batch.ListIndex)
+                {
+                    comboBox_lists.SelectedIndex = batch.ListIndex;
+                }
+                else
+                {
+                    change_list(null, null);
+                }
+
+                RestoreElementGridSelection(batch.SelectedGridRows, batch.ActiveGridRow);
+                change_item(null, null);
+                RestoreValueGridSelection(batch);
+                UpdateNpcSellServiceUiForSelection();
+                if (viewModel != null)
+                {
+                    viewModel.HasUnsavedChanges = batch.PreviousHasUnsavedChanges;
+                }
+                return true;
+            }
+            finally
+            {
+                suppressValueEditUndoCapture = false;
+            }
+        }
+
+        private void RestoreElementGridSelection(int[] selectedGridRows, int activeGridRow)
+        {
+            if (dataGridView_elems == null)
+            {
+                return;
+            }
+
+            dataGridView_elems.ClearSelection();
+            if (selectedGridRows != null)
+            {
+                for (int i = 0; i < selectedGridRows.Length; i++)
+                {
+                    int rowIndex = selectedGridRows[i];
+                    if (rowIndex >= 0 && rowIndex < dataGridView_elems.Rows.Count)
+                    {
+                        dataGridView_elems.Rows[rowIndex].Selected = true;
+                    }
+                }
+            }
+
+            int targetRow = activeGridRow;
+            if (targetRow < 0 && selectedGridRows != null && selectedGridRows.Length > 0)
+            {
+                targetRow = selectedGridRows[0];
+            }
+
+            if (targetRow >= 0 && targetRow < dataGridView_elems.Rows.Count)
+            {
+                dataGridView_elems.CurrentCell = dataGridView_elems.Rows[targetRow].Cells[0];
+            }
+        }
+
+        private void RestoreValueGridSelection(ValueEditUndoBatch batch)
+        {
+            if (dataGridView_item == null || batch == null)
+            {
+                return;
+            }
+
+            dataGridView_item.ClearSelection();
+            int targetRow = -1;
+            for (int i = 0; i < batch.Changes.Count; i++)
+            {
+                int rowIndex = batch.Changes[i].ValueRowIndex;
+                if (rowIndex < 0 || rowIndex >= dataGridView_item.Rows.Count)
+                {
+                    continue;
+                }
+
+                dataGridView_item.Rows[rowIndex].Cells[2].Selected = true;
+                if (targetRow < 0)
+                {
+                    targetRow = rowIndex;
+                }
+            }
+
+            if (targetRow >= 0 && targetRow < dataGridView_item.Rows.Count)
+            {
+                dataGridView_item.CurrentCell = dataGridView_item.Rows[targetRow].Cells[2];
+            }
         }
 
         private void GoToReferencedItemFromCurrentValueRow(bool showMessage)

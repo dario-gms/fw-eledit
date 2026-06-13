@@ -26,7 +26,7 @@ namespace FWEledit
                         listIndex,
                         entryIndex,
                         nameFieldIndex,
-                        mainWindowDirtyTrackingService.IsRowDirty(dirtyStateTracker, listIndex, entryIndex)),
+                        IsElementMarkedDirty(listIndex, entryIndex)),
                 dataGridView_elems,
                 dataGridView_item,
                 textBox_offset,
@@ -120,6 +120,8 @@ namespace FWEledit
                 return;
             }
 
+            ValueEditUndoCandidate undoCandidate = CaptureValueEditUndoCandidate(ea);
+
             int currentListIndex = comboBox_lists != null ? comboBox_lists.SelectedIndex : -1;
             int currentElementIndex = ResolveCurrentElementIndex();
             string editedFieldName = (ea != null && ea.RowIndex >= 0 && ea.RowIndex < dataGridView_item.Rows.Count)
@@ -149,7 +151,7 @@ namespace FWEledit
                         listIndex,
                         entryIndex,
                         nameFieldIndex,
-                        mainWindowDirtyTrackingService.IsRowDirty(dirtyStateTracker, listIndex, entryIndex)),
+                        IsElementMarkedDirty(listIndex, entryIndex)),
                 (listIndex, gridRowIndex) => elementIndexResolverService.ResolveElementIndexFromGridRow(
                     sessionService.ListCollection,
                     listIndex,
@@ -226,6 +228,7 @@ namespace FWEledit
                 }
             }
             UpdateNpcSellServiceUiForSelection();
+            CommitValueEditUndoCandidate(undoCandidate);
         }
     }
 }

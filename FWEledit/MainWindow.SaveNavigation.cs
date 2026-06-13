@@ -49,7 +49,8 @@ namespace FWEledit
                 navigationSnapshotUiService,
                 navigationSnapshotService,
                 comboBox_lists,
-                dataGridView_elems);
+                dataGridView_elems,
+                dataGridView_item);
         }
 
         private void RestoreNavigationSnapshot(NavigationSnapshot snapshot)
@@ -61,6 +62,7 @@ namespace FWEledit
                 snapshot,
                 comboBox_lists,
                 dataGridView_elems,
+                dataGridView_item,
                 () => viewModel.IsRestoringSessionState,
                 value => viewModel.IsRestoringSessionState = value);
         }

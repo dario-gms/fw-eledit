@@ -40,6 +40,10 @@ namespace FWEledit
         private readonly Button previewButton;
         private readonly DataGridView grid;
         private readonly Label statusLabel;
+        private readonly ContextMenuStrip entryMenu;
+        private readonly ToolStripMenuItem openPathEditorMenuItem;
+        private readonly AssetManager assetManager;
+        private readonly CacheSave database;
         private readonly System.Windows.Forms.Timer filterTimer;
         private readonly System.Windows.Forms.Timer autoPreviewTimer;
         private readonly AssetManager previewAssetManager;
@@ -61,13 +65,17 @@ namespace FWEledit
             int currentPathId,
             string preferredPackage,
             Func<string, List<ModelPickerEntry>> packageEntriesLoader = null,
-            Func<string, Bitmap> iconLoader = null)
+            Func<string, Bitmap> iconLoader = null,
+            AssetManager assetManager = null,
+            CacheSave database = null)
         {
             allEntries = entries ?? new List<ModelPickerEntry>();
             filteredEntries = new List<ModelPickerEntry>();
             loadedPackages = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             this.packageEntriesLoader = packageEntriesLoader;
             this.iconLoader = iconLoader;
+            this.assetManager = assetManager;
+            this.database = database;
             iconBitmapCache = new Dictionary<string, Bitmap>(StringComparer.OrdinalIgnoreCase);
             entriesByPackage = new Dictionary<string, List<ModelPickerEntry>>(StringComparer.OrdinalIgnoreCase);
             folderNamesByPackageCache = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
@@ -234,6 +242,7 @@ namespace FWEledit
             grid.SelectionChanged += (s, e) => ScheduleAutoPreview();
             grid.CellValueNeeded += OnGridCellValueNeeded;
             grid.CellFormatting += OnGridCellFormatting;
+            grid.CellMouseDown += OnGridCellMouseDown;
             grid.KeyDown += (s, e) =>
             {
                 if (e.KeyCode == Keys.Enter)
@@ -264,6 +273,13 @@ namespace FWEledit
             grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "colId", HeaderText = "ID", Width = 90 });
             grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "colUses", HeaderText = "Uses", Width = 70 });
             grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "colPathId", HeaderText = "PathID", Width = 90 });
+
+            entryMenu = new ContextMenuStrip();
+            openPathEditorMenuItem = new ToolStripMenuItem("Open with Path Editor");
+            openPathEditorMenuItem.Click += (s, e) => OpenSelectedEntryInPathEditor();
+            entryMenu.Items.Add(openPathEditorMenuItem);
+            entryMenu.Opening += OnEntryMenuOpening;
+            grid.ContextMenuStrip = entryMenu;
 
             Panel bottom = new Panel();
             bottom.Dock = DockStyle.Bottom;
@@ -616,6 +632,36 @@ namespace FWEledit
             }
         }
 
+        private void OnGridCellMouseDown(object sender, DataGridViewCellMouseEventArgs e)
+        {
+            if (e.Button != MouseButtons.Right || e.RowIndex < 0 || e.ColumnIndex < 0)
+            {
+                return;
+            }
+
+            if (grid.CurrentCell == null
+                || grid.CurrentCell.RowIndex != e.RowIndex
+                || grid.CurrentCell.ColumnIndex != e.ColumnIndex)
+            {
+                grid.CurrentCell = grid.Rows[e.RowIndex].Cells[e.ColumnIndex];
+            }
+        }
+
+        private void OnEntryMenuOpening(object sender, System.ComponentModel.CancelEventArgs e)
+        {
+            ModelPickerEntry selected = TryGetCurrentEntry();
+            bool canOpen = selected != null
+                && assetManager != null
+                && database != null;
+
+            if (openPathEditorMenuItem != null)
+            {
+                openPathEditorMenuItem.Enabled = canOpen;
+            }
+
+            e.Cancel = !canOpen;
+        }
+
         private ModelPickerEntry TryGetEntryAtRow(int rowIndex)
         {
             if (rowIndex < 0 || filteredEntries == null || rowIndex >= filteredEntries.Count)
@@ -624,6 +670,12 @@ namespace FWEledit
             }
 
             return filteredEntries[rowIndex];
+        }
+
+        private ModelPickerEntry TryGetCurrentEntry()
+        {
+            int rowIndex = grid != null && grid.CurrentCell != null ? grid.CurrentCell.RowIndex : -1;
+            return TryGetEntryAtRow(rowIndex);
         }
 
         private Bitmap ResolveEntryIcon(ModelPickerEntry entry)
@@ -1188,6 +1240,85 @@ namespace FWEledit
             SelectedMappedPath = mappedPath ?? string.Empty;
             DialogResult = DialogResult.OK;
             Close();
+        }
+
+        private void OpenSelectedEntryInPathEditor()
+        {
+            ModelPickerEntry selected = TryGetCurrentEntry();
+            if (selected == null)
+            {
+                return;
+            }
+
+            string mappedPath = selected.MappedPath;
+            if (string.IsNullOrWhiteSpace(mappedPath))
+            {
+                mappedPath = BuildMappedPath(selected.Package, selected.RelativePath);
+            }
+
+            if (string.IsNullOrWhiteSpace(mappedPath))
+            {
+                MessageBox.Show(
+                    this,
+                    "This entry has no valid mapped path.",
+                    "Choice Model",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+                return;
+            }
+
+            int previousPathId = selected.PathId;
+            using (ModelPathEditorWindow editor = new ModelPathEditorWindow(
+                assetManager,
+                database,
+                previousPathId,
+                mappedPath))
+            {
+                if (editor.ShowDialog(this) != DialogResult.OK)
+                {
+                    return;
+                }
+
+                ApplyPathEditorResult(mappedPath, previousPathId, editor.SavedPathId, editor.SavedMappedPath);
+            }
+        }
+
+        private void ApplyPathEditorResult(string mappedPath, int previousPathId, int savedPathId, string savedMappedPath)
+        {
+            string effectiveMappedPath = string.IsNullOrWhiteSpace(savedMappedPath) ? mappedPath : savedMappedPath;
+            string normalizedMappedPath = ModelPickerService.NormalizeModelPathLookupKey(effectiveMappedPath);
+
+            for (int i = 0; i < allEntries.Count; i++)
+            {
+                ModelPickerEntry entry = allEntries[i];
+                if (entry == null)
+                {
+                    continue;
+                }
+
+                string entryMappedPath = entry.MappedPath;
+                if (string.IsNullOrWhiteSpace(entryMappedPath))
+                {
+                    entryMappedPath = BuildMappedPath(entry.Package, entry.RelativePath);
+                }
+
+                if (!string.Equals(
+                        ModelPickerService.NormalizeModelPathLookupKey(entryMappedPath),
+                        normalizedMappedPath,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                entry.PathId = savedPathId;
+                entry.MappedPath = effectiveMappedPath;
+                entry.SearchKey = BuildEntrySearchKey(entry);
+            }
+
+            SelectedPathId = savedPathId;
+            SelectedMappedPath = effectiveMappedPath;
+            grid.Invalidate();
+            SelectCurrentPathId(savedPathId > 0 ? savedPathId : previousPathId);
         }
 
         private async void PreviewSelectionAsync()

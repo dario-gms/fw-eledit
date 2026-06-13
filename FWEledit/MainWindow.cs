@@ -145,6 +145,7 @@ namespace FWEledit
         private readonly ValueChangeCommandService valueChangeCommandService = new ValueChangeCommandService();
         private readonly ValueRowPickerUiService valueRowPickerUiService = new ValueRowPickerUiService();
         private readonly MainWindowValueRowPickerUiService mainWindowValueRowPickerUiService = new MainWindowValueRowPickerUiService();
+        private readonly GridCellSelectionService gridCellSelectionService = new GridCellSelectionService();
         private readonly ValueCompatibilityService valueCompatibilityService;
         private readonly ValueChangeService valueChangeService;
         private readonly DirtyStateTracker dirtyStateTracker = new DirtyStateTracker();
@@ -292,6 +293,47 @@ namespace FWEledit
         private ListBox searchSuggestionList;
         private System.Windows.Forms.Timer navigationPersistTimer;
         private static readonly List<QualityOption> ItemQualityOptions = ItemQualityCatalog.Options;
+        private readonly Stack<ValueEditUndoBatch> valueEditUndoStack = new Stack<ValueEditUndoBatch>();
+        private ValueEditUndoBatch pendingValueEditUndoBatch;
+        private int valueEditUndoGroupDepth;
+        private bool suppressValueEditUndoCapture;
+        private const string ValueRowsClipboardFormat = "FWEledit.ValueRows";
+
+        private sealed class ValueEditUndoCandidate
+        {
+            public int ListIndex { get; set; }
+            public int FieldIndex { get; set; }
+            public string FieldName { get; set; }
+            public int ValueRowIndex { get; set; }
+            public int ActiveGridRow { get; set; }
+            public int[] SelectedGridRows { get; set; }
+            public int[] SelectedElementIndices { get; set; }
+            public string[] OldValues { get; set; }
+            public bool[] RowWasDirty { get; set; }
+            public bool[] FieldWasDirty { get; set; }
+            public bool PreviousHasUnsavedChanges { get; set; }
+        }
+
+        private sealed class ValueEditUndoChange
+        {
+            public int FieldIndex { get; set; }
+            public string FieldName { get; set; }
+            public int ValueRowIndex { get; set; }
+            public int[] SelectedElementIndices { get; set; }
+            public string[] OldValues { get; set; }
+            public string[] NewValues { get; set; }
+            public bool[] RowWasDirty { get; set; }
+            public bool[] FieldWasDirty { get; set; }
+        }
+
+        private sealed class ValueEditUndoBatch
+        {
+            public int ListIndex { get; set; }
+            public int ActiveGridRow { get; set; }
+            public int[] SelectedGridRows { get; set; }
+            public bool PreviousHasUnsavedChanges { get; set; }
+            public List<ValueEditUndoChange> Changes { get; } = new List<ValueEditUndoChange>();
+        }
     }
 }
 

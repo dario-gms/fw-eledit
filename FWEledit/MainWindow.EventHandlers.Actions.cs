@@ -46,6 +46,39 @@ namespace FWEledit
                 () => change_list(null, null),
                 () => change_item(null, null),
                 index => listDisplayService.GetFriendlyListName(sessionService.ListCollection.Lists[index].listName));
+
+            InvalidateItemReferenceOptionCaches();
+            if (!referenceIndexReady)
+            {
+                ScheduleVisibleReferenceCountRefresh();
+                return;
+            }
+
+            int[] selectedGridRows = gridSelectionService != null
+                ? gridSelectionService.GetSelectedIndices(dataGridView_elems)
+                : new int[0];
+
+            if (selectedGridRows.Length == 0)
+            {
+                ScheduleVisibleReferenceCountRefresh();
+                return;
+            }
+
+            for (int i = 0; i < selectedGridRows.Length; i++)
+            {
+                int elementIndex = elementIndexResolverService.ResolveElementIndexFromGridRow(
+                    sessionService.ListCollection,
+                    listIndex,
+                    selectedGridRows[i],
+                    dataGridView_elems);
+
+                if (elementIndex < 0)
+                {
+                    continue;
+                }
+
+                UpdateReferenceIndexForEditedElement(listIndex, elementIndex);
+            }
 		}
 
 

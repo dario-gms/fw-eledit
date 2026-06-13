@@ -37,6 +37,11 @@ namespace FWEledit
             get { return store.HasPendingChanges; }
         }
 
+        public bool HasPendingChangeForItem(int itemId)
+        {
+            return store.HasPendingChangeForItem(itemId);
+        }
+
         public string[] LoadFromFile(string filePath)
         {
             StatusText = store.LoadFromFile(filePath);

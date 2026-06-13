@@ -7,31 +7,58 @@ namespace FWEledit
     {
         public NavigationSnapshot CaptureSnapshot(int listIndex, DataGridView grid)
         {
+            return CaptureSnapshot(listIndex, grid, null);
+        }
+
+        public NavigationSnapshot CaptureSnapshot(int listIndex, DataGridView elementGrid, DataGridView itemGrid)
+        {
             NavigationSnapshot snapshot = new NavigationSnapshot
             {
                 ListIndex = listIndex,
                 ItemId = -1,
                 GridRowIndex = -1,
-                FirstDisplayedRow = -1
+                FirstDisplayedRow = -1,
+                ItemGridRowIndex = -1,
+                ItemGridColumnIndex = -1,
+                ItemGridFirstDisplayedRow = -1
             };
 
-            if (grid != null)
+            if (elementGrid != null)
             {
-                if (grid.CurrentCell != null)
+                if (elementGrid.CurrentCell != null)
                 {
-                    snapshot.GridRowIndex = grid.CurrentCell.RowIndex;
-                    if (snapshot.GridRowIndex >= 0 && snapshot.GridRowIndex < grid.Rows.Count)
+                    snapshot.GridRowIndex = elementGrid.CurrentCell.RowIndex;
+                    if (snapshot.GridRowIndex >= 0 && snapshot.GridRowIndex < elementGrid.Rows.Count)
                     {
                         int id;
-                        if (int.TryParse(Convert.ToString(grid.Rows[snapshot.GridRowIndex].Cells[0].Value), out id))
+                        if (int.TryParse(Convert.ToString(elementGrid.Rows[snapshot.GridRowIndex].Cells[0].Value), out id))
                         {
                             snapshot.ItemId = id;
                         }
                     }
                 }
-                if (grid.Rows.Count > 0)
+                if (elementGrid.Rows.Count > 0)
                 {
-                    snapshot.FirstDisplayedRow = grid.FirstDisplayedScrollingRowIndex;
+                    snapshot.FirstDisplayedRow = elementGrid.FirstDisplayedScrollingRowIndex;
+                }
+            }
+
+            if (itemGrid != null)
+            {
+                if (itemGrid.CurrentCell != null)
+                {
+                    snapshot.ItemGridRowIndex = itemGrid.CurrentCell.RowIndex;
+                    snapshot.ItemGridColumnIndex = itemGrid.CurrentCell.ColumnIndex;
+                }
+                else if (itemGrid.CurrentRow != null)
+                {
+                    snapshot.ItemGridRowIndex = itemGrid.CurrentRow.Index;
+                    snapshot.ItemGridColumnIndex = itemGrid.Columns.Count > 2 ? 2 : 0;
+                }
+
+                if (itemGrid.Rows.Count > 0)
+                {
+                    snapshot.ItemGridFirstDisplayedRow = itemGrid.FirstDisplayedScrollingRowIndex;
                 }
             }
 
@@ -40,7 +67,18 @@ namespace FWEledit
 
         public void RestoreSnapshot(NavigationSnapshot snapshot, ComboBox listCombo, DataGridView grid, Func<bool> getIsRestoring, Action<bool> setIsRestoring)
         {
-            if (listCombo == null || grid == null)
+            RestoreSnapshot(snapshot, listCombo, grid, null, getIsRestoring, setIsRestoring);
+        }
+
+        public void RestoreSnapshot(
+            NavigationSnapshot snapshot,
+            ComboBox listCombo,
+            DataGridView elementGrid,
+            DataGridView itemGrid,
+            Func<bool> getIsRestoring,
+            Action<bool> setIsRestoring)
+        {
+            if (snapshot == null || listCombo == null || elementGrid == null)
             {
                 return;
             }
@@ -61,10 +99,10 @@ namespace FWEledit
                 int targetRow = -1;
                 if (snapshot.ItemId > 0)
                 {
-                    for (int row = 0; row < grid.Rows.Count; row++)
+                    for (int row = 0; row < elementGrid.Rows.Count; row++)
                     {
                         int rowId;
-                        if (int.TryParse(Convert.ToString(grid.Rows[row].Cells[0].Value), out rowId) && rowId == snapshot.ItemId)
+                        if (int.TryParse(Convert.ToString(elementGrid.Rows[row].Cells[0].Value), out rowId) && rowId == snapshot.ItemId)
                         {
                             targetRow = row;
                             break;
@@ -72,30 +110,32 @@ namespace FWEledit
                     }
                 }
 
-                if (targetRow < 0 && snapshot.GridRowIndex >= 0 && snapshot.GridRowIndex < grid.Rows.Count)
+                if (targetRow < 0 && snapshot.GridRowIndex >= 0 && snapshot.GridRowIndex < elementGrid.Rows.Count)
                 {
                     targetRow = snapshot.GridRowIndex;
                 }
 
-                if (targetRow >= 0 && targetRow < grid.Rows.Count)
+                if (targetRow >= 0 && targetRow < elementGrid.Rows.Count)
                 {
-                    grid.ClearSelection();
-                    grid.CurrentCell = grid[0, targetRow];
-                    grid.Rows[targetRow].Selected = true;
+                    elementGrid.ClearSelection();
+                    elementGrid.CurrentCell = elementGrid[0, targetRow];
+                    elementGrid.Rows[targetRow].Selected = true;
                     try
                     {
-                        if (snapshot.FirstDisplayedRow >= 0 && snapshot.FirstDisplayedRow < grid.Rows.Count)
+                        if (snapshot.FirstDisplayedRow >= 0 && snapshot.FirstDisplayedRow < elementGrid.Rows.Count)
                         {
-                            grid.FirstDisplayedScrollingRowIndex = snapshot.FirstDisplayedRow;
+                            elementGrid.FirstDisplayedScrollingRowIndex = snapshot.FirstDisplayedRow;
                         }
                         else
                         {
-                            grid.FirstDisplayedScrollingRowIndex = targetRow;
+                            elementGrid.FirstDisplayedScrollingRowIndex = targetRow;
                         }
                     }
                     catch
                     { }
                 }
+
+                RestoreItemGridPosition(snapshot, itemGrid);
             }
             finally
             {
@@ -104,6 +144,44 @@ namespace FWEledit
                     setIsRestoring(previousRestore);
                 }
             }
+        }
+
+        private static void RestoreItemGridPosition(NavigationSnapshot snapshot, DataGridView itemGrid)
+        {
+            if (snapshot == null || itemGrid == null || itemGrid.Rows.Count == 0)
+            {
+                return;
+            }
+
+            int targetRow = snapshot.ItemGridRowIndex;
+            if (targetRow < 0 || targetRow >= itemGrid.Rows.Count)
+            {
+                return;
+            }
+
+            int targetColumn = snapshot.ItemGridColumnIndex;
+            if (targetColumn < 0 || targetColumn >= itemGrid.Columns.Count)
+            {
+                targetColumn = itemGrid.Columns.Count > 2 ? 2 : 0;
+            }
+
+            itemGrid.ClearSelection();
+            itemGrid.CurrentCell = itemGrid[targetColumn, targetRow];
+            itemGrid.Rows[targetRow].Cells[targetColumn].Selected = true;
+
+            try
+            {
+                if (snapshot.ItemGridFirstDisplayedRow >= 0 && snapshot.ItemGridFirstDisplayedRow < itemGrid.Rows.Count)
+                {
+                    itemGrid.FirstDisplayedScrollingRowIndex = snapshot.ItemGridFirstDisplayedRow;
+                }
+                else
+                {
+                    itemGrid.FirstDisplayedScrollingRowIndex = targetRow;
+                }
+            }
+            catch
+            { }
         }
     }
 }

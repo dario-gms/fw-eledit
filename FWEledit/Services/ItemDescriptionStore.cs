@@ -9,16 +9,24 @@ namespace FWEledit
     public sealed class ItemDescriptionStore
     {
         private readonly Dictionary<int, string> map = new Dictionary<int, string>();
+        private readonly Dictionary<int, string> originalMap = new Dictionary<int, string>();
         private readonly List<int> order = new List<int>();
+        private readonly List<int> originalOrder = new List<int>();
+        private readonly HashSet<int> pendingItemIds = new HashSet<int>();
 
         public string FilePath { get; private set; } = string.Empty;
-        public bool HasPendingChanges { get; private set; }
+        public bool HasPendingChanges
+        {
+            get { return pendingItemIds.Count > 0; }
+        }
 
         public string LoadFromFile(string filePath)
         {
             map.Clear();
+            originalMap.Clear();
             order.Clear();
-            HasPendingChanges = false;
+            originalOrder.Clear();
+            pendingItemIds.Clear();
             FilePath = filePath ?? string.Empty;
 
             if (string.IsNullOrWhiteSpace(FilePath) || !File.Exists(FilePath))
@@ -57,8 +65,11 @@ namespace FWEledit
                             order.Add(id);
                         }
                         map[id] = desc;
+                        originalMap[id] = desc;
                     }
                 }
+
+                originalOrder.AddRange(order);
 
                 return "Loaded: " + Path.GetFileName(FilePath);
             }
@@ -80,20 +91,56 @@ namespace FWEledit
                 return false;
             }
 
-            string existing;
-            bool hasExisting = map.TryGetValue(id, out existing);
-            if (!hasExisting)
+            string safeEncoded = encoded ?? string.Empty;
+            string currentValue;
+            bool hasCurrent = map.TryGetValue(id, out currentValue);
+            string originalValue;
+            bool hasOriginal = originalMap.TryGetValue(id, out originalValue);
+
+            if (hasOriginal)
+            {
+                if (string.Equals(originalValue ?? string.Empty, safeEncoded, StringComparison.Ordinal))
+                {
+                    bool changed = !hasCurrent || !string.Equals(currentValue ?? string.Empty, safeEncoded, StringComparison.Ordinal);
+                    map[id] = safeEncoded;
+                    if (!order.Contains(id))
+                    {
+                        order.Add(id);
+                    }
+                    pendingItemIds.Remove(id);
+                    return changed;
+                }
+
+                bool contentChanged = !hasCurrent || !string.Equals(currentValue ?? string.Empty, safeEncoded, StringComparison.Ordinal);
+                map[id] = safeEncoded;
+                if (!order.Contains(id))
+                {
+                    order.Add(id);
+                }
+                pendingItemIds.Add(id);
+                return contentChanged;
+            }
+
+            if (string.Equals(safeEncoded, string.Empty, StringComparison.Ordinal))
+            {
+                bool changed = hasCurrent;
+                if (hasCurrent)
+                {
+                    map.Remove(id);
+                    order.Remove(id);
+                }
+                pendingItemIds.Remove(id);
+                return changed;
+            }
+
+            bool valueChanged = !hasCurrent || !string.Equals(currentValue ?? string.Empty, safeEncoded, StringComparison.Ordinal);
+            map[id] = safeEncoded;
+            if (!order.Contains(id))
             {
                 order.Add(id);
             }
-            if (!hasExisting || !string.Equals(existing ?? string.Empty, encoded ?? string.Empty, StringComparison.Ordinal))
-            {
-                map[id] = encoded;
-                HasPendingChanges = true;
-                return true;
-            }
-
-            return false;
+            pendingItemIds.Add(id);
+            return valueChanged;
         }
 
         public bool RemapId(int oldId, int newId)
@@ -126,7 +173,7 @@ namespace FWEledit
                 order.Add(newId);
             }
 
-            HasPendingChanges = true;
+            pendingItemIds.Add(newId);
             return true;
         }
 
@@ -188,7 +235,7 @@ namespace FWEledit
                 {
                     asm.MarkWorkspaceFileChanged(FilePath);
                 }
-                HasPendingChanges = false;
+                SyncBaselineToCurrent();
                 statusText = "Description file saved with main Save";
                 return true;
             }
@@ -201,7 +248,25 @@ namespace FWEledit
 
         public void ResetPendingChanges()
         {
-            HasPendingChanges = false;
+            SyncBaselineToCurrent();
+        }
+
+        public bool HasPendingChangeForItem(int id)
+        {
+            return id > 0 && pendingItemIds.Contains(id);
+        }
+
+        private void SyncBaselineToCurrent()
+        {
+            originalMap.Clear();
+            foreach (KeyValuePair<int, string> pair in map)
+            {
+                originalMap[pair.Key] = pair.Value;
+            }
+
+            originalOrder.Clear();
+            originalOrder.AddRange(order);
+            pendingItemIds.Clear();
         }
     }
 }

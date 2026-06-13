@@ -6,5 +6,8 @@ namespace FWEledit
         public int ItemId { get; set; }
         public int GridRowIndex { get; set; }
         public int FirstDisplayedRow { get; set; }
+        public int ItemGridRowIndex { get; set; }
+        public int ItemGridColumnIndex { get; set; }
+        public int ItemGridFirstDisplayedRow { get; set; }
     }
 }

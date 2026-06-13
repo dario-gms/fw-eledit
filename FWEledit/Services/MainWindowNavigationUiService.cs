@@ -9,7 +9,8 @@ namespace FWEledit
             NavigationSnapshotUiService snapshotUiService,
             NavigationSnapshotService snapshotService,
             ComboBox listCombo,
-            DataGridView elementGrid)
+            DataGridView elementGrid,
+            DataGridView itemGrid)
         {
             if (snapshotUiService == null)
             {
@@ -17,7 +18,7 @@ namespace FWEledit
             }
 
             int listIndex = listCombo != null ? listCombo.SelectedIndex : -1;
-            return snapshotUiService.CaptureSnapshot(snapshotService, listIndex, elementGrid);
+            return snapshotUiService.CaptureSnapshot(snapshotService, listIndex, elementGrid, itemGrid);
         }
 
         public void RestoreSnapshot(
@@ -26,6 +27,7 @@ namespace FWEledit
             NavigationSnapshot snapshot,
             ComboBox listCombo,
             DataGridView elementGrid,
+            DataGridView itemGrid,
             Func<bool> getIsRestoring,
             Action<bool> setIsRestoring)
         {
@@ -39,6 +41,7 @@ namespace FWEledit
                 snapshot,
                 listCombo,
                 elementGrid,
+                itemGrid,
                 getIsRestoring,
                 setIsRestoring);
         }

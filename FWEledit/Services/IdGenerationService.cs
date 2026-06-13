@@ -43,6 +43,41 @@ namespace FWEledit
             return used;
         }
 
+        public HashSet<int> BuildUsedIdsAcrossLists(eListCollection listCollection)
+        {
+            HashSet<int> used = new HashSet<int>();
+            if (listCollection == null || listCollection.Lists == null)
+            {
+                return used;
+            }
+
+            for (int listIndex = 0; listIndex < listCollection.Lists.Length; listIndex++)
+            {
+                int idFieldIndex = GetIdFieldIndex(listCollection, listIndex);
+                if (idFieldIndex < 0)
+                {
+                    continue;
+                }
+
+                object[][] values = listCollection.Lists[listIndex].elementValues;
+                if (values == null)
+                {
+                    continue;
+                }
+
+                for (int rowIndex = 0; rowIndex < values.Length; rowIndex++)
+                {
+                    int id;
+                    if (int.TryParse(listCollection.GetValue(listIndex, rowIndex, idFieldIndex), out id))
+                    {
+                        used.Add(id);
+                    }
+                }
+            }
+
+            return used;
+        }
+
         public int GetNextUniqueId(HashSet<int> used, int startCandidate)
         {
             if (used == null)

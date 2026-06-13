@@ -389,7 +389,7 @@ namespace FWEledit
 
             if (TryLoadPersistedReferenceCache())
             {
-                RefreshVisibleReferenceCounts();
+                ScheduleVisibleReferenceCountRefresh();
                 if (referencesViewerForm != null && !referencesViewerForm.IsDisposed && referencesViewerForm.Visible)
                 {
                     LoadReferencesViewerForSelectionAsync();
@@ -422,7 +422,7 @@ namespace FWEledit
                     }
 
                     referenceIndexReady = true;
-                    RefreshVisibleReferenceCounts();
+                    ScheduleVisibleReferenceCountRefresh();
                     PersistReferenceCacheToDisk();
                     if (referencesViewerForm != null && !referencesViewerForm.IsDisposed && referencesViewerForm.Visible)
                     {
@@ -958,15 +958,83 @@ namespace FWEledit
                 return;
             }
 
+            Dictionary<int, int> duplicateCountsById = BuildDuplicateCountsForTargets(listCollection, listIndex, targets);
+
             if (!EnsureReferenceIndexAvailable())
             {
+                HashSet<int> targetIds = new HashSet<int>();
                 for (int i = 0; i < targets.Count; i++)
                 {
-                    if (targets[i].RowIndex >= 0 && targets[i].RowIndex < dataGridView_elems.Rows.Count)
+                    if (targets[i] != null && targets[i].Id > 0)
                     {
-                        dataGridView_elems.Rows[targets[i].RowIndex].Cells[3].Value = string.Empty;
+                        targetIds.Add(targets[i].Id);
                     }
                 }
+
+                for (int i = 0; i < targets.Count; i++)
+                {
+                    if (targets[i].RowIndex < 0 || targets[i].RowIndex >= dataGridView_elems.Rows.Count)
+                    {
+                        continue;
+                    }
+
+                    DataGridViewRow row = dataGridView_elems.Rows[targets[i].RowIndex];
+                    int duplicateCount;
+                    duplicateCountsById.TryGetValue(targets[i].Id, out duplicateCount);
+                    ApplyElementIdUsageStyle(row, 0, duplicateCount > 1);
+                }
+
+                if (targetIds.Count == 0)
+                {
+                    return;
+                }
+
+                System.Threading.Tasks.Task.Run(() =>
+                {
+                    Dictionary<int, int> countsById = ComputeReferenceCountsForIds(listCollection, listIndex, targetIds);
+                    if (IsDisposed || !IsHandleCreated)
+                    {
+                        return;
+                    }
+
+                    BeginInvoke((Action)(() =>
+                    {
+                        if (IsDisposed
+                            || refreshVersion != referenceCountRefreshVersion
+                            || comboBox_lists == null
+                            || comboBox_lists.SelectedIndex != listIndex
+                            || dataGridView_elems == null
+                            || referenceIndexReady)
+                        {
+                            return;
+                        }
+
+                        for (int i = 0; i < targets.Count; i++)
+                        {
+                            VisibleReferenceTarget target = targets[i];
+                            if (target.RowIndex < 0 || target.RowIndex >= dataGridView_elems.Rows.Count)
+                            {
+                                continue;
+                            }
+
+                            int count;
+                            countsById.TryGetValue(target.Id, out count);
+                            int duplicateCount;
+                            duplicateCountsById.TryGetValue(target.Id, out duplicateCount);
+                            string nextValue = count > 0 ? count.ToString() : string.Empty;
+                            DataGridViewRow row = dataGridView_elems.Rows[target.RowIndex];
+                            object currentValue = row.Cells[3].Value;
+                            string currentText = currentValue != null ? Convert.ToString(currentValue) : string.Empty;
+                            if (!string.Equals(currentText, nextValue, StringComparison.Ordinal))
+                            {
+                                row.Cells[3].Value = nextValue;
+                            }
+
+                            ApplyElementIdUsageStyle(row, count, duplicateCount > 1);
+                        }
+                    }));
+                });
+
                 return;
             }
 
@@ -1012,13 +1080,18 @@ namespace FWEledit
 
                         int count;
                         countsById.TryGetValue(target.Id, out count);
+                        int duplicateCount;
+                        duplicateCountsById.TryGetValue(target.Id, out duplicateCount);
                         string nextValue = count > 0 ? count.ToString() : string.Empty;
-                        object currentValue = dataGridView_elems.Rows[target.RowIndex].Cells[3].Value;
+                        DataGridViewRow row = dataGridView_elems.Rows[target.RowIndex];
+                        object currentValue = row.Cells[3].Value;
                         string currentText = currentValue != null ? Convert.ToString(currentValue) : string.Empty;
                         if (!string.Equals(currentText, nextValue, StringComparison.Ordinal))
                         {
-                            dataGridView_elems.Rows[target.RowIndex].Cells[3].Value = nextValue;
+                            row.Cells[3].Value = nextValue;
                         }
+
+                        ApplyElementIdUsageStyle(row, count, duplicateCount > 1);
                     }
                 }));
             });
@@ -1245,6 +1318,129 @@ namespace FWEledit
             return targets;
         }
 
+        private Dictionary<int, int> BuildDuplicateCountsForTargets(eListCollection listCollection, int currentListIndex, List<VisibleReferenceTarget> targets)
+        {
+            Dictionary<int, int> countsById = new Dictionary<int, int>();
+            if (listCollection == null
+                || listCollection.Lists == null
+                || currentListIndex < 0
+                || currentListIndex >= listCollection.Lists.Length
+                || listCollection.Lists[currentListIndex] == null
+                || listCollection.Lists[currentListIndex].elementValues == null
+                || targets == null
+                || targets.Count == 0)
+            {
+                return countsById;
+            }
+
+            HashSet<int> targetIds = new HashSet<int>();
+            for (int i = 0; i < targets.Count; i++)
+            {
+                if (targets[i] != null && targets[i].Id > 0)
+                {
+                    targetIds.Add(targets[i].Id);
+                }
+            }
+
+            if (targetIds.Count == 0 || idGenerationService == null)
+            {
+                return countsById;
+            }
+
+            foreach (int targetId in targetIds)
+            {
+                countsById[targetId] = 0;
+            }
+
+            int idFieldIndex = idGenerationService.GetIdFieldIndex(listCollection, currentListIndex);
+            if (idFieldIndex < 0)
+            {
+                return countsById;
+            }
+
+            object[][] values = listCollection.Lists[currentListIndex].elementValues;
+            for (int rowIndex = 0; rowIndex < values.Length; rowIndex++)
+            {
+                int candidateId;
+                if (!int.TryParse(listCollection.GetValue(currentListIndex, rowIndex, idFieldIndex), out candidateId)
+                    || candidateId <= 0
+                    || !targetIds.Contains(candidateId))
+                {
+                    continue;
+                }
+
+                countsById[candidateId] = countsById[candidateId] + 1;
+            }
+
+            return countsById;
+        }
+
+        private int CountIdOccurrencesInList(eListCollection listCollection, int listIndex, int id)
+        {
+            if (listCollection == null
+                || listCollection.Lists == null
+                || idGenerationService == null
+                || listIndex < 0
+                || listIndex >= listCollection.Lists.Length
+                || listCollection.Lists[listIndex] == null
+                || listCollection.Lists[listIndex].elementValues == null
+                || id <= 0)
+            {
+                return 0;
+            }
+
+            int count = 0;
+            int idFieldIndex = idGenerationService.GetIdFieldIndex(listCollection, listIndex);
+            if (idFieldIndex < 0)
+            {
+                return 0;
+            }
+
+            object[][] values = listCollection.Lists[listIndex].elementValues;
+            for (int rowIndex = 0; rowIndex < values.Length; rowIndex++)
+            {
+                int candidateId;
+                if (int.TryParse(listCollection.GetValue(listIndex, rowIndex, idFieldIndex), out candidateId) && candidateId == id)
+                {
+                    count++;
+                }
+            }
+
+            return count;
+        }
+
+        private void ApplyElementIdUsageStyle(DataGridViewRow row, int referenceCount, bool hasDuplicateId)
+        {
+            if (row == null || row.Cells == null || row.Cells.Count == 0 || dataGridView_elems == null)
+            {
+                return;
+            }
+
+            DataGridViewCell idCell = row.Cells[0];
+            bool highlight = hasDuplicateId;
+            Font baseFont = dataGridView_elems.DefaultCellStyle.Font ?? dataGridView_elems.Font;
+            if (baseFont == null)
+            {
+                baseFont = row.InheritedStyle.Font;
+            }
+
+            if (highlight)
+            {
+                idCell.Style.ForeColor = Color.Red;
+                idCell.Style.SelectionForeColor = Color.Red;
+                if (baseFont != null)
+                {
+                    idCell.Style.Font = new Font(baseFont, FontStyle.Bold);
+                }
+            }
+            else
+            {
+                idCell.Style.ForeColor = dataGridView_elems.DefaultCellStyle.ForeColor;
+                idCell.Style.SelectionForeColor = dataGridView_elems.DefaultCellStyle.SelectionForeColor;
+                idCell.Style.Font = baseFont;
+            }
+        }
+
         private Dictionary<int, int> ComputeReferenceCountsForIds(eListCollection listCollection, int targetListIndex, HashSet<int> targetIds)
         {
             Dictionary<int, int> counts = new Dictionary<int, int>();
@@ -1270,11 +1466,27 @@ namespace FWEledit
                 }
 
                 string[] fields = listCollection.Lists[sourceListIndex].elementFields;
+                List<int> candidateFieldIndexes = new List<int>();
                 for (int fieldIndex = 0; fieldIndex < fields.Length; fieldIndex++)
                 {
                     string fieldName = fields[fieldIndex] ?? string.Empty;
-                    for (int sourceElementIndex = 0; sourceElementIndex < listCollection.Lists[sourceListIndex].elementValues.Length; sourceElementIndex++)
+                    if (itemReferenceService.IsReferenceField(listCollection, sourceListIndex, fieldName))
                     {
+                        candidateFieldIndexes.Add(fieldIndex);
+                    }
+                }
+
+                if (candidateFieldIndexes.Count == 0)
+                {
+                    continue;
+                }
+
+                for (int sourceElementIndex = 0; sourceElementIndex < listCollection.Lists[sourceListIndex].elementValues.Length; sourceElementIndex++)
+                {
+                    for (int i = 0; i < candidateFieldIndexes.Count; i++)
+                    {
+                        int fieldIndex = candidateFieldIndexes[i];
+                        string fieldName = fields[fieldIndex] ?? string.Empty;
                         int resolvedTargetListIndex;
                         if (!itemReferenceService.TryGetTargetListIndex(listCollection, sourceListIndex, sourceElementIndex, fieldName, out resolvedTargetListIndex))
                         {
