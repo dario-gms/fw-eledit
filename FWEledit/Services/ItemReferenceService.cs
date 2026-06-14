@@ -205,10 +205,6 @@ namespace FWEledit
             {
                 targetListName = "SPECIAL_STATUS_PACKAGE_CONFIG";
             }
-            else if (string.Equals(name, "id_quality", StringComparison.OrdinalIgnoreCase))
-            {
-                targetListName = "EQUIPMENT_QUALITY_CONFIG";
-            }
             else if (string.Equals(name, "id_identify", StringComparison.OrdinalIgnoreCase))
             {
                 targetListName = "IDENTIFY_SCROLL_ESSENCE";

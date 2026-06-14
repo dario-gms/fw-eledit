@@ -48,8 +48,23 @@ namespace FWEledit
             }
 
             string resourcesRoot = Path.Combine(gameRoot, "resources");
-            string pckPath = Path.Combine(resourcesRoot, normalizedPackage + ".pck");
-            string pkxPath = Path.Combine(resourcesRoot, normalizedPackage + ".pkx");
+            string workspaceResources = string.IsNullOrWhiteSpace(AssetManager.WorkspaceRootPath)
+                ? string.Empty
+                : Path.Combine(AssetManager.WorkspaceRootPath, "resources");
+            string pckPath = string.IsNullOrWhiteSpace(workspaceResources)
+                ? string.Empty
+                : Path.Combine(workspaceResources, normalizedPackage + ".pck");
+            if (!File.Exists(pckPath))
+            {
+                pckPath = Path.Combine(resourcesRoot, normalizedPackage + ".pck");
+            }
+            string pkxPath = string.IsNullOrWhiteSpace(workspaceResources)
+                ? string.Empty
+                : Path.Combine(workspaceResources, normalizedPackage + ".pkx");
+            if (!File.Exists(pkxPath))
+            {
+                pkxPath = Path.Combine(resourcesRoot, normalizedPackage + ".pkx");
+            }
             if (!File.Exists(pckPath))
             {
                 error = "Package not found: " + pckPath;
@@ -61,21 +76,57 @@ namespace FWEledit
             }
 
             PckPackageIndex index;
-            if (!TryGetPackageIndex(normalizedPackage, pckPath, pkxPath, out index, out error) || index == null)
+            string managedError = string.Empty;
+            if (TryGetPackageIndex(normalizedPackage, pckPath, pkxPath, out index, out managedError) && index != null)
+            {
+                PckFileEntry entry;
+                if (index.Entries.TryGetValue(normalizedEntry, out entry))
+                {
+                    if (TryReadIndexedEntry(pckPath, pkxPath, relativePath, entry, out payload, out error))
+                    {
+                        return true;
+                    }
+
+                string fallback = NormalizeLookupKey(normalizedPackage + "\\" + normalizedEntry);
+                    if (!string.Equals(fallback, normalizedEntry, StringComparison.OrdinalIgnoreCase)
+                        && index.Entries.TryGetValue(fallback, out entry)
+                        && TryReadIndexedEntry(pckPath, pkxPath, relativePath, entry, out payload, out error))
+                    {
+                        return true;
+                    }
+                }
+                else
+                {
+                    string fallback = NormalizeLookupKey(normalizedPackage + "\\" + normalizedEntry);
+                    if (index.Entries.TryGetValue(fallback, out entry)
+                        && TryReadIndexedEntry(pckPath, pkxPath, relativePath, entry, out payload, out error))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(error))
             {
                 return false;
             }
 
-            PckFileEntry entry;
-            if (!index.Entries.TryGetValue(normalizedEntry, out entry))
-            {
-                string fallback = NormalizeLookupKey(normalizedPackage + "\\" + normalizedEntry);
-                if (!index.Entries.TryGetValue(fallback, out entry))
-                {
-                    error = "Entry not found in " + normalizedPackage + ".pck: " + relativePath;
-                    return false;
-                }
-            }
+            error = !string.IsNullOrWhiteSpace(managedError)
+                ? managedError
+                : "Entry not found in " + normalizedPackage + ".pck: " + relativePath;
+            return false;
+        }
+
+        private static bool TryReadIndexedEntry(
+            string pckPath,
+            string pkxPath,
+            string relativePath,
+            PckFileEntry entry,
+            out byte[] payload,
+            out string error)
+        {
+            payload = null;
+            error = string.Empty;
 
             try
             {
@@ -526,12 +577,12 @@ namespace FWEledit
 
             public PckConcatStream(string pckPath, string pkxPath)
             {
-                pck = new FileStream(pckPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+                pck = new FileStream(pckPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
                 pckLength = pck.Length;
 
                 if (!string.IsNullOrWhiteSpace(pkxPath) && File.Exists(pkxPath))
                 {
-                    pkx = new FileStream(pkxPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+                    pkx = new FileStream(pkxPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
                     pkxLength = pkx.Length;
                 }
             }

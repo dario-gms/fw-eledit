@@ -7,45 +7,63 @@ namespace FWEledit
     {
         private void change_list(object sender, EventArgs ea)
 		{
-            mainWindowSelectionCoordinatorService.HandleChangeList(
-                mainWindowSelectionUiService,
-                viewModel.EnableSelectionList,
-                comboBox_lists,
-                sessionService,
-                UpdateEquipmentTabsVisibility,
-                listSelectionCommandService,
-                listSelectionRequestBuilderService,
-                listSelectionWorkflowService,
-                listSelectionUiService,
-                listDisplayService,
-                listRowBuilderService,
-                (listIndex, entryIndex, nameFieldIndex) =>
-                    listDisplayService.ComposeListDisplayName(
-                        sessionService,
+            bool previousSuppressSelectionHistory = suppressSelectionHistory;
+            pendingAutoSelectionHistoryListIndex = -1;
+            if (!previousSuppressSelectionHistory)
+            {
+                suppressSelectionHistory = true;
+            }
+
+            try
+            {
+                mainWindowSelectionCoordinatorService.HandleChangeList(
+                    mainWindowSelectionUiService,
+                    viewModel.EnableSelectionList,
+                    comboBox_lists,
+                    sessionService,
+                    UpdateEquipmentTabsVisibility,
+                    listSelectionCommandService,
+                    listSelectionRequestBuilderService,
+                    listSelectionWorkflowService,
+                    listSelectionUiService,
+                    listDisplayService,
+                    listRowBuilderService,
+                    (listIndex, entryIndex, nameFieldIndex) =>
+                        listDisplayService.ComposeListDisplayName(
+                            sessionService,
+                            sessionService.ListCollection,
+                            listIndex,
+                            entryIndex,
+                            nameFieldIndex,
+                            IsElementMarkedDirty(listIndex, entryIndex)),
+                    dataGridView_elems,
+                    dataGridView_item,
+                    textBox_offset,
+                    xrefItemToolStripMenuItem,
+                    (listIndex, entryIndex, row) => itemQualityRowStyleService.ApplyQualityStyle(
                         sessionService.ListCollection,
                         listIndex,
                         entryIndex,
-                        nameFieldIndex,
-                        IsElementMarkedDirty(listIndex, entryIndex)),
-                dataGridView_elems,
-                dataGridView_item,
-                textBox_offset,
-                xrefItemToolStripMenuItem,
-                (listIndex, entryIndex, row) => itemQualityRowStyleService.ApplyQualityStyle(
-                    sessionService.ListCollection,
-                    listIndex,
-                    entryIndex,
-                    row,
-                    dataGridView_elems,
-                    index => fieldIndexLookupService.GetItemQualityFieldIndex(sessionService.ListCollection, index),
-                    quality => itemQualityColorService.GetQualityColor(quality),
-                    (color, factor) => colorShadeService.Darken(color, factor)),
-                UpdateDescriptionTabForSelection,
-                UpdatePickIconButtonState,
-                PersistNavigationState);
+                        row,
+                        dataGridView_elems,
+                        index => fieldIndexLookupService.GetItemQualityFieldIndex(sessionService.ListCollection, index),
+                        quality => itemQualityColorService.GetQualityColor(quality),
+                        (color, factor) => colorShadeService.Darken(color, factor)),
+                    UpdateDescriptionTabForSelection,
+                    UpdatePickIconButtonState,
+                    PersistNavigationState);
+            }
+            finally
+            {
+                suppressSelectionHistory = previousSuppressSelectionHistory;
+            }
 
             RefreshVisibleReferenceCounts();
             UpdateNpcSellServiceUiForSelection();
+            if (!previousSuppressSelectionHistory)
+            {
+                pendingAutoSelectionHistoryListIndex = comboBox_lists != null ? comboBox_lists.SelectedIndex : -1;
+            }
 		}
 
 
@@ -93,7 +111,18 @@ namespace FWEledit
 
             UpdateRawValueEditorFromCurrentCell();
             RefreshLiveModelPreviewFromCurrentRow(true);
-            RecordSelectionHistory();
+            bool skipAutoSelectionHistory =
+                pendingAutoSelectionHistoryListIndex >= 0
+                && comboBox_lists != null
+                && comboBox_lists.SelectedIndex == pendingAutoSelectionHistoryListIndex;
+            if (skipAutoSelectionHistory)
+            {
+                pendingAutoSelectionHistoryListIndex = -1;
+            }
+            else
+            {
+                RecordSelectionHistory();
+            }
             UpdateNpcSellServiceUiForSelection();
 		}
 

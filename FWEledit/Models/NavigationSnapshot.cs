@@ -9,5 +9,6 @@ namespace FWEledit
         public int ItemGridRowIndex { get; set; }
         public int ItemGridColumnIndex { get; set; }
         public int ItemGridFirstDisplayedRow { get; set; }
+        public bool IsAutoListSelection { get; set; }
     }
 }

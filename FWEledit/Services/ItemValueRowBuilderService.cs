@@ -170,7 +170,8 @@ namespace FWEledit
                 {
                     fieldValue = iconResolutionService.FormatIconPathIdDisplay(database, fieldValue);
                 }
-                else if (string.Equals(fieldName, "item_quality", System.StringComparison.OrdinalIgnoreCase))
+                else if (string.Equals(fieldName, "item_quality", System.StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(fieldName, "id_quality", System.StringComparison.OrdinalIgnoreCase))
                 {
                     fieldValue = ItemQualityCatalog.FormatDisplay(fieldValue);
                 }

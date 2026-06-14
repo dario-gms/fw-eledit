@@ -12,6 +12,19 @@ FWEledit is based on [sELedit++ by Wrechid](https://github.com/Wrechid/sELedit-)
 
 ---
 
+## What's New in v0.9.5.11
+
+- Added direct read access for package-backed resources from `*.pck` / `*.pkx` without requiring full extraction of those packages for browsing and preview workflows.
+- Improved package-read stability when the game client is open by keeping the direct managed read path and removing the experimental native WinPCK bridge that introduced preview regressions.
+- Fixed 3D model preview regressions after the recent PCK-reading work, restoring reliable preview loading both from the normal editor flow and from the Choice Model window.
+- Improved Choice Model preview behavior so the preview window stays tied to the picker instead of falling behind the main editor while switching models.
+- Added a `Preview 3D Model` option to the Choice Model right-click menu, reusing the same preview action previously available only from Space / the bottom Preview button.
+- Corrected Equipment parsing for `id_quality`, so the field now resolves against the intended quality-ID data instead of being parsed as the wrong reference type.
+- Refined selection-history handling around list changes to reduce stray intermediate navigation states when moving across lists and using Back / Forward.
+- Project/app version metadata updated to `v0.9.5.11`.
+
+---
+
 ## What's New in v0.9.5.10
 
 - Added a built-in Path Editor flow from the Choice Model window, including `Open with Path Editor`, direct `path.data` editing, manual or auto-generated PathID assignment, duplicate-ID safety checks, and backup-aware save support.

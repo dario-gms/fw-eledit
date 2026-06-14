@@ -14,7 +14,8 @@ namespace FWEledit
 
         public bool IsItemQualityFieldName(string fieldName)
         {
-            return string.Equals(fieldName, "item_quality", StringComparison.OrdinalIgnoreCase);
+            return string.Equals(fieldName, "item_quality", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(fieldName, "id_quality", StringComparison.OrdinalIgnoreCase);
         }
 
         public bool IsGenderTypeFieldName(string fieldName)

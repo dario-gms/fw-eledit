@@ -41,6 +41,7 @@ namespace FWEledit
         private readonly DataGridView grid;
         private readonly Label statusLabel;
         private readonly ContextMenuStrip entryMenu;
+        private readonly ToolStripMenuItem previewModelMenuItem;
         private readonly ToolStripMenuItem openPathEditorMenuItem;
         private readonly AssetManager assetManager;
         private readonly CacheSave database;
@@ -51,6 +52,7 @@ namespace FWEledit
         private bool previewWindowOpened;
         private int previewLoadInProgress;
         private int previewPendingAuto;
+        private int previewPendingForce;
         private int lastPreviewPathId;
         private int previewSelectionVersion;
         private int nextEntryIndex;
@@ -84,7 +86,24 @@ namespace FWEledit
             activeLoadingPackage = string.Empty;
             SelectedPathId = currentPathId;
             SelectedMappedPath = string.Empty;
-            previewAssetManager = new AssetManager();
+            previewAssetManager = assetManager ?? new AssetManager();
+            if (assetManager == null)
+            {
+                try
+                {
+                    string gameRoot = AssetManager.GameRootPath ?? string.Empty;
+                    string elementsPath = string.IsNullOrWhiteSpace(gameRoot)
+                        ? string.Empty
+                        : Path.Combine(gameRoot, "data", "elements.data");
+                    if (!string.IsNullOrWhiteSpace(elementsPath) && File.Exists(elementsPath))
+                    {
+                        previewAssetManager.SetGameRootFromElements(elementsPath);
+                    }
+                }
+                catch
+                {
+                }
+            }
             modelPreviewService = new ModelPreviewService();
             isInitializing = true;
             nextEntryIndex = 1;
@@ -275,6 +294,10 @@ namespace FWEledit
             grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "colPathId", HeaderText = "PathID", Width = 90 });
 
             entryMenu = new ContextMenuStrip();
+            previewModelMenuItem = new ToolStripMenuItem("Preview 3D Model");
+            previewModelMenuItem.Click += (s, e) => PreviewSelectionAsync(true);
+            entryMenu.Items.Add(previewModelMenuItem);
+            entryMenu.Items.Add(new ToolStripSeparator());
             openPathEditorMenuItem = new ToolStripMenuItem("Open with Path Editor");
             openPathEditorMenuItem.Click += (s, e) => OpenSelectedEntryInPathEditor();
             entryMenu.Items.Add(openPathEditorMenuItem);
@@ -650,16 +673,21 @@ namespace FWEledit
         private void OnEntryMenuOpening(object sender, System.ComponentModel.CancelEventArgs e)
         {
             ModelPickerEntry selected = TryGetCurrentEntry();
-            bool canOpen = selected != null
+            bool canPreview = selected != null;
+            bool canOpenPathEditor = canPreview
                 && assetManager != null
                 && database != null;
 
+            if (previewModelMenuItem != null)
+            {
+                previewModelMenuItem.Enabled = canPreview;
+            }
             if (openPathEditorMenuItem != null)
             {
-                openPathEditorMenuItem.Enabled = canOpen;
+                openPathEditorMenuItem.Enabled = canOpenPathEditor;
             }
 
-            e.Cancel = !canOpen;
+            e.Cancel = !canPreview;
         }
 
         private ModelPickerEntry TryGetEntryAtRow(int rowIndex)
@@ -1356,7 +1384,11 @@ namespace FWEledit
 
             if (Interlocked.CompareExchange(ref previewLoadInProgress, 1, 0) != 0)
             {
-                if (!force)
+                if (force)
+                {
+                    Interlocked.Exchange(ref previewPendingForce, 1);
+                }
+                else
                 {
                     Interlocked.Exchange(ref previewPendingAuto, 1);
                 }
@@ -1417,7 +1449,7 @@ namespace FWEledit
                 if (force)
                 {
                     modelPreviewService.ShowPreviewWindow(meshData, true, Handle);
-                    previewWindowOpened = true;
+                    previewWindowOpened = modelPreviewService.IsPreviewWindowOpen();
                 }
                 else
                 {
@@ -1464,7 +1496,14 @@ namespace FWEledit
                 UseWaitCursor = false;
                 Cursor.Current = Cursors.Default;
                 Interlocked.Exchange(ref previewLoadInProgress, 0);
-                if (Interlocked.Exchange(ref previewPendingAuto, 0) == 1)
+                if (Interlocked.Exchange(ref previewPendingForce, 0) == 1)
+                {
+                    if (!IsDisposed && IsHandleCreated)
+                    {
+                        BeginInvoke((Action)(() => PreviewSelectionAsync(true)));
+                    }
+                }
+                else if (Interlocked.Exchange(ref previewPendingAuto, 0) == 1)
                 {
                     ScheduleAutoPreview();
                 }
