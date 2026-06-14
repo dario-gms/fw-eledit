@@ -90,7 +90,7 @@ namespace FWEledit
                 assembly,
                 label_Version,
                 navigationStateService,
-                "0.9.5.10");
+                "0.9.5.11");
 
             fwDarkMode = Properties.Settings.Default.UseDarkMode;
             cpb2.Value = 0;
@@ -359,7 +359,7 @@ namespace FWEledit
             NavigateSelectionHistory(1);
         }
 
-        private void RecordSelectionHistory()
+        private void RecordSelectionHistory(bool isAutoListSelection = false)
         {
             if (suppressSelectionHistory || comboBox_lists == null || dataGridView_elems == null || dataGridView_elems.CurrentCell == null)
             {
@@ -371,12 +371,23 @@ namespace FWEledit
             {
                 return;
             }
+            snapshot.IsAutoListSelection = isAutoListSelection;
 
             if (selectionHistoryIndex >= 0 && selectionHistoryIndex < selectionHistory.Count)
             {
                 NavigationSnapshot current = selectionHistory[selectionHistoryIndex];
                 if (current.ListIndex == snapshot.ListIndex && current.ItemId == snapshot.ItemId && current.GridRowIndex == snapshot.GridRowIndex)
                 {
+                    current.IsAutoListSelection = snapshot.IsAutoListSelection;
+                    UpdateSelectionHistoryButtons();
+                    return;
+                }
+
+                if (!snapshot.IsAutoListSelection
+                    && current.IsAutoListSelection
+                    && current.ListIndex == snapshot.ListIndex)
+                {
+                    selectionHistory[selectionHistoryIndex] = snapshot;
                     UpdateSelectionHistoryButtons();
                     return;
                 }
@@ -424,40 +435,44 @@ namespace FWEledit
                 return;
             }
 
-            viewModel.EnableSelectionItem = false;
-            try
+            using (new ControlRedrawScope(dataGridView_elems))
+            using (dataGridView_item != null ? new ControlRedrawScope(dataGridView_item) : null)
             {
-                if (comboBox_lists.SelectedIndex != snapshot.ListIndex)
+                viewModel.EnableSelectionItem = false;
+                try
                 {
-                    comboBox_lists.SelectedIndex = snapshot.ListIndex;
+                    if (comboBox_lists.SelectedIndex != snapshot.ListIndex)
+                    {
+                        comboBox_lists.SelectedIndex = snapshot.ListIndex;
+                    }
                 }
-            }
-            finally
-            {
-                viewModel.EnableSelectionItem = true;
-            }
+                finally
+                {
+                    viewModel.EnableSelectionItem = true;
+                }
 
-            int targetRow = FindElementRow(snapshot);
-            if (targetRow < 0)
-            {
-                return;
-            }
+                int targetRow = FindElementRow(snapshot);
+                if (targetRow < 0)
+                {
+                    return;
+                }
 
-            dataGridView_elems.ClearSelection();
-            dataGridView_elems.CurrentCell = dataGridView_elems.Rows[targetRow].Cells[0];
-            dataGridView_elems.Rows[targetRow].Selected = true;
-            try
-            {
-                dataGridView_elems.FirstDisplayedScrollingRowIndex =
-                    snapshot.FirstDisplayedRow >= 0 && snapshot.FirstDisplayedRow < dataGridView_elems.Rows.Count
-                        ? snapshot.FirstDisplayedRow
-                        : targetRow;
-            }
-            catch
-            {
-            }
+                dataGridView_elems.ClearSelection();
+                dataGridView_elems.CurrentCell = dataGridView_elems.Rows[targetRow].Cells[0];
+                dataGridView_elems.Rows[targetRow].Selected = true;
+                try
+                {
+                    dataGridView_elems.FirstDisplayedScrollingRowIndex =
+                        snapshot.FirstDisplayedRow >= 0 && snapshot.FirstDisplayedRow < dataGridView_elems.Rows.Count
+                            ? snapshot.FirstDisplayedRow
+                            : targetRow;
+                }
+                catch
+                {
+                }
 
-            change_item(null, null);
+                change_item(null, null);
+            }
         }
 
         private int FindElementRow(NavigationSnapshot snapshot)

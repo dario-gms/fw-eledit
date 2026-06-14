@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Windows.Forms;
 
 namespace FWEledit
@@ -19,6 +21,7 @@ namespace FWEledit
 
         private static readonly IntPtr HWND_TOP = IntPtr.Zero;
         private static readonly IntPtr HWND_NOTOPMOST = new IntPtr(-2);
+        private static readonly object PreviewStaticStateSync = new object();
         private const uint SWP_NOMOVE = 0x0002;
         private const uint SWP_NOSIZE = 0x0001;
         private const uint SWP_NOACTIVATE = 0x0010;
@@ -37,6 +40,7 @@ namespace FWEledit
 
         private readonly PckEntryReaderService pckEntryReaderService = new PckEntryReaderService();
         private readonly EmbeddedModelPreviewLoaderService embeddedPreviewLoaderService;
+        private readonly ErrorLoggingService errorLoggingService = new ErrorLoggingService();
         private readonly Dictionary<string, ModelPreviewMeshData> previewMeshCache
             = new Dictionary<string, ModelPreviewMeshData>(StringComparer.OrdinalIgnoreCase);
         private readonly LinkedList<string> previewMeshCacheOrder = new LinkedList<string>();
@@ -64,11 +68,13 @@ namespace FWEledit
             if (assetManager == null || modelPickerService == null)
             {
                 errorMessage = "Model preview unavailable.";
+                AppendPreviewTrace("build-denied reason=missing-service pathId=" + pathId.ToString());
                 return false;
             }
             if (pathId <= 0)
             {
                 errorMessage = "Invalid model PathID.";
+                AppendPreviewTrace("build-denied reason=invalid-pathid pathId=" + pathId.ToString());
                 return false;
             }
 
@@ -77,8 +83,10 @@ namespace FWEledit
             if (!modelPickerService.TryResolveModelPathById(database, pathId, fieldName, listName, out resolvedPathId, out mappedPath, true))
             {
                 errorMessage = "Model PathID not found in path.data:\n" + pathId;
+                AppendPreviewTrace("resolve-failed pathId=" + pathId.ToString() + " field=" + (fieldName ?? string.Empty) + " list=" + (listName ?? string.Empty));
                 return false;
             }
+            AppendPreviewTrace("resolve-ok pathId=" + pathId.ToString() + " resolvedPathId=" + resolvedPathId.ToString() + " mappedPath=" + (mappedPath ?? string.Empty));
 
             try
             {
@@ -90,10 +98,19 @@ namespace FWEledit
                     }
                     return false;
                 }
+                if (!IsUsablePreviewMesh(meshData))
+                {
+                    errorMessage = "Model preview generated an empty mesh:\n" + mappedPath;
+                    AppendPreviewTrace("empty-preview path=" + mappedPath + " pathId=" + pathId.ToString());
+                    meshData = null;
+                    return false;
+                }
+                AppendPreviewTrace("preview-ok path=" + mappedPath + " pathId=" + pathId.ToString() + " vertices=" + meshData.VertexCount.ToString() + " triangles=" + meshData.TriangleCount.ToString() + " textures=" + (meshData.Textures == null ? 0 : meshData.Textures.Length).ToString());
                 return true;
             }
             catch (Exception ex)
             {
+                errorLoggingService.Log("ModelPreviewService.TryBuildPreviewMeshData", ex);
                 errorMessage = "MODEL PREVIEW ERROR!\n" + ex.Message;
                 meshData = null;
                 return false;
@@ -111,13 +128,16 @@ namespace FWEledit
             if (assetManager == null)
             {
                 errorMessage = "Model preview unavailable.";
+                AppendPreviewTrace("build-by-path denied reason=missing-assetmanager");
                 return false;
             }
             if (string.IsNullOrWhiteSpace(mappedPath))
             {
                 errorMessage = "Invalid model path.";
+                AppendPreviewTrace("build-by-path denied reason=invalid-path");
                 return false;
             }
+            AppendPreviewTrace("build-by-path start mappedPath=" + mappedPath);
 
             try
             {
@@ -129,10 +149,19 @@ namespace FWEledit
                     }
                     return false;
                 }
+                if (!IsUsablePreviewMesh(meshData))
+                {
+                    errorMessage = "Model preview generated an empty mesh:\n" + mappedPath;
+                    AppendPreviewTrace("empty-preview path=" + mappedPath);
+                    meshData = null;
+                    return false;
+                }
+                AppendPreviewTrace("preview-ok path=" + mappedPath + " vertices=" + meshData.VertexCount.ToString() + " triangles=" + meshData.TriangleCount.ToString() + " textures=" + (meshData.Textures == null ? 0 : meshData.Textures.Length).ToString());
                 return true;
             }
             catch (Exception ex)
             {
+                errorLoggingService.Log("ModelPreviewService.TryBuildPreviewMeshDataFromMappedPath", ex);
                 errorMessage = "MODEL PREVIEW ERROR!\n" + ex.Message;
                 meshData = null;
                 return false;
@@ -143,8 +172,11 @@ namespace FWEledit
         {
             if (meshData == null)
             {
+                AppendPreviewTrace("show-window skipped reason=null-mesh");
                 return;
             }
+
+            AppendPreviewTrace("show-window request activate=" + activateWindow.ToString() + " vertices=" + meshData.VertexCount.ToString() + " triangles=" + meshData.TriangleCount.ToString() + " textures=" + (meshData.Textures == null ? 0 : meshData.Textures.Length).ToString() + " source=" + (meshData.SourceMappedPath ?? string.Empty));
 
             bool requireNonActivating = !activateWindow;
             if (activePreviewWindow != null && !activePreviewWindow.IsDisposed)
@@ -170,21 +202,35 @@ namespace FWEledit
                     activePreviewWindow.SetNonActivatingOwnerHandle(nonActivatingOwnerHandle);
                     activePreviewWindow.ReplaceMeshData(meshData);
                 }
-                catch
+                catch (Exception ex)
                 {
+                    errorLoggingService.Log("ModelPreviewService.ShowPreviewWindow.ReplaceMeshData", ex);
+                    try
+                    {
+                        activePreviewWindow.Close();
+                    }
+                    catch
+                    {
+                    }
+
+                    activePreviewWindow = null;
                 }
 
-                if (activateWindow
+                if (activePreviewWindow != null
+                    && activateWindow
                     && activePreviewWindow.WindowState == System.Windows.Forms.FormWindowState.Minimized)
                 {
                     activePreviewWindow.WindowState = System.Windows.Forms.FormWindowState.Normal;
                 }
-                if (activateWindow)
+                if (activePreviewWindow != null && activateWindow)
                 {
                     activePreviewWindow.BringToFront();
                     activePreviewWindow.Activate();
                 }
-                return;
+                if (activePreviewWindow != null)
+                {
+                    return;
+                }
             }
 
             ModelPreviewWindow window = new ModelPreviewWindow(meshData, !activateWindow, nonActivatingOwnerHandle);
@@ -227,6 +273,33 @@ namespace FWEledit
             ShowPreviewWindow(meshData, true, IntPtr.Zero);
         }
 
+        public void ClosePreviewWindow()
+        {
+            if (activePreviewWindow == null || activePreviewWindow.IsDisposed)
+            {
+                return;
+            }
+
+            try
+            {
+                if (activePreviewWindow.InvokeRequired)
+                {
+                    activePreviewWindow.BeginInvoke((Action)(() => ClosePreviewWindow()));
+                    return;
+                }
+
+                activePreviewWindow.Close();
+            }
+            catch (Exception ex)
+            {
+                errorLoggingService.Log("ModelPreviewService.ClosePreviewWindow", ex);
+            }
+            finally
+            {
+                activePreviewWindow = null;
+            }
+        }
+
         public void ShowPreviewWindow(ModelPreviewMeshData meshData, bool activateWindow)
         {
             ShowPreviewWindow(meshData, activateWindow, IntPtr.Zero);
@@ -236,21 +309,26 @@ namespace FWEledit
         {
             if (meshData == null)
             {
+                AppendPreviewTrace("update-window skipped reason=null-mesh");
                 return false;
             }
 
             if (activePreviewWindow == null || activePreviewWindow.IsDisposed)
             {
+                AppendPreviewTrace("update-window skipped reason=no-active-window");
                 return false;
             }
 
             try
             {
                 activePreviewWindow.ReplaceMeshData(meshData);
+                AppendPreviewTrace("update-window ok vertices=" + meshData.VertexCount.ToString() + " triangles=" + meshData.TriangleCount.ToString());
                 return true;
             }
-            catch
+            catch (Exception ex)
             {
+                errorLoggingService.Log("ModelPreviewService.TryUpdateOpenPreviewWindow", ex);
+                AppendPreviewTrace("update-window failed error=" + ex.Message);
                 return false;
             }
         }
@@ -260,6 +338,7 @@ namespace FWEledit
             string safeMessage = string.IsNullOrWhiteSpace(message)
                 ? "Model preview unavailable for this file."
                 : message.Trim();
+            AppendPreviewTrace("show-message activate=" + activateWindow.ToString() + " message=" + safeMessage.Replace('\r', ' ').Replace('\n', ' '));
 
             bool requireNonActivating = !activateWindow;
             if (activePreviewWindow != null && !activePreviewWindow.IsDisposed)
@@ -452,26 +531,46 @@ namespace FWEledit
         {
             meshData = null;
             errorMessage = string.Empty;
+            AssetManager previewAssetManager = CreateDetachedPreviewAssetManager(assetManager);
 
             string cacheKey = NormalizePreviewCacheKey(mappedPath);
             if (string.IsNullOrWhiteSpace(cacheKey))
             {
-                return embeddedPreviewLoaderService.TryLoadPreviewMesh(assetManager, mappedPath, out meshData, out errorMessage);
+                return TryLoadPreviewMeshDetached(previewAssetManager, mappedPath, out meshData, out errorMessage);
             }
 
             lock (previewMeshCacheSync)
             {
                 if (previewMeshCache.TryGetValue(cacheKey, out ModelPreviewMeshData cached) && cached != null)
                 {
-                    TouchPreviewCacheKey(cacheKey);
-                    meshData = CloneForPreviewRequest(cached);
-                    return true;
+                    if (IsUsablePreviewMesh(cached))
+                    {
+                        TouchPreviewCacheKey(cacheKey);
+                        meshData = CloneForPreviewRequest(cached);
+                        return true;
+                    }
+
+                    previewMeshCache.Remove(cacheKey);
+                    LinkedListNode<string> staleNode = previewMeshCacheOrder.Find(cacheKey);
+                    if (staleNode != null)
+                    {
+                        previewMeshCacheOrder.Remove(staleNode);
+                    }
                 }
             }
 
-            if (!embeddedPreviewLoaderService.TryLoadPreviewMesh(assetManager, mappedPath, out ModelPreviewMeshData loaded, out errorMessage))
+            if (!TryLoadPreviewMeshDetached(previewAssetManager, mappedPath, out ModelPreviewMeshData loaded, out errorMessage))
             {
                 meshData = null;
+                return false;
+            }
+
+            if (!IsUsablePreviewMesh(loaded))
+            {
+                meshData = null;
+                errorMessage = string.IsNullOrWhiteSpace(errorMessage)
+                    ? "Model preview generated an empty mesh."
+                    : errorMessage;
                 return false;
             }
 
@@ -485,6 +584,37 @@ namespace FWEledit
 
             meshData = CloneForPreviewRequest(toStore);
             return true;
+        }
+
+        private static AssetManager CreateDetachedPreviewAssetManager(AssetManager source)
+        {
+            AssetManager detached = new AssetManager();
+            if (source != null)
+            {
+                detached.DDSFORMAT = source.DDSFORMAT;
+            }
+            return detached;
+        }
+
+        private bool TryLoadPreviewMeshDetached(
+            AssetManager assetManager,
+            string mappedPath,
+            out ModelPreviewMeshData meshData,
+            out string errorMessage)
+        {
+            lock (PreviewStaticStateSync)
+            {
+                string previousWorkspaceRoot = AssetManager.WorkspaceRootPath;
+                try
+                {
+                    AssetManager.WorkspaceRootPath = string.Empty;
+                    return embeddedPreviewLoaderService.TryLoadPreviewMesh(assetManager, mappedPath, out meshData, out errorMessage);
+                }
+                finally
+                {
+                    AssetManager.WorkspaceRootPath = previousWorkspaceRoot;
+                }
+            }
         }
 
         private static string NormalizePreviewCacheKey(string mappedPath)
@@ -518,6 +648,32 @@ namespace FWEledit
                 {
                     previewMeshCache.Remove(oldest);
                 }
+            }
+        }
+
+        private static bool IsUsablePreviewMesh(ModelPreviewMeshData meshData)
+        {
+            return meshData != null
+                && meshData.Vertices != null
+                && meshData.Vertices.Length > 0
+                && meshData.Indices != null
+                && meshData.Indices.Length >= 3;
+        }
+
+        private static void AppendPreviewTrace(string message)
+        {
+            try
+            {
+                string logsDir = Path.Combine(Application.StartupPath, "logs");
+                Directory.CreateDirectory(logsDir);
+                string logFile = Path.Combine(logsDir, "model-preview.log");
+                using (StreamWriter sw = new StreamWriter(logFile, true, Encoding.UTF8))
+                {
+                    sw.WriteLine("[" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "] " + (message ?? string.Empty));
+                }
+            }
+            catch
+            {
             }
         }
 

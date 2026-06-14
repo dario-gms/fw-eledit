@@ -227,7 +227,8 @@ namespace FWEledit
                 string listName = request.ListCollection.Lists[request.ListIndex].listName ?? string.Empty;
                 result.DisplayValue = modelPickerService.FormatModelPathIdDisplay(request.Database, valueToSet, request.FieldName, listName);
             }
-            else if (string.Equals(request.FieldName, "item_quality", StringComparison.OrdinalIgnoreCase))
+            else if (string.Equals(request.FieldName, "item_quality", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(request.FieldName, "id_quality", StringComparison.OrdinalIgnoreCase))
             {
                 result.DisplayValue = ItemQualityCatalog.FormatDisplay(valueToSet);
             }

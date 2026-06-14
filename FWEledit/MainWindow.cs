@@ -30,6 +30,7 @@ namespace FWEledit
         private int fwInlinePickIconRowIndex = -1;
         private bool fwDarkMode;
         private bool suppressSelectionHistory;
+        private int pendingAutoSelectionHistoryListIndex = -1;
         private int selectionHistoryIndex = -1;
         private readonly List<NavigationSnapshot> selectionHistory = new List<NavigationSnapshot>();
         private bool liveModelPreviewRefreshInProgress;

@@ -181,7 +181,10 @@ namespace FWEledit
                 }
                 if (copyNeeded)
                 {
-                    File.Copy(gamePck, workspacePck, true);
+                    if (!TryCopyReadableFileToWorkspace(gamePck, workspacePck) && !File.Exists(workspacePck))
+                    {
+                        return false;
+                    }
                 }
                 if (File.Exists(gamePkx))
                 {
@@ -194,7 +197,10 @@ namespace FWEledit
                     }
                     if (pkxCopyNeeded)
                     {
-                        File.Copy(gamePkx, workspacePkx, true);
+                        if (!TryCopyReadableFileToWorkspace(gamePkx, workspacePkx) && !File.Exists(workspacePkx))
+                        {
+                            return false;
+                        }
                     }
                 }
 
@@ -214,19 +220,30 @@ namespace FWEledit
 
                 if (mustExtract)
                 {
+                    string backupExtractedDir = extractedDir + ".backup_fweledit";
+                    bool hadExistingExtractedDir = Directory.Exists(extractedDir);
                     try
                     {
-                        if (Directory.Exists(extractedDir))
+                        if (Directory.Exists(backupExtractedDir))
                         {
-                            Directory.Delete(extractedDir, true);
+                            Directory.Delete(backupExtractedDir, true);
                         }
                     }
                     catch
                     { }
-                    if (!RunPckExtraction(workspacePck))
+                    try
                     {
-                        return false;
+                        if (Directory.Exists(extractedDir))
+                        {
+                            Directory.Move(extractedDir, backupExtractedDir);
+                        }
                     }
+                    catch
+                    {
+                        hadExistingExtractedDir = false;
+                    }
+
+                    bool extracted = RunPckExtraction(workspacePck);
                     if (!Directory.Exists(extractedDir))
                     {
                         // Some spck builds extract next to the game pck path or spck working directory.
@@ -279,7 +296,27 @@ namespace FWEledit
 
                     if (!Directory.Exists(extractedDir))
                     {
-                        return false;
+                        if (hadExistingExtractedDir && Directory.Exists(backupExtractedDir))
+                        {
+                            try
+                            {
+                                Directory.Move(backupExtractedDir, extractedDir);
+                            }
+                            catch
+                            { }
+                        }
+
+                        return Directory.Exists(extractedDir) || extracted;
+                    }
+
+                    if (Directory.Exists(backupExtractedDir))
+                    {
+                        try
+                        {
+                            Directory.Delete(backupExtractedDir, true);
+                        }
+                        catch
+                        { }
                     }
                 }
 
@@ -287,6 +324,65 @@ namespace FWEledit
             }
             catch
             {
+                return false;
+            }
+        }
+
+        private bool TryCopyReadableFileToWorkspace(string sourcePath, string destinationPath)
+        {
+            string tempPath = destinationPath + ".tmp_fweledit";
+            try
+            {
+                string destinationDirectory = Path.GetDirectoryName(destinationPath);
+                if (!string.IsNullOrWhiteSpace(destinationDirectory))
+                {
+                    Directory.CreateDirectory(destinationDirectory);
+                }
+
+                try
+                {
+                    if (File.Exists(tempPath))
+                    {
+                        File.Delete(tempPath);
+                    }
+                }
+                catch
+                { }
+
+                using (FileStream source = new FileStream(sourcePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+                using (FileStream destination = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None))
+                {
+                    source.CopyTo(destination);
+                }
+
+                if (File.Exists(destinationPath))
+                {
+                    File.Delete(destinationPath);
+                }
+
+                File.Move(tempPath, destinationPath);
+
+                try
+                {
+                    File.SetLastWriteTimeUtc(destinationPath, File.GetLastWriteTimeUtc(sourcePath));
+                }
+                catch
+                { }
+
+                return true;
+            }
+            catch
+            {
+                try
+                {
+                    if (File.Exists(tempPath))
+                    {
+                        File.Delete(tempPath);
+                    }
+                }
+                catch
+                { }
+
                 return false;
             }
         }
@@ -2265,19 +2361,36 @@ namespace FWEledit
                     return false;
                 }
 
+                string normalizedPackage = packageName.Trim();
+                EnsureWorkspaceReady();
+                EnsureWorkspacePckPrepared(normalizedPackage, false);
+
                 string resourcesRoot = Path.Combine(GameRootPath, "resources");
-                string pckPath = Path.Combine(resourcesRoot, packageName.Trim() + ".pck");
+                string workspaceResources = GetWorkspaceResourcesRoot();
+                string pckPath = string.IsNullOrWhiteSpace(workspaceResources)
+                    ? string.Empty
+                    : Path.Combine(workspaceResources, normalizedPackage + ".pck");
+                if (!File.Exists(pckPath))
+                {
+                    pckPath = Path.Combine(resourcesRoot, normalizedPackage + ".pck");
+                }
                 if (!File.Exists(pckPath))
                 {
                     return false;
                 }
-                string pkxPath = Path.Combine(resourcesRoot, packageName.Trim() + ".pkx");
+                string pkxPath = string.IsNullOrWhiteSpace(workspaceResources)
+                    ? string.Empty
+                    : Path.Combine(workspaceResources, normalizedPackage + ".pkx");
+                if (!File.Exists(pkxPath))
+                {
+                    pkxPath = Path.Combine(resourcesRoot, normalizedPackage + ".pkx");
+                }
                 if (!File.Exists(pkxPath))
                 {
                     pkxPath = string.Empty;
                 }
 
-                return PckIndexReader.TryEnumerateEntries(packageName, pckPath, pkxPath, entries);
+                return PckIndexReader.TryEnumerateEntries(normalizedPackage, pckPath, pkxPath, entries);
             }
             catch
             {
@@ -2630,11 +2743,11 @@ namespace FWEledit
 
                 public PckConcatStream(string pckPath, string pkxPath)
                 {
-                    pck = new FileStream(pckPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+                    pck = new FileStream(pckPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
                     pckLength = pck.Length;
                     if (!string.IsNullOrWhiteSpace(pkxPath) && File.Exists(pkxPath))
                     {
-                        pkx = new FileStream(pkxPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+                        pkx = new FileStream(pkxPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
                         pkxLength = pkx.Length;
                     }
                 }
