@@ -13,6 +13,8 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Reflection;
 using System.Security.Cryptography;
+using System.Text.RegularExpressions;
+using eELedit;
 
 namespace FWEledit
 {
@@ -950,6 +952,11 @@ namespace FWEledit
             if (database.pathById == null || database.pathById.Count == 0)
             {
                 database.pathById = LoadPathById();
+            }
+
+            if (database.task_items == null)
+            {
+                LoadTaskReferences();
             }
 
             if (includeHeavyAssets && firstLoad)
@@ -3981,6 +3988,735 @@ namespace FWEledit
                 sessionService.BuffStr = new string[0];
             }
             database.buff_str = sessionService.BuffStr;
+        }
+
+        private void LoadTaskReferences()
+        {
+            SortedList<int, ItemDupe> taskItems = new SortedList<int, ItemDupe>();
+            if (string.IsNullOrWhiteSpace(GameRootPath) || !Directory.Exists(GameRootPath))
+            {
+                database.task_items = taskItems;
+                return;
+            }
+
+            try
+            {
+                List<string> taskFiles = EnumerateTaskDataShardFiles();
+                for (int shardIndex = 0; shardIndex < taskFiles.Count; shardIndex++)
+                {
+                    TryLoadTaskDataShard(taskFiles[shardIndex], shardIndex, taskItems);
+                }
+            }
+            catch
+            {
+                taskItems = new SortedList<int, ItemDupe>();
+            }
+
+            database.task_items = taskItems;
+        }
+
+        private List<string> EnumerateTaskDataShardFiles()
+        {
+            List<string> files = new List<string>();
+            string dataDirectory = Path.Combine(GameRootPath, "data");
+            if (Directory.Exists(dataDirectory))
+            {
+                files.AddRange(Directory.GetFiles(dataDirectory, "tasks.data*"));
+            }
+
+            if (files.Count == 0)
+            {
+                string backupDirectory = Path.Combine(GameRootPath, "bak");
+                if (Directory.Exists(backupDirectory))
+                {
+                    files.AddRange(Directory.GetFiles(backupDirectory, "tasks.data*"));
+                }
+            }
+
+            return files
+                .Where(path => IsTaskDataShardFile(Path.GetFileName(path)))
+                .OrderBy(path => GetTaskDataShardOrder(Path.GetFileName(path)))
+                .ToList();
+        }
+
+        private static bool IsTaskDataShardFile(string fileName)
+        {
+            if (string.IsNullOrWhiteSpace(fileName))
+            {
+                return false;
+            }
+
+            return Regex.IsMatch(fileName.Trim(), @"^tasks\.data\d+$", RegexOptions.IgnoreCase);
+        }
+
+        private static int GetTaskDataShardOrder(string fileName)
+        {
+            if (string.IsNullOrWhiteSpace(fileName))
+            {
+                return int.MaxValue;
+            }
+
+            Match match = Regex.Match(fileName.Trim(), @"^tasks\.data(\d+)$", RegexOptions.IgnoreCase);
+            int order;
+            return match.Success && int.TryParse(match.Groups[1].Value, out order)
+                ? order
+                : int.MaxValue;
+        }
+
+        private sealed class TaskChunkCandidate
+        {
+            public int Start { get; set; }
+            public int Id { get; set; }
+            public string Name { get; set; }
+        }
+
+        private sealed class ParsedTaskChunkNode
+        {
+            public TaskChunkCandidate Candidate { get; set; }
+            public int End { get; set; }
+            public List<ParsedTaskChunkNode> Children { get; set; } = new List<ParsedTaskChunkNode>();
+        }
+
+        private sealed class TaskChunkParseResult
+        {
+            public bool Success { get; set; }
+            public int NextCandidateIndex { get; set; }
+            public ParsedTaskChunkNode Node { get; set; }
+        }
+
+        private sealed class TaskChunkSiblingParseResult
+        {
+            public bool Success { get; set; }
+            public int NextCandidateIndex { get; set; }
+            public List<ParsedTaskChunkNode> Nodes { get; set; } = new List<ParsedTaskChunkNode>();
+        }
+
+        private void TryLoadTaskDataShard(string filePath, int shardIndex, SortedList<int, ItemDupe> taskItems)
+        {
+            if (taskItems == null || string.IsNullOrWhiteSpace(filePath) || !File.Exists(filePath))
+            {
+                return;
+            }
+
+            using (FileStream stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+            using (BinaryReader reader = new BinaryReader(stream, Encoding.Unicode))
+            {
+                if (reader.BaseStream.Length < 16)
+                {
+                    return;
+                }
+
+                reader.ReadInt32(); // custom shard signature
+                int version = reader.ReadInt32();
+                int count = reader.ReadInt32();
+                if (version <= 0 || count <= 0 || count > 200000)
+                {
+                    return;
+                }
+
+                long tableLength = 12L + count * 4L;
+                if (tableLength >= reader.BaseStream.Length)
+                {
+                    return;
+                }
+
+                int[] offsets = new int[count];
+                for (int i = 0; i < count; i++)
+                {
+                    offsets[i] = reader.ReadInt32();
+                }
+
+                int flatIndex = 0;
+                for (int i = 0; i < offsets.Length; i++)
+                {
+                    int startOffset = offsets[i];
+                    int endOffset = i < offsets.Length - 1 ? offsets[i + 1] : (int)reader.BaseStream.Length;
+                    if (startOffset <= 0 || endOffset <= startOffset || endOffset > reader.BaseStream.Length)
+                    {
+                        continue;
+                    }
+
+                    reader.BaseStream.Position = startOffset;
+                    byte[] chunkBytes = reader.ReadBytes(endOffset - startOffset);
+                    if (chunkBytes == null || chunkBytes.Length < 64)
+                    {
+                        continue;
+                    }
+
+                    List<TaskChunkCandidate> candidates = FindTaskChunkCandidates(chunkBytes);
+                    if (candidates.Count == 0)
+                    {
+                        AddFallbackRootTask(chunkBytes, shardIndex, taskItems, ref flatIndex);
+                        continue;
+                    }
+
+                    ParsedTaskChunkNode rootNode = ParseTaskChunkTree(chunkBytes, candidates);
+                    if (rootNode != null)
+                    {
+                        FlattenTaskChunkNode(rootNode, shardIndex, 0, 0, 0, taskItems, ref flatIndex);
+                        continue;
+                    }
+
+                    AddFlatTaskChunkCandidates(candidates, shardIndex, taskItems, ref flatIndex);
+                }
+            }
+        }
+
+        private List<TaskChunkCandidate> FindTaskChunkCandidates(byte[] chunkBytes)
+        {
+            List<TaskChunkCandidate> candidates = new List<TaskChunkCandidate>();
+            if (chunkBytes == null || chunkBytes.Length < 80)
+            {
+                return candidates;
+            }
+
+            for (int offset = 0; offset <= chunkBytes.Length - 80; offset++)
+            {
+                TaskChunkCandidate candidate;
+                if (TryReadTaskChunkCandidate(chunkBytes, offset, out candidate))
+                {
+                    candidates.Add(candidate);
+                }
+            }
+
+            if (candidates.Count <= 1)
+            {
+                return candidates;
+            }
+
+            List<TaskChunkCandidate> filtered = new List<TaskChunkCandidate>();
+            for (int i = 0; i < candidates.Count; i++)
+            {
+                TaskChunkCandidate candidate = candidates[i];
+                if (filtered.Count == 0)
+                {
+                    filtered.Add(candidate);
+                    continue;
+                }
+
+                TaskChunkCandidate previous = filtered[filtered.Count - 1];
+                if (candidate.Start - previous.Start <= 4)
+                {
+                    if ((candidate.Name ?? string.Empty).Length > (previous.Name ?? string.Empty).Length)
+                    {
+                        filtered[filtered.Count - 1] = candidate;
+                    }
+                    continue;
+                }
+
+                filtered.Add(candidate);
+            }
+
+            return filtered;
+        }
+
+        private bool TryReadTaskChunkCandidate(byte[] chunkBytes, int offset, out TaskChunkCandidate candidate)
+        {
+            candidate = null;
+            if (chunkBytes == null || offset < 0 || offset + 76 > chunkBytes.Length)
+            {
+                return false;
+            }
+
+            int id = ReadInt32(chunkBytes, offset);
+            if (id <= 0 || id > 20000000)
+            {
+                return false;
+            }
+
+            string name = ReadTaskName(chunkBytes, offset + 4, 30);
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                return false;
+            }
+
+            if (!HasTaskChunkHeaderSignature(chunkBytes, offset))
+            {
+                return false;
+            }
+
+            candidate = new TaskChunkCandidate
+            {
+                Start = offset,
+                Id = id,
+                Name = name
+            };
+            return true;
+        }
+
+        private static bool HasTaskChunkHeaderSignature(byte[] chunkBytes, int offset)
+        {
+            if (chunkBytes == null)
+            {
+                return false;
+            }
+
+            bool signatureA = ReadInt32(chunkBytes, offset + 64) == 0
+                && ReadInt32(chunkBytes, offset + 68) == 67108864
+                && ReadInt32(chunkBytes, offset + 72) == 0;
+            if (signatureA)
+            {
+                return true;
+            }
+
+            return ReadInt32(chunkBytes, offset + 64) == 0
+                && ReadInt32(chunkBytes, offset + 68) == 0
+                && ReadInt32(chunkBytes, offset + 72) == 67108864
+                && ReadInt32(chunkBytes, offset + 76) == 0;
+        }
+
+        private ParsedTaskChunkNode ParseTaskChunkTree(byte[] chunkBytes, List<TaskChunkCandidate> candidates)
+        {
+            if (chunkBytes == null || candidates == null || candidates.Count == 0 || candidates[0].Start != 0)
+            {
+                return null;
+            }
+
+            Dictionary<string, TaskChunkParseResult> taskMemo = new Dictionary<string, TaskChunkParseResult>();
+            Dictionary<string, TaskChunkSiblingParseResult> siblingMemo = new Dictionary<string, TaskChunkSiblingParseResult>();
+            int nextCandidateIndex;
+            ParsedTaskChunkNode rootNode;
+            if (TryParseTaskChunkNode(
+                chunkBytes,
+                candidates,
+                0,
+                chunkBytes.Length,
+                taskMemo,
+                siblingMemo,
+                out nextCandidateIndex,
+                out rootNode)
+                && rootNode != null)
+            {
+                return rootNode;
+            }
+
+            return null;
+        }
+
+        private bool TryParseTaskChunkNode(
+            byte[] chunkBytes,
+            List<TaskChunkCandidate> candidates,
+            int candidateIndex,
+            int endExclusive,
+            Dictionary<string, TaskChunkParseResult> taskMemo,
+            Dictionary<string, TaskChunkSiblingParseResult> siblingMemo,
+            out int nextCandidateIndex,
+            out ParsedTaskChunkNode node)
+        {
+            nextCandidateIndex = candidateIndex;
+            node = null;
+
+            if (chunkBytes == null
+                || candidates == null
+                || candidateIndex < 0
+                || candidateIndex >= candidates.Count
+                || endExclusive <= candidates[candidateIndex].Start
+                || endExclusive > chunkBytes.Length)
+            {
+                return false;
+            }
+
+            string memoKey = candidateIndex.ToString() + "|" + endExclusive.ToString();
+            TaskChunkParseResult cachedResult;
+            if (taskMemo != null && taskMemo.TryGetValue(memoKey, out cachedResult))
+            {
+                nextCandidateIndex = cachedResult.NextCandidateIndex;
+                node = cachedResult.Node;
+                return cachedResult.Success;
+            }
+
+            TaskChunkParseResult result = new TaskChunkParseResult
+            {
+                Success = false,
+                NextCandidateIndex = candidateIndex
+            };
+
+            int nextStartIndex = candidateIndex + 1;
+            if (nextStartIndex >= candidates.Count || candidates[nextStartIndex].Start >= endExclusive)
+            {
+                if (endExclusive >= 4 && ReadInt32(chunkBytes, endExclusive - 4) == 0)
+                {
+                    node = new ParsedTaskChunkNode
+                    {
+                        Candidate = candidates[candidateIndex],
+                        End = endExclusive
+                    };
+                    nextCandidateIndex = candidateIndex + 1;
+                    result.Success = true;
+                    result.NextCandidateIndex = nextCandidateIndex;
+                    result.Node = node;
+                }
+            }
+            else
+            {
+                for (int firstChildIndex = nextStartIndex; firstChildIndex < candidates.Count && candidates[firstChildIndex].Start < endExclusive; firstChildIndex++)
+                {
+                    int childCount = ReadInt32(chunkBytes, candidates[firstChildIndex].Start - 4);
+                    if (childCount <= 0)
+                    {
+                        continue;
+                    }
+
+                    List<ParsedTaskChunkNode> parsedChildren;
+                    int parsedNextIndex;
+                    if (!TryParseTaskChunkSiblings(
+                        chunkBytes,
+                        candidates,
+                        firstChildIndex,
+                        childCount,
+                        endExclusive,
+                        taskMemo,
+                        siblingMemo,
+                        out parsedNextIndex,
+                        out parsedChildren))
+                    {
+                        continue;
+                    }
+
+                    node = new ParsedTaskChunkNode
+                    {
+                        Candidate = candidates[candidateIndex],
+                        End = endExclusive,
+                        Children = parsedChildren ?? new List<ParsedTaskChunkNode>()
+                    };
+                    nextCandidateIndex = parsedNextIndex;
+                    result.Success = true;
+                    result.NextCandidateIndex = nextCandidateIndex;
+                    result.Node = node;
+                    break;
+                }
+            }
+
+            if (taskMemo != null)
+            {
+                taskMemo[memoKey] = result;
+            }
+
+            return result.Success;
+        }
+
+        private bool TryParseTaskChunkSiblings(
+            byte[] chunkBytes,
+            List<TaskChunkCandidate> candidates,
+            int firstChildIndex,
+            int childCount,
+            int endExclusive,
+            Dictionary<string, TaskChunkParseResult> taskMemo,
+            Dictionary<string, TaskChunkSiblingParseResult> siblingMemo,
+            out int nextCandidateIndex,
+            out List<ParsedTaskChunkNode> nodes)
+        {
+            nextCandidateIndex = firstChildIndex;
+            nodes = null;
+            if (chunkBytes == null
+                || candidates == null
+                || firstChildIndex < 0
+                || firstChildIndex >= candidates.Count
+                || childCount <= 0
+                || endExclusive <= candidates[firstChildIndex].Start)
+            {
+                return false;
+            }
+
+            string memoKey = firstChildIndex.ToString() + "|" + childCount.ToString() + "|" + endExclusive.ToString();
+            TaskChunkSiblingParseResult cachedResult;
+            if (siblingMemo != null && siblingMemo.TryGetValue(memoKey, out cachedResult))
+            {
+                nextCandidateIndex = cachedResult.NextCandidateIndex;
+                nodes = cachedResult.Nodes;
+                return cachedResult.Success;
+            }
+
+            TaskChunkSiblingParseResult result = new TaskChunkSiblingParseResult
+            {
+                Success = false,
+                NextCandidateIndex = firstChildIndex
+            };
+
+            List<ParsedTaskChunkNode> parsedNodes = new List<ParsedTaskChunkNode>();
+            int currentIndex = firstChildIndex;
+
+            for (int siblingOrdinal = 0; siblingOrdinal < childCount; siblingOrdinal++)
+            {
+                if (currentIndex >= candidates.Count || candidates[currentIndex].Start >= endExclusive)
+                {
+                    parsedNodes = null;
+                    break;
+                }
+
+                bool isLastSibling = siblingOrdinal == childCount - 1;
+                ParsedTaskChunkNode parsedNode = null;
+                int parsedNodeNextIndex = currentIndex;
+
+                if (!isLastSibling)
+                {
+                    for (int nextSiblingIndex = currentIndex + 1; nextSiblingIndex < candidates.Count && candidates[nextSiblingIndex].Start < endExclusive; nextSiblingIndex++)
+                    {
+                        if (TryParseTaskChunkNode(
+                            chunkBytes,
+                            candidates,
+                            currentIndex,
+                            candidates[nextSiblingIndex].Start,
+                            taskMemo,
+                            siblingMemo,
+                            out parsedNodeNextIndex,
+                            out parsedNode)
+                            && parsedNodeNextIndex == nextSiblingIndex)
+                        {
+                            break;
+                        }
+
+                        parsedNode = null;
+                    }
+                }
+
+                if (parsedNode == null)
+                {
+                    if (!TryParseTaskChunkNode(
+                        chunkBytes,
+                        candidates,
+                        currentIndex,
+                        endExclusive,
+                        taskMemo,
+                        siblingMemo,
+                        out parsedNodeNextIndex,
+                        out parsedNode))
+                    {
+                        parsedNodes = null;
+                        break;
+                    }
+                }
+
+                if (parsedNode == null)
+                {
+                    parsedNodes = null;
+                    break;
+                }
+
+                parsedNodes.Add(parsedNode);
+                currentIndex = parsedNodeNextIndex;
+            }
+
+            if (parsedNodes != null && currentIndex == GetFirstCandidateIndexAtOrAfter(candidates, endExclusive))
+            {
+                nodes = parsedNodes;
+                nextCandidateIndex = currentIndex;
+                result.Success = true;
+                result.NextCandidateIndex = currentIndex;
+                result.Nodes = parsedNodes;
+            }
+
+            if (siblingMemo != null)
+            {
+                siblingMemo[memoKey] = result;
+            }
+
+            return result.Success;
+        }
+
+        private int GetFirstCandidateIndexAtOrAfter(List<TaskChunkCandidate> candidates, int position)
+        {
+            if (candidates == null)
+            {
+                return 0;
+            }
+
+            for (int i = 0; i < candidates.Count; i++)
+            {
+                if (candidates[i].Start >= position)
+                {
+                    return i;
+                }
+            }
+
+            return candidates.Count;
+        }
+
+        private void FlattenTaskChunkNode(
+            ParsedTaskChunkNode node,
+            int shardIndex,
+            int parentId,
+            int rootId,
+            int depth,
+            SortedList<int, ItemDupe> taskItems,
+            ref int flatIndex)
+        {
+            if (node == null || node.Candidate == null || taskItems == null)
+            {
+                return;
+            }
+
+            int effectiveRootId = rootId > 0 ? rootId : node.Candidate.Id;
+            int childCount = node.Children != null ? node.Children.Count : 0;
+            UpsertTaskItem(
+                taskItems,
+                new ItemDupe
+                {
+                    listID = shardIndex,
+                    index = flatIndex++,
+                    itemId = node.Candidate.Id,
+                    parentId = parentId,
+                    rootId = effectiveRootId,
+                    depth = depth,
+                    childCount = childCount,
+                    name = node.Candidate.Name,
+                    iconpath = string.Empty,
+                    count = 0,
+                    price = string.Empty
+                });
+
+            if (node.Children == null)
+            {
+                return;
+            }
+
+            for (int i = 0; i < node.Children.Count; i++)
+            {
+                FlattenTaskChunkNode(node.Children[i], shardIndex, node.Candidate.Id, effectiveRootId, depth + 1, taskItems, ref flatIndex);
+            }
+        }
+
+        private void AddFlatTaskChunkCandidates(
+            List<TaskChunkCandidate> candidates,
+            int shardIndex,
+            SortedList<int, ItemDupe> taskItems,
+            ref int flatIndex)
+        {
+            if (candidates == null || candidates.Count == 0 || taskItems == null)
+            {
+                return;
+            }
+
+            int rootId = candidates[0].Id;
+            for (int i = 0; i < candidates.Count; i++)
+            {
+                TaskChunkCandidate candidate = candidates[i];
+                bool isRoot = i == 0;
+                UpsertTaskItem(
+                    taskItems,
+                    new ItemDupe
+                    {
+                        listID = shardIndex,
+                        index = flatIndex++,
+                        itemId = candidate.Id,
+                        parentId = isRoot ? 0 : rootId,
+                        rootId = rootId,
+                        depth = isRoot ? 0 : 1,
+                        childCount = isRoot ? Math.Max(0, candidates.Count - 1) : 0,
+                        name = candidate.Name,
+                        iconpath = string.Empty,
+                        count = 0,
+                        price = string.Empty
+                    });
+            }
+        }
+
+        private void AddFallbackRootTask(byte[] chunkBytes, int shardIndex, SortedList<int, ItemDupe> taskItems, ref int flatIndex)
+        {
+            if (chunkBytes == null || chunkBytes.Length < 64 || taskItems == null)
+            {
+                return;
+            }
+
+            int id = ReadInt32(chunkBytes, 0);
+            if (id <= 0)
+            {
+                return;
+            }
+
+            string name = ReadTaskName(chunkBytes, 4, 30);
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                name = "Task " + id.ToString();
+            }
+
+            UpsertTaskItem(
+                taskItems,
+                new ItemDupe
+                {
+                    listID = shardIndex,
+                    index = flatIndex++,
+                    itemId = id,
+                    rootId = id,
+                    name = name,
+                    iconpath = string.Empty,
+                    count = 0,
+                    price = string.Empty
+                });
+        }
+
+        private void UpsertTaskItem(SortedList<int, ItemDupe> taskItems, ItemDupe candidate)
+        {
+            if (taskItems == null || candidate == null || candidate.itemId <= 0)
+            {
+                return;
+            }
+
+            if (taskItems.ContainsKey(candidate.itemId))
+            {
+                ItemDupe existing = taskItems[candidate.itemId];
+                if (ShouldReplaceTaskEntry(existing != null ? existing.name : string.Empty, candidate.name))
+                {
+                    taskItems[candidate.itemId] = candidate;
+                }
+                return;
+            }
+
+            taskItems.Add(candidate.itemId, candidate);
+        }
+
+        private static int ReadInt32(byte[] bytes, int offset)
+        {
+            return bytes != null && offset >= 0 && offset + 4 <= bytes.Length
+                ? BitConverter.ToInt32(bytes, offset)
+                : 0;
+        }
+
+        private static bool ShouldReplaceTaskEntry(string existingName, string candidateName)
+        {
+            bool existingPlaceholder = string.IsNullOrWhiteSpace(existingName)
+                || existingName.StartsWith("N/A", StringComparison.OrdinalIgnoreCase)
+                || existingName.StartsWith("Task ", StringComparison.OrdinalIgnoreCase);
+            bool candidatePlaceholder = string.IsNullOrWhiteSpace(candidateName)
+                || candidateName.StartsWith("N/A", StringComparison.OrdinalIgnoreCase)
+                || candidateName.StartsWith("Task ", StringComparison.OrdinalIgnoreCase);
+
+            if (existingPlaceholder && !candidatePlaceholder)
+            {
+                return true;
+            }
+
+            return existingPlaceholder == candidatePlaceholder
+                && (candidateName ?? string.Empty).Length > (existingName ?? string.Empty).Length;
+        }
+
+        private static string ReadTaskName(byte[] bytes, int offset, int charCount)
+        {
+            StringBuilder builder = new StringBuilder(charCount);
+            for (int i = 0; i < charCount; i++)
+            {
+                int charOffset = offset + (i * 2);
+                if (bytes == null || charOffset < 0 || charOffset + 2 > bytes.Length)
+                {
+                    break;
+                }
+
+                ushort value = BitConverter.ToUInt16(bytes, charOffset);
+                if (value == 0)
+                {
+                    break;
+                }
+
+                char character = (char)value;
+                if (char.IsControl(character))
+                {
+                    return string.Empty;
+                }
+
+                builder.Append(character);
+            }
+
+            return builder.ToString().Trim();
         }
     }
 }

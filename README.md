@@ -8,7 +8,20 @@ FWEledit is based on [sELedit++ by Wrechid](https://github.com/Wrechid/sELedit-)
 
 > **Why open source?** The Forsaken World private server community has seen free editors disappear over the years simply because their source code was never shared — when the original author moved on, the tool died with them. FWEledit exists to break that cycle. By keeping the source open, any developer can pick it up, fix it, extend it, or fork it. The tool survives as long as the community does.
 
-> **Current development focus:** this release was built and validated against **FW v608** data. Config files for other versions (v547, v595, v610, v773, v834, v849) are included as a starting point, but they have not been thoroughly tested and may require adjustments — both to the `.cfg` field definitions and possibly to the editor's parsing logic — to work correctly with those binaries. Making those versions fully functional is one of the intended goals of opening this project to community contributions.
+> **Current development focus:** this release was built and validated against **FW v608** data. Config files for other versions (v547, v595, v610, v773, v834, v849) are included as a starting point, and versions below v608 are now allowed to load with a warning instead of being hard-blocked, but they still may require adjustments — both to the `.cfg` field definitions and possibly to the editor's parsing logic — to work correctly with those binaries. Making those versions fully functional is one of the intended goals of opening this project to community contributions.
+
+---
+
+## What's New in v0.9.5.12
+
+- Added the first built-in `tasks.data` reference pipeline, so task-linked fields can now resolve against real task IDs instead of staying as raw numbers.
+- Added hierarchical task-picker support with task groups and subtasks, including parent/root context in the picker so nested task chains are easier to understand while editing.
+- Added task-targeted reference resolution for task-related fields used by lists such as `DYNAMIC_INSTANCE_CONFIG` and NPC task-service tables.
+- Improved task-related target-list matching by recognizing `Equipment` and `EQUIPMENT_ESSENCE` as the same logical list where needed during reference resolution.
+- Broadened `elements.data` compatibility for versions below v608 by allowing older versions to load with a warning instead of a hard stop, while still blocking versions above the highest validated build.
+- Hardened list-count and auto-offset validation while loading `elements.data`, reducing endless-load / misalignment failures on older configs and surfacing cleaner errors when a structure does not match.
+- Kept the new task support on the lightweight path after removing the heavier task-description parsing experiment that was not worth the startup cost.
+- Project/app version metadata updated to `v0.9.5.12`.
 
 ---
 

@@ -6,7 +6,7 @@ namespace FWEledit
 {
     public sealed class ElementsLoadWorkflowService
     {
-        private const short SupportedVersion = 608;
+        private const short HighestValidatedVersion = 608;
         private readonly ElementsLoadService loadService;
         private readonly NavigationStateService navigationStateService;
         private readonly ElementsFileInfoService elementsFileInfoService;
@@ -56,14 +56,22 @@ namespace FWEledit
                     result.ElementsPath = elementsFile;
                     return result;
                 }
-                if (info != null && info.Success && info.Version != SupportedVersion)
+                if (info != null && info.Success && info.Version > HighestValidatedVersion)
                 {
                     result.ErrorMessage =
                         "Unsupported elements.data version (" + info.Version + ").\n\n" +
-                        "Only version " + SupportedVersion + " is compatible right now.";
+                        "Only versions up to " + HighestValidatedVersion + " are currently allowed.";
                     result.IsVersionUnsupported = true;
                     result.ElementsPath = elementsFile;
                     return result;
+                }
+
+                if (info != null && info.Success && info.Version < HighestValidatedVersion)
+                {
+                    result.WarningMessage =
+                        "Loaded elements.data version " + info.Version + ".\n\n" +
+                        "FWEledit was primarily validated against version " + HighestValidatedVersion + ", " +
+                        "so older configs may still need adjustments in some lists or parsers.";
                 }
             }
 

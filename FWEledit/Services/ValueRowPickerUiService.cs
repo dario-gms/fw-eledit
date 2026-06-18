@@ -979,6 +979,8 @@ namespace FWEledit
 
             List<ItemReferenceOption> options = itemReferenceService.IsTitleDefinitionTargetIndex(targetListIndex)
                 ? itemReferenceService.BuildTitleDefinitionOptions()
+                : itemReferenceService.IsTaskTargetIndex(targetListIndex)
+                    ? itemReferenceService.BuildTaskOptions(database)
                 : itemReferenceService.IsItemListTargetIndex(targetListIndex)
                     ? itemReferenceService.BuildSearchableItemOptions(listCollection, database, iconResolutionService)
                     : targetListIndex >= 0
@@ -995,6 +997,8 @@ namespace FWEledit
 
             string targetName = itemReferenceService.IsTitleDefinitionTargetIndex(targetListIndex)
                 ? "title"
+                : itemReferenceService.IsTaskTargetIndex(targetListIndex)
+                ? "task"
                 : targetListIndex >= 0 && targetListIndex < listCollection.Lists.Length
                 ? listCollection.Lists[targetListIndex].listName ?? "Item"
                 : "item";
