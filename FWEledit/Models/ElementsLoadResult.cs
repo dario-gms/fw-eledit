@@ -6,6 +6,7 @@ namespace FWEledit
     {
         public bool Success { get; set; }
         public string ErrorMessage { get; set; }
+        public string WarningMessage { get; set; }
         public bool IsVersionUnsupported { get; set; }
         public string GameFolderPath { get; set; }
         public string ElementsPath { get; set; }

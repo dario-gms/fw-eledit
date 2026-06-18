@@ -178,6 +178,11 @@ namespace FWEledit
                         persistNavigationState);
                 }
 
+                if (showMessage != null && !string.IsNullOrWhiteSpace(result.WarningMessage))
+                {
+                    showMessage(result.WarningMessage);
+                }
+
                 if (navigationStateService != null)
                 {
                     navigationStateService.SaveGameFolder(gameFolderPath);

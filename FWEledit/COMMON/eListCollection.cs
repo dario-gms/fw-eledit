@@ -149,32 +149,87 @@ namespace FWEledit
             return size;
         }
 
-        private void SkipAutoOffset(BinaryReader br, int listIndex)
+        private void SkipAutoOffset(BinaryReader br, int listIndex, eList[] li, IDictionary<int, int> autoOffsetOverrides)
         {
-            if (listIndex == 0)
+            if (br == null || li == null || listIndex < 0 || listIndex >= li.Length)
             {
-                br.ReadBytes(4);
-                int len = br.ReadInt32();
-                br.ReadBytes(len);
+                return;
             }
-            else if (listIndex == 20)
+
+            int autoOffsetLength = DetectAutoOffsetLength(br, listIndex, li, autoOffsetOverrides);
+            if (autoOffsetLength <= 0)
             {
-                br.ReadBytes(4);
-                int len = br.ReadInt32();
-                br.ReadBytes(len);
-                br.ReadBytes(4);
+                return;
             }
-            else
+
+            br.ReadBytes(autoOffsetLength);
+            autoOffsetOverrides[listIndex] = autoOffsetLength;
+        }
+
+        private int ReadListElementCount(BinaryReader br, int listIndex)
+        {
+            if (Listver > -1 && Listcnts != null && Listcnts[listIndex.ToString()] != null)
             {
-                int npcWarTowerBuildServiceIndex = 100;
-                if (Version >= 191)
-                    npcWarTowerBuildServiceIndex = 99;
-                if (listIndex == npcWarTowerBuildServiceIndex)
+                if (br.BaseStream.Position + 4 > br.BaseStream.Length)
                 {
-                    br.ReadBytes(4);
-                    int len = br.ReadInt32();
-                    br.ReadBytes(len);
+                    throw new EndOfStreamException("Could not skip stored element count for list " + listIndex.ToString() + ".");
                 }
+
+                int configuredCount = Convert.ToInt32(Listcnts[listIndex.ToString()]);
+                br.ReadBytes(4);
+                return configuredCount;
+            }
+
+            if (br.BaseStream.Position + 4 > br.BaseStream.Length)
+            {
+                throw new EndOfStreamException("Could not read element count for list " + listIndex.ToString() + ".");
+            }
+
+            return br.ReadInt32();
+        }
+
+        private void ValidateListElementCount(BinaryReader br, eList list, int listIndex, int elementCount)
+        {
+            if (list == null)
+            {
+                throw new InvalidDataException("List metadata missing for list " + listIndex.ToString() + ".");
+            }
+
+            if (elementCount < 0 || elementCount > 20000000)
+            {
+                throw new InvalidDataException(
+                    "Invalid element count (" + elementCount.ToString() + ") for list "
+                    + listIndex.ToString()
+                    + " ("
+                    + list.listName
+                    + ").");
+            }
+
+            int elementSize = GetElementSize(list.elementTypes);
+            if (elementSize <= 0)
+            {
+                return;
+            }
+
+            long bytesRemaining = br.BaseStream.Length - br.BaseStream.Position;
+            if (bytesRemaining < 0)
+            {
+                throw new EndOfStreamException("Negative remaining stream length while validating list " + listIndex.ToString() + ".");
+            }
+
+            long maxPossibleCount = bytesRemaining / elementSize;
+            if (elementCount > maxPossibleCount)
+            {
+                throw new InvalidDataException(
+                    "List "
+                    + listIndex.ToString()
+                    + " ("
+                    + list.listName
+                    + ") reported "
+                    + elementCount.ToString()
+                    + " items, but only "
+                    + maxPossibleCount.ToString()
+                    + " fit in the remaining data. Check config/header alignment.");
             }
         }
 
@@ -367,7 +422,7 @@ namespace FWEledit
                     }
                     else
                     {
-                        SkipAutoOffset(br, l);
+                        SkipAutoOffset(br, l, li, new Dictionary<int, int>());
                     }
 
                     if (br.BaseStream.Position + 12 > br.BaseStream.Length)
@@ -676,56 +731,9 @@ namespace FWEledit
 					// autodetect offset (for list 20 & 100)
 					else
 					{
-                        bool knownAutoOffsetHandled = false;
-						if (l == 0)
-						{
-							byte[] t = br.ReadBytes(4);
-							byte[] len = br.ReadBytes(4);
-							byte[] buffer = br.ReadBytes(BitConverter.ToInt32(len, 0));
-							Li[l].listOffset = new byte[t.Length + len.Length + buffer.Length];
-							Array.Copy(t, 0, Li[l].listOffset, 0, t.Length);
-							Array.Copy(len, 0, Li[l].listOffset, 4, len.Length);
-							Array.Copy(buffer, 0, Li[l].listOffset, 8, buffer.Length);
-                            knownAutoOffsetHandled = true;
-						}
-						if (l == 20)
-						{
-							byte[] tag = br.ReadBytes(4);
-							byte[] len = br.ReadBytes(4);
-							byte[] buffer = br.ReadBytes(BitConverter.ToInt32(len, 0));
-							byte[] t = br.ReadBytes(4);
-							Li[l].listOffset = new byte[tag.Length + len.Length + buffer.Length + t.Length];
-							Array.Copy(tag, 0, Li[l].listOffset, 0, tag.Length);
-							Array.Copy(len, 0, Li[l].listOffset, 4, len.Length);
-							Array.Copy(buffer, 0, Li[l].listOffset, 8, buffer.Length);
-							Array.Copy(t, 0, Li[l].listOffset, 8 + buffer.Length, t.Length);
-                            knownAutoOffsetHandled = true;
-						}
-						int NPC_WAR_TOWERBUILD_SERVICE_index = 100;
-						if (Version >= 191)
-							NPC_WAR_TOWERBUILD_SERVICE_index = 99;
-						if (l == NPC_WAR_TOWERBUILD_SERVICE_index)
-						{
-							byte[] tag = br.ReadBytes(4);
-							byte[] len = br.ReadBytes(4);
-							byte[] buffer = br.ReadBytes(BitConverter.ToInt32(len, 0));
-							Li[l].listOffset = new byte[tag.Length + len.Length + buffer.Length];
-							Array.Copy(tag, 0, Li[l].listOffset, 0, tag.Length);
-							Array.Copy(len, 0, Li[l].listOffset, 4, len.Length);
-							Array.Copy(buffer, 0, Li[l].listOffset, 8, buffer.Length);
-                            knownAutoOffsetHandled = true;
-						}
-                        if (knownAutoOffsetHandled)
-                        {
-                            autoOffsetOverrides[l] = Li[l].listOffset.Length;
-                        }
-
-                        if (!knownAutoOffsetHandled)
-                        {
-                            int autoOffsetLength = DetectAutoOffsetLength(br, l, Li, autoOffsetOverrides);
-                            Li[l].listOffset = br.ReadBytes(autoOffsetLength);
-                            autoOffsetOverrides[l] = Li[l].listOffset.Length;
-						}
+                        int autoOffsetLength = DetectAutoOffsetLength(br, l, Li, autoOffsetOverrides);
+                        Li[l].listOffset = br.ReadBytes(autoOffsetLength);
+                        autoOffsetOverrides[l] = Li[l].listOffset.Length;
 					}
 
 					// read conversation list
@@ -789,16 +797,9 @@ namespace FWEledit
 						{
 							Li[l].listType = br.ReadInt32();
 						}
-                        if (Listver > -1 && Listcnts[l.ToString()] != null)
-                        {
-                            int num = Convert.ToInt32(Listcnts[l.ToString()]);
-                            Li[l].elementValues = new object[num][];
-                            br.ReadBytes(4);
-                        }
-                        else
-                        {
-                            Li[l].elementValues = new object[br.ReadInt32()][];
-                        }
+                        int elementCount = ReadListElementCount(br, l);
+                        ValidateListElementCount(br, Li[l], l, elementCount);
+                        Li[l].elementValues = new object[elementCount][];
 
                         SStat[1] = Li[l].elementValues.Length;
 

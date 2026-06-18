@@ -8,6 +8,10 @@ namespace eELedit
         public int listID = 0;
         public int index = 0;
         public int itemId = 0;
+        public int parentId = 0;
+        public int rootId = 0;
+        public int depth = 0;
+        public int childCount = 0;
         public string name = "";
         public string iconpath = "";
         public int count = 0;

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using eELedit;
 
 namespace FWEledit
 {
@@ -7,6 +8,7 @@ namespace FWEledit
     {
         private const int AllListsTargetIndex = -1;
         private const int ItemListsTargetIndex = -2;
+        private const int TasksTargetIndex = -4;
         private const int TitleDefinitionsTargetIndex = TitleDefinitionCatalog.TargetListIndex;
         private readonly NpcTradePortraitService npcTradePortraitService = new NpcTradePortraitService();
         private readonly NpcSellPortraitService npcSellPortraitService = new NpcSellPortraitService();
@@ -54,6 +56,11 @@ namespace FWEledit
             Dictionary<int, List<ItemReferenceOption>> clone = new Dictionary<int, List<ItemReferenceOption>>();
             foreach (KeyValuePair<int, List<ItemReferenceOption>> pair in optionsByListIndex)
             {
+                if (pair.Key == TasksTargetIndex)
+                {
+                    continue;
+                }
+
                 clone[pair.Key] = CloneOptions(pair.Value);
             }
 
@@ -99,6 +106,11 @@ namespace FWEledit
         public bool IsTitleDefinitionTargetIndex(int targetListIndex)
         {
             return targetListIndex == TitleDefinitionsTargetIndex;
+        }
+
+        public bool IsTaskTargetIndex(int targetListIndex)
+        {
+            return targetListIndex == TasksTargetIndex;
         }
 
         public bool IsItemBearingList(eListCollection listCollection, int listIndex)
@@ -231,6 +243,11 @@ namespace FWEledit
                 targetListIndex = ItemListsTargetIndex;
                 return true;
             }
+            else if (IsTaskReferenceField(sourceListName, name))
+            {
+                targetListIndex = TasksTargetIndex;
+                return true;
+            }
             else if (RandomGiftBagRewardTypeCatalog.IsRewardIdFieldName(listCollection, listIndex, name))
             {
                 int rewardType;
@@ -320,6 +337,11 @@ namespace FWEledit
                 return string.IsNullOrWhiteSpace(option.Name) ? rawValue : option.Name;
             }
 
+            if (targetListIndex == TasksTargetIndex && TryFindOptionById(listCollection, targetListIndex, id, database, iconResolutionService, out option))
+            {
+                return string.IsNullOrWhiteSpace(option.Name) ? rawValue : option.Name;
+            }
+
             if (targetListIndex >= 0 && TryFindOptionById(listCollection, targetListIndex, id, database, iconResolutionService, out option))
             {
                 return string.IsNullOrWhiteSpace(option.Name) ? rawValue : option.Name;
@@ -370,6 +392,11 @@ namespace FWEledit
                 return true;
             }
 
+            if (targetListIndex == TasksTargetIndex && TryFindOptionById(listCollection, targetListIndex, id, database, iconResolutionService, out option))
+            {
+                return true;
+            }
+
             if (targetListIndex >= 0 && TryFindOptionById(listCollection, targetListIndex, id, database, iconResolutionService, out option))
             {
                 return true;
@@ -409,6 +436,11 @@ namespace FWEledit
 
             ItemReferenceOption option;
             if (targetListIndex == TitleDefinitionsTargetIndex && TitleDefinitionCatalog.TryGetOptionByName(value.Trim(), out option))
+            {
+                return option.Id.ToString();
+            }
+
+            if (targetListIndex == TasksTargetIndex && TryFindOptionByName(listCollection, targetListIndex, value.Trim(), out option))
             {
                 return option.Id.ToString();
             }
@@ -476,6 +508,13 @@ namespace FWEledit
 
         public List<ItemReferenceOption> BuildOptions(eListCollection listCollection, int targetListIndex, CacheSave database, IconResolutionService iconResolutionService)
         {
+            EnsureCacheContext(listCollection, database, iconResolutionService);
+
+            if (targetListIndex == TasksTargetIndex)
+            {
+                return BuildTaskOptions(database);
+            }
+
             if (targetListIndex == TitleDefinitionsTargetIndex)
             {
                 return BuildTitleDefinitionOptions();
@@ -485,8 +524,6 @@ namespace FWEledit
             {
                 return new List<ItemReferenceOption>();
             }
-
-            EnsureCacheContext(listCollection, database, iconResolutionService);
 
             List<ItemReferenceOption> options;
             if (!optionsByListIndex.TryGetValue(targetListIndex, out options))
@@ -502,6 +539,22 @@ namespace FWEledit
         public List<ItemReferenceOption> BuildTitleDefinitionOptions()
         {
             return TitleDefinitionCatalog.BuildOptions();
+        }
+
+        public List<ItemReferenceOption> BuildTaskOptions(CacheSave database)
+        {
+            EnsureCacheContext(cachedListCollection, database, cachedIconResolutionService);
+
+            List<ItemReferenceOption> options;
+            if (optionsByListIndex.TryGetValue(TasksTargetIndex, out options))
+            {
+                return options;
+            }
+
+            options = BuildTaskOptionsUncached(database);
+            optionsByListIndex[TasksTargetIndex] = options;
+            IndexOptions(TasksTargetIndex, options);
+            return options;
         }
 
         private List<ItemReferenceOption> BuildOptionsUncached(eListCollection listCollection, int targetListIndex, CacheSave database, IconResolutionService iconResolutionService)
@@ -623,6 +676,106 @@ namespace FWEledit
             }
 
             return options;
+        }
+
+        private static List<ItemReferenceOption> BuildTaskOptionsUncached(CacheSave database)
+        {
+            List<ItemReferenceOption> options = new List<ItemReferenceOption>();
+            if (database == null || database.task_items == null || database.task_items.Count == 0)
+            {
+                return options;
+            }
+
+            foreach (KeyValuePair<int, ItemDupe> pair in database.task_items)
+            {
+                ItemDupe task = pair.Value;
+                if (task == null || pair.Key <= 0)
+                {
+                    continue;
+                }
+
+                string secondaryText = BuildTaskSecondaryText(database, task);
+                string description = BuildTaskDescription(database, task);
+
+                options.Add(new ItemReferenceOption
+                {
+                    ListIndex = TasksTargetIndex,
+                    ElementIndex = task.index,
+                    Id = pair.Key,
+                    Name = string.IsNullOrWhiteSpace(task.name) ? "Task " + pair.Key.ToString() : task.name,
+                    ListName = "Tasks",
+                    IconKey = string.Empty,
+                    Quality = -1,
+                    SecondaryText = secondaryText,
+                    Description = description,
+                    Kind = task.depth > 0 ? "Subtask" : "Task"
+                });
+            }
+
+            return options;
+        }
+
+        private static string BuildTaskSecondaryText(CacheSave database, ItemDupe task)
+        {
+            if (task == null)
+            {
+                return "Task";
+            }
+
+            if (task.depth <= 0)
+            {
+                return task.childCount > 0 ? "Task group" : "Task";
+            }
+
+            ItemDupe parentTask;
+            string parentName = TryGetTaskById(database, task.parentId, out parentTask) && parentTask != null && !string.IsNullOrWhiteSpace(parentTask.name)
+                ? parentTask.name
+                : "Task " + task.parentId.ToString();
+            return "Subtask of " + parentName + " [" + task.parentId.ToString() + "]";
+        }
+
+        private static string BuildTaskDescription(CacheSave database, ItemDupe task)
+        {
+            if (task == null)
+            {
+                return string.Empty;
+            }
+
+            List<string> parts = new List<string>();
+            if (task.depth > 0)
+            {
+                ItemDupe parentTask;
+                string parentName = TryGetTaskById(database, task.parentId, out parentTask) && parentTask != null && !string.IsNullOrWhiteSpace(parentTask.name)
+                    ? parentTask.name
+                    : "Task " + task.parentId.ToString();
+                parts.Add("Parent: " + parentName + " [" + task.parentId.ToString() + "]");
+            }
+
+            if (task.rootId > 0 && task.rootId != task.itemId)
+            {
+                ItemDupe rootTask;
+                string rootName = TryGetTaskById(database, task.rootId, out rootTask) && rootTask != null && !string.IsNullOrWhiteSpace(rootTask.name)
+                    ? rootTask.name
+                    : "Task " + task.rootId.ToString();
+                parts.Add("Root: " + rootName + " [" + task.rootId.ToString() + "]");
+            }
+
+            if (task.childCount > 0)
+            {
+                parts.Add("Contains " + task.childCount.ToString() + " subtasks");
+            }
+
+            return string.Join(Environment.NewLine, parts.ToArray());
+        }
+
+        private static bool TryGetTaskById(CacheSave database, int id, out ItemDupe task)
+        {
+            task = null;
+            return database != null
+                && database.task_items != null
+                && id > 0
+                && database.task_items.ContainsKey(id)
+                && (task = database.task_items[id]) != null;
         }
 
         private Dictionary<int, ItemReferenceOption> BuildAddonPackageUsageMap(
@@ -1049,6 +1202,13 @@ namespace FWEledit
             {
                 return TitleDefinitionCatalog.TryGetOptionById(id, out option);
             }
+            if (targetListIndex == TasksTargetIndex)
+            {
+                BuildTaskOptions(database);
+                Dictionary<int, ItemReferenceOption> taskById;
+                return optionsByIdByListIndex.TryGetValue(TasksTargetIndex, out taskById)
+                    && taskById.TryGetValue(id, out option);
+            }
 
             BuildOptions(listCollection, targetListIndex, database, iconResolutionService);
 
@@ -1067,6 +1227,13 @@ namespace FWEledit
             if (targetListIndex == TitleDefinitionsTargetIndex)
             {
                 return TitleDefinitionCatalog.TryGetOptionByName(name, out option);
+            }
+            if (targetListIndex == TasksTargetIndex)
+            {
+                BuildTaskOptions(cachedDatabase);
+                Dictionary<string, ItemReferenceOption> taskByName;
+                return optionsByNameByListIndex.TryGetValue(TasksTargetIndex, out taskByName)
+                    && taskByName.TryGetValue(name, out option);
             }
 
             BuildOptions(listCollection, targetListIndex);
@@ -1159,6 +1326,73 @@ namespace FWEledit
             optionsByNameByListIndex[listIndex] = byName;
         }
 
+        private static bool IsTaskReferenceField(string sourceListName, string fieldName)
+        {
+            if (string.IsNullOrWhiteSpace(fieldName))
+            {
+                return false;
+            }
+
+            string normalized = fieldName.Trim();
+            string lowered = normalized.ToLowerInvariant();
+            if (IsTaskServiceField(lowered) || lowered == "id_task_set")
+            {
+                return false;
+            }
+
+            if (lowered == "task_in" || lowered == "task_out")
+            {
+                return true;
+            }
+
+            if (lowered.StartsWith("id_tasks_", StringComparison.OrdinalIgnoreCase)
+                || lowered.EndsWith("_task_id", StringComparison.OrdinalIgnoreCase)
+                || lowered.EndsWith("_id_task", StringComparison.OrdinalIgnoreCase)
+                || lowered.Contains("_task_id_")
+                || lowered.Contains("_id_task_")
+                || (lowered.StartsWith("tasks_", StringComparison.OrdinalIgnoreCase) && lowered.EndsWith("_id_task", StringComparison.OrdinalIgnoreCase))
+                || (lowered.StartsWith("task_", StringComparison.OrdinalIgnoreCase) && lowered.EndsWith("_id", StringComparison.OrdinalIgnoreCase))
+                || (lowered.StartsWith("id_task_", StringComparison.OrdinalIgnoreCase) && !lowered.EndsWith("_service", StringComparison.OrdinalIgnoreCase))
+                || HasIndexedTaskSuffix(lowered)
+                || (lowered.StartsWith("task_") && int.TryParse(lowered.Substring(5), out _)))
+            {
+                return true;
+            }
+
+            if (!lowered.Contains("task"))
+            {
+                return false;
+            }
+
+            return string.Equals(sourceListName, "NPC_TASK_IN_SERVICE", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(sourceListName, "NPC_TASK_OUT_SERVICE", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(sourceListName, "NPC_TASK_MATTER_SERVICE", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsTaskServiceField(string fieldName)
+        {
+            return string.Equals(fieldName, "id_task_out_service", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(fieldName, "id_task_in_service", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(fieldName, "id_task_matter_service", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool HasIndexedTaskSuffix(string fieldName)
+        {
+            if (string.IsNullOrWhiteSpace(fieldName))
+            {
+                return false;
+            }
+
+            int markerIndex = fieldName.LastIndexOf("_task_", StringComparison.OrdinalIgnoreCase);
+            if (markerIndex < 0)
+            {
+                return false;
+            }
+
+            string suffix = fieldName.Substring(markerIndex + 6);
+            return int.TryParse(suffix, out _);
+        }
+
         private bool TryGetRandomGiftBagRewardType(
             eListCollection listCollection,
             int listIndex,
@@ -1206,16 +1440,38 @@ namespace FWEledit
         private static bool TryFindListIndexByName(eListCollection listCollection, string targetListName, out int targetListIndex)
         {
             targetListIndex = -1;
+            string normalizedTarget = NormalizeListName(targetListName);
             for (int i = 0; i < listCollection.Lists.Length; i++)
             {
                 string listName = NormalizeListName(listCollection.Lists[i].listName);
-                if (string.Equals(listName, targetListName, StringComparison.OrdinalIgnoreCase))
+                if (IsEquivalentListName(listName, normalizedTarget))
                 {
                     targetListIndex = i;
                     return true;
                 }
             }
             return false;
+        }
+
+        private static bool IsEquivalentListName(string left, string right)
+        {
+            if (string.Equals(left, right, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            if (IsEquipmentEssenceAlias(left) && IsEquipmentEssenceAlias(right))
+            {
+                return true;
+            }
+
+            return false;
+        }
+
+        private static bool IsEquipmentEssenceAlias(string listName)
+        {
+            return string.Equals(listName, "Equipment", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(listName, "EQUIPMENT_ESSENCE", StringComparison.OrdinalIgnoreCase);
         }
 
         private static bool TryGetMappedTargetListName(string sourceListName, string fieldName, out string targetListName)
@@ -1667,7 +1923,7 @@ namespace FWEledit
             }
 
             string listName = NormalizeListName(listCollection.Lists[listIndex].listName);
-            if (string.Equals(listName, "Equipment", StringComparison.OrdinalIgnoreCase))
+            if (IsEquipmentEssenceAlias(listName))
             {
                 return true;
             }
