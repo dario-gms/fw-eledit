@@ -36,7 +36,8 @@ namespace FWEledit
             eListConversation conversationList,
             CacheSave database,
             int listIndex,
-            System.Func<int, int, int, string> composeDisplayName)
+            System.Func<int, int, int, string> composeDisplayName,
+            bool includeIcons)
         {
             List<object[]> rows = new List<object[]>();
             if (listCollection == null || listIndex < 0 || listIndex >= listCollection.Lists.Length)
@@ -57,6 +58,22 @@ namespace FWEledit
                 {
                     rows.Add(new object[] { 0, Properties.Resources.blank, "Conversation parser unavailable for this data format", string.Empty });
                 }
+                return rows;
+            }
+
+            if (eListCollection.IsRawTailList(listCollection.Lists[listIndex]))
+            {
+                int byteCount = 0;
+                if (listCollection.Lists[listIndex].elementValues != null
+                    && listCollection.Lists[listIndex].elementValues.Length > 0
+                    && listCollection.Lists[listIndex].elementValues[0] != null
+                    && listCollection.Lists[listIndex].elementValues[0].Length > 0)
+                {
+                    byte[] raw = listCollection.Lists[listIndex].elementValues[0][0] as byte[];
+                    byteCount = raw != null ? raw.Length : 0;
+                }
+
+                rows.Add(new object[] { 0, Properties.Resources.blank, "Raw tail preserved (" + byteCount.ToString("N0") + " bytes)", string.Empty });
                 return rows;
             }
 
@@ -92,9 +109,9 @@ namespace FWEledit
             int isCategoryFieldIndex = isDropTableList ? GetFieldIndex(listCollection.Lists[listIndex].elementFields, "is_category") : -1;
             List<int> dropFieldIndexes = isDropTableList ? GetDropFieldIndexes(listCollection.Lists[listIndex].elementFields) : null;
             List<int> tradePageGoodsFieldIndexes = isItemTradePageList ? GetTradePageGoodsFieldIndexes(listCollection.Lists[listIndex].elementFields) : null;
-            Dictionary<int, int> dropTableRowById = isDropTableList ? BuildDropTableRowIndexMap(listCollection, listIndex) : null;
-            Dictionary<int, Bitmap> addonPackageIconById = isAddonPackageList ? BuildAddonPackageIconMap(listCollection, database) : null;
-            bool requiresInheritedItemIcons = isDropTableList || isItemTradePageList;
+            Dictionary<int, int> dropTableRowById = includeIcons && isDropTableList ? BuildDropTableRowIndexMap(listCollection, listIndex) : null;
+            Dictionary<int, Bitmap> addonPackageIconById = includeIcons && isAddonPackageList ? BuildAddonPackageIconMap(listCollection, database) : null;
+            bool requiresInheritedItemIcons = includeIcons && (isDropTableList || isItemTradePageList);
             Dictionary<int, ItemIconSource> itemIconSourcesById = requiresInheritedItemIcons ? BuildItemIconSourceMap(listCollection) : null;
             Dictionary<int, Bitmap> itemIconById = requiresInheritedItemIcons ? new Dictionary<int, Bitmap>() : null;
 
@@ -103,8 +120,10 @@ namespace FWEledit
                 if (string.Equals(listCollection.Lists[listIndex].elementFields[0], "ID", System.StringComparison.OrdinalIgnoreCase)
                     || string.Equals(listCollection.Lists[listIndex].elementFields[0], "id", System.StringComparison.OrdinalIgnoreCase))
                 {
-                    Bitmap img = ResolveRowIcon(listCollection, database, listIndex, e, pos2);
-                    if (isDropTableList)
+                    Bitmap img = includeIcons
+                        ? ResolveRowIcon(listCollection, database, listIndex, e, pos2)
+                        : Properties.Resources.NoIcon;
+                    if (includeIcons && isDropTableList)
                     {
                         int dropTableId;
                         Bitmap monsterPortrait = null;
@@ -136,7 +155,7 @@ namespace FWEledit
                             }
                         }
                     }
-                    else if (isItemTradeList)
+                    else if (includeIcons && isItemTradeList)
                     {
                         int tradeServiceId;
                         if (int.TryParse(listCollection.GetValue(listIndex, e, 0), out tradeServiceId))
@@ -148,7 +167,7 @@ namespace FWEledit
                             }
                         }
                     }
-                    else if (isItemTradePageList)
+                    else if (includeIcons && isItemTradePageList)
                     {
                         Bitmap tradePageIcon = ResolveTradePageIcon(
                             listCollection,
@@ -163,7 +182,7 @@ namespace FWEledit
                             img = tradePageIcon;
                         }
                     }
-                    else if (isNpcSellServiceList)
+                    else if (includeIcons && isNpcSellServiceList)
                     {
                         if (int.TryParse(listCollection.GetValue(listIndex, e, 0), out int sellServiceId))
                         {
@@ -174,7 +193,7 @@ namespace FWEledit
                             }
                         }
                     }
-                    else if (isAddonPackageList)
+                    else if (includeIcons && isAddonPackageList)
                     {
                         if (int.TryParse(listCollection.GetValue(listIndex, e, 0), out int addonPackageId)
                             && addonPackageIconById != null
@@ -193,6 +212,38 @@ namespace FWEledit
             }
 
             return rows;
+        }
+
+        public Bitmap BuildRowIcon(
+            eListCollection listCollection,
+            CacheSave database,
+            int listIndex,
+            int elementIndex)
+        {
+            if (listCollection == null
+                || listIndex < 0
+                || listIndex >= listCollection.Lists.Length
+                || listCollection.Lists[listIndex] == null
+                || listCollection.Lists[listIndex].elementFields == null
+                || listCollection.Lists[listIndex].elementValues == null
+                || elementIndex < 0
+                || elementIndex >= listCollection.Lists[listIndex].elementValues.Length)
+            {
+                return Properties.Resources.NoIcon;
+            }
+
+            int iconFieldIndex = -1;
+            for (int i = 0; i < listCollection.Lists[listIndex].elementFields.Length; i++)
+            {
+                if (string.Equals(listCollection.Lists[listIndex].elementFields[i], "file_icon", System.StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(listCollection.Lists[listIndex].elementFields[i], "file_icon1", System.StringComparison.OrdinalIgnoreCase))
+                {
+                    iconFieldIndex = i;
+                    break;
+                }
+            }
+
+            return ResolveRowIcon(listCollection, database, listIndex, elementIndex, iconFieldIndex);
         }
 
         private Bitmap ResolveDropTableIcon(

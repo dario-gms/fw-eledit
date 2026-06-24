@@ -6,7 +6,8 @@ namespace FWEledit
 {
     public sealed class ElementsLoadWorkflowService
     {
-        private const short HighestValidatedVersion = 608;
+        private const short HighestValidatedVersion = 663;
+        private const short StableVersionWithoutWarning = 608;
         private readonly ElementsLoadService loadService;
         private readonly NavigationStateService navigationStateService;
         private readonly ElementsFileInfoService elementsFileInfoService;
@@ -66,7 +67,10 @@ namespace FWEledit
                     return result;
                 }
 
-                if (info != null && info.Success && info.Version < HighestValidatedVersion)
+                if (info != null
+                    && info.Success
+                    && info.Version < HighestValidatedVersion
+                    && info.Version != StableVersionWithoutWarning)
                 {
                     result.WarningMessage =
                         "Loaded elements.data version " + info.Version + ".\n\n" +

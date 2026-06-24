@@ -12,7 +12,8 @@ namespace FWEledit
             int listIndex,
             ListRowBuilderService rowBuilderService,
             ListDisplayService listDisplayService,
-            Func<int, int, int, string> composeDisplayName)
+            Func<int, int, int, string> composeDisplayName,
+            bool includeIcons)
         {
             if (rowBuilderService == null || listDisplayService == null)
             {
@@ -24,7 +25,8 @@ namespace FWEledit
                 conversationList,
                 database,
                 listIndex,
-                composeDisplayName);
+                composeDisplayName,
+                includeIcons);
         }
 
         public void WarmupAll(

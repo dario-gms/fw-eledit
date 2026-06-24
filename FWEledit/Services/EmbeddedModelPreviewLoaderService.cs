@@ -16,6 +16,7 @@ namespace FWEledit
     {
         private readonly PckEntryReaderService pckEntryReaderService;
         private static readonly object PfimBindingsSync = new object();
+        private static readonly object ResourcePackageCacheSync = new object();
         private static bool pfimBindingsInitialized;
         private static MethodInfo pfimFromStreamMethod;
         private static Type pfimImageType;
@@ -27,6 +28,11 @@ namespace FWEledit
         private static PropertyInfo pfimBitsPerPixelProperty;
         private static PropertyInfo pfimDataProperty;
         private static MethodInfo pfimDisposeMethod;
+        private static string cachedResourcePackagesRoot = string.Empty;
+        private static string cachedResourcePackagesSignature = string.Empty;
+        private static List<string> cachedResourcePackages = new List<string>();
+        private static Dictionary<string, string> crossPackagePathCache = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        private static HashSet<string> crossPackageMissCache = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private const int MaxGfxReferenceDepth = 6;
         private static readonly float[] IdentitySkinMatrix = new float[]
         {
@@ -73,7 +79,7 @@ namespace FWEledit
             string modelExtension = (Path.GetExtension(relativeModelPath) ?? string.Empty).ToLowerInvariant();
             if (string.Equals(modelExtension, ".ski", StringComparison.OrdinalIgnoreCase))
             {
-                if (!TryReadModelFile(assetManager, package, relativeModelPath, out byte[] directSkiBytes, out error))
+                if (!TryReadModelFile(assetManager, package, relativeModelPath, out string directSkiPackage, out string directSkiRelative, out byte[] directSkiBytes, out error))
                 {
                     return false;
                 }
@@ -83,13 +89,13 @@ namespace FWEledit
                     mappedModelPath,
                     string.Empty,
                     string.Empty,
-                    package,
-                    relativeModelPath,
-                    package,
-                    relativeModelPath,
-                    Path.ChangeExtension(relativeModelPath, ".bon"),
-                    package,
-                    relativeModelPath,
+                    directSkiPackage,
+                    directSkiRelative,
+                    directSkiPackage,
+                    directSkiRelative,
+                    Path.ChangeExtension(directSkiRelative, ".bon"),
+                    directSkiPackage,
+                    directSkiRelative,
                     directSkiBytes,
                     5,
                     6,
@@ -104,7 +110,7 @@ namespace FWEledit
 
             if (string.Equals(modelExtension, ".smd", StringComparison.OrdinalIgnoreCase))
             {
-                if (!TryReadModelFile(assetManager, package, relativeModelPath, out byte[] smdBytesDirect, out error))
+                if (!TryReadModelFile(assetManager, package, relativeModelPath, out string directSmdPackage, out string directSmdRelative, out byte[] smdBytesDirect, out error))
                 {
                     return false;
                 }
@@ -112,7 +118,7 @@ namespace FWEledit
                 string skiReferenceDirect;
                 if (!TryExtractReferencedFileFromSmd(smdBytesDirect, ".ski", out skiReferenceDirect))
                 {
-                    skiReferenceDirect = Path.ChangeExtension(relativeModelPath, ".ski");
+                    skiReferenceDirect = Path.ChangeExtension(directSmdRelative, ".ski");
                     if (string.IsNullOrWhiteSpace(skiReferenceDirect))
                     {
                         skiReferenceDirect = string.Empty;
@@ -122,7 +128,7 @@ namespace FWEledit
                 string bonReferenceDirect;
                 if (!TryExtractReferencedFileFromSmd(smdBytesDirect, ".bon", out bonReferenceDirect))
                 {
-                    bonReferenceDirect = Path.ChangeExtension(relativeModelPath, ".bon");
+                    bonReferenceDirect = Path.ChangeExtension(directSmdRelative, ".bon");
                     if (string.IsNullOrWhiteSpace(bonReferenceDirect))
                     {
                         bonReferenceDirect = string.Empty;
@@ -131,8 +137,8 @@ namespace FWEledit
 
                 if (!TryReadSkiWithFallback(
                     assetManager,
-                    package,
-                    relativeModelPath,
+                    directSmdPackage,
+                    directSmdRelative,
                     skiReferenceDirect,
                     out string skiPackageDirect,
                     out string relativeSkiDirect,
@@ -147,10 +153,10 @@ namespace FWEledit
                     mappedModelPath,
                     string.Empty,
                     string.Empty,
-                    package,
-                    relativeModelPath,
-                    package,
-                    relativeModelPath,
+                    directSmdPackage,
+                    directSmdRelative,
+                    directSmdPackage,
+                    directSmdRelative,
                     bonReferenceDirect,
                     skiPackageDirect,
                     relativeSkiDirect,
@@ -168,10 +174,12 @@ namespace FWEledit
 
             string relativeEcm = relativeModelPath;
             byte[] ecmBytes;
-            if (!TryReadModelFile(assetManager, package, relativeEcm, out ecmBytes, out error))
+            if (!TryReadModelFile(assetManager, package, relativeEcm, out string resolvedEcmPackage, out string resolvedRelativeEcm, out ecmBytes, out error))
             {
                 return false;
             }
+            package = resolvedEcmPackage;
+            relativeEcm = resolvedRelativeEcm;
 
             string ecmText;
             if (!TryDecodeText(ecmBytes, out ecmText))
@@ -235,10 +243,12 @@ namespace FWEledit
             }
             else
             {
-                if (!TryReadModelFile(assetManager, smdPackage, relativeSmd, out smdBytes, out error))
+                if (!TryReadModelFile(assetManager, smdPackage, relativeSmd, out string resolvedSmdPackage, out string resolvedRelativeSmd, out smdBytes, out error))
                 {
                     return false;
                 }
+                smdPackage = resolvedSmdPackage;
+                relativeSmd = resolvedRelativeSmd;
 
                 if (!TryExtractReferencedFileFromSmd(smdBytes, ".ski", out skiReference))
                 {
@@ -323,7 +333,9 @@ namespace FWEledit
 
             previewData = basePreview;
 
-            if (ShouldTryEcmEffectMerge(basePreview))
+            bool hasEffectDrivenVisuals = HasEffectDrivenVisualReferences(ecmText);
+            bool shouldForceEffectMerge = hasEffectDrivenVisuals && IsLikelyBlackPlaceholderPreview(basePreview);
+            if (ShouldTryEcmEffectMerge(basePreview) || shouldForceEffectMerge)
             {
                 if (TryBuildPreviewDataFromEcmEffectReferences(
                         assetManager,
@@ -338,6 +350,11 @@ namespace FWEledit
                 {
                     previewData = enhancedPreview;
                 }
+            }
+
+            if (hasEffectDrivenVisuals && IsLikelyBlackPlaceholderPreview(previewData))
+            {
+                PromoteBlackPlaceholderTexturesForPreview(previewData);
             }
 
             error = string.Empty;
@@ -517,8 +534,29 @@ namespace FWEledit
             out byte[] bytes,
             out string error)
         {
+            return TryReadModelFile(
+                assetManager,
+                package,
+                relativePath,
+                out string _,
+                out string _,
+                out bytes,
+                out error);
+        }
+
+        private bool TryReadModelFile(
+            AssetManager assetManager,
+            string package,
+            string relativePath,
+            out string resolvedPackage,
+            out string resolvedRelativePath,
+            out byte[] bytes,
+            out string error)
+        {
             bytes = null;
             error = string.Empty;
+            resolvedPackage = string.Empty;
+            resolvedRelativePath = string.Empty;
 
             string normalizedRelative = NormalizeRelativePath(relativePath);
             if (string.IsNullOrWhiteSpace(normalizedRelative))
@@ -540,6 +578,8 @@ namespace FWEledit
 
                 if (pckEntryReaderService.TryReadFile(probePackage, probeRelative, out bytes, out error))
                 {
+                    resolvedPackage = probePackage;
+                    resolvedRelativePath = NormalizeRelativeForPackage(probePackage, probeRelative);
                     return true;
                 }
 
@@ -549,10 +589,358 @@ namespace FWEledit
                 }
             }
 
+            if (TryReadModelFileFromAnyPackage(assetManager, readTargets, out resolvedPackage, out resolvedRelativePath, out bytes, out string crossPackageError))
+            {
+                error = string.Empty;
+                return true;
+            }
+            if (string.IsNullOrWhiteSpace(firstError) && !string.IsNullOrWhiteSpace(crossPackageError))
+            {
+                firstError = crossPackageError;
+            }
+
             error = string.IsNullOrWhiteSpace(firstError)
                 ? "Entry not found."
                 : firstError;
+            error = DecorateMissingDetachedReferenceError(normalizedRelative, error);
             return false;
+        }
+
+        private bool TryReadModelFileFromAnyPackage(
+            AssetManager assetManager,
+            List<KeyValuePair<string, string>> readTargets,
+            out string resolvedPackage,
+            out string resolvedRelativePath,
+            out byte[] bytes,
+            out string error)
+        {
+            resolvedPackage = string.Empty;
+            resolvedRelativePath = string.Empty;
+            bytes = null;
+            error = string.Empty;
+
+            if (readTargets == null || readTargets.Count == 0)
+            {
+                return false;
+            }
+
+            List<string> packages = GetAvailableResourcePackages();
+            if (packages.Count == 0)
+            {
+                return false;
+            }
+
+            HashSet<string> tried = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            for (int i = 0; i < readTargets.Count; i++)
+            {
+                string relative = NormalizeRelativePath(readTargets[i].Value);
+                if (string.IsNullOrWhiteSpace(relative))
+                {
+                    continue;
+                }
+
+                string cachedKey = BuildCrossPackageCacheKey(relative);
+                if (IsKnownMissingCrossPackagePath(cachedKey))
+                {
+                    continue;
+                }
+
+                if (TryResolveCachedCrossPackagePath(cachedKey, out string cachedPackage, out string cachedRelative)
+                    && !string.IsNullOrWhiteSpace(cachedPackage)
+                    && !string.IsNullOrWhiteSpace(cachedRelative))
+                {
+                    string cachedTryKey = (cachedPackage + "|" + cachedRelative).ToLowerInvariant();
+                    string cachedProbeError = string.Empty;
+                    if (tried.Add(cachedTryKey)
+                        && pckEntryReaderService.TryReadFile(cachedPackage, cachedRelative, out bytes, out cachedProbeError))
+                    {
+                        resolvedPackage = cachedPackage;
+                        resolvedRelativePath = NormalizeRelativeForPackage(cachedPackage, cachedRelative);
+                        return true;
+                    }
+
+                    if (string.IsNullOrWhiteSpace(error) && !string.IsNullOrWhiteSpace(cachedProbeError))
+                    {
+                        error = cachedProbeError;
+                    }
+                }
+
+                for (int p = 0; p < packages.Count; p++)
+                {
+                    string package = packages[p];
+                    if (string.IsNullOrWhiteSpace(package))
+                    {
+                        continue;
+                    }
+
+                    string key = (package + "|" + relative).ToLowerInvariant();
+                    if (!tried.Add(key))
+                    {
+                        continue;
+                    }
+
+                    if (pckEntryReaderService.TryReadFile(package, relative, out bytes, out string probeError))
+                    {
+                        RememberCrossPackagePath(cachedKey, package, relative);
+                        resolvedPackage = package;
+                        resolvedRelativePath = NormalizeRelativeForPackage(package, relative);
+                        return true;
+                    }
+
+                    if (string.IsNullOrWhiteSpace(error) && !string.IsNullOrWhiteSpace(probeError))
+                    {
+                        error = probeError;
+                    }
+                }
+
+                RememberMissingCrossPackagePath(cachedKey);
+            }
+
+            return false;
+        }
+
+        private static List<string> GetAvailableResourcePackages()
+        {
+            string gameRoot = AssetManager.GameRootPath ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(gameRoot))
+            {
+                return new List<string>();
+            }
+
+            string resourcesRoot = Path.Combine(gameRoot, "resources");
+            if (!Directory.Exists(resourcesRoot))
+            {
+                return new List<string>();
+            }
+
+            string resourcesSignature = BuildResourcePackagesStateSignature(resourcesRoot);
+
+            lock (ResourcePackageCacheSync)
+            {
+                if (string.Equals(cachedResourcePackagesRoot, resourcesRoot, StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(cachedResourcePackagesSignature, resourcesSignature, StringComparison.Ordinal)
+                    && cachedResourcePackages != null
+                    && cachedResourcePackages.Count > 0)
+                {
+                    return new List<string>(cachedResourcePackages);
+                }
+
+                List<string> packages = new List<string>(16);
+                HashSet<string> seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                try
+                {
+                    string[] pckFiles = Directory.GetFiles(resourcesRoot, "*.pck", SearchOption.TopDirectoryOnly);
+                    for (int i = 0; i < pckFiles.Length; i++)
+                    {
+                        string packageName = Path.GetFileNameWithoutExtension(pckFiles[i]) ?? string.Empty;
+                        if (string.IsNullOrWhiteSpace(packageName) || !seen.Add(packageName))
+                        {
+                            continue;
+                        }
+
+                        packages.Add(packageName);
+                    }
+                }
+                catch
+                {
+                }
+
+                cachedResourcePackagesRoot = resourcesRoot;
+                cachedResourcePackagesSignature = resourcesSignature;
+                cachedResourcePackages = new List<string>(packages);
+                crossPackagePathCache = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                crossPackageMissCache = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                return packages;
+            }
+        }
+
+        public static string GetResourcePackagesStateSignature()
+        {
+            string gameRoot = AssetManager.GameRootPath ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(gameRoot))
+            {
+                return string.Empty;
+            }
+
+            string resourcesRoot = Path.Combine(gameRoot, "resources");
+            return BuildResourcePackagesStateSignature(resourcesRoot);
+        }
+
+        private static string BuildResourcePackagesStateSignature(string resourcesRoot)
+        {
+            if (string.IsNullOrWhiteSpace(resourcesRoot))
+            {
+                return string.Empty;
+            }
+
+            if (!Directory.Exists(resourcesRoot))
+            {
+                return "missing|" + resourcesRoot.ToLowerInvariant();
+            }
+
+            try
+            {
+                string[] pckFiles = Directory.GetFiles(resourcesRoot, "*.pck", SearchOption.TopDirectoryOnly);
+                string[] pkxFiles = Directory.GetFiles(resourcesRoot, "*.pkx", SearchOption.TopDirectoryOnly);
+                Array.Sort(pckFiles, StringComparer.OrdinalIgnoreCase);
+                Array.Sort(pkxFiles, StringComparer.OrdinalIgnoreCase);
+
+                StringBuilder sb = new StringBuilder(resourcesRoot.Length + ((pckFiles.Length + pkxFiles.Length) * 48));
+                sb.Append(resourcesRoot.ToLowerInvariant());
+                AppendPackageSignatureFiles(sb, pckFiles);
+                AppendPackageSignatureFiles(sb, pkxFiles);
+                return sb.ToString();
+            }
+            catch
+            {
+                return "error|" + resourcesRoot.ToLowerInvariant();
+            }
+        }
+
+        private static void AppendPackageSignatureFiles(StringBuilder sb, string[] files)
+        {
+            if (sb == null || files == null)
+            {
+                return;
+            }
+
+            for (int i = 0; i < files.Length; i++)
+            {
+                string filePath = files[i] ?? string.Empty;
+                if (string.IsNullOrWhiteSpace(filePath))
+                {
+                    continue;
+                }
+
+                string relativeName = Path.GetFileName(filePath) ?? string.Empty;
+                try
+                {
+                    FileInfo info = new FileInfo(filePath);
+                    sb.Append('|')
+                        .Append(relativeName.ToLowerInvariant())
+                        .Append(':')
+                        .Append(info.Exists ? info.Length.ToString() : "missing")
+                        .Append(':')
+                        .Append(info.Exists ? info.LastWriteTimeUtc.Ticks.ToString() : "0");
+                }
+                catch
+                {
+                    sb.Append('|')
+                        .Append(relativeName.ToLowerInvariant())
+                        .Append(":error");
+                }
+            }
+        }
+
+        private static string BuildCrossPackageCacheKey(string relativePath)
+        {
+            string normalized = NormalizeRelativePath(relativePath);
+            if (string.IsNullOrWhiteSpace(normalized))
+            {
+                return string.Empty;
+            }
+
+            string resourcesRoot = Path.Combine(AssetManager.GameRootPath ?? string.Empty, "resources");
+            return (resourcesRoot + "|" + normalized).ToLowerInvariant();
+        }
+
+        private static bool TryResolveCachedCrossPackagePath(string cacheKey, out string package, out string relativePath)
+        {
+            package = string.Empty;
+            relativePath = string.Empty;
+            if (string.IsNullOrWhiteSpace(cacheKey))
+            {
+                return false;
+            }
+
+            lock (ResourcePackageCacheSync)
+            {
+                if (!crossPackagePathCache.TryGetValue(cacheKey, out string cached) || string.IsNullOrWhiteSpace(cached))
+                {
+                    return false;
+                }
+
+                int sep = cached.IndexOf('|');
+                if (sep <= 0 || sep >= cached.Length - 1)
+                {
+                    return false;
+                }
+
+                package = cached.Substring(0, sep);
+                relativePath = cached.Substring(sep + 1);
+                return !string.IsNullOrWhiteSpace(package) && !string.IsNullOrWhiteSpace(relativePath);
+            }
+        }
+
+        private static bool IsKnownMissingCrossPackagePath(string cacheKey)
+        {
+            if (string.IsNullOrWhiteSpace(cacheKey))
+            {
+                return false;
+            }
+
+            lock (ResourcePackageCacheSync)
+            {
+                return crossPackageMissCache.Contains(cacheKey);
+            }
+        }
+
+        private static void RememberCrossPackagePath(string cacheKey, string package, string relativePath)
+        {
+            if (string.IsNullOrWhiteSpace(cacheKey))
+            {
+                return;
+            }
+
+            string normalizedPackage = (package ?? string.Empty).Trim();
+            string normalizedRelative = NormalizeRelativeForPackage(package, relativePath);
+            if (string.IsNullOrWhiteSpace(normalizedPackage) || string.IsNullOrWhiteSpace(normalizedRelative))
+            {
+                return;
+            }
+
+            lock (ResourcePackageCacheSync)
+            {
+                crossPackageMissCache.Remove(cacheKey);
+                crossPackagePathCache[cacheKey] = normalizedPackage + "|" + normalizedRelative;
+            }
+        }
+
+        private static void RememberMissingCrossPackagePath(string cacheKey)
+        {
+            if (string.IsNullOrWhiteSpace(cacheKey))
+            {
+                return;
+            }
+
+            lock (ResourcePackageCacheSync)
+            {
+                if (!crossPackagePathCache.ContainsKey(cacheKey))
+                {
+                    crossPackageMissCache.Add(cacheKey);
+                }
+            }
+        }
+
+        private static string NormalizeRelativeForPackage(string package, string relativePath)
+        {
+            string normalized = NormalizeRelativePath(relativePath);
+            if (string.IsNullOrWhiteSpace(normalized))
+            {
+                return string.Empty;
+            }
+
+            string normalizedPackage = NormalizeRelativePath(package);
+            if (!string.IsNullOrWhiteSpace(normalizedPackage))
+            {
+                string prefix = normalizedPackage + "\\";
+                if (normalized.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    normalized = NormalizeRelativePath(normalized.Substring(prefix.Length));
+                }
+            }
+
+            return normalized;
         }
 
         private static List<KeyValuePair<string, string>> BuildPckReadTargets(string preferredPackage, string relativePath)
@@ -601,6 +989,9 @@ namespace FWEledit
             {
                 AddUniquePathCandidate(relativeCandidates, seenRelatives, NormalizeRelativePath(normalizedRelative.Substring("gfx\\".Length)));
             }
+
+            AddSpecialRelativeAliases(relativeCandidates, seenRelatives, normalizedRelative);
+            AddSpecialRelativeAliases(relativeCandidates, seenRelatives, splitRelative);
 
             // Some gfx descriptors reference "folder\\file.smd", while the actual PCK entry
             // is stored as "models\\folder\\file.smd" (inside gfx.pck). Probe prefixed forms too.
@@ -1558,7 +1949,7 @@ namespace FWEledit
                             continue;
                         }
 
-                        if (!TryReadModelFile(assetManager, probePackage, probeRelative, out byte[] gfxBytes, out string readError))
+                        if (!TryReadModelFile(assetManager, probePackage, probeRelative, out string resolvedNestedPackage, out string resolvedNestedRelative, out byte[] gfxBytes, out string readError))
                         {
                             if (string.IsNullOrWhiteSpace(firstError) && !string.IsNullOrWhiteSpace(readError))
                             {
@@ -1596,8 +1987,8 @@ namespace FWEledit
                             if (TryBuildPreviewFromReferencedPath(
                                 assetManager,
                                 sourceMappedPath,
-                                probePackage,
-                                probeRelative,
+                                resolvedNestedPackage,
+                                resolvedNestedRelative,
                                 nestedReferences[n],
                                 visitedGfx,
                                 depth + 1,
@@ -1682,7 +2073,7 @@ namespace FWEledit
                         continue;
                     }
 
-                    if (TryReadModelFile(assetManager, probePackage, probeRelative, out byte[] nestedBytes, out string nestedReadError)
+                    if (TryReadModelFile(assetManager, probePackage, probeRelative, out string resolvedTextPackage, out string resolvedTextRelative, out byte[] nestedBytes, out string nestedReadError)
                         && TryDecodeText(nestedBytes, out string nestedText))
                     {
                         List<string> nestedReferences = ExtractModelReferenceCandidatesFromGfx(nestedText, nestedBytes);
@@ -1700,8 +2091,8 @@ namespace FWEledit
                             if (TryBuildPreviewFromReferencedPath(
                                 assetManager,
                                 sourceMappedPath,
-                                probePackage,
-                                probeRelative,
+                                resolvedTextPackage,
+                                resolvedTextRelative,
                                 nestedReferences[n],
                                 visitedGfx,
                                 depth + 1,
@@ -1818,6 +2209,12 @@ namespace FWEledit
                 AddTargetCandidate(candidates, seen, "configs", normalizedRelative);
             }
 
+            AddSpecialReferenceTargets(candidates, seen, package, normalizedRelative);
+            if (!string.Equals(withoutConfigsPrefix, normalizedRelative, StringComparison.OrdinalIgnoreCase))
+            {
+                AddSpecialReferenceTargets(candidates, seen, package, withoutConfigsPrefix);
+            }
+
             AddTargetCandidate(candidates, seen, string.Empty, withoutConfigsPrefix);
             AddTargetCandidate(candidates, seen, string.Empty, normalizedRelative);
             return candidates;
@@ -1848,6 +2245,96 @@ namespace FWEledit
             }
 
             candidates.Add(new KeyValuePair<string, string>(normalizedPackage, normalizedRelative));
+        }
+
+        private static void AddSpecialReferenceTargets(
+            List<KeyValuePair<string, string>> candidates,
+            HashSet<string> seen,
+            string package,
+            string relativePath)
+        {
+            string normalizedRelative = NormalizeRelativePath(relativePath);
+            if (string.IsNullOrWhiteSpace(normalizedRelative))
+            {
+                return;
+            }
+
+            string tailFallback = BuildConfigsTailFallbackPath(normalizedRelative);
+            if (!string.IsNullOrWhiteSpace(tailFallback))
+            {
+                AddTargetCandidate(candidates, seen, "configs", tailFallback);
+                AddTargetCandidate(candidates, seen, "configs", "configs\\" + tailFallback);
+                if (string.Equals(package, "gfx", StringComparison.OrdinalIgnoreCase))
+                {
+                    AddTargetCandidate(candidates, seen, string.Empty, tailFallback);
+                }
+            }
+        }
+
+        private static void AddSpecialRelativeAliases(
+            List<string> candidates,
+            HashSet<string> seen,
+            string relativePath)
+        {
+            string normalizedRelative = NormalizeRelativePath(relativePath);
+            if (string.IsNullOrWhiteSpace(normalizedRelative))
+            {
+                return;
+            }
+
+            string tailFallback = BuildConfigsTailFallbackPath(normalizedRelative);
+            if (!string.IsNullOrWhiteSpace(tailFallback))
+            {
+                AddUniquePathCandidate(candidates, seen, tailFallback);
+                AddUniquePathCandidate(candidates, seen, "configs\\" + tailFallback);
+            }
+        }
+
+        private static string BuildConfigsTailFallbackPath(string relativePath)
+        {
+            string normalizedRelative = NormalizeRelativePath(relativePath);
+            if (string.IsNullOrWhiteSpace(normalizedRelative))
+            {
+                return string.Empty;
+            }
+
+            bool looksLikeKnownDetachedReference = normalizedRelative.StartsWith("models2\\", StringComparison.OrdinalIgnoreCase)
+                || normalizedRelative.StartsWith("hide\\", StringComparison.OrdinalIgnoreCase);
+            if (!looksLikeKnownDetachedReference)
+            {
+                return string.Empty;
+            }
+
+            string fileName = Path.GetFileName(normalizedRelative) ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(fileName))
+            {
+                return string.Empty;
+            }
+
+            return NormalizeRelativePath("test_tails\\" + fileName);
+        }
+
+        private static string DecorateMissingDetachedReferenceError(string relativePath, string error)
+        {
+            string normalizedRelative = NormalizeRelativePath(relativePath);
+            if (string.IsNullOrWhiteSpace(normalizedRelative) || string.IsNullOrWhiteSpace(error))
+            {
+                return error ?? string.Empty;
+            }
+
+            bool looksLikeDetachedReference = normalizedRelative.StartsWith("hide\\", StringComparison.OrdinalIgnoreCase)
+                || normalizedRelative.StartsWith("models2\\", StringComparison.OrdinalIgnoreCase);
+            bool looksLikeNotFound = error.IndexOf("Entry not found", StringComparison.OrdinalIgnoreCase) >= 0
+                || error.IndexOf("not found", StringComparison.OrdinalIgnoreCase) >= 0;
+            if (!looksLikeDetachedReference || !looksLikeNotFound)
+            {
+                return error;
+            }
+
+            string kind = normalizedRelative.StartsWith("hide\\", StringComparison.OrdinalIgnoreCase)
+                ? "hide"
+                : "detached";
+            return "Missing " + kind + " reference: " + normalizedRelative + " (not found in any loaded resource package).";
         }
 
         private static string BuildPreviewMergeKey(ModelPreviewMeshData previewData)
@@ -1902,6 +2389,144 @@ namespace FWEledit
             }
 
             return false;
+        }
+
+        private static bool HasEffectDrivenVisualReferences(string ecmText)
+        {
+            if (string.IsNullOrWhiteSpace(ecmText))
+            {
+                return false;
+            }
+
+            if (ExtractRepeatedFieldValues(ecmText, "FxFilePath").Length > 0)
+            {
+                return true;
+            }
+
+            if (ExtractRepeatedFieldValues(ecmText, "GfxPath").Length > 0)
+            {
+                return true;
+            }
+
+            if (ExtractRepeatedFieldValues(ecmText, "GfxFile").Length > 0)
+            {
+                return true;
+            }
+
+            return false;
+        }
+
+        private static bool IsLikelyBlackPlaceholderPreview(ModelPreviewMeshData previewData)
+        {
+            if (previewData == null || previewData.Textures == null || previewData.Textures.Length == 0)
+            {
+                return false;
+            }
+
+            int validTextures = 0;
+            int blackTextures = 0;
+            for (int i = 0; i < previewData.Textures.Length; i++)
+            {
+                PreviewTextureData texture = previewData.Textures[i];
+                if (texture == null || !texture.IsValid)
+                {
+                    continue;
+                }
+
+                validTextures++;
+                if (IsLikelyBlackPlaceholderTexture(texture))
+                {
+                    blackTextures++;
+                }
+            }
+
+            return validTextures > 0 && validTextures == blackTextures;
+        }
+
+        private static bool IsLikelyBlackPlaceholderTexture(PreviewTextureData texture)
+        {
+            if (texture == null || !texture.IsValid || texture.Pixels == null || texture.Pixels.Length == 0)
+            {
+                return false;
+            }
+
+            int[] pixels = texture.Pixels;
+            int step = Math.Max(1, pixels.Length / 4096);
+            int visibleSamples = 0;
+            int darkSamples = 0;
+            long totalLuma = 0;
+            for (int i = 0; i < pixels.Length; i += step)
+            {
+                int argb = pixels[i];
+                int a = (argb >> 24) & 0xFF;
+                if (a < 10)
+                {
+                    continue;
+                }
+
+                int r = (argb >> 16) & 0xFF;
+                int g = (argb >> 8) & 0xFF;
+                int b = argb & 0xFF;
+                int luma = (r + g + b) / 3;
+                visibleSamples++;
+                totalLuma += luma;
+                if (luma <= 6)
+                {
+                    darkSamples++;
+                }
+            }
+
+            if (visibleSamples <= 0)
+            {
+                return false;
+            }
+
+            float darkRatio = darkSamples / (float)Math.Max(1, visibleSamples);
+            float averageLuma = totalLuma / (float)Math.Max(1, visibleSamples);
+            return darkRatio >= 0.985f && averageLuma <= 6.5f;
+        }
+
+        private static void PromoteBlackPlaceholderTexturesForPreview(ModelPreviewMeshData previewData)
+        {
+            if (previewData == null || previewData.Textures == null || previewData.Textures.Length == 0)
+            {
+                return;
+            }
+
+            int fallbackArgb = ResolveBlackPlaceholderFallbackColor(previewData.OrgColorArgb);
+            for (int i = 0; i < previewData.Textures.Length; i++)
+            {
+                PreviewTextureData texture = previewData.Textures[i];
+                if (texture == null || !IsLikelyBlackPlaceholderTexture(texture))
+                {
+                    continue;
+                }
+
+                int[] pixels = texture.Pixels;
+                for (int p = 0; p < pixels.Length; p++)
+                {
+                    int a = (pixels[p] >> 24) & 0xFF;
+                    if (a <= 0)
+                    {
+                        continue;
+                    }
+
+                    pixels[p] = (a << 24) | (fallbackArgb & 0x00FFFFFF);
+                }
+
+                texture.AverageColorArgb = ComputeAverageColorArgb(pixels);
+            }
+        }
+
+        private static int ResolveBlackPlaceholderFallbackColor(int orgColorArgb)
+        {
+            int rgb = orgColorArgb & 0x00FFFFFF;
+            if (rgb == 0 || rgb == 0x00FFFFFF)
+            {
+                return unchecked((int)0xFFC8CCD4);
+            }
+
+            return unchecked((int)0xFF000000) | rgb;
         }
 
         private static List<string> ExtractModelReferenceCandidatesFromGfx(string text, byte[] bytes)

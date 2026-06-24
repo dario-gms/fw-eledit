@@ -8,6 +8,7 @@ namespace FWEledit
         public void HandleChangeList(
             MainWindowSelectionUiService selectionUiService,
             bool enableSelectionList,
+            bool useLightweightRows,
             ComboBox listCombo,
             ISessionService sessionService,
             Action<int> updateEquipmentTabsVisibility,
@@ -34,6 +35,7 @@ namespace FWEledit
 
             selectionUiService.ChangeList(
                 enableSelectionList,
+                useLightweightRows,
                 listCombo,
                 sessionService.ListCollection,
                 updateEquipmentTabsVisibility,

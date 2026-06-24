@@ -623,20 +623,7 @@ namespace FWEledit
                 string packagePkx = string.IsNullOrWhiteSpace(resourcesRoot)
                     ? string.Empty
                     : Path.Combine(resourcesRoot, package + ".pkx");
-
-                DateTime pckTimestampUtc = DateTime.MinValue;
-                if (!string.IsNullOrWhiteSpace(packagePck) && File.Exists(packagePck))
-                {
-                    pckTimestampUtc = File.GetLastWriteTimeUtc(packagePck);
-                }
-                if (!string.IsNullOrWhiteSpace(packagePkx) && File.Exists(packagePkx))
-                {
-                    DateTime pkxTime = File.GetLastWriteTimeUtc(packagePkx);
-                    if (pkxTime > pckTimestampUtc)
-                    {
-                        pckTimestampUtc = pkxTime;
-                    }
-                }
+                string packageSignature = BuildPackageCacheSignature(package);
 
                 string cacheKey = (packagePck ?? string.Empty).Trim().ToLowerInvariant();
                 if (!string.IsNullOrWhiteSpace(packagePkx) && File.Exists(packagePkx))
@@ -644,7 +631,7 @@ namespace FWEledit
                     cacheKey += "|" + packagePkx.Trim().ToLowerInvariant();
                 }
                 List<string> cachedFiles;
-                if (cacheService.TryGetPickerFiles(cacheKey, pckTimestampUtc, out cachedFiles))
+                if (cacheService.TryGetPickerFiles(cacheKey, packageSignature, out cachedFiles))
                 {
                     return cachedFiles;
                 }
@@ -683,12 +670,61 @@ namespace FWEledit
 
                 files.Reverse();
 
-                cacheService.SetPickerFiles(cacheKey, pckTimestampUtc, files);
+                cacheService.SetPickerFiles(cacheKey, packageSignature, files);
             }
             catch
             { }
 
             return files;
+        }
+
+        public string BuildPackageCacheSignature(string package)
+        {
+            try
+            {
+                string normalizedPackage = (package ?? string.Empty).Trim();
+                string gameRoot = AssetManager.GameRootPath ?? string.Empty;
+                if (string.IsNullOrWhiteSpace(normalizedPackage) || string.IsNullOrWhiteSpace(gameRoot))
+                {
+                    return string.Empty;
+                }
+
+                string resourcesRoot = Path.Combine(gameRoot, "resources");
+                string packagePck = Path.Combine(resourcesRoot, normalizedPackage + ".pck");
+                string packagePkx = Path.Combine(resourcesRoot, normalizedPackage + ".pkx");
+                return normalizedPackage.ToLowerInvariant()
+                    + "|"
+                    + BuildFileSignature(packagePck)
+                    + "|"
+                    + BuildFileSignature(packagePkx);
+            }
+            catch
+            {
+                return (package ?? string.Empty).Trim().ToLowerInvariant() + "|error";
+            }
+        }
+
+        private static string BuildFileSignature(string filePath)
+        {
+            if (string.IsNullOrWhiteSpace(filePath))
+            {
+                return "none";
+            }
+
+            try
+            {
+                FileInfo info = new FileInfo(filePath);
+                if (!info.Exists)
+                {
+                    return "missing";
+                }
+
+                return info.Length.ToString() + ":" + info.LastWriteTimeUtc.Ticks.ToString();
+            }
+            catch
+            {
+                return "error";
+            }
         }
 
         public bool ShouldNotifyMissingPackageExtraction(string package)

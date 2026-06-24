@@ -128,6 +128,29 @@ namespace FWEledit
                 return rows;
             }
 
+            if (listIndex < listCollection.Lists.Length && eListCollection.IsRawTailList(listCollection.Lists[listIndex]))
+            {
+                int byteCount = 0;
+                if (listCollection.Lists[listIndex].elementValues != null
+                    && listCollection.Lists[listIndex].elementValues.Length > 0
+                    && listCollection.Lists[listIndex].elementValues[0] != null
+                    && listCollection.Lists[listIndex].elementValues[0].Length > 0)
+                {
+                    byte[] raw = listCollection.Lists[listIndex].elementValues[0][0] as byte[];
+                    byteCount = raw != null ? raw.Length : 0;
+                }
+
+                rows.Add(new ValueRowDisplay
+                {
+                    FieldIndex = -1,
+                    FieldName = "RAW_TAIL",
+                    FieldType = "byte:AUTO",
+                    DisplayValue = "Preserved raw data (" + byteCount.ToString("N0") + " bytes)",
+                    RawValue = string.Empty
+                });
+                return rows;
+            }
+
             if (elementIndex < 0 || elementIndex >= listCollection.Lists[listIndex].elementValues.Length)
             {
                 return rows;

@@ -28,6 +28,7 @@ namespace FWEledit
         private Dictionary<int, ItemReferenceOption> searchableItemOptionsById;
         private Dictionary<string, ItemReferenceOption> searchableItemOptionsByName;
         private readonly Dictionary<string, ItemReferenceOption> preferredOptionsByFieldAndId = new Dictionary<string, ItemReferenceOption>(StringComparer.OrdinalIgnoreCase);
+        private int cachedTaskItemsRevision = -1;
 
         public void ClearCache()
         {
@@ -44,6 +45,7 @@ namespace FWEledit
             searchableItemOptions = null;
             searchableItemOptionsById = null;
             searchableItemOptionsByName = null;
+            cachedTaskItemsRevision = -1;
         }
 
         public Dictionary<int, List<ItemReferenceOption>> ExportOptionsCache(
@@ -341,6 +343,10 @@ namespace FWEledit
             {
                 return string.IsNullOrWhiteSpace(option.Name) ? rawValue : option.Name;
             }
+            if (targetListIndex == TasksTargetIndex)
+            {
+                return rawValue ?? string.Empty;
+            }
 
             if (targetListIndex >= 0 && TryFindOptionById(listCollection, targetListIndex, id, database, iconResolutionService, out option))
             {
@@ -395,6 +401,10 @@ namespace FWEledit
             if (targetListIndex == TasksTargetIndex && TryFindOptionById(listCollection, targetListIndex, id, database, iconResolutionService, out option))
             {
                 return true;
+            }
+            if (targetListIndex == TasksTargetIndex)
+            {
+                return false;
             }
 
             if (targetListIndex >= 0 && TryFindOptionById(listCollection, targetListIndex, id, database, iconResolutionService, out option))
@@ -1293,14 +1303,17 @@ namespace FWEledit
 
         private void EnsureCacheContext(eListCollection listCollection, CacheSave database, IconResolutionService iconResolutionService)
         {
+            int currentTaskItemsRevision = database != null ? database.task_items_revision : 0;
             if (!object.ReferenceEquals(cachedListCollection, listCollection)
                 || !object.ReferenceEquals(cachedDatabase, database)
-                || !object.ReferenceEquals(cachedIconResolutionService, iconResolutionService))
+                || !object.ReferenceEquals(cachedIconResolutionService, iconResolutionService)
+                || cachedTaskItemsRevision != currentTaskItemsRevision)
             {
                 ClearCache();
                 cachedListCollection = listCollection;
                 cachedDatabase = database;
                 cachedIconResolutionService = iconResolutionService;
+                cachedTaskItemsRevision = currentTaskItemsRevision;
             }
         }
 

@@ -90,6 +90,10 @@ namespace FWEledit
         public List<string> arrTheme = null;
         //public SortedList<int, ItemDupe> task_recipes = null;
         public SortedList<int, ItemDupe> task_items = null;
+        [JsonIgnore]
+        public int task_items_revision = 0;
+        [JsonIgnore]
+        public string task_items_signature = string.Empty;
         public string[] task_items_list = null;
         public SortedList monsters_npcs_mines = null;
         public SortedList titles = null;

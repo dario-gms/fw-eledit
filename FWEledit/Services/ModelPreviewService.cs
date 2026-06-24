@@ -45,6 +45,7 @@ namespace FWEledit
             = new Dictionary<string, ModelPreviewMeshData>(StringComparer.OrdinalIgnoreCase);
         private readonly LinkedList<string> previewMeshCacheOrder = new LinkedList<string>();
         private readonly object previewMeshCacheSync = new object();
+        private string previewMeshCacheResourceSignature = string.Empty;
         private const int PreviewMeshCacheCapacity = 128;
         private ModelPreviewWindow activePreviewWindow;
 
@@ -532,6 +533,7 @@ namespace FWEledit
             meshData = null;
             errorMessage = string.Empty;
             AssetManager previewAssetManager = CreateDetachedPreviewAssetManager(assetManager);
+            EnsurePreviewMeshCacheFresh();
 
             string cacheKey = NormalizePreviewCacheKey(mappedPath);
             if (string.IsNullOrWhiteSpace(cacheKey))
@@ -584,6 +586,22 @@ namespace FWEledit
 
             meshData = CloneForPreviewRequest(toStore);
             return true;
+        }
+
+        private void EnsurePreviewMeshCacheFresh()
+        {
+            string currentSignature = EmbeddedModelPreviewLoaderService.GetResourcePackagesStateSignature() ?? string.Empty;
+            lock (previewMeshCacheSync)
+            {
+                if (string.Equals(previewMeshCacheResourceSignature, currentSignature, StringComparison.Ordinal))
+                {
+                    return;
+                }
+
+                previewMeshCache.Clear();
+                previewMeshCacheOrder.Clear();
+                previewMeshCacheResourceSignature = currentSignature;
+            }
         }
 
         private static AssetManager CreateDetachedPreviewAssetManager(AssetManager source)

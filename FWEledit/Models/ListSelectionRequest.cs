@@ -12,5 +12,6 @@ namespace FWEledit
         public ListDisplayService ListDisplayService { get; set; }
         public ListRowBuilderService ListRowBuilderService { get; set; }
         public Func<int, int, int, string> ComposeListDisplayName { get; set; }
+        public bool UseLightweightRows { get; set; }
     }
 }

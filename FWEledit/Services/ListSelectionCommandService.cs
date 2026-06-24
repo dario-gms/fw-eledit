@@ -8,6 +8,7 @@ namespace FWEledit
         public void HandleListChange(
             bool enableSelectionList,
             int selectedListIndex,
+            bool useLightweightRows,
             eListCollection listCollection,
             Action<int> updateEquipmentTabs,
             ListSelectionRequestBuilderService requestBuilder,
@@ -51,7 +52,8 @@ namespace FWEledit
                 xrefs,
                 listDisplayService,
                 listRowBuilderService,
-                composeDisplayName);
+                composeDisplayName,
+                useLightweightRows);
 
             uiService.ApplySelection(
                 workflowService,

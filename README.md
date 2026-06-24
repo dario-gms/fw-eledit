@@ -12,6 +12,28 @@ FWEledit is based on [sELedit++ by Wrechid](https://github.com/Wrechid/sELedit-)
 
 ---
 
+## What's New in v0.9.5.13
+
+- Migrated the package-backed resource workflow toward the new `WinPCK`-based reader/updater path, reducing dependency on the older `spck` extraction flow for runtime reads and package access.
+- Improved direct package access when the game client keeps `.pck` files locked, allowing the editor to read package-backed data more reliably from live installs.
+- Added cross-package preview asset resolution across all `.pck` files in the `resources` folder.
+- Restricted cross-package fallback to exact relative-path matches only, preventing wrong models from loading because of duplicate filenames in other packages.
+- Added caching for successful cross-package resolutions to speed up repeated previews.
+- Added negative-cache tracking for missing cross-package references, reducing repeated slow scans on unresolved assets.
+- Added package-change-aware preview cache invalidation so stale model/path results are less likely to survive after a `.pck` is replaced or rebuilt.
+- Improved handling and error reporting for detached preview references that do not resolve from the original package chain.
+- Improved nested `.gfx` / `.ecm` / effect-driven preview resolution so referenced assets can be merged more reliably.
+- Added black-placeholder texture detection with fallback color promotion for previews that load geometry but would otherwise render fully black textures.
+- Improved preview stability for assets with chained FX / GFX references.
+- Reduced long preview stalls caused by repeated searches for missing files.
+- Improved startup/session-restore rendering by keeping the first visible list responsive while heavier visual hydration catches up after the initial open.
+- Reworked the startup progress bar so it now reflects the real loading phases instead of completing long before lists, assets, and restored UI state are actually ready.
+- Fixed visible-list scroll artifacts introduced by the lightweight hydration path, preventing rows from visually “cloning” while icons are catching up during fast scrolling.
+- Kept the v608 load path as the stable baseline by suppressing the compatibility warning for that validated version while preserving warnings for other older builds.
+- Project/app version metadata updated to `v0.9.5.13`.
+
+---
+
 ## What's New in v0.9.5.12
 
 - Added the first built-in `tasks.data` reference pipeline, so task-linked fields can now resolve against real task IDs instead of staying as raw numbers.

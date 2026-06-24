@@ -8,6 +8,7 @@ namespace FWEledit
     {
         public void ChangeList(
             bool enableSelectionList,
+            bool useLightweightRows,
             ComboBox listCombo,
             eListCollection listCollection,
             Action<int> updateEquipmentTabsVisibility,
@@ -43,6 +44,7 @@ namespace FWEledit
             listSelectionCommandService.HandleListChange(
                 enableSelectionList,
                 listIndex,
+                useLightweightRows,
                 listCollection,
                 updateEquipmentTabsVisibility,
                 requestBuilderService,

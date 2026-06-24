@@ -53,7 +53,7 @@ namespace FWEledit
             int ftmp = startField;
             for (int lf = startList; lf < listCount; lf++)
             {
-                if (listCollection.Lists[lf] == null)
+                if (listCollection.Lists[lf] == null || eListCollection.IsRawTailList(listCollection.Lists[lf]))
                 {
                     etmp = 0;
                     ftmp = 0;
@@ -84,7 +84,7 @@ namespace FWEledit
             ftmp = startField;
             for (int lf = 0; lf < listCount && lf <= startList; lf++)
             {
-                if (listCollection.Lists[lf] == null)
+                if (listCollection.Lists[lf] == null || eListCollection.IsRawTailList(listCollection.Lists[lf]))
                 {
                     etmp = 0;
                     ftmp = 0;
@@ -134,6 +134,12 @@ namespace FWEledit
             int etmp = startElement;
             for (int lf = startList; lf < listCount; lf++)
             {
+                if (eListCollection.IsRawTailList(listCollection.Lists[lf]))
+                {
+                    etmp = 0;
+                    continue;
+                }
+
                 int pos = GetNameFieldIndex(listCollection, lf);
                 int elementCount = listCollection.Lists[lf].elementValues.Length;
                 for (int ef = etmp; ef < elementCount; ef++)
@@ -152,6 +158,12 @@ namespace FWEledit
             etmp = startElement;
             for (int lf = 0; lf < listCount && lf <= startList; lf++)
             {
+                if (eListCollection.IsRawTailList(listCollection.Lists[lf]))
+                {
+                    etmp = 0;
+                    continue;
+                }
+
                 int pos = GetNameFieldIndex(listCollection, lf);
                 int elementCount = listCollection.Lists[lf].elementValues.Length;
                 for (int ef = etmp; ef < elementCount; ef++)
