@@ -43,15 +43,20 @@ namespace FWEledit
                 && request.Xrefs[request.ListIndex].Length > 1;
 
             List<object[]> rows;
-            if (!request.ListDisplayService.TryGetListDisplayRows(request.ListIndex, out rows))
+            bool canUseCachedRows = !request.UseLightweightRows;
+            if (!canUseCachedRows || !request.ListDisplayService.TryGetListDisplayRows(request.ListIndex, out rows))
             {
                 rows = request.ListRowBuilderService.BuildRows(
                     request.ListCollection,
                     request.ConversationList,
                     request.Database,
                     request.ListIndex,
-                    request.ComposeListDisplayName);
-                request.ListDisplayService.SetListDisplayRows(request.ListIndex, rows);
+                    request.ComposeListDisplayName,
+                    !request.UseLightweightRows);
+                if (!request.UseLightweightRows)
+                {
+                    request.ListDisplayService.SetListDisplayRows(request.ListIndex, rows);
+                }
             }
 
             result.Rows = rows ?? new List<object[]>();

@@ -10,7 +10,8 @@ namespace FWEledit
             string[][] xrefs,
             ListDisplayService listDisplayService,
             ListRowBuilderService listRowBuilderService,
-            System.Func<int, int, int, string> composeListDisplayName)
+            System.Func<int, int, int, string> composeListDisplayName,
+            bool useLightweightRows)
         {
             return new ListSelectionRequest
             {
@@ -21,7 +22,8 @@ namespace FWEledit
                 Xrefs = xrefs,
                 ListDisplayService = listDisplayService,
                 ListRowBuilderService = listRowBuilderService,
-                ComposeListDisplayName = composeListDisplayName
+                ComposeListDisplayName = composeListDisplayName,
+                UseLightweightRows = useLightweightRows
             };
         }
     }

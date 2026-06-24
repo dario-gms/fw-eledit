@@ -44,6 +44,11 @@ namespace FWEledit
 
             for (int listIndex = 0; listIndex < listCollection.Lists.Length; listIndex++)
             {
+                if (eListCollection.IsRawTailList(listCollection.Lists[listIndex]))
+                {
+                    continue;
+                }
+
                 int idFieldIndex = getIdFieldIndex != null ? getIdFieldIndex(listIndex) : -1;
                 if (idFieldIndex < 0)
                 {

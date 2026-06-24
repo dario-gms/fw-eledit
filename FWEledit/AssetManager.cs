@@ -1,11 +1,13 @@
 using FWEledit.DDSReader;
 using FWEledit.Properties;
+using Newtonsoft.Json;
 using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using System.Text;
 using System.Windows.Forms;
@@ -46,6 +48,8 @@ namespace FWEledit
         private HashSet<string> dirtyPackages = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private bool pathDataDirty = false;
         private readonly SortedList<int, string> pendingPathDataEntries = new SortedList<int, string>();
+        private readonly PckEntryReaderService pckEntryReaderService = new PckEntryReaderService();
+        private readonly object loadSync = new object();
 
         public static object anydata;
 
@@ -86,6 +90,14 @@ namespace FWEledit
                     dirtyPackages.Clear();
                     pathDataDirty = false;
                     pendingPathDataEntries.Clear();
+                    lock (loadSync)
+                    {
+                        imagesx = null;
+                        imagesById = null;
+                        imageposition = null;
+                        arrTheme = null;
+                        item_color = null;
+                    }
                 }
             }
             catch
@@ -137,6 +149,25 @@ namespace FWEledit
                 return string.Empty;
             }
             return Path.Combine(WorkspaceRootPath, "data");
+        }
+
+        private string GetWorkspaceCacheRoot()
+        {
+            if (string.IsNullOrWhiteSpace(WorkspaceRootPath))
+            {
+                return string.Empty;
+            }
+            return Path.Combine(WorkspaceRootPath, "cache");
+        }
+
+        private string GetTaskReferenceCachePath()
+        {
+            string cacheRoot = GetWorkspaceCacheRoot();
+            if (string.IsNullOrWhiteSpace(cacheRoot))
+            {
+                return string.Empty;
+            }
+            return Path.Combine(cacheRoot, "task-references.json.gz");
         }
 
         private string GetWorkspacePathDataFile()
@@ -246,57 +277,7 @@ namespace FWEledit
                     }
 
                     bool extracted = RunPckExtraction(workspacePck);
-                    if (!Directory.Exists(extractedDir))
-                    {
-                        // Some spck builds extract next to the game pck path or spck working directory.
-                        string altGame = Path.Combine(Path.GetDirectoryName(gamePck), Path.GetFileName(workspacePck) + ".files");
-                        if (Directory.Exists(altGame))
-                        {
-                            try
-                            {
-                                if (Directory.Exists(extractedDir))
-                                {
-                                    Directory.Delete(extractedDir, true);
-                                }
-                            }
-                            catch
-                            { }
-                            try
-                            {
-                                Directory.Move(altGame, extractedDir);
-                            }
-                            catch
-                            { }
-                        }
-                        else
-                        {
-                            string spckExe = FindSpckExecutable();
-                            if (!string.IsNullOrWhiteSpace(spckExe))
-                            {
-                                string altSpck = Path.Combine(Path.GetDirectoryName(spckExe), Path.GetFileName(workspacePck) + ".files");
-                                if (Directory.Exists(altSpck))
-                                {
-                                    try
-                                    {
-                                        if (Directory.Exists(extractedDir))
-                                        {
-                                            Directory.Delete(extractedDir, true);
-                                        }
-                                    }
-                                    catch
-                                    { }
-                                    try
-                                    {
-                                        Directory.Move(altSpck, extractedDir);
-                                    }
-                                    catch
-                                    { }
-                                }
-                            }
-                        }
-                    }
-
-                    if (!Directory.Exists(extractedDir))
+                    if (!extracted || !Directory.Exists(extractedDir))
                     {
                         if (hadExistingExtractedDir && Directory.Exists(backupExtractedDir))
                         {
@@ -308,7 +289,7 @@ namespace FWEledit
                             { }
                         }
 
-                        return Directory.Exists(extractedDir) || extracted;
+                        return Directory.Exists(extractedDir);
                     }
 
                     if (Directory.Exists(backupExtractedDir))
@@ -449,7 +430,7 @@ namespace FWEledit
                 Directory.CreateDirectory(GetWorkspaceResourcesRoot());
                 Directory.CreateDirectory(GetWorkspaceDataRoot());
                 EnsureWorkspacePathDataPrepared();
-                EnsureWorkspacePckPrepared("configs", true);
+                EnsureWorkspacePckPrepared("configs", false);
 
                 return true;
             }
@@ -523,32 +504,23 @@ namespace FWEledit
         {
             try
             {
-                string spck = FindSpckExecutable();
-                if (string.IsNullOrWhiteSpace(spck) || !Directory.Exists(extractedDirectory))
+                string helper = FindWinPckUpdaterExecutable();
+                if (string.IsNullOrWhiteSpace(helper) || !Directory.Exists(extractedDirectory))
                 {
                     return false;
                 }
 
                 if (compressionLevel < 0) { compressionLevel = 0; }
-                if (compressionLevel > 9) { compressionLevel = 9; }
+                if (compressionLevel > 12) { compressionLevel = 12; }
 
-                ProcessStartInfo psi = new ProcessStartInfo();
-                psi.FileName = spck;
-                psi.Arguments = "-fw -c \"" + extractedDirectory + "\" " + compressionLevel;
-                psi.WorkingDirectory = Path.GetDirectoryName(spck);
-                psi.UseShellExecute = false;
-                psi.CreateNoWindow = true;
-                psi.WindowStyle = ProcessWindowStyle.Hidden;
-
-                using (Process p = Process.Start(psi))
+                string targetPck = GetPckPathFromExtractedDirectory(extractedDirectory);
+                if (string.IsNullOrWhiteSpace(targetPck))
                 {
-                    if (p == null)
-                    {
-                        return false;
-                    }
-                    p.WaitForExit(180000);
-                    return p.ExitCode == 0;
+                    return false;
                 }
+
+                int timeoutMs = GetPckOperationTimeoutMs(targetPck, false);
+                return RunWinPckHelper("rebuild", extractedDirectory, targetPck, compressionLevel, timeoutMs);
             }
             catch
             {
@@ -938,48 +910,104 @@ namespace FWEledit
                 sessionService.Database = database;
                 return false;
             }
-            EnsureWorkspaceReady();
-
-            if (includeHeavyAssets && sourceBitmap == null)
+            lock (loadSync)
             {
-                // Ensure surfaces are extracted so iconset files are available on first load.
-                EnsureWorkspacePckPrepared("surfaces", true);
-                imageposition = loadSurfaces();
-                loadItem_color();
-                firstLoad = true;
-            }
+                EnsureWorkspaceReady();
+                EnsureVisualAssetsLoadedInternal(includeHeavyAssets);
 
-            if (database.pathById == null || database.pathById.Count == 0)
-            {
-                database.pathById = LoadPathById();
-            }
+                if (database.pathById == null || database.pathById.Count == 0)
+                {
+                    database.pathById = LoadPathById();
+                }
 
-            if (database.task_items == null)
-            {
-                LoadTaskReferences();
+                EnsureTaskReferencesUpToDate();
+                EnsureDeferredMetadataLoadedInternal(includeHeavyAssets);
+                sessionService.Database = database;
             }
-
-            if (includeHeavyAssets && firstLoad)
-            {
-                LoadTheme();
-                Application.DoEvents();
-                LoadLocalizationText();
-                Application.DoEvents();
-                //this.LoadInstanceList();
-                //Application.DoEvents();
-                LoadBuffList();
-                Application.DoEvents();
-                LoadItemExtDescList();
-                Application.DoEvents();
-                LoadSkillList();
-                Application.DoEvents();
-                LoadAddonList();
-                Application.DoEvents();
-                firstLoad = false;
-            }
-            sessionService.Database = database;
 
             return true;
+        }
+
+        public bool EnsureVisualAssetsLoaded()
+        {
+            if (string.IsNullOrWhiteSpace(GameRootPath) || !Directory.Exists(GameRootPath))
+            {
+                sessionService.Database = database;
+                return false;
+            }
+
+            lock (loadSync)
+            {
+                EnsureWorkspaceReady();
+                EnsureVisualAssetsLoadedInternal(true);
+                if (database.pathById == null || database.pathById.Count == 0)
+                {
+                    database.pathById = LoadPathById();
+                }
+                sessionService.Database = database;
+            }
+
+            return true;
+        }
+
+        public bool EnsureDeferredMetadataLoaded()
+        {
+            if (string.IsNullOrWhiteSpace(GameRootPath) || !Directory.Exists(GameRootPath))
+            {
+                sessionService.Database = database;
+                return false;
+            }
+
+            lock (loadSync)
+            {
+                EnsureWorkspaceReady();
+                if (database.pathById == null || database.pathById.Count == 0)
+                {
+                    database.pathById = LoadPathById();
+                }
+
+                EnsureTaskReferencesUpToDate();
+                EnsureDeferredMetadataLoadedInternal(true);
+                sessionService.Database = database;
+            }
+
+            return true;
+        }
+
+        private void EnsureVisualAssetsLoadedInternal(bool enabled)
+        {
+            if (!enabled || sourceBitmap != null)
+            {
+                return;
+            }
+
+            imageposition = loadSurfaces();
+            loadItem_color();
+            firstLoad = true;
+        }
+
+        private void EnsureDeferredMetadataLoadedInternal(bool enabled)
+        {
+            if (!enabled || !firstLoad)
+            {
+                return;
+            }
+
+            LoadTheme();
+            Application.DoEvents();
+            LoadLocalizationText();
+            Application.DoEvents();
+            //this.LoadInstanceList();
+            //Application.DoEvents();
+            LoadBuffList();
+            Application.DoEvents();
+            LoadItemExtDescList();
+            Application.DoEvents();
+            LoadSkillList();
+            Application.DoEvents();
+            LoadAddonList();
+            Application.DoEvents();
+            firstLoad = false;
         }
 
         private string ResolvePathDataFile()
@@ -1958,10 +1986,6 @@ namespace FWEledit
         private string ResolveResourceFile(string relativePath, bool ensureRequiredPackageExtracted)
         {
             string normalizedRelative = (relativePath ?? string.Empty).Replace('/', '\\').TrimStart('\\');
-            if (ensureRequiredPackageExtracted)
-            {
-                TryEnsureRequiredPckExtracted(normalizedRelative);
-            }
 
             List<string> roots = new List<string>();
             if (!string.IsNullOrWhiteSpace(WorkspaceRootPath) && Directory.Exists(WorkspaceRootPath))
@@ -2005,6 +2029,27 @@ namespace FWEledit
                 return string.Empty;
             }
 
+            string materializedCandidate = TryMaterializeResourceToWorkspace(normalizedRelative);
+            if (!string.IsNullOrEmpty(materializedCandidate) && File.Exists(materializedCandidate))
+            {
+                return materializedCandidate;
+            }
+
+            TryEnsureRequiredPckExtracted(normalizedRelative);
+            foreach (string root in roots)
+            {
+                try
+                {
+                    string candidate = Path.Combine(root, relativePath);
+                    if (File.Exists(candidate))
+                    {
+                        return candidate;
+                    }
+                }
+                catch
+                { }
+            }
+
             string indexedCandidate = ResolveFromIndexedResources(relativePath);
             if (!string.IsNullOrEmpty(indexedCandidate))
             {
@@ -2017,6 +2062,236 @@ namespace FWEledit
         private string ResolveResourceFile(string relativePath)
         {
             return ResolveResourceFile(relativePath, true);
+        }
+
+        private string TryMaterializeResourceToWorkspace(string normalizedRelative)
+        {
+            if (string.IsNullOrWhiteSpace(normalizedRelative)
+                || string.IsNullOrWhiteSpace(GameRootPath)
+                || !Directory.Exists(GameRootPath))
+            {
+                return string.Empty;
+            }
+
+            string workspaceResources = GetWorkspaceResourcesRoot();
+            if (string.IsNullOrWhiteSpace(workspaceResources))
+            {
+                return string.Empty;
+            }
+
+            try
+            {
+                Directory.CreateDirectory(workspaceResources);
+            }
+            catch
+            {
+                return string.Empty;
+            }
+
+            List<string> packageCandidates = BuildResourcePackageCandidates(normalizedRelative);
+            for (int p = 0; p < packageCandidates.Count; p++)
+            {
+                string package = packageCandidates[p];
+                if (string.IsNullOrWhiteSpace(package))
+                {
+                    continue;
+                }
+
+                string targetRoot = Path.Combine(workspaceResources, package + ".pck.files");
+                string primaryTarget = Path.Combine(targetRoot, normalizedRelative);
+                if (File.Exists(primaryTarget))
+                {
+                    return primaryTarget;
+                }
+
+                List<string> relativeCandidates = BuildMaterializationRelativeCandidates(package, normalizedRelative);
+                for (int r = 0; r < relativeCandidates.Count; r++)
+                {
+                    string candidateRelative = relativeCandidates[r];
+                    if (string.IsNullOrWhiteSpace(candidateRelative))
+                    {
+                        continue;
+                    }
+
+                    if (!pckEntryReaderService.TryReadFile(package, candidateRelative, out byte[] payload, out string _)
+                        || payload == null)
+                    {
+                        continue;
+                    }
+
+                    try
+                    {
+                        Directory.CreateDirectory(targetRoot);
+                        string writtenPrimary = WriteMaterializedResource(targetRoot, normalizedRelative, payload);
+                        if (!string.IsNullOrWhiteSpace(writtenPrimary) && File.Exists(writtenPrimary))
+                        {
+                            if (!string.Equals(candidateRelative, normalizedRelative, StringComparison.OrdinalIgnoreCase))
+                            {
+                                WriteMaterializedResource(targetRoot, candidateRelative, payload);
+                            }
+                            return writtenPrimary;
+                        }
+                    }
+                    catch
+                    {
+                    }
+                }
+            }
+
+            return string.Empty;
+        }
+
+        private static string WriteMaterializedResource(string targetRoot, string relativePath, byte[] payload)
+        {
+            string safeRelative = NormalizeMaterializedRelativePath(relativePath);
+            if (string.IsNullOrWhiteSpace(targetRoot)
+                || string.IsNullOrWhiteSpace(safeRelative)
+                || payload == null)
+            {
+                return string.Empty;
+            }
+
+            string targetPath = Path.Combine(targetRoot, safeRelative);
+            string targetDirectory = Path.GetDirectoryName(targetPath) ?? targetRoot;
+            Directory.CreateDirectory(targetDirectory);
+            File.WriteAllBytes(targetPath, payload);
+            return targetPath;
+        }
+
+        private static string NormalizeMaterializedRelativePath(string relativePath)
+        {
+            if (string.IsNullOrWhiteSpace(relativePath))
+            {
+                return string.Empty;
+            }
+
+            string normalized = relativePath.Replace('/', '\\').Trim().TrimStart('\\');
+            while (normalized.StartsWith(".\\", StringComparison.Ordinal))
+            {
+                normalized = normalized.Substring(2);
+            }
+
+            if (normalized == "."
+                || normalized.StartsWith("..\\", StringComparison.Ordinal)
+                || normalized.IndexOf("\\..\\", StringComparison.Ordinal) >= 0
+                || normalized.EndsWith("\\..", StringComparison.Ordinal))
+            {
+                return string.Empty;
+            }
+
+            return normalized;
+        }
+
+        private List<string> BuildResourcePackageCandidates(string normalizedRelative)
+        {
+            List<string> packages = new List<string>(8);
+            HashSet<string> seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            AddResourcePackageCandidate(packages, seen, ExtractKnownPackagePrefix(normalizedRelative));
+
+            if (IsConfigRelativePath(normalizedRelative))
+            {
+                AddResourcePackageCandidate(packages, seen, "configs");
+            }
+            if (IsSurfaceRelativePath(normalizedRelative))
+            {
+                AddResourcePackageCandidate(packages, seen, "surfaces");
+            }
+            if (IsModelRelativePath(normalizedRelative))
+            {
+                AddResourcePackageCandidate(packages, seen, "gfx");
+                AddResourcePackageCandidate(packages, seen, "models");
+                AddResourcePackageCandidate(packages, seen, "litmodels");
+                AddResourcePackageCandidate(packages, seen, "moxing");
+            }
+
+            AddResourcePackageCandidate(packages, seen, "configs");
+            AddResourcePackageCandidate(packages, seen, "surfaces");
+            return packages;
+        }
+
+        private static void AddResourcePackageCandidate(List<string> packages, HashSet<string> seen, string package)
+        {
+            string normalized = (package ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(normalized) || packages == null || seen == null || !seen.Add(normalized))
+            {
+                return;
+            }
+
+            packages.Add(normalized);
+        }
+
+        private static string ExtractKnownPackagePrefix(string normalizedRelative)
+        {
+            if (string.IsNullOrWhiteSpace(normalizedRelative))
+            {
+                return string.Empty;
+            }
+
+            string[] knownPackages = new string[]
+            {
+                "configs",
+                "surfaces",
+                "gfx",
+                "models",
+                "litmodels",
+                "moxing"
+            };
+
+            for (int i = 0; i < knownPackages.Length; i++)
+            {
+                string prefix = knownPackages[i] + "\\";
+                if (normalizedRelative.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    return knownPackages[i];
+                }
+            }
+
+            return string.Empty;
+        }
+
+        private List<string> BuildMaterializationRelativeCandidates(string package, string normalizedRelative)
+        {
+            List<string> candidates = new List<string>(8);
+            HashSet<string> seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            AddMaterializationRelativeCandidate(candidates, seen, normalizedRelative);
+
+            string normalizedPackage = (package ?? string.Empty).Trim();
+            if (!string.IsNullOrWhiteSpace(normalizedPackage))
+            {
+                string prefix = normalizedPackage + "\\";
+                if (normalizedRelative.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    AddMaterializationRelativeCandidate(candidates, seen, normalizedRelative.Substring(prefix.Length));
+                }
+            }
+
+            if (string.Equals(normalizedPackage, "configs", StringComparison.OrdinalIgnoreCase))
+            {
+                string fileName = Path.GetFileName(normalizedRelative) ?? string.Empty;
+                if (!string.IsNullOrWhiteSpace(fileName) && normalizedRelative.IndexOf('\\') < 0)
+                {
+                    AddMaterializationRelativeCandidate(candidates, seen, Path.Combine("data", fileName));
+                }
+            }
+
+            if (string.Equals(normalizedPackage, "surfaces", StringComparison.OrdinalIgnoreCase)
+                && normalizedRelative.StartsWith("surfaces\\", StringComparison.OrdinalIgnoreCase))
+            {
+                AddMaterializationRelativeCandidate(candidates, seen, normalizedRelative.Substring("surfaces\\".Length));
+            }
+
+            return candidates;
+        }
+
+        private static void AddMaterializationRelativeCandidate(List<string> candidates, HashSet<string> seen, string relativePath)
+        {
+            string normalized = NormalizeMaterializedRelativePath(relativePath);
+            if (string.IsNullOrWhiteSpace(normalized) || candidates == null || seen == null || !seen.Add(normalized))
+            {
+                return;
+            }
+
+            candidates.Add(normalized);
         }
 
         private void EnsureResourceIndex()
@@ -2215,7 +2490,7 @@ namespace FWEledit
                 || normalizedRelative.StartsWith("litmodels\\", StringComparison.OrdinalIgnoreCase);
         }
 
-        private string FindSpckExecutable()
+        private string FindWinPckUpdaterExecutable()
         {
             List<string> roots = new List<string>();
             HashSet<string> seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -2240,11 +2515,9 @@ namespace FWEledit
             {
                 string[] candidates = new string[]
                 {
-                    Path.Combine(root, "fELedit", "tools", "spck", "spck", "bin", "spck.exe"),
-                    Path.Combine(root, "tools", "spck", "spck", "bin", "spck.exe"),
-                    Path.Combine(root, "fELedit", "tools", "spck.exe"),
-                    Path.Combine(root, "tools", "spck.exe"),
-                    Path.Combine(root, "spck.exe")
+                    Path.Combine(root, "fELedit", "tools", "winpck", "FWPckUpdater.exe"),
+                    Path.Combine(root, "tools", "winpck", "FWPckUpdater.exe"),
+                    Path.Combine(root, "FWPckUpdater.exe")
                 };
                 for (int i = 0; i < candidates.Length; i++)
                 {
@@ -2261,16 +2534,84 @@ namespace FWEledit
         {
             try
             {
-                string spck = FindSpckExecutable();
-                if (string.IsNullOrWhiteSpace(spck) || !File.Exists(pckFilePath))
+                if (string.IsNullOrWhiteSpace(pckFilePath) || !File.Exists(pckFilePath))
+                {
+                    return false;
+                }
+
+                string pkxFilePath = Path.ChangeExtension(pckFilePath, ".pkx");
+                if (!File.Exists(pkxFilePath))
+                {
+                    pkxFilePath = string.Empty;
+                }
+
+                string outputDirectory = pckFilePath + ".files";
+                string tempDirectory = outputDirectory + ".extracting";
+                try
+                {
+                    if (Directory.Exists(tempDirectory))
+                    {
+                        Directory.Delete(tempDirectory, true);
+                    }
+                }
+                catch
+                { }
+
+                Directory.CreateDirectory(tempDirectory);
+                string packageName = Path.GetFileNameWithoutExtension(pckFilePath) ?? string.Empty;
+                if (!PckIndexReader.TryExtractEntries(packageName, pckFilePath, pkxFilePath, tempDirectory, out string error))
+                {
+                    TryWritePckExtractLog(pckFilePath, "managed-index", error);
+                    try
+                    {
+                        if (Directory.Exists(tempDirectory))
+                        {
+                            Directory.Delete(tempDirectory, true);
+                        }
+                    }
+                    catch
+                    { }
+                    return false;
+                }
+
+                try
+                {
+                    if (Directory.Exists(outputDirectory))
+                    {
+                        Directory.Delete(outputDirectory, true);
+                    }
+                }
+                catch
+                { }
+
+                Directory.Move(tempDirectory, outputDirectory);
+                return Directory.Exists(outputDirectory);
+            }
+            catch (Exception ex)
+            {
+                TryWritePckExtractLog(pckFilePath, "managed-index", ex.Message);
+                return false;
+            }
+        }
+
+        private bool RunWinPckHelper(string mode, string sourceDirectory, string targetPckPath, int compressionLevel, int timeoutMs)
+        {
+            try
+            {
+                string helper = FindWinPckUpdaterExecutable();
+                if (string.IsNullOrWhiteSpace(helper)
+                    || !File.Exists(helper)
+                    || string.IsNullOrWhiteSpace(sourceDirectory)
+                    || !Directory.Exists(sourceDirectory)
+                    || string.IsNullOrWhiteSpace(targetPckPath))
                 {
                     return false;
                 }
 
                 ProcessStartInfo psi = new ProcessStartInfo();
-                psi.FileName = spck;
-                psi.Arguments = "-fw -x \"" + pckFilePath + "\"";
-                psi.WorkingDirectory = Path.GetDirectoryName(spck);
+                psi.FileName = helper;
+                psi.Arguments = (mode ?? "rebuild") + " \"" + sourceDirectory + "\" \"" + targetPckPath + "\" " + compressionLevel.ToString();
+                psi.WorkingDirectory = Path.GetDirectoryName(helper);
                 psi.UseShellExecute = false;
                 psi.RedirectStandardOutput = true;
                 psi.RedirectStandardError = true;
@@ -2283,34 +2624,28 @@ namespace FWEledit
                     {
                         return false;
                     }
-                    int timeoutMs = 120000;
-                    string fileName = Path.GetFileName(pckFilePath) ?? string.Empty;
-                    if (string.Equals(fileName, "models.pck", StringComparison.OrdinalIgnoreCase)
-                        || string.Equals(fileName, "surfaces.pck", StringComparison.OrdinalIgnoreCase)
-                        || string.Equals(fileName, "gfx.pck", StringComparison.OrdinalIgnoreCase)
-                        || string.Equals(fileName, "grasses.pck", StringComparison.OrdinalIgnoreCase))
-                    {
-                        timeoutMs = 900000;
-                    }
+
                     bool exited = p.WaitForExit(timeoutMs);
                     if (!exited)
                     {
-                        TryWriteSpckLog(pckFilePath, spck, -1, string.Empty, "Timed out.");
+                        TryWriteWinPckLog(targetPckPath, helper, -1, string.Empty, "Timed out.");
                         return false;
                     }
+
                     string stdout = string.Empty;
                     string stderr = string.Empty;
                     try { stdout = p.StandardOutput.ReadToEnd(); } catch { }
                     try { stderr = p.StandardError.ReadToEnd(); } catch { }
                     if (p.ExitCode != 0)
                     {
-                        TryWriteSpckLog(pckFilePath, spck, p.ExitCode, stdout, stderr);
+                        TryWriteWinPckLog(targetPckPath, helper, p.ExitCode, stdout, stderr);
                         return false;
                     }
                     if (!string.IsNullOrWhiteSpace(stderr))
                     {
-                        TryWriteSpckLog(pckFilePath, spck, p.ExitCode, stdout, stderr);
+                        TryWriteWinPckLog(targetPckPath, helper, p.ExitCode, stdout, stderr);
                     }
+
                     return true;
                 }
             }
@@ -2320,21 +2655,75 @@ namespace FWEledit
             }
         }
 
-        private void TryWriteSpckLog(string pckFilePath, string spckPath, int exitCode, string stdout, string stderr)
+        private static string GetPckPathFromExtractedDirectory(string extractedDirectory)
+        {
+            if (string.IsNullOrWhiteSpace(extractedDirectory))
+            {
+                return string.Empty;
+            }
+
+            string normalized = extractedDirectory.Trim().TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            if (!normalized.EndsWith(".pck.files", StringComparison.OrdinalIgnoreCase))
+            {
+                return string.Empty;
+            }
+
+            return normalized.Substring(0, normalized.Length - ".files".Length);
+        }
+
+        private static int GetPckOperationTimeoutMs(string pckFilePath, bool isExtraction)
+        {
+            int timeoutMs = isExtraction ? 120000 : 180000;
+            string fileName = Path.GetFileName(pckFilePath) ?? string.Empty;
+            if (string.Equals(fileName, "models.pck", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(fileName, "surfaces.pck", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(fileName, "gfx.pck", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(fileName, "grasses.pck", StringComparison.OrdinalIgnoreCase))
+            {
+                timeoutMs = 900000;
+            }
+
+            return timeoutMs;
+        }
+
+        private void TryWritePckExtractLog(string pckFilePath, string extractorName, string details)
         {
             try
             {
                 string root = !string.IsNullOrWhiteSpace(WorkspaceRootPath)
                     ? WorkspaceRootPath
                     : Path.GetTempPath();
-                string logDir = Path.Combine(root, "spck_logs");
+                string logDir = Path.Combine(root, "pck_logs");
                 Directory.CreateDirectory(logDir);
                 string name = Path.GetFileName(pckFilePath) ?? "pck";
                 string logPath = Path.Combine(logDir, name + "_extract.log");
                 using (StreamWriter sw = new StreamWriter(logPath, false))
                 {
                     sw.WriteLine("pck: " + pckFilePath);
-                    sw.WriteLine("spck: " + spckPath);
+                    sw.WriteLine("extractor: " + extractorName);
+                    sw.WriteLine("details:");
+                    sw.WriteLine(details ?? string.Empty);
+                }
+            }
+            catch
+            { }
+        }
+
+        private void TryWriteWinPckLog(string pckFilePath, string helperPath, int exitCode, string stdout, string stderr)
+        {
+            try
+            {
+                string root = !string.IsNullOrWhiteSpace(WorkspaceRootPath)
+                    ? WorkspaceRootPath
+                    : Path.GetTempPath();
+                string logDir = Path.Combine(root, "winpck_logs");
+                Directory.CreateDirectory(logDir);
+                string name = Path.GetFileName(pckFilePath) ?? "pck";
+                string logPath = Path.Combine(logDir, name + "_update.log");
+                using (StreamWriter sw = new StreamWriter(logPath, false))
+                {
+                    sw.WriteLine("pck: " + pckFilePath);
+                    sw.WriteLine("helper: " + helperPath);
                     sw.WriteLine("exit: " + exitCode);
                     sw.WriteLine("---- stdout ----");
                     sw.WriteLine(stdout ?? string.Empty);
@@ -2350,7 +2739,7 @@ namespace FWEledit
         {
             try
             {
-                return FindSpckExecutable();
+                return FindWinPckUpdaterExecutable();
             }
             catch
             {
@@ -2369,28 +2758,21 @@ namespace FWEledit
                 }
 
                 string normalizedPackage = packageName.Trim();
-                EnsureWorkspaceReady();
-                EnsureWorkspacePckPrepared(normalizedPackage, false);
-
                 string resourcesRoot = Path.Combine(GameRootPath, "resources");
                 string workspaceResources = GetWorkspaceResourcesRoot();
-                string pckPath = string.IsNullOrWhiteSpace(workspaceResources)
-                    ? string.Empty
-                    : Path.Combine(workspaceResources, normalizedPackage + ".pck");
-                if (!File.Exists(pckPath))
+                string pckPath = Path.Combine(resourcesRoot, normalizedPackage + ".pck");
+                if (!File.Exists(pckPath) && !string.IsNullOrWhiteSpace(workspaceResources))
                 {
-                    pckPath = Path.Combine(resourcesRoot, normalizedPackage + ".pck");
+                    pckPath = Path.Combine(workspaceResources, normalizedPackage + ".pck");
                 }
                 if (!File.Exists(pckPath))
                 {
                     return false;
                 }
-                string pkxPath = string.IsNullOrWhiteSpace(workspaceResources)
-                    ? string.Empty
-                    : Path.Combine(workspaceResources, normalizedPackage + ".pkx");
-                if (!File.Exists(pkxPath))
+                string pkxPath = Path.Combine(resourcesRoot, normalizedPackage + ".pkx");
+                if (!File.Exists(pkxPath) && !string.IsNullOrWhiteSpace(workspaceResources))
                 {
-                    pkxPath = Path.Combine(resourcesRoot, normalizedPackage + ".pkx");
+                    pkxPath = Path.Combine(workspaceResources, normalizedPackage + ".pkx");
                 }
                 if (!File.Exists(pkxPath))
                 {
@@ -2413,6 +2795,12 @@ namespace FWEledit
             private const int PathBytes = 260;
             private const int MinEntrySize = PathBytes + 12;
             private const int MaxEntrySize = 1024 * 1024;
+            private sealed class ExtractablePckEntry
+            {
+                public string RelativePath { get; set; }
+                public long Offset { get; set; }
+                public int CompressedSize { get; set; }
+            }
 
             public static bool TryEnumerateEntries(string packageName, string pckPath, string pkxPath, List<string> entries)
             {
@@ -2498,6 +2886,133 @@ namespace FWEledit
                 }
 
                 return entries.Count > 0;
+            }
+
+            public static bool TryExtractEntries(
+                string packageName,
+                string pckPath,
+                string pkxPath,
+                string outputDirectory,
+                out string error)
+            {
+                error = string.Empty;
+                if (string.IsNullOrWhiteSpace(pckPath) || !File.Exists(pckPath))
+                {
+                    error = "Package file not found.";
+                    return false;
+                }
+                if (string.IsNullOrWhiteSpace(outputDirectory))
+                {
+                    error = "Output folder not set.";
+                    return false;
+                }
+
+                List<ExtractablePckEntry> indexedEntries = new List<ExtractablePckEntry>();
+                try
+                {
+                    using (PckConcatStream stream = new PckConcatStream(pckPath, pkxPath))
+                    using (BinaryReader br = new BinaryReader(stream))
+                    {
+                        long length = stream.Length;
+                        if (length < FooterSize + 8)
+                        {
+                            error = "Package is too short.";
+                            return false;
+                        }
+
+                        uint entryCount;
+                        long tableOffset;
+                        if (!TryReadFooter(stream, br, length, out tableOffset, out entryCount))
+                        {
+                            error = "Failed to decode package footer.";
+                            return false;
+                        }
+
+                        stream.Seek(tableOffset, SeekOrigin.Begin);
+                        Encoding enc = Encoding.GetEncoding("GBK");
+                        for (uint i = 0; i < entryCount; i++)
+                        {
+                            int entrySize;
+                            if (!TryReadEntrySize(br, length, out entrySize))
+                            {
+                                break;
+                            }
+
+                            byte[] entryData = br.ReadBytes(entrySize);
+                            if (entryData.Length != entrySize)
+                            {
+                                break;
+                            }
+
+                            byte[] raw = entrySize == FooterSize ? entryData : InflateEntry(entryData);
+                            if (raw == null || raw.Length < MinEntrySize)
+                            {
+                                continue;
+                            }
+
+                            string relativePath = NormalizeExtractedRelativePath(DecodeEntryPath(enc, raw));
+                            if (string.IsNullOrWhiteSpace(relativePath))
+                            {
+                                continue;
+                            }
+
+                            uint rawOffset = BitConverter.ToUInt32(raw, PathBytes + 0);
+                            uint rawCompressedSize = BitConverter.ToUInt32(raw, PathBytes + 4);
+                            if (rawCompressedSize == 0)
+                            {
+                                continue;
+                            }
+
+                            long offset = rawOffset;
+                            long end = offset + rawCompressedSize;
+                            if (offset < 0 || end > length)
+                            {
+                                continue;
+                            }
+
+                            indexedEntries.Add(new ExtractablePckEntry
+                            {
+                                RelativePath = relativePath,
+                                Offset = offset,
+                                CompressedSize = (int)rawCompressedSize
+                            });
+                        }
+
+                        if (indexedEntries.Count == 0)
+                        {
+                            error = "No package index entries decoded.";
+                            return false;
+                        }
+
+                        indexedEntries.Sort((a, b) => a.Offset.CompareTo(b.Offset));
+                        Directory.CreateDirectory(outputDirectory);
+
+                        for (int i = 0; i < indexedEntries.Count; i++)
+                        {
+                            ExtractablePckEntry entry = indexedEntries[i];
+                            stream.Seek(entry.Offset, SeekOrigin.Begin);
+                            byte[] compressed = br.ReadBytes(entry.CompressedSize);
+                            if (compressed.Length != entry.CompressedSize)
+                            {
+                                error = "Failed to read package entry data: " + entry.RelativePath;
+                                return false;
+                            }
+
+                            byte[] payload = InflateEntry(compressed) ?? compressed;
+                            string targetPath = Path.Combine(outputDirectory, entry.RelativePath);
+                            string targetDirectory = Path.GetDirectoryName(targetPath) ?? outputDirectory;
+                            Directory.CreateDirectory(targetDirectory);
+                            File.WriteAllBytes(targetPath, payload);
+                        }
+                    }
+
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    error = ex.Message;
+                    return false;
+                }
             }
 
             private static bool TryReadFooter(Stream stream, BinaryReader br, long length, out long tableOffset, out uint entryCount)
@@ -2604,6 +3119,30 @@ namespace FWEledit
                     return string.Empty;
                 }
                 return path.Trim();
+            }
+
+            private static string NormalizeExtractedRelativePath(string path)
+            {
+                if (string.IsNullOrWhiteSpace(path))
+                {
+                    return string.Empty;
+                }
+
+                string normalized = path.Replace('/', '\\').Trim().TrimStart('\\');
+                while (normalized.StartsWith(".\\", StringComparison.Ordinal))
+                {
+                    normalized = normalized.Substring(2);
+                }
+
+                if (normalized == "."
+                    || normalized.StartsWith("..\\", StringComparison.Ordinal)
+                    || normalized.IndexOf("\\..\\", StringComparison.Ordinal) >= 0
+                    || normalized.EndsWith("\\..", StringComparison.Ordinal))
+                {
+                    return string.Empty;
+                }
+
+                return normalized;
             }
 
             private static byte[] InflateEntry(byte[] data)
@@ -3990,17 +4529,41 @@ namespace FWEledit
             database.buff_str = sessionService.BuffStr;
         }
 
-        private void LoadTaskReferences()
+        public bool EnsureTaskReferencesUpToDate()
+        {
+            string taskSignature = BuildTaskReferencesSignature();
+            if (database.task_items != null
+                && string.Equals(database.task_items_signature ?? string.Empty, taskSignature, StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            LoadTaskReferences(taskSignature);
+            sessionService.Database = database;
+            return true;
+        }
+
+        private void LoadTaskReferences(string taskSignature)
         {
             SortedList<int, ItemDupe> taskItems = new SortedList<int, ItemDupe>();
             if (string.IsNullOrWhiteSpace(GameRootPath) || !Directory.Exists(GameRootPath))
             {
                 database.task_items = taskItems;
+                database.task_items_signature = taskSignature ?? string.Empty;
+                database.task_items_revision++;
                 return;
             }
 
             try
             {
+                if (TryLoadPersistedTaskReferences(taskSignature, out taskItems))
+                {
+                    database.task_items = taskItems;
+                    database.task_items_signature = taskSignature ?? string.Empty;
+                    database.task_items_revision++;
+                    return;
+                }
+
                 List<string> taskFiles = EnumerateTaskDataShardFiles();
                 for (int shardIndex = 0; shardIndex < taskFiles.Count; shardIndex++)
                 {
@@ -4013,6 +4576,119 @@ namespace FWEledit
             }
 
             database.task_items = taskItems;
+            database.task_items_signature = taskSignature ?? string.Empty;
+            database.task_items_revision++;
+            TryPersistTaskReferences(taskSignature, taskItems);
+        }
+
+        private bool TryLoadPersistedTaskReferences(string taskSignature, out SortedList<int, ItemDupe> taskItems)
+        {
+            taskItems = new SortedList<int, ItemDupe>();
+            try
+            {
+                string cachePath = GetTaskReferenceCachePath();
+                if (string.IsNullOrWhiteSpace(cachePath) || !File.Exists(cachePath))
+                {
+                    return false;
+                }
+
+                using (FileStream stream = new FileStream(cachePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+                using (GZipStream gzip = new GZipStream(stream, CompressionMode.Decompress))
+                using (StreamReader reader = new StreamReader(gzip, Encoding.UTF8))
+                {
+                    string json = reader.ReadToEnd();
+                    PersistedTaskReferenceCache payload = JsonConvert.DeserializeObject<PersistedTaskReferenceCache>(json);
+                    if (payload == null
+                        || !string.Equals(payload.Signature ?? string.Empty, taskSignature ?? string.Empty, StringComparison.Ordinal)
+                        || payload.Items == null)
+                    {
+                        return false;
+                    }
+
+                    for (int i = 0; i < payload.Items.Count; i++)
+                    {
+                        UpsertTaskItem(taskItems, payload.Items[i]);
+                    }
+                }
+
+                return taskItems.Count > 0;
+            }
+            catch
+            {
+                taskItems = new SortedList<int, ItemDupe>();
+                return false;
+            }
+        }
+
+        private void TryPersistTaskReferences(string taskSignature, SortedList<int, ItemDupe> taskItems)
+        {
+            try
+            {
+                string cacheRoot = GetWorkspaceCacheRoot();
+                string cachePath = GetTaskReferenceCachePath();
+                if (string.IsNullOrWhiteSpace(cacheRoot) || string.IsNullOrWhiteSpace(cachePath) || taskItems == null)
+                {
+                    return;
+                }
+
+                Directory.CreateDirectory(cacheRoot);
+                PersistedTaskReferenceCache payload = new PersistedTaskReferenceCache
+                {
+                    Signature = taskSignature ?? string.Empty,
+                    Items = taskItems.Values.ToList()
+                };
+
+                string json = JsonConvert.SerializeObject(payload);
+                using (FileStream stream = new FileStream(cachePath, FileMode.Create, FileAccess.Write, FileShare.None))
+                using (GZipStream gzip = new GZipStream(stream, CompressionLevel.Optimal))
+                using (StreamWriter writer = new StreamWriter(gzip, Encoding.UTF8))
+                {
+                    writer.Write(json);
+                }
+            }
+            catch
+            { }
+        }
+
+        private string BuildTaskReferencesSignature()
+        {
+            if (string.IsNullOrWhiteSpace(GameRootPath) || !Directory.Exists(GameRootPath))
+            {
+                return string.Empty;
+            }
+
+            try
+            {
+                List<string> taskFiles = EnumerateTaskDataShardFiles();
+                if (taskFiles == null || taskFiles.Count == 0)
+                {
+                    return string.Empty;
+                }
+
+                StringBuilder signature = new StringBuilder();
+                for (int i = 0; i < taskFiles.Count; i++)
+                {
+                    FileInfo fileInfo = new FileInfo(taskFiles[i]);
+                    if (!fileInfo.Exists)
+                    {
+                        continue;
+                    }
+
+                    signature
+                        .Append(fileInfo.FullName.ToLowerInvariant())
+                        .Append('|')
+                        .Append(fileInfo.Length.ToString())
+                        .Append('|')
+                        .Append(fileInfo.LastWriteTimeUtc.Ticks.ToString())
+                        .Append(';');
+                }
+
+                return signature.ToString();
+            }
+            catch
+            {
+                return string.Empty;
+            }
         }
 
         private List<string> EnumerateTaskDataShardFiles()
@@ -4068,6 +4744,12 @@ namespace FWEledit
             public int Start { get; set; }
             public int Id { get; set; }
             public string Name { get; set; }
+        }
+
+        private sealed class PersistedTaskReferenceCache
+        {
+            public string Signature { get; set; }
+            public List<ItemDupe> Items { get; set; }
         }
 
         private sealed class ParsedTaskChunkNode
@@ -4147,6 +4829,7 @@ namespace FWEledit
                     if (candidates.Count == 0)
                     {
                         AddFallbackRootTask(chunkBytes, shardIndex, taskItems, ref flatIndex);
+                        AddSupplementalTaskChunkCandidates(chunkBytes, null, shardIndex, taskItems, ref flatIndex);
                         continue;
                     }
 
@@ -4154,10 +4837,10 @@ namespace FWEledit
                     if (rootNode != null)
                     {
                         FlattenTaskChunkNode(rootNode, shardIndex, 0, 0, 0, taskItems, ref flatIndex);
-                        continue;
                     }
 
                     AddFlatTaskChunkCandidates(candidates, shardIndex, taskItems, ref flatIndex);
+                    AddSupplementalTaskChunkCandidates(chunkBytes, candidates, shardIndex, taskItems, ref flatIndex);
                 }
             }
         }
@@ -4263,6 +4946,56 @@ namespace FWEledit
                 && ReadInt32(chunkBytes, offset + 68) == 0
                 && ReadInt32(chunkBytes, offset + 72) == 67108864
                 && ReadInt32(chunkBytes, offset + 76) == 0;
+        }
+
+        private static bool HasTaskChunkLooseSignature(byte[] chunkBytes, int offset)
+        {
+            if (chunkBytes == null || offset < 8 || offset + 80 > chunkBytes.Length)
+            {
+                return false;
+            }
+
+            for (int i = offset - 8; i < offset; i++)
+            {
+                if (chunkBytes[i] != 0)
+                {
+                    return false;
+                }
+            }
+
+            for (int i = offset + 60; i < offset + 64; i++)
+            {
+                if (chunkBytes[i] != 0)
+                {
+                    return false;
+                }
+            }
+
+            if (chunkBytes[offset + 64] > 1)
+            {
+                return false;
+            }
+
+            for (int i = offset + 65; i < offset + 75; i++)
+            {
+                if (chunkBytes[i] != 0)
+                {
+                    return false;
+                }
+            }
+
+            for (int i = offset + 76; i < offset + 79; i++)
+            {
+                if (chunkBytes[i] != 0)
+                {
+                    return false;
+                }
+            }
+
+            int markerA = chunkBytes[offset + 75];
+            int markerB = chunkBytes[offset + 79];
+            return (markerA > 0 && markerA <= 32)
+                || (markerB > 0 && markerB <= 32);
         }
 
         private ParsedTaskChunkNode ParseTaskChunkTree(byte[] chunkBytes, List<TaskChunkCandidate> candidates)
@@ -4607,8 +5340,197 @@ namespace FWEledit
                         iconpath = string.Empty,
                         count = 0,
                         price = string.Empty
+                });
+            }
+        }
+
+        private void AddSupplementalTaskChunkCandidates(
+            byte[] chunkBytes,
+            List<TaskChunkCandidate> strictCandidates,
+            int shardIndex,
+            SortedList<int, ItemDupe> taskItems,
+            ref int flatIndex)
+        {
+            if (chunkBytes == null || taskItems == null)
+            {
+                return;
+            }
+
+            List<TaskChunkCandidate> looseCandidates = FindLooseTaskChunkCandidates(chunkBytes);
+            if (looseCandidates.Count == 0)
+            {
+                return;
+            }
+
+            HashSet<int> strictIds = new HashSet<int>();
+            if (strictCandidates != null)
+            {
+                for (int i = 0; i < strictCandidates.Count; i++)
+                {
+                    strictIds.Add(strictCandidates[i].Id);
+                }
+            }
+
+            for (int i = 0; i < looseCandidates.Count; i++)
+            {
+                TaskChunkCandidate candidate = looseCandidates[i];
+                if (candidate == null || candidate.Id <= 0 || strictIds.Contains(candidate.Id))
+                {
+                    continue;
+                }
+
+                UpsertTaskItem(
+                    taskItems,
+                    new ItemDupe
+                    {
+                        listID = shardIndex,
+                        index = flatIndex++,
+                        itemId = candidate.Id,
+                        rootId = candidate.Id,
+                        name = candidate.Name,
+                        iconpath = string.Empty,
+                        count = 0,
+                        price = string.Empty
                     });
             }
+        }
+
+        private List<TaskChunkCandidate> FindLooseTaskChunkCandidates(byte[] chunkBytes)
+        {
+            List<TaskChunkCandidate> candidates = new List<TaskChunkCandidate>();
+            if (chunkBytes == null || chunkBytes.Length < 80)
+            {
+                return candidates;
+            }
+
+            for (int offset = 0; offset <= chunkBytes.Length - 80; offset++)
+            {
+                TaskChunkCandidate candidate;
+                if (TryReadLooseTaskChunkCandidate(chunkBytes, offset, out candidate))
+                {
+                    candidates.Add(candidate);
+                }
+            }
+
+            if (candidates.Count <= 1)
+            {
+                return candidates;
+            }
+
+            List<TaskChunkCandidate> filtered = new List<TaskChunkCandidate>();
+            for (int i = 0; i < candidates.Count; i++)
+            {
+                TaskChunkCandidate candidate = candidates[i];
+                if (filtered.Count == 0)
+                {
+                    filtered.Add(candidate);
+                    continue;
+                }
+
+                TaskChunkCandidate previous = filtered[filtered.Count - 1];
+                if (candidate.Start - previous.Start <= 4)
+                {
+                    if ((candidate.Name ?? string.Empty).Length > (previous.Name ?? string.Empty).Length)
+                    {
+                        filtered[filtered.Count - 1] = candidate;
+                    }
+                    continue;
+                }
+
+                filtered.Add(candidate);
+            }
+
+            return filtered;
+        }
+
+        private bool TryReadLooseTaskChunkCandidate(byte[] chunkBytes, int offset, out TaskChunkCandidate candidate)
+        {
+            candidate = null;
+            if (chunkBytes == null || offset < 0 || offset + 80 > chunkBytes.Length)
+            {
+                return false;
+            }
+
+            int id = ReadInt32(chunkBytes, offset);
+            if (id <= 0 || id > 20000000)
+            {
+                return false;
+            }
+
+            string name = ReadTaskName(chunkBytes, offset + 4, 30);
+            if (string.IsNullOrWhiteSpace(name)
+                || !IsLikelyLooseTaskName(name)
+                || !HasTaskChunkLooseSignature(chunkBytes, offset))
+            {
+                return false;
+            }
+
+            candidate = new TaskChunkCandidate
+            {
+                Start = offset,
+                Id = id,
+                Name = name
+            };
+            return true;
+        }
+
+        private static bool IsLikelyLooseTaskName(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                return false;
+            }
+
+            string trimmed = name.Trim();
+            int supportedCharacterCount = 0;
+            bool hasAsciiWordCharacter = false;
+            bool hasCjkCharacter = false;
+
+            for (int i = 0; i < trimmed.Length; i++)
+            {
+                char character = trimmed[i];
+                if (IsCjkTaskCharacter(character))
+                {
+                    hasCjkCharacter = true;
+                    supportedCharacterCount++;
+                    continue;
+                }
+
+                if (character <= sbyte.MaxValue)
+                {
+                    if (char.IsLetterOrDigit(character))
+                    {
+                        hasAsciiWordCharacter = true;
+                        supportedCharacterCount++;
+                        continue;
+                    }
+
+                    if (char.IsWhiteSpace(character) || "-_'()[]{}:,.!?/&+".IndexOf(character) >= 0)
+                    {
+                        supportedCharacterCount++;
+                    }
+                }
+            }
+
+            if (!hasAsciiWordCharacter && !hasCjkCharacter)
+            {
+                return false;
+            }
+
+            if (hasCjkCharacter)
+            {
+                return supportedCharacterCount >= 2;
+            }
+
+            return supportedCharacterCount >= 3;
+        }
+
+        private static bool IsCjkTaskCharacter(char character)
+        {
+            return (character >= 0x2E80 && character <= 0x9FFF)
+                || (character >= 0xAC00 && character <= 0xD7AF)
+                || (character >= 0xF900 && character <= 0xFAFF)
+                || (character >= 0xFF00 && character <= 0xFFEF);
         }
 
         private void AddFallbackRootTask(byte[] chunkBytes, int shardIndex, SortedList<int, ItemDupe> taskItems, ref int flatIndex)

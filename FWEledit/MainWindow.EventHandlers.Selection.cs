@@ -9,6 +9,7 @@ namespace FWEledit
 		{
             bool previousSuppressSelectionHistory = suppressSelectionHistory;
             pendingAutoSelectionHistoryListIndex = -1;
+            bool useLightweightStartupLoad = viewModel != null && viewModel.IsRestoringSessionState;
             if (!previousSuppressSelectionHistory)
             {
                 suppressSelectionHistory = true;
@@ -19,6 +20,7 @@ namespace FWEledit
                 mainWindowSelectionCoordinatorService.HandleChangeList(
                     mainWindowSelectionUiService,
                     viewModel.EnableSelectionList,
+                    useLightweightStartupLoad,
                     comboBox_lists,
                     sessionService,
                     UpdateEquipmentTabsVisibility,
@@ -58,11 +60,22 @@ namespace FWEledit
                 suppressSelectionHistory = previousSuppressSelectionHistory;
             }
 
-            RefreshVisibleReferenceCounts();
+            int currentListIndex = comboBox_lists != null ? comboBox_lists.SelectedIndex : -1;
+            ResetLightweightListRenderState(currentListIndex, useLightweightStartupLoad);
+            if (useLightweightStartupLoad)
+            {
+                ScheduleVisibleReferenceCountRefresh();
+                BeginInvoke((Action)(() => ScheduleVisibleElementIconHydration()));
+            }
+            else
+            {
+                RefreshVisibleReferenceCounts();
+            }
+
             UpdateNpcSellServiceUiForSelection();
             if (!previousSuppressSelectionHistory)
             {
-                pendingAutoSelectionHistoryListIndex = comboBox_lists != null ? comboBox_lists.SelectedIndex : -1;
+                pendingAutoSelectionHistoryListIndex = currentListIndex;
             }
 		}
 
@@ -261,7 +274,3 @@ namespace FWEledit
         }
     }
 }
-
-
-
-

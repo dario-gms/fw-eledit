@@ -90,7 +90,7 @@ namespace FWEledit
                 assembly,
                 label_Version,
                 navigationStateService,
-                "0.9.5.11");
+                "0.9.5.13");
 
             fwDarkMode = Properties.Settings.Default.UseDarkMode;
             cpb2.Value = 0;
@@ -179,10 +179,28 @@ namespace FWEledit
                     RefreshVisibleReferenceCounts();
                 };
             }
+            if (visibleIconHydrationTimer == null)
+            {
+                visibleIconHydrationTimer = new System.Windows.Forms.Timer();
+                visibleIconHydrationTimer.Interval = 90;
+                visibleIconHydrationTimer.Tick += (s, e) =>
+                {
+                    visibleIconHydrationTimer.Stop();
+                    HydrateVisibleElementRowIcons();
+                };
+            }
             if (dataGridView_elems != null)
             {
-                dataGridView_elems.Scroll += (s, e) => ScheduleVisibleReferenceCountRefresh();
-                dataGridView_elems.SizeChanged += (s, e) => ScheduleVisibleReferenceCountRefresh();
+                dataGridView_elems.Scroll += (s, e) =>
+                {
+                    ScheduleVisibleReferenceCountRefresh();
+                    ScheduleVisibleElementIconHydration();
+                };
+                dataGridView_elems.SizeChanged += (s, e) =>
+                {
+                    ScheduleVisibleReferenceCountRefresh();
+                    ScheduleVisibleElementIconHydration();
+                };
             }
             if (fwRightTabs != null)
             {

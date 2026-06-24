@@ -1,5 +1,7 @@
 using System;
 using System.IO;
+using System.Reflection;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 
 namespace FWEledit
@@ -60,6 +62,7 @@ namespace FWEledit
                 }
 
                 SaveProgressService.SetVisible(progressBar, true);
+                SetProgress(progressBar, 2);
 
                 if (resetState != null)
                 {
@@ -71,7 +74,17 @@ namespace FWEledit
                     cancelIconWarmup();
                 }
 
-                ElementsLoadResult result = workflowService.LoadFromGameFolder(gameFolderPath, ref progressBar);
+                SaveProgressService.BeginScope(progressBar, 4, 58);
+                ElementsLoadResult result = null;
+                try
+                {
+                    result = workflowService.LoadFromGameFolder(gameFolderPath, ref progressBar);
+                }
+                finally
+                {
+                    SaveProgressService.EndScope(progressBar);
+                }
+
                 if (result == null || !result.Success)
                 {
                     if (showMessage != null)
@@ -84,18 +97,19 @@ namespace FWEledit
                     {
                         navigationStateService.ResetOnStartup(navigationStateService.GetLastRunVersion());
                     }
-                    if (progressBar != null)
-                    {
-                        progressBar.Value = 0;
-                    }
+                    SetProgress(progressBar, 0);
                     SaveProgressService.SetVisible(progressBar, false);
                     return false;
                 }
+
+                SetProgress(progressBar, 62);
 
                 if (applyResult != null)
                 {
                     applyResult(result);
                 }
+
+                SetProgress(progressBar, 66);
 
                 if (listDisplayService != null)
                 {
@@ -103,30 +117,20 @@ namespace FWEledit
                     listDisplayService.ClearListDisplayCache();
                 }
 
+                SetProgress(progressBar, 70);
+
                 if (assetManager != null)
                 {
                     assetManager.SetGameRootFromElements(result.ElementsPath ?? string.Empty);
-                    assetManager.load();
+                    SetProgress(progressBar, 73);
+                    assetManager.load(false);
+                    SetProgress(progressBar, 84);
+                    assetManager.EnsureVisualAssetsLoaded();
+                    SetProgress(progressBar, 92);
                     if (viewModel != null && viewModel.Session != null)
                     {
                         viewModel.Session.AssetManager = assetManager;
                     }
-                }
-
-                if (beginIconWarmup != null)
-                {
-                    try
-                    {
-                        beginIconWarmup();
-                    }
-                    catch
-                    {
-                    }
-                }
-
-                if (applyTheme != null)
-                {
-                    applyTheme();
                 }
 
                 if (exportRulesMenuService != null)
@@ -143,6 +147,8 @@ namespace FWEledit
                     xrefMenuService.SetVisibility(xrefSeparator, xrefMenuItem, result.HasXrefs);
                 }
 
+                SetProgress(progressBar, 94);
+
                 if (itemGrid != null)
                 {
                     itemGrid.Rows.Clear();
@@ -153,19 +159,11 @@ namespace FWEledit
                     listComboPopulationService.PopulateLists(listComboBox, result.ListCollection, listDisplayService);
                 }
 
+                SetProgress(progressBar, 97);
+
                 if (windowTitleService != null && result.ListCollection != null)
                 {
                     windowTitleService.Apply(owner, result.ListCollection, result.ElementsPath);
-                }
-
-                if (loadDescriptions != null)
-                {
-                    loadDescriptions();
-                }
-
-                if (iconListAvailabilityService != null)
-                {
-                    iconListAvailabilityService.EnsureIconListAvailable(assetManager);
                 }
 
                 if (navigationSelectionService != null)
@@ -178,6 +176,17 @@ namespace FWEledit
                         persistNavigationState);
                 }
 
+                SetProgress(progressBar, 99);
+                
+                StartDeferredAssetWarmup(
+                    assetManager,
+                    beginIconWarmup,
+                    applyTheme,
+                    loadDescriptions,
+                    owner,
+                    itemGrid,
+                    elementGrid);
+
                 if (showMessage != null && !string.IsNullOrWhiteSpace(result.WarningMessage))
                 {
                     showMessage(result.WarningMessage);
@@ -188,10 +197,7 @@ namespace FWEledit
                     navigationStateService.SaveGameFolder(gameFolderPath);
                 }
 
-                if (progressBar != null)
-                {
-                    progressBar.Value = 0;
-                }
+                SetProgress(progressBar, 100);
 
                 return true;
             }
@@ -207,15 +213,173 @@ namespace FWEledit
                         eListCollection.SStat[1].ToString() + " - # Items This List\n" +
                         eListCollection.SStat[2].ToString() + " - Item ID");
                 }
+                SetProgress(progressBar, 0);
                 return false;
             }
             finally
             {
+                SaveProgressService.EndScope(progressBar);
                 SaveProgressService.SetVisible(progressBar, false);
                 if (setCursor != null)
                 {
                     setCursor(Cursors.Default);
                 }
+            }
+        }
+
+        private static void SetProgress(ColorProgressBar.ColorProgressBar progressBar, int value)
+        {
+            if (progressBar == null)
+            {
+                return;
+            }
+
+            try
+            {
+                progressBar.Minimum = 0;
+                progressBar.Maximum = 100;
+                progressBar.Value = Math.Max(0, Math.Min(100, value));
+                progressBar.Refresh();
+                Application.DoEvents();
+            }
+            catch
+            {
+            }
+        }
+
+        private void StartDeferredAssetWarmup(
+            AssetManager assetManager,
+            Action beginIconWarmup,
+            Action applyTheme,
+            Action loadDescriptions,
+            Form owner,
+            DataGridView itemGrid,
+            DataGridView elementGrid)
+        {
+            if (assetManager == null)
+            {
+                return;
+            }
+
+            Action queueWarmup = () =>
+            {
+                Task.Run(() =>
+                {
+                    try
+                    {
+                        assetManager.EnsureDeferredMetadataLoaded();
+                    }
+                    catch
+                    {
+                        return;
+                    }
+
+                    if (owner == null || owner.IsDisposed)
+                    {
+                        return;
+                    }
+
+                    try
+                    {
+                        owner.BeginInvoke((Action)(() =>
+                        {
+                            if (owner.IsDisposed)
+                            {
+                                return;
+                            }
+
+                            applyTheme?.Invoke();
+                            loadDescriptions?.Invoke();
+                            beginIconWarmup?.Invoke();
+
+                            TryClearOwnerHashSetField(owner, "hydratedElementRowIconKeys");
+                            TryInvokeOwnerMethod(owner, "ScheduleVisibleElementIconHydration");
+                            TryInvokeOwnerMethod(owner, "ScheduleVisibleReferenceCountRefresh");
+                            TryInvokeOwnerMethod(owner, "change_item", null, null);
+
+                            elementGrid?.Refresh();
+                            itemGrid?.Refresh();
+                        }));
+                    }
+                    catch
+                    {
+                    }
+                });
+            };
+
+            try
+            {
+                if (owner != null && owner.IsHandleCreated && !owner.IsDisposed)
+                {
+                    owner.BeginInvoke(queueWarmup);
+                }
+                else
+                {
+                    queueWarmup();
+                }
+            }
+            catch
+            {
+                queueWarmup();
+            }
+        }
+
+        private static void TryInvokeOwnerMethod(Form owner, string methodName, object arg0 = null, object arg1 = null)
+        {
+            if (owner == null || string.IsNullOrWhiteSpace(methodName))
+            {
+                return;
+            }
+
+            try
+            {
+                MethodInfo method = owner.GetType().GetMethod(methodName, BindingFlags.Instance | BindingFlags.NonPublic);
+                if (method == null)
+                {
+                    return;
+                }
+
+                ParameterInfo[] parameters = method.GetParameters();
+                if (parameters.Length == 0)
+                {
+                    method.Invoke(owner, null);
+                }
+                else if (parameters.Length == 2)
+                {
+                    method.Invoke(owner, new object[] { arg0, arg1 });
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        private static void TryClearOwnerHashSetField(Form owner, string fieldName)
+        {
+            if (owner == null || string.IsNullOrWhiteSpace(fieldName))
+            {
+                return;
+            }
+
+            try
+            {
+                FieldInfo field = owner.GetType().GetField(fieldName, BindingFlags.Instance | BindingFlags.NonPublic);
+                if (field == null)
+                {
+                    return;
+                }
+
+                object value = field.GetValue(owner);
+                if (value == null)
+                {
+                    return;
+                }
+
+                MethodInfo clearMethod = value.GetType().GetMethod("Clear", BindingFlags.Instance | BindingFlags.Public);
+                clearMethod?.Invoke(value, null);
+            }
+            catch
+            {
             }
         }
     }

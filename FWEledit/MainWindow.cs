@@ -61,6 +61,7 @@ namespace FWEledit
         private Button fwRawValueDownButton;
         private int referenceCountRefreshVersion;
         private System.Windows.Forms.Timer referenceCountRefreshTimer;
+        private System.Windows.Forms.Timer visibleIconHydrationTimer;
         private int referencesTabLoadVersion;
         private System.Windows.Forms.Timer referencesTabRefreshTimer;
         private System.Threading.Tasks.Task referenceIndexBuildTask;
@@ -72,6 +73,8 @@ namespace FWEledit
         private string persistedItemReferenceOptionsCachePath = string.Empty;
         private System.Threading.Tasks.Task itemReferenceOptionsWarmupTask;
         private bool itemReferenceOptionsReady;
+        private readonly HashSet<string> hydratedElementRowIconKeys = new HashSet<string>(StringComparer.Ordinal);
+        private int lightweightListRenderIndex = -1;
         
         private readonly ElementDeletionUiService elementDeletionUiService = new ElementDeletionUiService();
         private readonly ElementCloneUiService elementCloneUiService = new ElementCloneUiService();

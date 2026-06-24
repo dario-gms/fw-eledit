@@ -119,10 +119,14 @@ namespace FWEledit
             {
                 return 8;
             }
-            if (type.Contains("byte:"))
-            {
-                return Convert.ToInt32(type.Substring(5));
-            }
+			if (type.Contains("byte:"))
+			{
+                if (type == "byte:AUTO")
+                {
+                    return -1;
+                }
+				return Convert.ToInt32(type.Substring(5));
+			}
             if (type.Contains("wstring:"))
             {
                 return Convert.ToInt32(type.Substring(8));
@@ -147,6 +151,20 @@ namespace FWEledit
                 size += typeSize;
             }
             return size;
+        }
+
+        public static bool IsRawTailList(eList list)
+        {
+            return list != null
+                && list.listName != null
+                && list.listName.EndsWith("RAW_TAIL", StringComparison.OrdinalIgnoreCase)
+                && list.elementFields != null
+                && list.elementFields.Length == 1
+                && string.Equals(list.elementFields[0], "RAW", StringComparison.OrdinalIgnoreCase)
+                && list.elementTypes != null
+                && list.elementTypes.Length == 1
+                && list.elementTypes[0] != null
+                && list.elementTypes[0].StartsWith("byte:", StringComparison.OrdinalIgnoreCase);
         }
 
         private void SkipAutoOffset(BinaryReader br, int listIndex, eList[] li, IDictionary<int, int> autoOffsetOverrides)
@@ -709,8 +727,14 @@ namespace FWEledit
 				Li = loadConfiguration(ConfigFile);
                 bool isFwConfig = Path.GetFileName(ConfigFile).StartsWith("FW_", StringComparison.OrdinalIgnoreCase);
                 HasExtendedListHeader = isFwConfig ? false : DetectExtendedListHeader(br, Li);
-				cpb2.Maximum = Li.Length;
-                cpb2.Value = 0;
+                if (cpb2 != null)
+                {
+                    if (!SaveProgressService.TrySetScopedValue(cpb2, 0, Li.Length))
+                    {
+				        cpb2.Maximum = Li.Length;
+                        cpb2.Value = 0;
+                    }
+                }
                 Dictionary<int, int> autoOffsetOverrides = new Dictionary<int, int>();
 
 				// read the element file
@@ -737,7 +761,20 @@ namespace FWEledit
 					}
 
 					// read conversation list
-					if (l == ConversationListIndex)
+                    if (IsRawTailList(Li[l]))
+                    {
+                        long remaining = br.BaseStream.Length - br.BaseStream.Position;
+                        if (remaining < 0 || remaining > int.MaxValue)
+                        {
+                            throw new InvalidDataException("Invalid RAW_TAIL length for list " + l.ToString() + ".");
+                        }
+
+                        Li[l].elementTypes[0] = "byte:" + remaining.ToString();
+                        Li[l].elementValues = new object[1][];
+                        Li[l].elementValues[0] = new object[1];
+                        Li[l].elementValues[0][0] = br.ReadBytes((int)remaining);
+                    }
+					else if (l == ConversationListIndex)
 					{
 						if (Version >= 191)
 						{
@@ -838,7 +875,13 @@ namespace FWEledit
                             }
 						}
 					}
-                    cpb2.Value++;
+                    if (cpb2 != null)
+                    {
+                        if (!SaveProgressService.TrySetScopedValue(cpb2, l + 1, Li.Length))
+                        {
+                            cpb2.Value++;
+                        }
+                    }
 				}
 			}
 			else
@@ -880,7 +923,9 @@ namespace FWEledit
 					bw.Write(Lists[l].listOffset);
 				}
 
-				if (l != ConversationListIndex)
+                bool isRawTailList = IsRawTailList(Lists[l]);
+
+				if (l != ConversationListIndex && !isRawTailList)
 				{
 					if (HasExtendedListHeader)
 					{

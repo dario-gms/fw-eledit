@@ -977,6 +977,11 @@ namespace FWEledit
                 int.TryParse(normalized, out currentId);
             }
 
+            if (itemReferenceService.IsTaskTargetIndex(targetListIndex) && assetManager != null)
+            {
+                assetManager.EnsureTaskReferencesUpToDate();
+            }
+
             List<ItemReferenceOption> options = itemReferenceService.IsTitleDefinitionTargetIndex(targetListIndex)
                 ? itemReferenceService.BuildTitleDefinitionOptions()
                 : itemReferenceService.IsTaskTargetIndex(targetListIndex)
@@ -1527,9 +1532,12 @@ namespace FWEledit
             }
 
             string listContextSignature = BuildPickerEntriesCacheSignature(listCollection, database, listIndex, modelPickerService);
+            string packageContentSignature = modelPickerService.BuildPackageCacheSignature(safePackage);
             string cacheSignature = listContextSignature
                 + "|pkg:"
-                + safePackage;
+                + safePackage
+                + "|pkgsig:"
+                + packageContentSignature;
             if (modelPickerCacheService != null
                 && modelPickerCacheService.TryGetPickerEntries(listIndex, cacheSignature, out List<ModelPickerEntry> cachedEntries))
             {

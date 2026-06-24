@@ -51,19 +51,15 @@ namespace FWEledit
             string workspaceResources = string.IsNullOrWhiteSpace(AssetManager.WorkspaceRootPath)
                 ? string.Empty
                 : Path.Combine(AssetManager.WorkspaceRootPath, "resources");
-            string pckPath = string.IsNullOrWhiteSpace(workspaceResources)
-                ? string.Empty
-                : Path.Combine(workspaceResources, normalizedPackage + ".pck");
-            if (!File.Exists(pckPath))
+            string pckPath = Path.Combine(resourcesRoot, normalizedPackage + ".pck");
+            if (!File.Exists(pckPath) && !string.IsNullOrWhiteSpace(workspaceResources))
             {
-                pckPath = Path.Combine(resourcesRoot, normalizedPackage + ".pck");
+                pckPath = Path.Combine(workspaceResources, normalizedPackage + ".pck");
             }
-            string pkxPath = string.IsNullOrWhiteSpace(workspaceResources)
-                ? string.Empty
-                : Path.Combine(workspaceResources, normalizedPackage + ".pkx");
-            if (!File.Exists(pkxPath))
+            string pkxPath = Path.Combine(resourcesRoot, normalizedPackage + ".pkx");
+            if (!File.Exists(pkxPath) && !string.IsNullOrWhiteSpace(workspaceResources))
             {
-                pkxPath = Path.Combine(resourcesRoot, normalizedPackage + ".pkx");
+                pkxPath = Path.Combine(workspaceResources, normalizedPackage + ".pkx");
             }
             if (!File.Exists(pckPath))
             {

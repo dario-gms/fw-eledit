@@ -5,6 +5,13 @@ namespace FWEledit
 {
     public sealed class SaveProgressService
     {
+        private sealed class ProgressScopeState
+        {
+            public int StartValue { get; set; }
+            public int EndValue { get; set; }
+            public object PreviousTag { get; set; }
+        }
+
         public void Begin(ColorProgressBar.ColorProgressBar progressBar)
         {
             if (progressBar == null)
@@ -142,6 +149,105 @@ namespace FWEledit
             }
             progressBar.Refresh();
             Application.DoEvents();
+        }
+
+        public static void BeginScope(Control progressBar, int startValue, int endValue)
+        {
+            if (progressBar == null)
+            {
+                return;
+            }
+
+            try
+            {
+                int start = Math.Max(0, Math.Min(100, startValue));
+                int end = Math.Max(start, Math.Min(100, endValue));
+                progressBar.Tag = new ProgressScopeState
+                {
+                    StartValue = start,
+                    EndValue = end,
+                    PreviousTag = progressBar.Tag
+                };
+
+                ProgressBar windowsProgressBar = progressBar as ProgressBar;
+                if (windowsProgressBar != null)
+                {
+                    windowsProgressBar.Minimum = 0;
+                    windowsProgressBar.Maximum = 100;
+                    windowsProgressBar.Value = start;
+                    windowsProgressBar.Refresh();
+                    Application.DoEvents();
+                    return;
+                }
+
+                ColorProgressBar.ColorProgressBar colorProgressBar = progressBar as ColorProgressBar.ColorProgressBar;
+                if (colorProgressBar != null)
+                {
+                    colorProgressBar.Minimum = 0;
+                    colorProgressBar.Maximum = 100;
+                    colorProgressBar.Value = start;
+                    colorProgressBar.Refresh();
+                    Application.DoEvents();
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        public static void EndScope(Control progressBar)
+        {
+            if (progressBar == null)
+            {
+                return;
+            }
+
+            try
+            {
+                ProgressScopeState scope = progressBar.Tag as ProgressScopeState;
+                progressBar.Tag = scope != null ? scope.PreviousTag : null;
+            }
+            catch
+            {
+            }
+        }
+
+        public static bool TrySetScopedValue(ColorProgressBar.ColorProgressBar progressBar, int completedUnits, int totalUnits)
+        {
+            if (progressBar == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                ProgressScopeState scope = progressBar.Tag as ProgressScopeState;
+                if (scope == null)
+                {
+                    return false;
+                }
+
+                int total = Math.Max(1, totalUnits);
+                int completed = Math.Max(0, Math.Min(total, completedUnits));
+                int range = Math.Max(0, scope.EndValue - scope.StartValue);
+                int mappedValue = scope.StartValue;
+                if (range > 0)
+                {
+                    mappedValue = scope.StartValue + (int)Math.Round((double)range * completed / total);
+                }
+
+                mappedValue = Math.Max(0, Math.Min(100, mappedValue));
+                progressBar.Minimum = 0;
+                progressBar.Maximum = 100;
+                progressBar.Value = mappedValue;
+                progressBar.Refresh();
+                Application.DoEvents();
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
         }
     }
 }

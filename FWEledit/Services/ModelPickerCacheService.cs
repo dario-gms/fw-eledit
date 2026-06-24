@@ -53,7 +53,7 @@ namespace FWEledit
             }
         }
 
-        public bool TryGetPickerFiles(string cacheKey, DateTime pckTimestampUtc, out List<string> files)
+        public bool TryGetPickerFiles(string cacheKey, string packageSignature, out List<string> files)
         {
             lock (syncRoot)
             {
@@ -66,7 +66,7 @@ namespace FWEledit
                 if (modelPickerPackageCache.TryGetValue(cacheKey, out cached)
                     && cached != null
                     && cached.Files != null
-                    && cached.PckTimestampUtc == pckTimestampUtc)
+                    && string.Equals(cached.PackageSignature ?? string.Empty, packageSignature ?? string.Empty, StringComparison.Ordinal))
                 {
                     files = new List<string>(cached.Files);
                     return true;
@@ -75,7 +75,7 @@ namespace FWEledit
             }
         }
 
-        public void SetPickerFiles(string cacheKey, DateTime pckTimestampUtc, List<string> files)
+        public void SetPickerFiles(string cacheKey, string packageSignature, List<string> files)
         {
             if (string.IsNullOrWhiteSpace(cacheKey))
             {
@@ -85,7 +85,7 @@ namespace FWEledit
             {
                 modelPickerPackageCache[cacheKey] = new ModelPickerPackageCacheEntry
                 {
-                    PckTimestampUtc = pckTimestampUtc,
+                    PackageSignature = packageSignature ?? string.Empty,
                     Files = files != null ? new List<string>(files) : new List<string>()
                 };
             }
