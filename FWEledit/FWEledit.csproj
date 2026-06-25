@@ -22,7 +22,7 @@
     <UpdateRequired>false</UpdateRequired>
     <MapFileExtensions>true</MapFileExtensions>
     <ApplicationRevision>0</ApplicationRevision>
-    <ApplicationVersion>0.9.5.13</ApplicationVersion>
+    <ApplicationVersion>0.9.5.14</ApplicationVersion>
     <IsWebBootstrapper>false</IsWebBootstrapper>
     <UseApplicationTrust>false</UseApplicationTrust>
     <BootstrapperEnabled>true</BootstrapperEnabled>
@@ -1191,6 +1191,18 @@
     </Content>
     <Content Include="..\tools\lua\lua5.1.dll">
       <Link>tools\lua\lua5.1.dll</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\tools\spck\spck\bin\spck.exe">
+      <Link>tools\spck\spck\bin\spck.exe</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\tools\spck\spck\bin\packdll.dll">
+      <Link>tools\spck\spck\bin\packdll.dll</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\tools\spck\spck\bin\p2sp_4th_lib.dll">
+      <Link>tools\spck\spck\bin\p2sp_4th_lib.dll</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <Content Include="..\tools\Pfim.dll">
