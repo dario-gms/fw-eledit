@@ -12,6 +12,16 @@ FWEledit is based on [sELedit++ by Wrechid](https://github.com/Wrechid/sELedit-)
 
 ---
 
+## What's New in v0.9.5.14
+
+- Restored the stable `spck`-based repack path for `configs.pck` / `script.pck` saves, avoiding the package-corruption regressions seen in the recent experimental write path.
+- Kept the newer `WinPCK`-based access focused on package reading/runtime lookup workflows while moving the critical save pipeline back to the proven repack toolchain.
+- Hardened the standalone `FWPckUpdater` rebuild flow so package rebuilds are assembled root-by-root instead of trying to recreate multi-root packages from a single staging folder call.
+- Fixed missing bundled `spck` binaries in the standard `bin\\Debug` output, so the stable repack path is actually available in local test builds without manual file copying.
+- Project/app version metadata updated to `v0.9.5.14`.
+
+---
+
 ## What's New in v0.9.5.13
 
 - Migrated the package-backed resource workflow toward the new `WinPCK`-based reader/updater path, reducing dependency on the older `spck` extraction flow for runtime reads and package access.

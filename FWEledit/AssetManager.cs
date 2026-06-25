@@ -504,6 +504,56 @@ namespace FWEledit
         {
             try
             {
+                string spck = FindSpckExecutable();
+                if (!string.IsNullOrWhiteSpace(spck) && Directory.Exists(extractedDirectory))
+                {
+                    if (compressionLevel < 0) { compressionLevel = 0; }
+                    if (compressionLevel > 9) { compressionLevel = 9; }
+
+                    ProcessStartInfo psi = new ProcessStartInfo();
+                    psi.FileName = spck;
+                    psi.Arguments = "-fw -c \"" + extractedDirectory + "\" " + compressionLevel;
+                    psi.WorkingDirectory = Path.GetDirectoryName(spck);
+                    psi.UseShellExecute = false;
+                    psi.RedirectStandardOutput = true;
+                    psi.RedirectStandardError = true;
+                    psi.CreateNoWindow = true;
+                    psi.WindowStyle = ProcessWindowStyle.Hidden;
+
+                    using (Process p = Process.Start(psi))
+                    {
+                        if (p == null)
+                        {
+                            return false;
+                        }
+
+                        bool exited = p.WaitForExit(180000);
+                        if (!exited)
+                        {
+                            TryWriteSpckLog(extractedDirectory, spck, -1, string.Empty, "Timed out.");
+                            return false;
+                        }
+
+                        string stdout = string.Empty;
+                        string stderr = string.Empty;
+                        try { stdout = p.StandardOutput.ReadToEnd(); } catch { }
+                        try { stderr = p.StandardError.ReadToEnd(); } catch { }
+
+                        if (p.ExitCode != 0)
+                        {
+                            TryWriteSpckLog(extractedDirectory, spck, p.ExitCode, stdout, stderr);
+                            return false;
+                        }
+
+                        if (!string.IsNullOrWhiteSpace(stderr))
+                        {
+                            TryWriteSpckLog(extractedDirectory, spck, p.ExitCode, stdout, stderr);
+                        }
+
+                        return true;
+                    }
+                }
+
                 string helper = FindWinPckUpdaterExecutable();
                 if (string.IsNullOrWhiteSpace(helper) || !Directory.Exists(extractedDirectory))
                 {
@@ -526,6 +576,50 @@ namespace FWEledit
             {
                 return false;
             }
+        }
+
+        private string FindSpckExecutable()
+        {
+            List<string> roots = new List<string>();
+            HashSet<string> seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            void AddRoot(string root)
+            {
+                if (!string.IsNullOrWhiteSpace(root) && Directory.Exists(root) && seen.Add(root))
+                {
+                    roots.Add(root);
+                }
+            }
+
+            AddRoot(GameRootPath);
+            AddRoot(Application.StartupPath);
+            AddRoot(Path.GetDirectoryName(Application.StartupPath));
+            AddRoot(Path.GetDirectoryName(Path.GetDirectoryName(Application.StartupPath)));
+            AddRoot(Path.GetDirectoryName(Path.GetDirectoryName(Path.GetDirectoryName(Application.StartupPath))));
+            AddRoot(Path.GetDirectoryName(Path.GetDirectoryName(Path.GetDirectoryName(Path.GetDirectoryName(Application.StartupPath)))));
+            AddRoot(Path.GetDirectoryName(Path.GetDirectoryName(Path.GetDirectoryName(Path.GetDirectoryName(Path.GetDirectoryName(Application.StartupPath))))));
+
+            foreach (string root in roots)
+            {
+                string[] candidates = new string[]
+                {
+                    Path.Combine(root, "fELedit", "tools", "spck", "spck", "bin", "spck.exe"),
+                    Path.Combine(root, "tools", "spck", "spck", "bin", "spck.exe"),
+                    Path.Combine(root, "fELedit", "tools", "spck.exe"),
+                    Path.Combine(root, "tools", "spck.exe"),
+                    Path.Combine(root, "spck.exe")
+                };
+
+                for (int i = 0; i < candidates.Length; i++)
+                {
+                    if (File.Exists(candidates[i]))
+                    {
+                        return candidates[i];
+                    }
+                }
+            }
+
+            return string.Empty;
         }
 
         public static void CreateTimestampedZipBackup(string sourceFile, string backupDirectory, string prefix)
@@ -2735,11 +2829,37 @@ namespace FWEledit
             { }
         }
 
+        private void TryWriteSpckLog(string sourcePath, string spckPath, int exitCode, string stdout, string stderr)
+        {
+            try
+            {
+                string root = !string.IsNullOrWhiteSpace(WorkspaceRootPath)
+                    ? WorkspaceRootPath
+                    : Path.GetTempPath();
+                string logDir = Path.Combine(root, "spck_logs");
+                Directory.CreateDirectory(logDir);
+                string name = Path.GetFileName(sourcePath) ?? "pck";
+                string logPath = Path.Combine(logDir, name + "_repack.log");
+                using (StreamWriter sw = new StreamWriter(logPath, false))
+                {
+                    sw.WriteLine("source: " + sourcePath);
+                    sw.WriteLine("spck: " + spckPath);
+                    sw.WriteLine("exit: " + exitCode);
+                    sw.WriteLine("---- stdout ----");
+                    sw.WriteLine(stdout ?? string.Empty);
+                    sw.WriteLine("---- stderr ----");
+                    sw.WriteLine(stderr ?? string.Empty);
+                }
+            }
+            catch
+            { }
+        }
+
         public string GetSpckExecutablePath()
         {
             try
             {
-                return FindWinPckUpdaterExecutable();
+                return FindSpckExecutable();
             }
             catch
             {
