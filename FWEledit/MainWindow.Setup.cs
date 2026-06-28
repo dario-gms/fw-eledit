@@ -90,7 +90,7 @@ namespace FWEledit
                 assembly,
                 label_Version,
                 navigationStateService,
-                "0.9.5.14");
+                "0.9.5.15");
 
             fwDarkMode = Properties.Settings.Default.UseDarkMode;
             cpb2.Value = 0;

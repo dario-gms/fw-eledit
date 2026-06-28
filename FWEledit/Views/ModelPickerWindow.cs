@@ -42,6 +42,8 @@ namespace FWEledit
         private readonly Label statusLabel;
         private readonly ContextMenuStrip entryMenu;
         private readonly ToolStripMenuItem previewModelMenuItem;
+        private readonly ToolStripMenuItem copyModelNameMenuItem;
+        private readonly ToolStripMenuItem copyModelPathMenuItem;
         private readonly ToolStripMenuItem openPathEditorMenuItem;
         private readonly AssetManager assetManager;
         private readonly CacheSave database;
@@ -297,6 +299,12 @@ namespace FWEledit
             previewModelMenuItem = new ToolStripMenuItem("Preview 3D Model");
             previewModelMenuItem.Click += (s, e) => PreviewSelectionAsync(true);
             entryMenu.Items.Add(previewModelMenuItem);
+            copyModelNameMenuItem = new ToolStripMenuItem("Copy model name");
+            copyModelNameMenuItem.Click += (s, e) => CopySelectedModelName();
+            entryMenu.Items.Add(copyModelNameMenuItem);
+            copyModelPathMenuItem = new ToolStripMenuItem("Copy model path");
+            copyModelPathMenuItem.Click += (s, e) => CopySelectedModelPath();
+            entryMenu.Items.Add(copyModelPathMenuItem);
             entryMenu.Items.Add(new ToolStripSeparator());
             openPathEditorMenuItem = new ToolStripMenuItem("Open with Path Editor");
             openPathEditorMenuItem.Click += (s, e) => OpenSelectedEntryInPathEditor();
@@ -682,6 +690,14 @@ namespace FWEledit
             {
                 previewModelMenuItem.Enabled = canPreview;
             }
+            if (copyModelNameMenuItem != null)
+            {
+                copyModelNameMenuItem.Enabled = !string.IsNullOrWhiteSpace(GetEntryModelFileName(selected));
+            }
+            if (copyModelPathMenuItem != null)
+            {
+                copyModelPathMenuItem.Enabled = !string.IsNullOrWhiteSpace(selected != null ? selected.RelativePath : null);
+            }
             if (openPathEditorMenuItem != null)
             {
                 openPathEditorMenuItem.Enabled = canOpenPathEditor;
@@ -704,6 +720,47 @@ namespace FWEledit
         {
             int rowIndex = grid != null && grid.CurrentCell != null ? grid.CurrentCell.RowIndex : -1;
             return TryGetEntryAtRow(rowIndex);
+        }
+
+        private static string GetEntryModelFileName(ModelPickerEntry entry)
+        {
+            if (entry == null || string.IsNullOrWhiteSpace(entry.RelativePath))
+            {
+                return string.Empty;
+            }
+
+            return Path.GetFileName(entry.RelativePath.Trim());
+        }
+
+        private void CopySelectedModelName()
+        {
+            CopySelectedEntryText(GetEntryModelFileName(TryGetCurrentEntry()), "model name");
+        }
+
+        private void CopySelectedModelPath()
+        {
+            CopySelectedEntryText(TryGetCurrentEntry()?.RelativePath, "model path");
+        }
+
+        private void CopySelectedEntryText(string value, string label)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return;
+            }
+
+            try
+            {
+                Clipboard.SetText(value);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    "Failed to copy " + label + ":\n" + ex.Message,
+                    "Choice Model",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+            }
         }
 
         private Bitmap ResolveEntryIcon(ModelPickerEntry entry)

@@ -177,6 +177,9 @@ namespace FWEledit
                 }
 
                 SetProgress(progressBar, 99);
+
+                loadDescriptions?.Invoke();
+                TryInvokeOwnerMethod(owner, "change_item", null, null);
                 
                 StartDeferredAssetWarmup(
                     assetManager,
@@ -265,13 +268,14 @@ namespace FWEledit
             {
                 Task.Run(() =>
                 {
+                    bool metadataLoaded = false;
                     try
                     {
-                        assetManager.EnsureDeferredMetadataLoaded();
+                        metadataLoaded = assetManager.EnsureDeferredMetadataLoaded();
                     }
                     catch
                     {
-                        return;
+                        metadataLoaded = false;
                     }
 
                     if (owner == null || owner.IsDisposed)
@@ -289,7 +293,10 @@ namespace FWEledit
                             }
 
                             applyTheme?.Invoke();
-                            loadDescriptions?.Invoke();
+                            if (metadataLoaded)
+                            {
+                                loadDescriptions?.Invoke();
+                            }
                             beginIconWarmup?.Invoke();
 
                             TryClearOwnerHashSetField(owner, "hydratedElementRowIconKeys");
