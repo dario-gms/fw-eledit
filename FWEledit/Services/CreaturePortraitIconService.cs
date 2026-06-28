@@ -66,10 +66,29 @@ namespace FWEledit
                 return false;
             }
 
-            return string.Equals(fieldName, "file_icon", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(fieldName, "file_icon1", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(fieldName, "file_head_icon", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(fieldName, "file_self_head_icon", StringComparison.OrdinalIgnoreCase);
+            if (string.IsNullOrWhiteSpace(fieldName))
+            {
+                return false;
+            }
+
+            string normalizedFieldName = fieldName.Trim();
+            string listName = listCollection != null
+                && listIndex >= 0
+                && listCollection.Lists != null
+                && listIndex < listCollection.Lists.Length
+                ? (listCollection.Lists[listIndex].listName ?? string.Empty)
+                : string.Empty;
+
+            if (listName.IndexOf("PET_BEDGE_ESSENCE", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return string.Equals(normalizedFieldName, "file_head_icon", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(normalizedFieldName, "file_self_head_icon", StringComparison.OrdinalIgnoreCase);
+            }
+
+            return string.Equals(normalizedFieldName, "file_icon", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(normalizedFieldName, "file_icon1", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(normalizedFieldName, "file_head_icon", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(normalizedFieldName, "file_self_head_icon", StringComparison.OrdinalIgnoreCase);
         }
 
         public string FormatPortraitPathIdDisplay(CacheSave database, string rawValue)

@@ -249,6 +249,14 @@ namespace FWEledit
                     DateTime pckTime = File.GetLastWriteTimeUtc(workspacePck);
                     DateTime dirTime = Directory.GetLastWriteTimeUtc(extractedDir);
                     mustExtract = pckTime > dirTime;
+
+                    if (!mustExtract
+                        && string.Equals(packageName, "configs", StringComparison.OrdinalIgnoreCase))
+                    {
+                        string itemExtDescDirect = Path.Combine(extractedDir, "item_ext_desc.txt");
+                        string itemExtDescData = Path.Combine(extractedDir, "data", "item_ext_desc.txt");
+                        mustExtract = !File.Exists(itemExtDescDirect) && !File.Exists(itemExtDescData);
+                    }
                 }
 
                 if (mustExtract)
@@ -2526,6 +2534,16 @@ namespace FWEledit
             return ResolveResourceFile(relativePaths[0]);
         }
 
+        public string ResolveResourceFilePublic(params string[] relativePaths)
+        {
+            if (relativePaths == null || relativePaths.Length == 0)
+            {
+                return string.Empty;
+            }
+
+            return ResolveResourceFileAny(relativePaths);
+        }
+
         private bool IsConfigRelativePath(string normalizedRelative)
         {
             if (string.IsNullOrWhiteSpace(normalizedRelative))
@@ -2640,6 +2658,13 @@ namespace FWEledit
                 }
 
                 string outputDirectory = pckFilePath + ".files";
+                string packageName = Path.GetFileNameWithoutExtension(pckFilePath) ?? string.Empty;
+                if (string.Equals(packageName, "configs", StringComparison.OrdinalIgnoreCase)
+                    && RunSpckExtractionForRead(pckFilePath, outputDirectory))
+                {
+                    return true;
+                }
+
                 string tempDirectory = outputDirectory + ".extracting";
                 try
                 {
@@ -2652,7 +2677,6 @@ namespace FWEledit
                 { }
 
                 Directory.CreateDirectory(tempDirectory);
-                string packageName = Path.GetFileNameWithoutExtension(pckFilePath) ?? string.Empty;
                 if (!PckIndexReader.TryExtractEntries(packageName, pckFilePath, pkxFilePath, tempDirectory, out string error))
                 {
                     TryWritePckExtractLog(pckFilePath, "managed-index", error);
@@ -2678,14 +2702,102 @@ namespace FWEledit
                 catch
                 { }
 
+                if (string.Equals(packageName, "configs", StringComparison.OrdinalIgnoreCase)
+                    && !HasRequiredConfigExtractionFiles(outputDirectory)
+                    && RunSpckExtractionForRead(pckFilePath, outputDirectory))
+                {
+                    return true;
+                }
+
                 Directory.Move(tempDirectory, outputDirectory);
-                return Directory.Exists(outputDirectory);
+                return Directory.Exists(outputDirectory)
+                    && (!string.Equals(packageName, "configs", StringComparison.OrdinalIgnoreCase)
+                        || HasRequiredConfigExtractionFiles(outputDirectory));
             }
             catch (Exception ex)
             {
                 TryWritePckExtractLog(pckFilePath, "managed-index", ex.Message);
                 return false;
             }
+        }
+
+        private bool RunSpckExtractionForRead(string pckFilePath, string outputDirectory)
+        {
+            try
+            {
+                string spck = FindSpckExecutable();
+                if (string.IsNullOrWhiteSpace(spck) || !File.Exists(spck) || string.IsNullOrWhiteSpace(pckFilePath) || !File.Exists(pckFilePath))
+                {
+                    return false;
+                }
+
+                try
+                {
+                    if (Directory.Exists(outputDirectory))
+                    {
+                        Directory.Delete(outputDirectory, true);
+                    }
+                }
+                catch
+                { }
+
+                ProcessStartInfo psi = new ProcessStartInfo();
+                psi.FileName = spck;
+                psi.Arguments = "-fw -x \"" + pckFilePath + "\"";
+                psi.WorkingDirectory = Path.GetDirectoryName(spck);
+                psi.UseShellExecute = false;
+                psi.RedirectStandardOutput = true;
+                psi.RedirectStandardError = true;
+                psi.CreateNoWindow = true;
+                psi.WindowStyle = ProcessWindowStyle.Hidden;
+
+                using (Process p = Process.Start(psi))
+                {
+                    if (p == null)
+                    {
+                        return false;
+                    }
+
+                    bool exited = p.WaitForExit(GetPckOperationTimeoutMs(pckFilePath, true));
+                    string stdout = string.Empty;
+                    string stderr = string.Empty;
+                    try { stdout = p.StandardOutput.ReadToEnd(); } catch { }
+                    try { stderr = p.StandardError.ReadToEnd(); } catch { }
+
+                    if (!exited)
+                    {
+                        TryWritePckExtractLog(pckFilePath, "spck", "Timed out." + Environment.NewLine + stdout + Environment.NewLine + stderr);
+                        return false;
+                    }
+
+                    if (p.ExitCode != 0)
+                    {
+                        TryWritePckExtractLog(pckFilePath, "spck", "Exit " + p.ExitCode.ToString() + Environment.NewLine + stdout + Environment.NewLine + stderr);
+                        return false;
+                    }
+                }
+
+                return Directory.Exists(outputDirectory)
+                    && (!string.Equals(Path.GetFileNameWithoutExtension(pckFilePath), "configs", StringComparison.OrdinalIgnoreCase)
+                        || HasRequiredConfigExtractionFiles(outputDirectory));
+            }
+            catch (Exception ex)
+            {
+                TryWritePckExtractLog(pckFilePath, "spck", ex.Message);
+                return false;
+            }
+        }
+
+        private static bool HasRequiredConfigExtractionFiles(string extractedDirectory)
+        {
+            if (string.IsNullOrWhiteSpace(extractedDirectory))
+            {
+                return false;
+            }
+
+            string itemExtDescDirect = Path.Combine(extractedDirectory, "item_ext_desc.txt");
+            string itemExtDescData = Path.Combine(extractedDirectory, "data", "item_ext_desc.txt");
+            return File.Exists(itemExtDescDirect) || File.Exists(itemExtDescData);
         }
 
         private bool RunWinPckHelper(string mode, string sourceDirectory, string targetPckPath, int compressionLevel, int timeoutMs)
@@ -2903,6 +3015,51 @@ namespace FWEledit
             }
             catch
             {
+                return false;
+            }
+        }
+
+        public bool TryReadPackageEntry(string packageName, string relativePath, out byte[] payload, out string error)
+        {
+            payload = null;
+            error = string.Empty;
+            try
+            {
+                if (string.IsNullOrWhiteSpace(packageName) || string.IsNullOrWhiteSpace(relativePath) || string.IsNullOrWhiteSpace(GameRootPath))
+                {
+                    error = "Invalid package entry request.";
+                    return false;
+                }
+
+                string normalizedPackage = packageName.Trim();
+                string resourcesRoot = Path.Combine(GameRootPath, "resources");
+                string workspaceResources = GetWorkspaceResourcesRoot();
+                string pckPath = Path.Combine(resourcesRoot, normalizedPackage + ".pck");
+                if (!File.Exists(pckPath) && !string.IsNullOrWhiteSpace(workspaceResources))
+                {
+                    pckPath = Path.Combine(workspaceResources, normalizedPackage + ".pck");
+                }
+                if (!File.Exists(pckPath))
+                {
+                    error = "Package file not found.";
+                    return false;
+                }
+
+                string pkxPath = Path.Combine(resourcesRoot, normalizedPackage + ".pkx");
+                if (!File.Exists(pkxPath) && !string.IsNullOrWhiteSpace(workspaceResources))
+                {
+                    pkxPath = Path.Combine(workspaceResources, normalizedPackage + ".pkx");
+                }
+                if (!File.Exists(pkxPath))
+                {
+                    pkxPath = string.Empty;
+                }
+
+                return PckIndexReader.TryReadEntry(normalizedPackage, pckPath, pkxPath, relativePath, out payload, out error);
+            }
+            catch (Exception ex)
+            {
+                error = ex.Message;
                 return false;
             }
         }
@@ -3135,6 +3292,144 @@ namespace FWEledit
                 }
             }
 
+            public static bool TryReadEntry(
+                string packageName,
+                string pckPath,
+                string pkxPath,
+                string relativePath,
+                out byte[] payload,
+                out string error)
+            {
+                payload = null;
+                error = string.Empty;
+
+                if (string.IsNullOrWhiteSpace(pckPath) || !File.Exists(pckPath))
+                {
+                    error = "Package file not found.";
+                    return false;
+                }
+
+                if (string.IsNullOrWhiteSpace(relativePath))
+                {
+                    error = "Package entry path not set.";
+                    return false;
+                }
+
+                Dictionary<string, ExtractablePckEntry> indexedEntries = new Dictionary<string, ExtractablePckEntry>(StringComparer.OrdinalIgnoreCase);
+                try
+                {
+                    using (PckConcatStream stream = new PckConcatStream(pckPath, pkxPath))
+                    using (BinaryReader br = new BinaryReader(stream))
+                    {
+                        long length = stream.Length;
+                        if (length < FooterSize + 8)
+                        {
+                            error = "Package is too short.";
+                            return false;
+                        }
+
+                        uint entryCount;
+                        long tableOffset;
+                        if (!TryReadFooter(stream, br, length, out tableOffset, out entryCount))
+                        {
+                            error = "Failed to decode package footer.";
+                            return false;
+                        }
+
+                        stream.Seek(tableOffset, SeekOrigin.Begin);
+                        Encoding enc = Encoding.GetEncoding("GBK");
+                        string packagePrefix = packageName.Trim().ToLowerInvariant() + "\\";
+
+                        for (uint i = 0; i < entryCount; i++)
+                        {
+                            int entrySize;
+                            if (!TryReadEntrySize(br, length, out entrySize))
+                            {
+                                break;
+                            }
+
+                            byte[] entryData = br.ReadBytes(entrySize);
+                            if (entryData.Length != entrySize)
+                            {
+                                break;
+                            }
+
+                            byte[] raw = entrySize == FooterSize ? entryData : InflateEntry(entryData);
+                            if (raw == null || raw.Length < MinEntrySize)
+                            {
+                                continue;
+                            }
+
+                            string decodedPath = DecodeEntryPath(enc, raw);
+                            string normalizedPath = NormalizeLookupKey(decodedPath);
+                            if (string.IsNullOrWhiteSpace(normalizedPath))
+                            {
+                                continue;
+                            }
+
+                            uint rawOffset = BitConverter.ToUInt32(raw, PathBytes + 0);
+                            uint rawCompressedSize = BitConverter.ToUInt32(raw, PathBytes + 4);
+                            if (rawCompressedSize == 0)
+                            {
+                                continue;
+                            }
+
+                            long offset = rawOffset;
+                            long end = offset + rawCompressedSize;
+                            if (offset < 0 || end > length)
+                            {
+                                continue;
+                            }
+
+                            ExtractablePckEntry entry = new ExtractablePckEntry
+                            {
+                                RelativePath = NormalizeExtractedRelativePath(decodedPath),
+                                Offset = offset,
+                                CompressedSize = (int)rawCompressedSize
+                            };
+
+                            indexedEntries[normalizedPath] = entry;
+                            if (normalizedPath.StartsWith(packagePrefix, StringComparison.OrdinalIgnoreCase))
+                            {
+                                string trimmed = normalizedPath.Substring(packagePrefix.Length);
+                                if (!indexedEntries.ContainsKey(trimmed))
+                                {
+                                    indexedEntries[trimmed] = entry;
+                                }
+                            }
+                        }
+
+                        string requested = NormalizeLookupKey(relativePath);
+                        ExtractablePckEntry match;
+                        if (!indexedEntries.TryGetValue(requested, out match))
+                        {
+                            string fallback = NormalizeLookupKey(packageName + "\\" + requested);
+                            if (!indexedEntries.TryGetValue(fallback, out match))
+                            {
+                                error = "Entry not found in " + packageName + ".pck: " + relativePath;
+                                return false;
+                            }
+                        }
+
+                        stream.Seek(match.Offset, SeekOrigin.Begin);
+                        byte[] compressed = br.ReadBytes(match.CompressedSize);
+                        if (compressed.Length != match.CompressedSize)
+                        {
+                            error = "Failed to read package entry data: " + relativePath;
+                            return false;
+                        }
+
+                        payload = InflateEntry(compressed) ?? compressed;
+                        return payload != null && payload.Length > 0;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    error = ex.Message;
+                    return false;
+                }
+            }
+
             private static bool TryReadFooter(Stream stream, BinaryReader br, long length, out long tableOffset, out uint entryCount)
             {
                 tableOffset = 0;
@@ -3263,6 +3558,16 @@ namespace FWEledit
                 }
 
                 return normalized;
+            }
+
+            private static string NormalizeLookupKey(string value)
+            {
+                if (string.IsNullOrWhiteSpace(value))
+                {
+                    return string.Empty;
+                }
+
+                return value.Replace('/', '\\').Trim().TrimStart('\\').ToLowerInvariant();
             }
 
             private static byte[] InflateEntry(byte[] data)

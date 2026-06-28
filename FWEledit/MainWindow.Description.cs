@@ -1,6 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.IO;
+using System.Linq;
+using System.Text;
+using System.Text.RegularExpressions;
 using System.Windows.Forms;
 
 namespace FWEledit
@@ -18,6 +22,28 @@ namespace FWEledit
 
         private void LoadItemDescriptionsFromConfigs()
         {
+            AssetManager manager = sessionService != null ? sessionService.AssetManager : null;
+            if (manager != null)
+            {
+                manager.EnsurePackageExtracted("configs");
+            }
+
+            string resolvedDescriptionPath = ResolveItemDescriptionFilePath();
+            if (!string.IsNullOrWhiteSpace(resolvedDescriptionPath) && File.Exists(resolvedDescriptionPath))
+            {
+                viewModel.DescriptionViewModel.LoadFromFile(resolvedDescriptionPath);
+                if (fwDescriptionStatusLabel != null && !string.IsNullOrWhiteSpace(viewModel.DescriptionViewModel.StatusText))
+                {
+                    fwDescriptionStatusLabel.Text = viewModel.DescriptionViewModel.StatusText;
+                }
+
+                descriptionLoadService.SyncRuntime(
+                    viewModel.DescriptionViewModel,
+                    descriptionRuntimeService,
+                    ApplyItemDescriptionRuntime);
+                return;
+            }
+
             mainWindowDescriptionCoordinatorService.LoadItemDescriptionsFromConfigs(
                 mainWindowDescriptionUiService,
                 descriptionLoadUiService,
@@ -73,6 +99,21 @@ namespace FWEledit
                 return;
             }
 
+            EnsureItemDescriptionsAvailable();
+            ApplyDescriptionTabSelection();
+
+            if (string.IsNullOrWhiteSpace(fwDescriptionEditor != null ? fwDescriptionEditor.Text : string.Empty)
+                && TryGetCurrentDescriptionItemId(out int selectedItemId)
+                && selectedItemId > 0
+                && !HasLoadedItemDescriptions())
+            {
+                LoadItemDescriptionsFromConfigs();
+                ApplyDescriptionTabSelection();
+            }
+        }
+
+        private void ApplyDescriptionTabSelection()
+        {
             mainWindowDescriptionCoordinatorService.UpdateDescriptionTabForSelection(
                 mainWindowDescriptionUiService,
                 sessionService.ListCollection,
@@ -82,8 +123,124 @@ namespace FWEledit
                 viewModel,
                 descriptionUiService,
                 descriptionWorkflowService,
-                id => Extensions.ItemDesc(sessionService, id),
+                ResolveDescriptionTextFallback,
                 RenderDescriptionPreview);
+        }
+
+        private void EnsureItemDescriptionsAvailable()
+        {
+            if (HasLoadedItemDescriptions())
+            {
+                return;
+            }
+
+            LoadItemDescriptionsFromConfigs();
+        }
+
+        private bool HasLoadedItemDescriptions()
+        {
+            return sessionService != null
+                && sessionService.Database != null
+                && sessionService.Database.item_ext_desc != null
+                && sessionService.Database.item_ext_desc.Length > 1;
+        }
+
+        private bool TryGetCurrentDescriptionItemId(out int itemId)
+        {
+            itemId = 0;
+            if (dataGridView_elems == null
+                || dataGridView_elems.CurrentCell == null
+                || dataGridView_elems.CurrentCell.RowIndex < 0
+                || dataGridView_elems.CurrentCell.RowIndex >= dataGridView_elems.Rows.Count)
+            {
+                return false;
+            }
+
+            object value = dataGridView_elems.Rows[dataGridView_elems.CurrentCell.RowIndex].Cells[0].Value;
+            return int.TryParse(Convert.ToString(value), out itemId) && itemId > 0;
+        }
+
+        private string ResolveDescriptionTextFallback(int itemId)
+        {
+            string runtimeText = Extensions.ItemDesc(sessionService, itemId);
+            if (!string.IsNullOrWhiteSpace(runtimeText))
+            {
+                return runtimeText;
+            }
+
+            return TryReadRawItemDescriptionFromFile(itemId, out string rawText)
+                ? rawText
+                : string.Empty;
+        }
+
+        private bool TryReadRawItemDescriptionFromFile(int itemId, out string rawText)
+        {
+            rawText = string.Empty;
+            if (itemId <= 0)
+            {
+                return false;
+            }
+
+            string filePath = ResolveItemDescriptionFilePath();
+            if (string.IsNullOrWhiteSpace(filePath) || !File.Exists(filePath))
+            {
+                return false;
+            }
+
+            try
+            {
+                Regex rx = new Regex("^\\s*(\\d+)\\s+\"(.*)\"\\s*$", RegexOptions.Compiled);
+                using (StreamReader sr = new StreamReader(filePath, Encoding.Unicode, true))
+                {
+                    while (!sr.EndOfStream)
+                    {
+                        string line = sr.ReadLine();
+                        if (string.IsNullOrWhiteSpace(line) || line.StartsWith("#") || line.StartsWith("//"))
+                        {
+                            continue;
+                        }
+
+                        Match match = rx.Match(line);
+                        if (!match.Success)
+                        {
+                            continue;
+                        }
+
+                        if (int.TryParse(match.Groups[1].Value, out int parsedItemId) && parsedItemId == itemId)
+                        {
+                            rawText = match.Groups[2].Value ?? string.Empty;
+                            return true;
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                return false;
+            }
+
+            return false;
+        }
+
+        private string ResolveItemDescriptionFilePath()
+        {
+            AssetManager manager = sessionService != null ? sessionService.AssetManager : null;
+            if (manager != null)
+            {
+                manager.EnsurePackageExtracted("configs");
+                string resolved = manager.ResolveResourceFilePublic(
+                    Path.Combine("data", "item_ext_desc.txt"),
+                    "item_ext_desc.txt",
+                    Path.Combine("configs.pck.files", "item_ext_desc.txt"));
+                if (!string.IsNullOrWhiteSpace(resolved))
+                {
+                    return resolved;
+                }
+            }
+
+            return itemDescriptionFileService.ResolveItemExtDescFilePath(
+                AssetManager.GameRootPath,
+                AssetManager.WorkspaceRootPath);
         }
 
         private bool CurrentListSupportsItemDescriptions()

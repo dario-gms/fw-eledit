@@ -12,6 +12,18 @@ FWEledit is based on [sELedit++ by Wrechid](https://github.com/Wrechid/sELedit-)
 
 ---
 
+## What's New in v0.9.5.15
+
+- Restored reliable item-description loading from `configs.pck` after the recent package-reader transition, including safer startup hydration so the Description tab is populated again instead of appearing empty or stale.
+- Hardened `configs.pck` read extraction by automatically re-extracting when required description files are missing and falling back to the stable `spck` read path for that package when the managed package read is not enough.
+- Added direct package-entry read helpers and resource-resolution plumbing used by the refreshed description-loading path, reducing dependence on stale extracted leftovers.
+- Added `Copy model name` and `Copy model path` actions to the Choice Model right-click menu for quicker reuse of selected preview assets.
+- Corrected race-aware model field labels for `AIRCRAFT_ESSENCE`, so `model_name_*` rows now show race names instead of only numbered slots.
+- Fixed `PET_BEDGE_ESSENCE.file_icon` to use the normal image/icon picker again, while keeping `file_head_icon` and `file_self_head_icon` on the portrait-style TGA picker.
+- Project/app version metadata updated to `v0.9.5.15`.
+
+---
+
 ## What's New in v0.9.5.14
 
 - Restored the stable `spck`-based repack path for `configs.pck` / `script.pck` saves, avoiding the package-corruption regressions seen in the recent experimental write path.

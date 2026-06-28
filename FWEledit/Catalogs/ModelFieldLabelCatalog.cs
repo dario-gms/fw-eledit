@@ -13,7 +13,13 @@ namespace FWEledit
                 { "file_models_3", "file_models_dwarf" },
                 { "file_models_4", "file_models_stoneman" },
                 { "file_models_5", "file_models_kindred" },
-                { "file_models_6", "file_models_lycan" }
+                { "file_models_6", "file_models_lycan" },
+                { "model_name_1", "model_name_human" },
+                { "model_name_2", "model_name_elf" },
+                { "model_name_3", "model_name_dwarf" },
+                { "model_name_4", "model_name_stoneman" },
+                { "model_name_5", "model_name_kindred" },
+                { "model_name_6", "model_name_lycan" }
             };
 
         public static string GetDisplayFieldName(
