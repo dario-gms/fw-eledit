@@ -48,6 +48,7 @@ namespace FWEledit
         private DataGridView referencesViewerGrid;
         private readonly Dictionary<string, DataGridView> referencesViewerGridsByKey = new Dictionary<string, DataGridView>();
         private TabPage fwDescriptionTab;
+        private TabPage fwColorPreviewTab;
         private TextBox fwDescriptionEditor;
         private RichTextBox fwDescriptionPreview;
         private Button fwDescriptionSaveButton;
@@ -57,6 +58,9 @@ namespace FWEledit
         private Button fwDescriptionNormalFontButton;
         private Button fwDescriptionSmallFontButton;
         private Button fwDescriptionTitleFontButton;
+        private Panel fwColorPreviewSwatch;
+        private Label fwColorPreviewValueLabel;
+        private Button fwColorPreviewGenerateButton;
         private Button fwRawValueUpButton;
         private Button fwRawValueDownButton;
         private int referenceCountRefreshVersion;

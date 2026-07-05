@@ -242,6 +242,7 @@ namespace FWEledit
 
             RefreshLiveModelPreviewFromCurrentRow(false);
             UpdateRawValueEditorFromCurrentCell();
+            UpdateDescriptionTabForSelection();
             if (string.Equals(editedFieldName, "id", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(editedFieldName, "ID", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(editedFieldName, "name", StringComparison.OrdinalIgnoreCase))

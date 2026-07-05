@@ -29,6 +29,8 @@ namespace FWEledit
             if (iconBox != null)
             {
                 iconBox.Image = preview.IconImage;
+                iconBox.SizeMode = PictureBoxSizeMode.Zoom;
+                iconBox.Visible = preview.IconImage != null;
             }
             if (previewBox != null)
             {

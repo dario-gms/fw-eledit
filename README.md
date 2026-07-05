@@ -12,6 +12,19 @@ FWEledit is based on [sELedit++ by Wrechid](https://github.com/Wrechid/sELedit-)
 
 ---
 
+## What's New in v0.9.5.16
+
+- Switched the editor to start in dark mode by default, matching the current FW-focused UI direction out of the box while still keeping the theme toggle available.
+- Added unofficial load support groundwork for FW v773, including newer list/config handling needed to get that branch opening and browsing more safely.
+- Improved `WING_ESSENCE` / newer-version parser coverage and related list handling touched by the v773 compatibility pass.
+- Reworked item hover tooltips to render closer to the in-game presentation, including richer formatting, better item detail grouping, and proper icon loading inside the tooltip instead of the old generic placeholder look.
+- Added mount/flying speed conversion helpers so `VEHICLE_ESSENCE` / `AIRCRAFT_ESSENCE` tooltips and value displays can show gameplay-facing speed percentages and related movement details more clearly.
+- Added dedicated color-preview tooling for `COLOR_PLAN_CONFIG`, replacing the old Description-style workflow there with a color-focused preview/generator flow.
+- Added `QUENCH_TOOL_ESSENCE` to `QUENCH_CONFIG` reference parsing, so `quench_config_id` now resolves correctly and `QUENCH_CONFIG` rows can show where they are used through `Refs`.
+- Project/app version metadata updated to `v0.9.5.16`.
+
+---
+
 ## What's New in v0.9.5.15
 
 - Restored reliable item-description loading from `configs.pck` after the recent package-reader transition, including safer startup hydration so the Description tab is populated again instead of appearing empty or stale.

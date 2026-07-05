@@ -22,7 +22,7 @@
     <UpdateRequired>false</UpdateRequired>
     <MapFileExtensions>true</MapFileExtensions>
     <ApplicationRevision>0</ApplicationRevision>
-    <ApplicationVersion>0.9.5.15</ApplicationVersion>
+    <ApplicationVersion>0.9.5.16</ApplicationVersion>
     <IsWebBootstrapper>false</IsWebBootstrapper>
     <UseApplicationTrust>false</UseApplicationTrust>
     <BootstrapperEnabled>true</BootstrapperEnabled>
@@ -190,6 +190,7 @@
     <Compile Include="COMMON\GetProps\ARMORRUNE_ESSENCE.cs" />
     <Compile Include="COMMON\GetProps\ARMOR_ESSENCE.cs" />
     <Compile Include="COMMON\GetProps\ASTROLABE_ESSENCE.cs" />
+    <Compile Include="COMMON\GetProps\AIRCRAFT_ESSENCE.cs" />
     <Compile Include="COMMON\GetProps\AUTOHP_ESSENCE.cs" />
     <Compile Include="COMMON\GetProps\AUTOMP_ESSENCE.cs" />
     <Compile Include="COMMON\GetProps\CONGREGATE_ESSENCE.cs" />
@@ -224,6 +225,7 @@
     <Compile Include="COMMON\GetProps\TARGET_ITEM_ESSENCE.cs" />
     <Compile Include="COMMON\GetProps\TITLE_CONFIG.cs" />
     <Compile Include="COMMON\GetProps\UNIVERSAL_TOKEN_ESSENCE.cs" />
+    <Compile Include="COMMON\GetProps\VEHICLE_ESSENCE.cs" />
     <Compile Include="COMMON\GetProps\WEAPON_ESSENCE.cs" />
     <Compile Include="COMMON\GetProps\WEDDING_BOOKCARD_ESSENCE.cs" />
     <Compile Include="COMMON\GetProps\WINGMANWING_ESSENCE.cs" />
@@ -876,6 +878,7 @@
     <Compile Include="Services\MainWindowThemeUiService.cs" />
     <Compile Include="Services\MainWindowLayoutUiService.cs" />
     <Compile Include="Services\MainWindowLayoutBuilderService.cs" />
+    <Compile Include="Services\MovementSpeedDisplayService.cs" />
     <Compile Include="Services\MainWindowLayoutResult.cs" />
     <Compile Include="Services\MainWindowVersionUiService.cs" />
     <Compile Include="Services\MainWindowWorkflowSetupResult.cs" />

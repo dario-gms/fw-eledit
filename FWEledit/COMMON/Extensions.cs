@@ -10,6 +10,8 @@ namespace FWEledit
 {
     class Extensions
     {
+        private static readonly IconResolutionService IconResolutionService = new IconResolutionService();
+        private static readonly CreaturePortraitIconService CreaturePortraitIconService = new CreaturePortraitIconService();
         
         //public static string decrypt(int key, byte[] text)
         //{
@@ -687,6 +689,7 @@ namespace FWEledit
                 if (l == 12) line += MEDICINE_ESSENCE.GetProps(sessionService, pos_item);
                 if (l == 17) line += DAMAGERUNE_ESSENCE.GetProps(sessionService, pos_item);
                 if (l == 19) line += ARMORRUNE_ESSENCE.GetProps(sessionService, pos_item);
+                if (l == 21) line += AIRCRAFT_ESSENCE.GetProps(sessionService, pos_item);
                 if (l == 22) line += FLYSWORD_ESSENCE.GetProps(sessionService, pos_item);
                 if (l == 23) line += WINGMANWING_ESSENCE.GetProps(sessionService, pos_item);
                 if (l == 27) line += ELEMENT_ESSENCE.GetProps(sessionService, pos_item);
@@ -711,15 +714,16 @@ namespace FWEledit
                 if (l == 135) line += SHARPENER_ESSENCE.GetProps(sessionService, pos_item);
                 if (l == 141) line += CONGREGATE_ESSENCE.GetProps(sessionService, pos_item);
                 if (l == 151) line += FORCE_TOKEN_ESSENCE.GetProps(sessionService, pos_item);
+                if (l == 77) line += VEHICLE_ESSENCE.GetProps(sessionService, pos_item);
                 if (l == 184) line += POKER_ESSENCE.GetProps(sessionService, pos_item);
                 if (l == 191) line += UNIVERSAL_TOKEN_ESSENCE.GetProps(sessionService, pos_item);
                 if (l == 197) line += ASTROLABE_ESSENCE.GetProps(sessionService, pos_item);
                 if (l == 212) line += FIREWORKS2_ESSENCE.GetProps(sessionService, pos_item);
                 if (l == 218) line += HOME_FORMULAS_ITEM_ESSENCE.GetProps(sessionService, pos_item);
-                if (l != 3 && l != 6 && l != 9 && l != 12 && l != 17 && l != 19 && l != 22 && l != 23 &&
+                if (l != 3 && l != 6 && l != 9 && l != 12 && l != 17 && l != 19 && l != 21 && l != 22 && l != 23 &&
                     l != 27 && l != 31 && l != 83 && l != 89 && l != 95 && l != 96 && l != 98 && l != 106 &&
                     l != 107 && l != 114 && l != 115 && l != 119 && l != 121 && l != 122 && l != 123 &&
-                    l != 124 && l != 130 && l != 133 && l != 135 && l != 141 && l != 151 && l != 184 &&
+                    l != 124 && l != 130 && l != 133 && l != 135 && l != 141 && l != 151 && l != 77 && l != 184 &&
                     l != 191 && l != 197 && l != 212 && l != 218)
                 {
                     for (int k = 0; k < sessionService.ListCollection.Lists[l].elementFields.Length; k++)
@@ -821,6 +825,7 @@ namespace FWEledit
                     }
                 }
                 bool result = uint.TryParse(sessionService.ListCollection.GetValue(l, pos_item, pos_proc_type), out proctypes);
+                ift.procTypeValue = proctypes;
                 List<uint> powers = new List<uint>(Extensions.GetPowers(proctypes));
                 for (int p = 0; p < powers.Count; p++)
                 {
@@ -854,6 +859,7 @@ namespace FWEledit
                 if (l == 12) ift.addons += MEDICINE_ESSENCE.GetProps(sessionService, pos_item);
                 if (l == 17) ift.addons += DAMAGERUNE_ESSENCE.GetProps(sessionService, pos_item);
                 if (l == 19) ift.addons += ARMORRUNE_ESSENCE.GetProps(sessionService, pos_item);
+                if (l == 21) ift.addons += AIRCRAFT_ESSENCE.GetProps(sessionService, pos_item);
                 if (l == 22) ift.addons += FLYSWORD_ESSENCE.GetProps(sessionService, pos_item);
                 if (l == 23) ift.addons += WINGMANWING_ESSENCE.GetProps(sessionService, pos_item);
                 if (l == 27) ift.addons += ELEMENT_ESSENCE.GetProps(sessionService, pos_item);
@@ -879,15 +885,16 @@ namespace FWEledit
                 if (l == 135) ift.addons += SHARPENER_ESSENCE.GetProps(sessionService, pos_item);
                 if (l == 141) ift.addons += CONGREGATE_ESSENCE.GetProps(sessionService, pos_item);
                 if (l == 151) ift.addons += FORCE_TOKEN_ESSENCE.GetProps(sessionService, pos_item);
+                if (l == 77) ift.addons += VEHICLE_ESSENCE.GetProps(sessionService, pos_item);
                 if (l == 184) ift.addons += POKER_ESSENCE.GetProps(sessionService, pos_item);
                 if (l == 191) ift.addons += UNIVERSAL_TOKEN_ESSENCE.GetProps(sessionService, pos_item);
                 if (l == 197) ift.addons += ASTROLABE_ESSENCE.GetProps(sessionService, pos_item);
                 if (l == 212) ift.addons += FIREWORKS2_ESSENCE.GetProps(sessionService, pos_item);
                 if (l == 218) ift.addons += HOME_FORMULAS_ITEM_ESSENCE.GetProps(sessionService, pos_item);
-                if (l != 3 && l != 6 && l != 9 && l != 12 && l != 17 && l != 19 && l != 22 && l != 23 &&
+                if (l != 3 && l != 6 && l != 9 && l != 12 && l != 17 && l != 19 && l != 21 && l != 22 && l != 23 &&
                     l != 27 && l != 31 && l != 83 && l != 89 && l != 95 && l != 96 && l != 98 && l != 106 &&
                     l != 107 && l != 114 && l != 115 && l != 119 && l != 121 && l != 122 && l != 123 &&
-                    l != 124 && l != 130 && l != 133 && l != 135 && l != 141 && l != 151 && l != 184 &&
+                    l != 124 && l != 130 && l != 133 && l != 135 && l != 141 && l != 151 && l != 77 && l != 184 &&
                     l != 191 && l != 197 && l != 212 && l != 218)
                 {
                     for (int k = 0; k < sessionService.ListCollection.Lists[l].elementFields.Length; k++)
@@ -955,23 +962,10 @@ namespace FWEledit
                     }
                 }
 
-                for (int k = 0; k < sessionService.ListCollection.Lists[l].elementFields.Length; k++)
-                {
-                    if (sessionService.ListCollection.Lists[l].elementFields[k] == "file_icon")
-                    {
-                        string image = sessionService.ListCollection.GetValue(l, pos_item, k);
-                        String path = Path.GetFileName(image);
-                        if (sessionService.Database.ContainsKey(path))
-                        {
-                            ift.img = sessionService.Database.images(path);
-                        }
-                        else
-                        {
-                            ift.img = sessionService.Database.images("unknown.dds");
-                        }
-                        break;
-                    }
-                }
+                string resolvedIconValue;
+                Bitmap resolvedIcon = ResolveTooltipIcon(sessionService, l, pos_item, out resolvedIconValue);
+                ift.file_icon = resolvedIconValue;
+                ift.img = resolvedIcon ?? sessionService.Database.images("unknown.dds");
                 //if (sessionService.Database.item_desc.ContainsKey(ift.itemId))
                 //{
                 //    ift.description = sessionService.Database.item_desc[ift.itemId];
@@ -1206,23 +1200,12 @@ namespace FWEledit
                     }
                 }
 
-                for (int k = 0; k < sessionService.ListCollection.Lists[l].elementFields.Length; k++)
+                string resolvedIconValue;
+                Bitmap resolvedIcon = ResolveTooltipIcon(sessionService, l, pos_item, out resolvedIconValue);
+                ift.file_icon = resolvedIconValue;
+                if (resolvedIcon != null)
                 {
-                    if (sessionService.ListCollection.Lists[l].elementFields[k] == "file_icon")
-                    {
-                        ift.file_icon = sessionService.ListCollection.GetValue(l, pos_item, k);
-                        String path = Path.GetFileName(ift.file_icon);
-                        Bitmap img = null;
-                        if (sessionService.Database.ContainsKey(path))
-                        {
-                            img = sessionService.Database.images(path);
-                        }
-                        if (img != null)
-                        {
-                            ift.img = img;
-                        }
-                        break;
-                    }
+                    ift.img = resolvedIcon;
                 }
 
                 if (Period != 0)
@@ -1237,28 +1220,14 @@ namespace FWEledit
                         break;
                     }
                 }
-                for (int k = 0; k < sessionService.ListCollection.Lists[l].elementFields.Length; k++)
-                {
-                    if (sessionService.ListCollection.Lists[l].elementFields[k] == "file_icon")
-                    {
-                        string image = sessionService.ListCollection.GetValue(l, pos_item, k);
-                        String path = Path.GetFileName(image);
-                        if (sessionService.Database.ContainsKey(path))
-                        {
-                            ift.img = sessionService.Database.images(path);
-                        }
-                        else
-                        {
-                            ift.img = sessionService.Database.images("unknown.dds");
-                        }
-                        break;
-                    }
-                }
+                resolvedIcon = ResolveTooltipIcon(sessionService, l, pos_item, out resolvedIconValue);
+                ift.file_icon = resolvedIconValue;
+                ift.img = resolvedIcon ?? sessionService.Database.images("unknown.dds");
 
-                if (l != 3 && l != 6 && l != 9 && l != 12 && l != 17 && l != 19 && l != 22 && l != 23 &&
+                if (l != 3 && l != 6 && l != 9 && l != 12 && l != 17 && l != 19 && l != 21 && l != 22 && l != 23 &&
                     l != 27 && l != 31 && l != 83 && l != 89 && l != 95 && l != 96 && l != 98 && l != 106 &&
                     l != 107 && l != 114 && l != 115 && l != 119 && l != 121 && l != 122 && l != 123 &&
-                    l != 124 && l != 130 && l != 133 && l != 135 && l != 141 && l != 151 && l != 184 &&
+                    l != 124 && l != 130 && l != 133 && l != 135 && l != 141 && l != 151 && l != 77 && l != 184 &&
                     l != 191 && l != 197 && l != 212 && l != 218)
                 {
                     for (int k = 0; k < sessionService.ListCollection.Lists[l].elementFields.Length; k++)
@@ -1281,6 +1250,7 @@ namespace FWEledit
                 return ift;
             }
             bool result = uint.TryParse(sessionService.ListCollection.GetValue(l, pos_item, pos_proc_type), out proctypes);
+            ift.procTypeValue = proctypes;
             List<uint> powers = new List<uint>(Extensions.GetPowers(proctypes));
             for (int p = 0; p < powers.Count; p++)
             {
@@ -1314,6 +1284,7 @@ namespace FWEledit
             if (l == 12) ift.addons += MEDICINE_ESSENCE.GetProps(sessionService, pos_item);
             if (l == 17) ift.addons += DAMAGERUNE_ESSENCE.GetProps(sessionService, pos_item);
             if (l == 19) ift.addons += ARMORRUNE_ESSENCE.GetProps(sessionService, pos_item);
+            if (l == 21) ift.addons += AIRCRAFT_ESSENCE.GetProps(sessionService, pos_item);
             if (l == 22) ift.addons += FLYSWORD_ESSENCE.GetProps(sessionService, pos_item);
             if (l == 23) ift.addons += WINGMANWING_ESSENCE.GetProps(sessionService, pos_item);
             if (l == 27) ift.addons += ELEMENT_ESSENCE.GetProps(sessionService, pos_item);
@@ -1338,6 +1309,7 @@ namespace FWEledit
             if (l == 135) ift.addons += SHARPENER_ESSENCE.GetProps(sessionService, pos_item);
             if (l == 141) ift.addons += CONGREGATE_ESSENCE.GetProps(sessionService, pos_item);
             if (l == 151) ift.addons += FORCE_TOKEN_ESSENCE.GetProps(sessionService, pos_item);
+            if (l == 77) ift.addons += VEHICLE_ESSENCE.GetProps(sessionService, pos_item);
             if (l == 184) ift.addons += POKER_ESSENCE.GetProps(sessionService, pos_item);
             if (l == 191) ift.addons += UNIVERSAL_TOKEN_ESSENCE.GetProps(sessionService, pos_item);
             if (l == 197) ift.addons += ASTROLABE_ESSENCE.GetProps(sessionService, pos_item);
@@ -1602,6 +1574,66 @@ namespace FWEledit
             if (time1 > 3600 && time1 <= 86400) result = hours.ToString() + Extensions.GetLocalization(sessionService, 7093) + " " + minutes.ToString() + Extensions.GetLocalization(sessionService, 7092);
             if (time1 > 86400) result = days.ToString() + Extensions.GetLocalization(sessionService, 7094) + " " + hours.ToString() + Extensions.GetLocalization(sessionService, 7093);
             return result;
+        }
+
+        private static Bitmap ResolveTooltipIcon(ISessionService sessionService, int listIndex, int elementIndex, out string rawIconValue)
+        {
+            rawIconValue = string.Empty;
+            if (sessionService == null
+                || sessionService.Database == null
+                || sessionService.ListCollection == null
+                || sessionService.ListCollection.Lists == null
+                || listIndex < 0
+                || listIndex >= sessionService.ListCollection.Lists.Length
+                || sessionService.ListCollection.Lists[listIndex] == null
+                || sessionService.ListCollection.Lists[listIndex].elementFields == null)
+            {
+                return null;
+            }
+
+            string[] fields = sessionService.ListCollection.Lists[listIndex].elementFields;
+            int iconFieldIndex = -1;
+            for (int i = 0; i < fields.Length; i++)
+            {
+                if (string.Equals(fields[i], "file_icon", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(fields[i], "file_icon1", StringComparison.OrdinalIgnoreCase))
+                {
+                    iconFieldIndex = i;
+                    break;
+                }
+            }
+
+            if (iconFieldIndex < 0)
+            {
+                return null;
+            }
+
+            rawIconValue = sessionService.ListCollection.GetValue(listIndex, elementIndex, iconFieldIndex);
+            Bitmap portrait;
+            if (CreaturePortraitIconService.TryResolvePortrait(
+                sessionService.Database,
+                sessionService.ListCollection,
+                listIndex,
+                rawIconValue,
+                out portrait))
+            {
+                return portrait;
+            }
+
+            string iconKey = IconResolutionService.ResolveIconKeyForList(
+                sessionService.Database,
+                sessionService.ListCollection,
+                listIndex,
+                rawIconValue);
+
+            if (!string.IsNullOrWhiteSpace(iconKey)
+                && sessionService.Database.sourceBitmap != null
+                && sessionService.Database.ContainsKey(iconKey))
+            {
+                return sessionService.Database.images(iconKey);
+            }
+
+            return null;
         }
 
         public static string ItemPropsSecondsToString2(ISessionService sessionService, uint time)

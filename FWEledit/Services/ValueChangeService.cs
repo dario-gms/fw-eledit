@@ -140,6 +140,15 @@ namespace FWEledit
             {
                 valueToSet = CombinedServicesCatalog.NormalizeInput(valueToSet);
             }
+            else if (MovementSpeedDisplayService.IsSupportedField(request.ListCollection, request.ListIndex, request.FieldName))
+            {
+                valueToSet = MovementSpeedDisplayService.NormalizeInput(
+                    request.ListCollection,
+                    request.ListIndex,
+                    request.FieldName,
+                    request.FieldType,
+                    valueToSet);
+            }
             else if (SkillReferenceCatalog.IsSkillFieldName(request.FieldName))
             {
                 valueToSet = SkillReferenceCatalog.NormalizeInput(request.Database, valueToSet);
@@ -291,6 +300,14 @@ namespace FWEledit
             else if (CombinedServicesCatalog.IsCombinedServicesFieldName(request.FieldName))
             {
                 result.DisplayValue = CombinedServicesCatalog.FormatDisplay(request.ListCollection, request.ListIndex, request.FieldName, valueToSet);
+            }
+            else if (MovementSpeedDisplayService.IsSupportedField(request.ListCollection, request.ListIndex, request.FieldName))
+            {
+                result.DisplayValue = MovementSpeedDisplayService.FormatDisplay(
+                    request.ListCollection,
+                    request.ListIndex,
+                    request.FieldName,
+                    valueToSet);
             }
             else if (SkillReferenceCatalog.IsSkillFieldName(request.FieldName))
             {

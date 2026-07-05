@@ -141,6 +141,9 @@ namespace FWEledit
                 // Legacy FW lists encode model fields as "..._file_model_..."
                 // (for example: models_1_file_model_male, data_1_race_data_1_file_model_female).
                 || normalized.IndexOf("_file_model_", StringComparison.OrdinalIgnoreCase) >= 0
+                // WING_ESSENCE-style model slots encode direct male/female model PathIDs.
+                || normalized.EndsWith("_male_model", StringComparison.OrdinalIgnoreCase)
+                || normalized.EndsWith("_female_model", StringComparison.OrdinalIgnoreCase)
                 // PET_BEDGE_ESSENCE uses these model display slots.
                 || normalized.StartsWith("file_to_shown_", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(normalized, "file_default_weapon", StringComparison.OrdinalIgnoreCase)

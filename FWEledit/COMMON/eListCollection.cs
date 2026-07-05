@@ -550,8 +550,6 @@ namespace FWEledit
 			string line;
 			for (int i = 0; i < Li.Length; i++)
 			{
-				System.Windows.Forms.Application.DoEvents();
-
 				while ((line = sr.ReadLine()) == "")
 				{
 				}
@@ -580,7 +578,6 @@ namespace FWEledit
 			while (!sr.EndOfStream)
 			{
 				line = sr.ReadLine();
-				System.Windows.Forms.Application.DoEvents();
 
 				if (line != "" && !line.StartsWith("#"))
 				{
@@ -741,7 +738,6 @@ namespace FWEledit
 				for (int l = 0; l < Li.Length; l++)
 				{
                     SStat[0] = l;
-                    Application.DoEvents();
 
 					// read offset
 					if (Li[l].listOffset != null)
@@ -916,8 +912,6 @@ namespace FWEledit
 			// go through all lists
 			for (int l = 0; l < Lists.Length; l++)
 			{
-				System.Windows.Forms.Application.DoEvents();
-
 				if (Lists[l].listOffset.Length > 0)
 				{
 					bw.Write(Lists[l].listOffset);

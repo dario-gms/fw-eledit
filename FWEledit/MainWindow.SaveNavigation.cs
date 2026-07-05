@@ -76,8 +76,102 @@ namespace FWEledit
                 viewModel.DescriptionViewModel,
                 listDisplayService,
                 comboBox_lists.SelectedIndex,
-                () => change_list(null, null),
+                RefreshCurrentListAfterSave,
                 ref viewModel.HasUnsavedChanges);
+        }
+
+        private void RefreshCurrentListAfterSave()
+        {
+            if (sessionService == null
+                || sessionService.ListCollection == null
+                || comboBox_lists == null
+                || dataGridView_elems == null
+                || listDisplayService == null)
+            {
+                return;
+            }
+
+            int listIndex = comboBox_lists.SelectedIndex;
+            if (listIndex < 0 || listIndex >= sessionService.ListCollection.Lists.Length)
+            {
+                return;
+            }
+
+            int nameFieldIndex = fieldIndexLookupService.GetNameFieldIndex(sessionService.ListCollection, listIndex);
+
+            dataGridView_elems.SuspendLayout();
+            try
+            {
+                for (int gridRow = 0; gridRow < dataGridView_elems.Rows.Count; gridRow++)
+                {
+                    int elementIndex = elementIndexResolverService != null
+                        ? elementIndexResolverService.ResolveElementIndexFromGridRow(
+                            sessionService.ListCollection,
+                            listIndex,
+                            gridRow,
+                            dataGridView_elems)
+                        : gridRow;
+                    if (elementIndex < 0
+                        || elementIndex >= sessionService.ListCollection.Lists[listIndex].elementValues.Length)
+                    {
+                        continue;
+                    }
+
+                    dataGridView_elems.Rows[gridRow].Cells[2].Value = listDisplayService.ComposeListDisplayName(
+                        sessionService,
+                        sessionService.ListCollection,
+                        listIndex,
+                        elementIndex,
+                        nameFieldIndex,
+                        false);
+                }
+            }
+            finally
+            {
+                dataGridView_elems.ResumeLayout();
+            }
+
+            dataGridView_elems.Refresh();
+
+            RefreshCurrentItemGridAfterSave();
+            UpdateDescriptionTabForSelection();
+            UpdatePickIconButtonState();
+            UpdateRawValueEditorFromCurrentCell();
+            UpdateNpcSellServiceUiForSelection();
+        }
+
+        private void RefreshCurrentItemGridAfterSave()
+        {
+            if (dataGridView_item == null || dataGridView_item.Rows.Count == 0)
+            {
+                return;
+            }
+
+            System.Drawing.Color defaultForeColor = dataGridView_item.DefaultCellStyle.ForeColor;
+            System.Drawing.Color defaultSelectionForeColor = dataGridView_item.DefaultCellStyle.SelectionForeColor;
+
+            dataGridView_item.SuspendLayout();
+            try
+            {
+                for (int rowIndex = 0; rowIndex < dataGridView_item.Rows.Count; rowIndex++)
+                {
+                    DataGridViewRow row = dataGridView_item.Rows[rowIndex];
+                    if (row == null || row.Cells.Count < 3)
+                    {
+                        continue;
+                    }
+
+                    DataGridViewCell valueCell = row.Cells[2];
+                    valueCell.Style.ForeColor = defaultForeColor;
+                    valueCell.Style.SelectionForeColor = defaultSelectionForeColor;
+                }
+            }
+            finally
+            {
+                dataGridView_item.ResumeLayout();
+            }
+
+            dataGridView_item.Refresh();
         }
 
         private void PersistNavigationState()

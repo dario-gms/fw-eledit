@@ -90,7 +90,7 @@ namespace FWEledit
                 assembly,
                 label_Version,
                 navigationStateService,
-                "0.9.5.15");
+                "0.9.5.16");
 
             fwDarkMode = Properties.Settings.Default.UseDarkMode;
             cpb2.Value = 0;
@@ -209,6 +209,12 @@ namespace FWEledit
                     if (IsReferencesTabActive())
                     {
                         UpdateReferencesTabForSelection();
+                    }
+
+                    if ((fwDescriptionTab != null && fwRightTabs.SelectedTab == fwDescriptionTab)
+                        || (fwColorPreviewTab != null && fwRightTabs.SelectedTab == fwColorPreviewTab))
+                    {
+                        UpdateDescriptionTabForSelection();
                     }
                 };
             }

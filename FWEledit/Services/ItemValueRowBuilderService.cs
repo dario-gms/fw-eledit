@@ -258,6 +258,10 @@ namespace FWEledit
                 {
                     fieldValue = CombinedServicesCatalog.FormatDisplay(listCollection, listIndex, fieldName, fieldValue);
                 }
+                else if (MovementSpeedDisplayService.IsSupportedField(listCollection, listIndex, fieldName))
+                {
+                    fieldValue = MovementSpeedDisplayService.FormatDisplay(listCollection, listIndex, fieldName, fieldValue);
+                }
                 else if (SkillReferenceCatalog.IsSkillFieldName(fieldName))
                 {
                     fieldValue = SkillReferenceCatalog.FormatDisplay(listCollection, listIndex, elementIndex, fieldName, database, fieldValue);

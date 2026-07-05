@@ -243,7 +243,11 @@ namespace FWEledit
                 progressBar.Maximum = 100;
                 progressBar.Value = Math.Max(0, Math.Min(100, value));
                 progressBar.Refresh();
-                Application.DoEvents();
+                progressBar.Update();
+                if (progressBar.Parent != null)
+                {
+                    progressBar.Parent.Update();
+                }
             }
             catch
             {

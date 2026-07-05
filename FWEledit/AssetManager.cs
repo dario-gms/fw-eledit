@@ -535,27 +535,25 @@ namespace FWEledit
                             return false;
                         }
 
-                        bool exited = p.WaitForExit(180000);
+                        int exitCode;
+                        string stdout;
+                        string stderr;
+                        bool exited = WaitForProcessWithOutput(p, 180000, out exitCode, out stdout, out stderr);
                         if (!exited)
                         {
-                            TryWriteSpckLog(extractedDirectory, spck, -1, string.Empty, "Timed out.");
+                            TryWriteSpckLog(extractedDirectory, spck, -1, stdout, "Timed out." + Environment.NewLine + stderr);
                             return false;
                         }
 
-                        string stdout = string.Empty;
-                        string stderr = string.Empty;
-                        try { stdout = p.StandardOutput.ReadToEnd(); } catch { }
-                        try { stderr = p.StandardError.ReadToEnd(); } catch { }
-
-                        if (p.ExitCode != 0)
+                        if (exitCode != 0)
                         {
-                            TryWriteSpckLog(extractedDirectory, spck, p.ExitCode, stdout, stderr);
+                            TryWriteSpckLog(extractedDirectory, spck, exitCode, stdout, stderr);
                             return false;
                         }
 
                         if (!string.IsNullOrWhiteSpace(stderr))
                         {
-                            TryWriteSpckLog(extractedDirectory, spck, p.ExitCode, stdout, stderr);
+                            TryWriteSpckLog(extractedDirectory, spck, exitCode, stdout, stderr);
                         }
 
                         return true;
@@ -1096,19 +1094,13 @@ namespace FWEledit
             }
 
             LoadTheme();
-            Application.DoEvents();
             LoadLocalizationText();
-            Application.DoEvents();
             //this.LoadInstanceList();
             //Application.DoEvents();
             LoadBuffList();
-            Application.DoEvents();
             LoadItemExtDescList();
-            Application.DoEvents();
             LoadSkillList();
-            Application.DoEvents();
             LoadAddonList();
-            Application.DoEvents();
             firstLoad = false;
         }
 
@@ -2758,11 +2750,15 @@ namespace FWEledit
                         return false;
                     }
 
-                    bool exited = p.WaitForExit(GetPckOperationTimeoutMs(pckFilePath, true));
-                    string stdout = string.Empty;
-                    string stderr = string.Empty;
-                    try { stdout = p.StandardOutput.ReadToEnd(); } catch { }
-                    try { stderr = p.StandardError.ReadToEnd(); } catch { }
+                    int exitCode;
+                    string stdout;
+                    string stderr;
+                    bool exited = WaitForProcessWithOutput(
+                        p,
+                        GetPckOperationTimeoutMs(pckFilePath, true),
+                        out exitCode,
+                        out stdout,
+                        out stderr);
 
                     if (!exited)
                     {
@@ -2770,9 +2766,9 @@ namespace FWEledit
                         return false;
                     }
 
-                    if (p.ExitCode != 0)
+                    if (exitCode != 0)
                     {
-                        TryWritePckExtractLog(pckFilePath, "spck", "Exit " + p.ExitCode.ToString() + Environment.NewLine + stdout + Environment.NewLine + stderr);
+                        TryWritePckExtractLog(pckFilePath, "spck", "Exit " + exitCode.ToString() + Environment.NewLine + stdout + Environment.NewLine + stderr);
                         return false;
                     }
                 }
@@ -2831,25 +2827,24 @@ namespace FWEledit
                         return false;
                     }
 
-                    bool exited = p.WaitForExit(timeoutMs);
+                    int exitCode;
+                    string stdout;
+                    string stderr;
+                    bool exited = WaitForProcessWithOutput(p, timeoutMs, out exitCode, out stdout, out stderr);
                     if (!exited)
                     {
-                        TryWriteWinPckLog(targetPckPath, helper, -1, string.Empty, "Timed out.");
+                        TryWriteWinPckLog(targetPckPath, helper, -1, stdout, "Timed out." + Environment.NewLine + stderr);
                         return false;
                     }
 
-                    string stdout = string.Empty;
-                    string stderr = string.Empty;
-                    try { stdout = p.StandardOutput.ReadToEnd(); } catch { }
-                    try { stderr = p.StandardError.ReadToEnd(); } catch { }
-                    if (p.ExitCode != 0)
+                    if (exitCode != 0)
                     {
-                        TryWriteWinPckLog(targetPckPath, helper, p.ExitCode, stdout, stderr);
+                        TryWriteWinPckLog(targetPckPath, helper, exitCode, stdout, stderr);
                         return false;
                     }
                     if (!string.IsNullOrWhiteSpace(stderr))
                     {
-                        TryWriteWinPckLog(targetPckPath, helper, p.ExitCode, stdout, stderr);
+                        TryWriteWinPckLog(targetPckPath, helper, exitCode, stdout, stderr);
                     }
 
                     return true;
@@ -2858,6 +2853,95 @@ namespace FWEledit
             catch
             {
                 return false;
+            }
+        }
+
+        private static bool WaitForProcessWithOutput(Process process, int timeoutMs, out int exitCode, out string stdout, out string stderr)
+        {
+            exitCode = -1;
+            stdout = string.Empty;
+            stderr = string.Empty;
+
+            if (process == null)
+            {
+                return false;
+            }
+
+            StringBuilder stdoutBuilder = new StringBuilder();
+            StringBuilder stderrBuilder = new StringBuilder();
+
+            DataReceivedEventHandler outputHandler = (sender, args) =>
+            {
+                if (args != null && args.Data != null)
+                {
+                    lock (stdoutBuilder)
+                    {
+                        stdoutBuilder.AppendLine(args.Data);
+                    }
+                }
+            };
+
+            DataReceivedEventHandler errorHandler = (sender, args) =>
+            {
+                if (args != null && args.Data != null)
+                {
+                    lock (stderrBuilder)
+                    {
+                        stderrBuilder.AppendLine(args.Data);
+                    }
+                }
+            };
+
+            try
+            {
+                process.OutputDataReceived += outputHandler;
+                process.ErrorDataReceived += errorHandler;
+                process.BeginOutputReadLine();
+                process.BeginErrorReadLine();
+
+                bool exited = process.WaitForExit(timeoutMs);
+                if (!exited)
+                {
+                    try
+                    {
+                        process.Kill();
+                    }
+                    catch
+                    {
+                    }
+                }
+
+                try
+                {
+                    process.WaitForExit();
+                }
+                catch
+                {
+                }
+
+                try
+                {
+                    exitCode = process.HasExited ? process.ExitCode : -1;
+                }
+                catch
+                {
+                    exitCode = -1;
+                }
+
+                stdout = stdoutBuilder.ToString();
+                stderr = stderrBuilder.ToString();
+                return exited;
+            }
+            finally
+            {
+                try
+                {
+                    process.OutputDataReceived -= outputHandler;
+                    process.ErrorDataReceived -= errorHandler;
+                }
+                catch
+                {
+                }
             }
         }
 
@@ -4183,7 +4267,6 @@ namespace FWEledit
                 Encoding enc = Encoding.GetEncoding("GBK");
                 int lines = File.ReadAllLines(theme_list).Length;
                 StreamReader file = new StreamReader(theme_list, enc);
-                Application.DoEvents();
                 int count = 0;
 
                 while ((line = file.ReadLine()) != null)
@@ -4228,7 +4311,6 @@ namespace FWEledit
                 int count = 0;
                 while ((line = file.ReadLine()) != null)
                 {
-                    Application.DoEvents();
                     string[] data = line.Split(null);
                     try
                     {
@@ -4452,7 +4534,6 @@ namespace FWEledit
             int x, y = 0;
             for (int a = 0; a < fileNames.Count; a++)
             {
-                Application.DoEvents();
                 y = a / cols;
                 x = a - y * cols;
                 x = x * w;

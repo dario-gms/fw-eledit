@@ -25,8 +25,7 @@ namespace FWEledit
                 progressBar.Minimum = 0;
                 progressBar.Maximum = 100;
                 progressBar.Value = 0;
-                progressBar.Refresh();
-                Application.DoEvents();
+                RefreshControl(progressBar);
             }
             catch
             {
@@ -45,8 +44,7 @@ namespace FWEledit
                 progressBar.Minimum = 0;
                 progressBar.Maximum = 100;
                 progressBar.Value = 0;
-                progressBar.Refresh();
-                Application.DoEvents();
+                RefreshControl(progressBar);
             }
             catch
             {
@@ -64,8 +62,7 @@ namespace FWEledit
             {
                 int bounded = Math.Max(progressBar.Minimum, Math.Min(progressBar.Maximum, value));
                 progressBar.Value = bounded;
-                progressBar.Refresh();
-                Application.DoEvents();
+                RefreshControl(progressBar);
             }
             catch
             {
@@ -83,8 +80,7 @@ namespace FWEledit
             {
                 int bounded = Math.Max(progressBar.Minimum, Math.Min(progressBar.Maximum, value));
                 progressBar.Value = bounded;
-                progressBar.Refresh();
-                Application.DoEvents();
+                RefreshControl(progressBar);
             }
             catch
             {
@@ -102,8 +98,7 @@ namespace FWEledit
             {
                 progressBar.Value = 0;
                 SetVisible(progressBar, false);
-                progressBar.Refresh();
-                Application.DoEvents();
+                RefreshControl(progressBar);
             }
             catch
             {
@@ -120,8 +115,7 @@ namespace FWEledit
             try
             {
                 progressBar.Value = 0;
-                progressBar.Refresh();
-                Application.DoEvents();
+                RefreshControl(progressBar);
             }
             catch
             {
@@ -147,8 +141,7 @@ namespace FWEledit
                 }
                 table.PerformLayout();
             }
-            progressBar.Refresh();
-            Application.DoEvents();
+            RefreshControl(progressBar);
         }
 
         public static void BeginScope(Control progressBar, int startValue, int endValue)
@@ -175,8 +168,7 @@ namespace FWEledit
                     windowsProgressBar.Minimum = 0;
                     windowsProgressBar.Maximum = 100;
                     windowsProgressBar.Value = start;
-                    windowsProgressBar.Refresh();
-                    Application.DoEvents();
+                    RefreshControl(windowsProgressBar);
                     return;
                 }
 
@@ -186,8 +178,7 @@ namespace FWEledit
                     colorProgressBar.Minimum = 0;
                     colorProgressBar.Maximum = 100;
                     colorProgressBar.Value = start;
-                    colorProgressBar.Refresh();
-                    Application.DoEvents();
+                    RefreshControl(colorProgressBar);
                 }
             }
             catch
@@ -240,13 +231,33 @@ namespace FWEledit
                 progressBar.Minimum = 0;
                 progressBar.Maximum = 100;
                 progressBar.Value = mappedValue;
-                progressBar.Refresh();
-                Application.DoEvents();
+                RefreshControl(progressBar);
                 return true;
             }
             catch
             {
                 return false;
+            }
+        }
+
+        private static void RefreshControl(Control control)
+        {
+            if (control == null || control.IsDisposed)
+            {
+                return;
+            }
+
+            try
+            {
+                control.Refresh();
+                control.Update();
+                if (control.Parent != null && !control.Parent.IsDisposed)
+                {
+                    control.Parent.Update();
+                }
+            }
+            catch
+            {
             }
         }
     }
