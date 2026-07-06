@@ -110,13 +110,14 @@ namespace FWEledit
                 {
                     context.SetProgress(100);
                 }
-                if (context.RestoreNavigationSnapshot != null)
-                {
-                    context.RestoreNavigationSnapshot(navSnapshot);
-                }
                 if (context.EndProgress != null)
                 {
                     context.EndProgress();
+                    progressStarted = false;
+                }
+                if (context.RestoreNavigationSnapshot != null)
+                {
+                    context.RestoreNavigationSnapshot(navSnapshot);
                 }
                 completed = true;
                 return true;

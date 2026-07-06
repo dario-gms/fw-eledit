@@ -1554,6 +1554,12 @@ namespace FWEledit
                 return true;
             }
 
+            if (fieldName.Contains("quench_config"))
+            {
+                targetListName = "QUENCH_CONFIG";
+                return true;
+            }
+
             if (fieldName.Contains("quality_config"))
             {
                 targetListName = "EQUIPMENT_QUALITY_CONFIG";

@@ -1,4 +1,5 @@
 using System;
+using System.Drawing;
 using System.Windows.Forms;
 
 namespace FWEledit
@@ -54,7 +55,11 @@ namespace FWEledit
 
                 infoTool.description = listIndex == 0
                     ? string.Empty
-                    : Extensions.ColorClean(Extensions.ItemDesc(sessionService, itemId));
+                    : Extensions.ItemDesc(sessionService, itemId);
+                if (infoTool.img == null)
+                {
+                    infoTool.img = TryGetGridIcon(grid, rowIndex);
+                }
                 return true;
             }
             catch
@@ -63,6 +68,29 @@ namespace FWEledit
                 infoTool = null;
                 return false;
             }
+        }
+
+        private static Bitmap TryGetGridIcon(DataGridView grid, int rowIndex)
+        {
+            if (grid == null || rowIndex < 0 || rowIndex >= grid.Rows.Count || grid.Columns.Count <= 1)
+            {
+                return null;
+            }
+
+            object value = grid.Rows[rowIndex].Cells[1].Value;
+            Image image = value as Image;
+            if (image == null)
+            {
+                return null;
+            }
+
+            Bitmap bitmap = image as Bitmap;
+            if (bitmap != null)
+            {
+                return bitmap;
+            }
+
+            return new Bitmap(image);
         }
     }
 }

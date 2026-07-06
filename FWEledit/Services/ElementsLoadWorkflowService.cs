@@ -6,7 +6,7 @@ namespace FWEledit
 {
     public sealed class ElementsLoadWorkflowService
     {
-        private const short HighestValidatedVersion = 663;
+        private const short HighestAllowedVersion = 773;
         private const short StableVersionWithoutWarning = 608;
         private readonly ElementsLoadService loadService;
         private readonly NavigationStateService navigationStateService;
@@ -57,11 +57,11 @@ namespace FWEledit
                     result.ElementsPath = elementsFile;
                     return result;
                 }
-                if (info != null && info.Success && info.Version > HighestValidatedVersion)
+                if (info != null && info.Success && info.Version > HighestAllowedVersion)
                 {
                     result.ErrorMessage =
                         "Unsupported elements.data version (" + info.Version + ").\n\n" +
-                        "Only versions up to " + HighestValidatedVersion + " are currently allowed.";
+                        "Only versions up to " + HighestAllowedVersion + " are currently allowed.";
                     result.IsVersionUnsupported = true;
                     result.ElementsPath = elementsFile;
                     return result;
@@ -69,13 +69,23 @@ namespace FWEledit
 
                 if (info != null
                     && info.Success
-                    && info.Version < HighestValidatedVersion
                     && info.Version != StableVersionWithoutWarning)
                 {
-                    result.WarningMessage =
-                        "Loaded elements.data version " + info.Version + ".\n\n" +
-                        "FWEledit was primarily validated against version " + HighestValidatedVersion + ", " +
-                        "so older configs may still need adjustments in some lists or parsers.";
+                    if (info.Version == HighestAllowedVersion)
+                    {
+                        result.WarningMessage =
+                            "Loaded elements.data version " + info.Version + ".\n\n" +
+                            "This version is currently available through unofficial compatibility support.\n" +
+                            "FWEledit was primarily validated against version " + StableVersionWithoutWarning + ", " +
+                            "so some lists or parsers may still need adjustments.";
+                    }
+                    else
+                    {
+                        result.WarningMessage =
+                            "Loaded elements.data version " + info.Version + ".\n\n" +
+                            "FWEledit was primarily validated against version " + StableVersionWithoutWarning + ", " +
+                            "so non-" + StableVersionWithoutWarning + " configs may still need adjustments in some lists or parsers.";
+                    }
                 }
             }
 

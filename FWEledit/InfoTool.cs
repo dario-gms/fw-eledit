@@ -17,5 +17,6 @@ namespace FWEledit
         internal string price;
         internal string file_icon = "";
         internal Object test = null;
+        internal uint procTypeValue = 0;
     }
 }

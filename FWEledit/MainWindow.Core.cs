@@ -306,7 +306,7 @@ namespace FWEledit
                 assembly,
                 label_Version,
                 navigationStateService,
-                "0.9.5.15");
+                "0.9.5.16");
 
             MainWindowAssetSetupResult assetSetup = mainWindowAssetSetupService.Build(
                 addonTypeHintService,
@@ -442,6 +442,7 @@ namespace FWEledit
                 itemListThemeService,
                 fwDarkMode);
             UpdateThemeToggleButton();
+            UpdateDescriptionTabForSelection();
         }
 
         private void comboBoxDb_DrawItem(object sender, DrawItemEventArgs e)

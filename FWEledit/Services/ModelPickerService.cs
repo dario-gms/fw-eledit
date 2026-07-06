@@ -1272,8 +1272,14 @@ namespace FWEledit
             }
 
             string normalized = fieldName.Trim();
-            return normalized.StartsWith("models_", StringComparison.OrdinalIgnoreCase)
-                && normalized.IndexOf("_file_model_", StringComparison.OrdinalIgnoreCase) >= 0;
+            if (!normalized.StartsWith("models_", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            return normalized.IndexOf("_file_model_", StringComparison.OrdinalIgnoreCase) >= 0
+                || normalized.EndsWith("_male_model", StringComparison.OrdinalIgnoreCase)
+                || normalized.EndsWith("_female_model", StringComparison.OrdinalIgnoreCase);
         }
 
         private static bool IsAircraftLikeListName(string listName)
