@@ -17,7 +17,8 @@ namespace FWEledit
             viewModel = new IToolTypeViewModel(new ToolPreviewService());
             InitializeComponent();
             FormBorderStyle = FormBorderStyle.None;
-            BackColor = Color.FromArgb(32, 32, 32);
+            BackColor = Color.FromArgb(18, 21, 26);
+            Padding = new Padding(1);
             Opacity = 0;
             fadeTimer = new Timer { Interval = 15, Enabled = true };
             fadeTimer.Tick += new EventHandler(fadeTimer_Tick);

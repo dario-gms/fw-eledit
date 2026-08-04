@@ -25,6 +25,8 @@ namespace FWEledit
         public Button DescriptionNormalFontButton { get; set; }
         public Button DescriptionSmallFontButton { get; set; }
         public Button DescriptionTitleFontButton { get; set; }
+        public Panel AddonPackageDescEditorPanel { get; set; }
+        public TextBox AddonPackageDescEditor { get; set; }
         public Button InlinePickIconButton { get; set; }
         public Button RawValueUpButton { get; set; }
         public Button RawValueDownButton { get; set; }

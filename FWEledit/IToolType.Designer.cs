@@ -36,35 +36,38 @@ namespace FWEledit
             // 
             // iconBox
             // 
-            this.iconBox.Location = new System.Drawing.Point(6, 8);
+            this.iconBox.Location = new System.Drawing.Point(12, 12);
             this.iconBox.Name = "iconBox";
-            this.iconBox.Size = new System.Drawing.Size(32, 32);
+            this.iconBox.Size = new System.Drawing.Size(38, 38);
             this.iconBox.TabIndex = 6;
             this.iconBox.TabStop = false;
             // 
             // titleText
             // 
-            this.titleText.AutoSize = true;
-            this.titleText.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(32)))), ((int)(((byte)(32)))), ((int)(((byte)(32)))));
-            this.titleText.Font = new System.Drawing.Font("Arial", 9.75F, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.titleText.AutoEllipsis = true;
+            this.titleText.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(18)))), ((int)(((byte)(21)))), ((int)(((byte)(26)))));
+            this.titleText.Font = new System.Drawing.Font("Segoe UI", 9.25F, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
             this.titleText.ForeColor = System.Drawing.Color.White;
-            this.titleText.Location = new System.Drawing.Point(40, 16);
+            this.titleText.Location = new System.Drawing.Point(58, 14);
             this.titleText.Name = "titleText";
-            this.titleText.Size = new System.Drawing.Size(179, 16);
+            this.titleText.Size = new System.Drawing.Size(286, 34);
             this.titleText.TabIndex = 7;
             this.titleText.Text = "AAAAASDASDASDASDASD";
+            this.titleText.TextAlign = System.Drawing.ContentAlignment.MiddleLeft;
             // 
             // richTextBox_PreviewText
             // 
-            this.richTextBox_PreviewText.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(32)))), ((int)(((byte)(32)))), ((int)(((byte)(32)))));
+            this.richTextBox_PreviewText.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(18)))), ((int)(((byte)(21)))), ((int)(((byte)(26)))));
             this.richTextBox_PreviewText.BorderStyle = System.Windows.Forms.BorderStyle.None;
             this.richTextBox_PreviewText.CausesValidation = false;
-            this.richTextBox_PreviewText.Cursor = System.Windows.Forms.Cursors.No;
-            this.richTextBox_PreviewText.Location = new System.Drawing.Point(3, 46);
+            this.richTextBox_PreviewText.Cursor = System.Windows.Forms.Cursors.Default;
+            this.richTextBox_PreviewText.Font = new System.Drawing.Font("Segoe UI", 8.5F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.richTextBox_PreviewText.ForeColor = System.Drawing.Color.FromArgb(((int)(((byte)(219)))), ((int)(((byte)(226)))), ((int)(((byte)(235)))));
+            this.richTextBox_PreviewText.Location = new System.Drawing.Point(12, 58);
             this.richTextBox_PreviewText.Name = "richTextBox_PreviewText";
             this.richTextBox_PreviewText.ReadOnly = true;
             this.richTextBox_PreviewText.ScrollBars = System.Windows.Forms.RichTextBoxScrollBars.None;
-            this.richTextBox_PreviewText.Size = new System.Drawing.Size(244, 311);
+            this.richTextBox_PreviewText.Size = new System.Drawing.Size(336, 112);
             this.richTextBox_PreviewText.TabIndex = 42;
             this.richTextBox_PreviewText.TabStop = false;
             this.richTextBox_PreviewText.Text = "";
@@ -74,8 +77,8 @@ namespace FWEledit
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            this.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(32)))), ((int)(((byte)(32)))), ((int)(((byte)(32)))));
-            this.ClientSize = new System.Drawing.Size(251, 368);
+            this.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(18)))), ((int)(((byte)(21)))), ((int)(((byte)(26)))));
+            this.ClientSize = new System.Drawing.Size(360, 182);
             this.Controls.Add(this.richTextBox_PreviewText);
             this.Controls.Add(this.titleText);
             this.Controls.Add(this.iconBox);

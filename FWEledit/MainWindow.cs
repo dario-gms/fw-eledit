@@ -58,6 +58,13 @@ namespace FWEledit
         private Button fwDescriptionNormalFontButton;
         private Button fwDescriptionSmallFontButton;
         private Button fwDescriptionTitleFontButton;
+        private Panel fwAddonPackageDescEditorPanel;
+        private TextBox fwAddonPackageDescEditor;
+        private bool fwSuppressAddonPackageDescEditorEvents;
+        private int fwAddonPackageDescEditorRowIndex = -1;
+        private int fwValueGridListIndex = -1;
+        private readonly Dictionary<int, string> fwLastValueFieldNameByList = new Dictionary<int, string>();
+        private string fwHoverPreviewKey = string.Empty;
         private Panel fwColorPreviewSwatch;
         private Label fwColorPreviewValueLabel;
         private Button fwColorPreviewGenerateButton;

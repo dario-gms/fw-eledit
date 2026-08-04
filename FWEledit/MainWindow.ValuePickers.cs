@@ -406,6 +406,8 @@ namespace FWEledit
             finally
             {
                 UseWaitCursor = restoreWaitCursor;
+                Cursor = Cursors.Default;
+                Cursor.Current = Cursors.Default;
             }
         }
 
@@ -466,8 +468,66 @@ namespace FWEledit
                 return;
             }
 
+            RememberCurrentValueFieldSelection();
             UpdateRawValueEditorFromCurrentCell();
+            UpdateAddonPackageDescEditorFromCurrentCell();
             RefreshLiveModelPreviewFromCurrentRow(false);
+        }
+
+        private void RememberCurrentValueFieldSelection()
+        {
+            if (comboBox_lists == null
+                || dataGridView_item == null
+                || dataGridView_item.CurrentCell == null)
+            {
+                return;
+            }
+
+            int listIndex = comboBox_lists.SelectedIndex;
+            if (listIndex < 0 || listIndex != fwValueGridListIndex)
+            {
+                return;
+            }
+
+            int rowIndex = dataGridView_item.CurrentCell.RowIndex;
+            if (rowIndex < 0 || rowIndex >= dataGridView_item.Rows.Count)
+            {
+                return;
+            }
+
+            string fieldName = ValueGridFieldNameService.GetFieldName(dataGridView_item, rowIndex);
+            if (!string.IsNullOrWhiteSpace(fieldName))
+            {
+                fwLastValueFieldNameByList[listIndex] = fieldName;
+            }
+        }
+
+        private void RestoreRememberedValueFieldSelection(int listIndex)
+        {
+            if (dataGridView_item == null
+                || dataGridView_item.Rows.Count == 0
+                || !fwLastValueFieldNameByList.ContainsKey(listIndex))
+            {
+                fwValueGridListIndex = listIndex;
+                return;
+            }
+
+            string fieldNameToRestore = fwLastValueFieldNameByList[listIndex];
+            for (int rowIndex = 0; rowIndex < dataGridView_item.Rows.Count; rowIndex++)
+            {
+                if (!string.Equals(ValueGridFieldNameService.GetFieldName(dataGridView_item, rowIndex), fieldNameToRestore, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                dataGridView_item.ClearSelection();
+                dataGridView_item.CurrentCell = dataGridView_item.Rows[rowIndex].Cells[2];
+                dataGridView_item.Rows[rowIndex].Cells[2].Selected = true;
+                fwValueGridListIndex = listIndex;
+                return;
+            }
+
+            fwValueGridListIndex = listIndex;
         }
 
         private void dataGridView_item_CellPainting(object sender, DataGridViewCellPaintingEventArgs e)
@@ -705,6 +765,324 @@ namespace FWEledit
             }
 
             UpdateCurrentIdUsageIndicator();
+        }
+
+        private void UpdateAddonPackageDescEditorFromCurrentCell()
+        {
+            if (fwAddonPackageDescEditorPanel == null || fwAddonPackageDescEditor == null)
+            {
+                return;
+            }
+
+            string rawValue = string.Empty;
+            bool visible = IsAddonPackageDescCurrentCell() && TryGetRawValueForCurrentCell(out rawValue);
+            fwAddonPackageDescEditorPanel.Visible = visible;
+
+            fwSuppressAddonPackageDescEditorEvents = true;
+            try
+            {
+                fwAddonPackageDescEditor.Enabled = visible;
+                fwAddonPackageDescEditor.Text = visible ? (rawValue ?? string.Empty) : string.Empty;
+                fwAddonPackageDescEditorRowIndex = visible && dataGridView_item.CurrentCell != null
+                    ? dataGridView_item.CurrentCell.RowIndex
+                    : -1;
+            }
+            finally
+            {
+                fwSuppressAddonPackageDescEditorEvents = false;
+            }
+        }
+
+        private bool IsAddonPackageDescCurrentCell()
+        {
+            if (comboBox_lists == null
+                || sessionService == null
+                || sessionService.ListCollection == null
+                || dataGridView_item == null
+                || dataGridView_item.CurrentCell == null)
+            {
+                return false;
+            }
+
+            int listIndex = comboBox_lists.SelectedIndex;
+            if (listIndex < 0 || listIndex >= sessionService.ListCollection.Lists.Length)
+            {
+                return false;
+            }
+
+            string listName = sessionService.ListCollection.Lists[listIndex].listName ?? string.Empty;
+            if (!IsNamedConfigList(listName, "ADDON_PACKAGE_CONFIG"))
+            {
+                return false;
+            }
+
+            int rowIndex = dataGridView_item.CurrentCell.RowIndex;
+            if (rowIndex < 0 || rowIndex >= dataGridView_item.Rows.Count)
+            {
+                return false;
+            }
+
+            return string.Equals(ValueGridFieldNameService.GetFieldName(dataGridView_item, rowIndex), "desc", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private bool TryShowValueReferenceHoverPreview(Control owner, DataGridViewCellMouseEventArgs e)
+        {
+            if (owner == null
+                || e == null
+                || e.RowIndex < 0
+                || e.ColumnIndex != 2
+                || dataGridView_item == null
+                || sessionService == null
+                || sessionService.ListCollection == null
+                || sessionService.Database == null
+                || itemReferenceService == null)
+            {
+                return false;
+            }
+
+            int listIndex = comboBox_lists != null ? comboBox_lists.SelectedIndex : -1;
+            int elementIndex = ResolveCurrentElementIndex();
+            if (listIndex < 0 || elementIndex < 0)
+            {
+                return false;
+            }
+
+            string fieldName = ValueGridFieldNameService.GetFieldName(dataGridView_item, e.RowIndex);
+            if (string.IsNullOrWhiteSpace(fieldName))
+            {
+                return false;
+            }
+
+            string rawValue = GetRawValueForValueRow(e.RowIndex);
+            ItemReferenceOption option;
+            if (!itemReferenceService.TryResolveReferenceOption(
+                sessionService.ListCollection,
+                listIndex,
+                elementIndex,
+                fieldName,
+                rawValue,
+                sessionService.Database,
+                iconResolutionService,
+                out option)
+                || option == null
+                || option.Id <= 0)
+            {
+                return false;
+            }
+
+            string hoverKey = listIndex.ToString()
+                + "|"
+                + elementIndex.ToString()
+                + "|"
+                + e.RowIndex.ToString()
+                + "|"
+                + option.ListIndex.ToString()
+                + "|"
+                + option.Id.ToString();
+            if (string.Equals(fwHoverPreviewKey, hoverKey, StringComparison.Ordinal)
+                && viewModel != null
+                && viewModel.CustomTooltype != null
+                && !viewModel.CustomTooltype.IsDisposed)
+            {
+                return true;
+            }
+
+            CloseHoverPreview();
+
+            InfoTool infoTool = BuildReferenceHoverInfoTool(option, fieldName, rawValue);
+            if (infoTool == null)
+            {
+                return false;
+            }
+
+            fwHoverPreviewKey = hoverKey;
+            viewModel.CustomTooltype = new IToolType(sessionService, infoTool);
+            viewModel.CustomTooltype.Show(this);
+            return true;
+        }
+
+        private InfoTool BuildReferenceHoverInfoTool(ItemReferenceOption option, string sourceFieldName, string rawValue)
+        {
+            if (option == null)
+            {
+                return null;
+            }
+
+            InfoTool itemInfo = TryBuildNativeItemPreview(option);
+            if (itemInfo != null)
+            {
+                itemInfo.addons = JoinHoverBlocks(
+                    itemInfo.addons,
+                    BuildReferenceHoverMeta(option, sourceFieldName, rawValue));
+                return itemInfo;
+            }
+
+            InfoTool infoTool = new InfoTool();
+            infoTool.itemId = option.Id;
+            infoTool.name = string.IsNullOrWhiteSpace(option.Name) ? option.Id.ToString() : option.Name;
+            infoTool.img = ResolveReferenceOptionImage(option);
+            infoTool.basicAdons = BuildReferenceHoverMeta(option, sourceFieldName, rawValue);
+            infoTool.description = option.Description ?? string.Empty;
+            return infoTool;
+        }
+
+        private InfoTool TryBuildNativeItemPreview(ItemReferenceOption option)
+        {
+            if (option == null || option.ListIndex < 0 || option.ElementIndex < 0)
+            {
+                return null;
+            }
+
+            try
+            {
+                if (itemReferenceService != null && itemReferenceService.IsItemBearingList(sessionService.ListCollection, option.ListIndex))
+                {
+                    InfoTool info = Extensions.GetItemProps2(
+                        sessionService,
+                        option.Id,
+                        0,
+                        option.ListIndex,
+                        option.ElementIndex);
+                    if (info != null)
+                    {
+                        info.description = option.Description ?? Extensions.ItemDesc(sessionService, option.Id);
+                        if (info.img == null)
+                        {
+                            info.img = ResolveReferenceOptionImage(option);
+                        }
+                    }
+
+                    return info;
+                }
+            }
+            catch
+            {
+            }
+
+            return null;
+        }
+
+        private string BuildReferenceHoverMeta(ItemReferenceOption option, string sourceFieldName, string rawValue)
+        {
+            string listName = option.ListName ?? string.Empty;
+            int referenceCount = 0;
+            if (referenceIndexReady && option.ListIndex >= 0)
+            {
+                referenceCount = referenceIndexService.GetReferenceCount(
+                    sessionService.ListCollection,
+                    itemReferenceService,
+                    option.ListIndex,
+                    option.Id);
+            }
+            else
+            {
+                StartReferenceCacheWarmup();
+            }
+
+            string referenceLine = referenceIndexReady
+                ? "References: " + referenceCount.ToString()
+                : "References: loading index";
+
+            return "List: " + listName
+                + "\nField: " + (sourceFieldName ?? string.Empty)
+                + "\nRaw value: " + (rawValue ?? string.Empty)
+                + "\n" + referenceLine
+                + "\nCtrl + Shift + G: Go to this item";
+        }
+
+        private Bitmap ResolveReferenceOptionImage(ItemReferenceOption option)
+        {
+            if (option == null || sessionService == null || sessionService.Database == null || string.IsNullOrWhiteSpace(option.IconKey))
+            {
+                return null;
+            }
+
+            try
+            {
+                if (sessionService.Database.sourceBitmap != null && sessionService.Database.ContainsKey(option.IconKey))
+                {
+                    Image image = sessionService.Database.images(option.IconKey);
+                    Bitmap bitmap = image as Bitmap;
+                    return bitmap ?? (image != null ? new Bitmap(image) : null);
+                }
+
+                Bitmap portrait = creaturePortraitIconService.TryLoadPortraitThumbnail(option.IconKey, 48);
+                if (portrait != null)
+                {
+                    return portrait;
+                }
+            }
+            catch
+            {
+            }
+
+            return null;
+        }
+
+        private static string JoinHoverBlocks(string first, string second)
+        {
+            if (string.IsNullOrWhiteSpace(first))
+            {
+                return second ?? string.Empty;
+            }
+            if (string.IsNullOrWhiteSpace(second))
+            {
+                return first ?? string.Empty;
+            }
+
+            return first + "\n\n" + second;
+        }
+
+        private void CloseHoverPreview()
+        {
+            fwHoverPreviewKey = string.Empty;
+            if (viewModel == null || viewModel.CustomTooltype == null)
+            {
+                return;
+            }
+
+            try
+            {
+                if (!viewModel.CustomTooltype.IsDisposed)
+                {
+                    viewModel.CustomTooltype.Close();
+                }
+            }
+            catch
+            {
+            }
+
+            viewModel.CustomTooltype = null;
+        }
+
+        private void ApplyAddonPackageDescEditorToCurrentCell()
+        {
+            if (fwSuppressAddonPackageDescEditorEvents
+                || fwAddonPackageDescEditor == null
+                || !fwAddonPackageDescEditor.Enabled
+                || dataGridView_item == null
+                || fwAddonPackageDescEditorRowIndex < 0
+                || fwAddonPackageDescEditorRowIndex >= dataGridView_item.Rows.Count)
+            {
+                return;
+            }
+
+            int rowIndex = fwAddonPackageDescEditorRowIndex;
+            if (!string.Equals(ValueGridFieldNameService.GetFieldName(dataGridView_item, rowIndex), "desc", StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            string rawValue = fwAddonPackageDescEditor.Text ?? string.Empty;
+            string previousRawValue = GetRawValueForValueRow(rowIndex);
+            if (string.Equals(previousRawValue, rawValue, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            DataGridViewCell valueCell = dataGridView_item.Rows[rowIndex].Cells[2];
+            valueCell.Tag = rawValue;
+            valueCell.Value = rawValue;
         }
 
         private bool TryGetRawValueForCurrentCell(out string rawValue)

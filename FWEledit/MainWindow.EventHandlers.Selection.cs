@@ -9,7 +9,7 @@ namespace FWEledit
 		{
             bool previousSuppressSelectionHistory = suppressSelectionHistory;
             pendingAutoSelectionHistoryListIndex = -1;
-            bool useLightweightStartupLoad = viewModel != null && viewModel.IsRestoringSessionState;
+            bool useLightweightStartupLoad = false;
             if (!previousSuppressSelectionHistory)
             {
                 suppressSelectionHistory = true;
@@ -73,6 +73,9 @@ namespace FWEledit
             }
 
             UpdateNpcSellServiceUiForSelection();
+            UpdateAddonPackageDescEditorFromCurrentCell();
+            EnsureReferencesTabIsLast();
+            UpdateReferencesTabForSelection();
             if (!previousSuppressSelectionHistory)
             {
                 pendingAutoSelectionHistoryListIndex = currentListIndex;
@@ -82,6 +85,9 @@ namespace FWEledit
 
         private void change_item(object sender, EventArgs ea)
 		{
+            int currentListIndex = comboBox_lists != null ? comboBox_lists.SelectedIndex : -1;
+            RememberCurrentValueFieldSelection();
+
             mainWindowSelectionCoordinatorService.HandleChangeItem(
                 mainWindowSelectionUiService,
                 viewModel.EnableSelectionItem,
@@ -122,8 +128,12 @@ namespace FWEledit
                 PersistNavigationState,
                 value => viewModel.SuppressValuesUiRefresh = value);
 
+            RestoreRememberedValueFieldSelection(currentListIndex);
             UpdateRawValueEditorFromCurrentCell();
+            UpdateAddonPackageDescEditorFromCurrentCell();
             RefreshLiveModelPreviewFromCurrentRow(true);
+            EnsureReferencesTabIsLast();
+            UpdateReferencesTabForSelection();
             bool skipAutoSelectionHistory =
                 pendingAutoSelectionHistoryListIndex >= 0
                 && comboBox_lists != null

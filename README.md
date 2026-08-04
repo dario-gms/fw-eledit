@@ -12,6 +12,19 @@ FWEledit is based on [sELedit++ by Wrechid](https://github.com/Wrechid/sELedit-)
 
 ---
 
+## What's New in v0.9.5.17
+
+- Added a dedicated multiline bottom editor for the `desc` field in `[105] ADDON_PACKAGE_CONFIG`, making line breaks practical without using the old Description tab workflow.
+- Removed the separate Description tab for `ADDON_PACKAGE_CONFIG`, keeping that list focused on the actual value-field editor.
+- Preserved the selected Values-field row while switching items, so quick comparison of fields such as `desc` no longer requires reselecting the row each time.
+- Added rich hover previews for reference values in the Values grid, including target item/config context, icon/title rendering, raw value, source field, and reference-count status.
+- Restored an embedded `References` tab in the main editor with lazy loading, cached reference rows, automatic refresh while switching items, and double-click/Enter navigation to referenced records.
+- Kept `References` as the last tab even when equipment-specific tabs are shown or hidden.
+- Refined tooltip presentation with better spacing, dynamic sizing, border treatment, icon/title alignment, and a cleaner dark-theme look.
+- Project/app version metadata updated to `v0.9.5.17`.
+
+---
+
 ## What's New in v0.9.5.16
 
 - Switched the editor to start in dark mode by default, matching the current FW-focused UI direction out of the box while still keeping the theme toggle available.

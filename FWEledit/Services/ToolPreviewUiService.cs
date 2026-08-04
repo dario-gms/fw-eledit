@@ -11,12 +11,15 @@ namespace FWEledit
 
         public void ApplyTheme(CacheSave database, Form form, RichTextBox previewBox, Label title)
         {
-            if (database == null || database.arrTheme == null)
+            Color bg = Color.FromArgb(18, 21, 26);
+            if (database != null && database.arrTheme != null && database.arrTheme.Count > 16)
             {
-                return;
+                Color themeBg = Color.FromName(database.arrTheme[16]);
+                if (!themeBg.IsEmpty)
+                {
+                    bg = themeBg;
+                }
             }
-
-            Color bg = Color.FromName(database.arrTheme[16]);
             if (form != null)
             {
                 form.BackColor = bg;
@@ -24,6 +27,7 @@ namespace FWEledit
             if (previewBox != null)
             {
                 previewBox.BackColor = bg;
+                previewBox.ForeColor = Color.FromArgb(219, 226, 235);
             }
             if (title != null)
             {
