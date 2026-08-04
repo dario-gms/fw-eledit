@@ -83,6 +83,7 @@ namespace FWEledit
             dataGridView_item.CellMouseDown += dataGridView_item_CellMouseDown;
             dataGridView_item.CurrentCellChanged += dataGridView_item_CurrentCellChanged;
             dataGridView_item.CellPainting += dataGridView_item_CellPainting;
+            dataGridView_item.MouseLeave += (s, e) => CloseHoverPreview();
             dataGridView_elems.CellMouseDown += dataGridView_elems_CellMouseDown;
 
             Assembly assembly = Assembly.GetExecutingAssembly();
@@ -90,7 +91,7 @@ namespace FWEledit
                 assembly,
                 label_Version,
                 navigationStateService,
-                "0.9.5.16");
+                "0.9.5.17");
 
             fwDarkMode = Properties.Settings.Default.UseDarkMode;
             cpb2.Value = 0;
@@ -156,6 +157,8 @@ namespace FWEledit
             fwDescriptionNormalFontButton = layout.DescriptionNormalFontButton;
             fwDescriptionSmallFontButton = layout.DescriptionSmallFontButton;
             fwDescriptionTitleFontButton = layout.DescriptionTitleFontButton;
+            fwAddonPackageDescEditorPanel = layout.AddonPackageDescEditorPanel;
+            fwAddonPackageDescEditor = layout.AddonPackageDescEditor;
             fwInlinePickIconButton = layout.InlinePickIconButton;
             fwRawValueUpButton = layout.RawValueUpButton;
             fwRawValueDownButton = layout.RawValueDownButton;
@@ -206,6 +209,8 @@ namespace FWEledit
             {
                 fwRightTabs.SelectedIndexChanged += (s, e) =>
                 {
+                    EnsureReferencesTabIsLast();
+
                     if (IsReferencesTabActive())
                     {
                         UpdateReferencesTabForSelection();
@@ -218,9 +223,10 @@ namespace FWEledit
                     }
                 };
             }
-            RemoveReferencesTabFromMainView();
+            InitializeEmbeddedReferencesTab();
             InitializeElementContextActions();
             InitializeDescriptionFormattingActions();
+            InitializeAddonPackageDescEditor();
             InitializeRawValueEditor();
             InitializeNpcSellServicePageUi();
             UpdateThemeToggleButton();
@@ -243,6 +249,18 @@ namespace FWEledit
                 fwRawValueDownButton.Click += (s, e) => AdjustRawValueEditor(-1);
             }
             UpdateRawValueEditorFromCurrentCell();
+        }
+
+        private void InitializeAddonPackageDescEditor()
+        {
+            if (fwAddonPackageDescEditor == null)
+            {
+                return;
+            }
+
+            fwAddonPackageDescEditor.Leave += addon_package_desc_editor_leave;
+            fwAddonPackageDescEditor.KeyDown += addon_package_desc_editor_key_down;
+            UpdateAddonPackageDescEditorFromCurrentCell();
         }
 
         private void EnsureMainSplitSizing()
@@ -305,6 +323,41 @@ namespace FWEledit
             if (fwRightTabs.TabPages.Contains(fwReferencesTab))
             {
                 fwRightTabs.TabPages.Remove(fwReferencesTab);
+            }
+        }
+
+        private void InitializeEmbeddedReferencesTab()
+        {
+            if (fwReferencesGrid == null)
+            {
+                return;
+            }
+
+            fwReferencesGrid.CellDoubleClick += referencesViewerGrid_CellDoubleClick;
+            fwReferencesGrid.KeyDown += referencesViewerGrid_KeyDown;
+            EnsureReferencesTabIsLast();
+        }
+
+        private void EnsureReferencesTabIsLast()
+        {
+            if (fwRightTabs == null || fwReferencesTab == null || !fwRightTabs.TabPages.Contains(fwReferencesTab))
+            {
+                return;
+            }
+
+            int lastIndex = fwRightTabs.TabPages.Count - 1;
+            int currentIndex = fwRightTabs.TabPages.IndexOf(fwReferencesTab);
+            if (currentIndex == lastIndex)
+            {
+                return;
+            }
+
+            TabPage selectedTab = fwRightTabs.SelectedTab;
+            fwRightTabs.TabPages.Remove(fwReferencesTab);
+            fwRightTabs.TabPages.Add(fwReferencesTab);
+            if (selectedTab != null && fwRightTabs.TabPages.Contains(selectedTab))
+            {
+                fwRightTabs.SelectedTab = selectedTab;
             }
         }
 

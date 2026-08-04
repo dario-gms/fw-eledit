@@ -373,8 +373,40 @@ namespace FWEledit
             valuesTab.Tag = EquipmentValuesTab.Main;
 
             Label valuesCaption = CreateSectionLabel("Properties");
-            valuesCaption.Dock = DockStyle.Top;
-            valuesCaption.Height = 30;
+            valuesCaption.Dock = DockStyle.Fill;
+
+            Panel addonPackageDescEditorPanel = new Panel();
+            addonPackageDescEditorPanel.Dock = DockStyle.Fill;
+            addonPackageDescEditorPanel.Margin = new Padding(0);
+            addonPackageDescEditorPanel.Padding = new Padding(0, 6, 0, 0);
+            addonPackageDescEditorPanel.Visible = false;
+
+            Label addonPackageDescEditorLabel = CreateSubsectionLabel("desc");
+            addonPackageDescEditorLabel.Dock = DockStyle.Top;
+            addonPackageDescEditorLabel.Height = 22;
+
+            TextBox addonPackageDescEditor = new TextBox();
+            addonPackageDescEditor.Dock = DockStyle.Fill;
+            addonPackageDescEditor.Multiline = true;
+            addonPackageDescEditor.ScrollBars = ScrollBars.Vertical;
+            addonPackageDescEditor.AcceptsReturn = true;
+            addonPackageDescEditor.AcceptsTab = true;
+            addonPackageDescEditor.WordWrap = false;
+            addonPackageDescEditor.Font = new Font("Consolas", 9F, FontStyle.Regular, GraphicsUnit.Point, ((byte)(0)));
+            addonPackageDescEditor.BorderStyle = BorderStyle.FixedSingle;
+
+            addonPackageDescEditorPanel.Controls.Add(addonPackageDescEditor);
+            addonPackageDescEditorPanel.Controls.Add(addonPackageDescEditorLabel);
+
+            TableLayoutPanel valuesInspectorLayout = new TableLayoutPanel();
+            valuesInspectorLayout.Dock = DockStyle.Fill;
+            valuesInspectorLayout.Margin = new Padding(0);
+            valuesInspectorLayout.ColumnCount = 1;
+            valuesInspectorLayout.RowCount = 3;
+            valuesInspectorLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            valuesInspectorLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 30F));
+            valuesInspectorLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+            valuesInspectorLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 0F));
 
             TabPage equipmentTabMain = valuesTab;
             TabPage equipmentTabModels = new TabPage("Models");
@@ -392,7 +424,6 @@ namespace FWEledit
 
             if (valuesGrid != null)
             {
-                valuesGrid.Parent = valuesInspectorPanel;
                 valuesGrid.Dock = DockStyle.Fill;
                 valuesGrid.Margin = new Padding(0);
                 ApplyInspectorGridLayout(valuesGrid);
@@ -403,16 +434,18 @@ namespace FWEledit
                     valuesGrid.SizeChanged += (s, e) => updatePickIconButtonState();
                 }
             }
+            addonPackageDescEditorPanel.VisibleChanged += (s, e) =>
+            {
+                valuesInspectorLayout.RowStyles[2].Height = addonPackageDescEditorPanel.Visible ? 92F : 0F;
+                valuesInspectorLayout.PerformLayout();
+            };
+            valuesInspectorLayout.Controls.Add(valuesCaption, 0, 0);
             if (valuesGrid != null)
             {
-                valuesInspectorPanel.Controls.Add(valuesGrid);
+                valuesInspectorLayout.Controls.Add(valuesGrid, 0, 1);
             }
-            valuesInspectorPanel.Controls.Add(valuesCaption);
-            if (valuesGrid != null)
-            {
-                valuesInspectorPanel.Controls.SetChildIndex(valuesGrid, 0);
-            }
-            valuesInspectorPanel.Controls.SetChildIndex(valuesCaption, 1);
+            valuesInspectorLayout.Controls.Add(addonPackageDescEditorPanel, 0, 2);
+            valuesInspectorPanel.Controls.Add(valuesInspectorLayout);
             valuesTab.Controls.Add(valuesInspectorPanel);
 
             Label referencesCaption = CreateSectionLabel("Referenced By");
@@ -574,8 +607,8 @@ namespace FWEledit
             rightTabs.TabPages.Add(equipmentTabModels);
             rightTabs.TabPages.Add(equipmentTabRefine);
             rightTabs.TabPages.Add(equipmentTabDecompose);
-            rightTabs.TabPages.Add(referencesTab);
             rightTabs.TabPages.Add(descriptionTab);
+            rightTabs.TabPages.Add(referencesTab);
 
             rightTabs.Margin = new Padding(0, 8, 0, 0);
             rightLayout.Controls.Add(rightTabs, 0, 3);
@@ -634,6 +667,8 @@ namespace FWEledit
                 DescriptionNormalFontButton = descriptionNormalFontButton,
                 DescriptionSmallFontButton = descriptionSmallFontButton,
                 DescriptionTitleFontButton = descriptionTitleFontButton,
+                AddonPackageDescEditorPanel = addonPackageDescEditorPanel,
+                AddonPackageDescEditor = addonPackageDescEditor,
                 InlinePickIconButton = inlinePickIconButton,
                 RawValueUpButton = rawValueUpButton,
                 RawValueDownButton = rawValueDownButton,

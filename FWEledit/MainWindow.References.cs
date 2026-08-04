@@ -390,6 +390,10 @@ namespace FWEledit
             if (TryLoadPersistedReferenceCache())
             {
                 ScheduleVisibleReferenceCountRefresh();
+                if (IsReferencesTabActive())
+                {
+                    LoadEmbeddedReferencesTabForSelectionAsync();
+                }
                 if (referencesViewerForm != null && !referencesViewerForm.IsDisposed && referencesViewerForm.Visible)
                 {
                     LoadReferencesViewerForSelectionAsync();
@@ -424,6 +428,10 @@ namespace FWEledit
                     referenceIndexReady = true;
                     ScheduleVisibleReferenceCountRefresh();
                     PersistReferenceCacheToDisk();
+                    if (IsReferencesTabActive())
+                    {
+                        LoadEmbeddedReferencesTabForSelectionAsync();
+                    }
                     if (referencesViewerForm != null && !referencesViewerForm.IsDisposed && referencesViewerForm.Visible)
                     {
                         LoadReferencesViewerForSelectionAsync();
@@ -728,7 +736,139 @@ namespace FWEledit
 
         private void UpdateReferencesTabForSelection()
         {
+            if (IsReferencesTabActive())
+            {
+                LoadEmbeddedReferencesTabForSelectionAsync();
+            }
             ScheduleReferencesTabRefresh();
+        }
+
+        private void LoadEmbeddedReferencesTabForSelectionAsync()
+        {
+            if (fwReferencesGrid == null || fwReferencesGrid.IsDisposed)
+            {
+                return;
+            }
+
+            int listIndex = comboBox_lists != null ? comboBox_lists.SelectedIndex : -1;
+            int elementIndex = ResolveCurrentElementIndex();
+            int id;
+            if (!TryGetElementId(listIndex, elementIndex, out id))
+            {
+                fwReferencesGrid.Rows.Clear();
+                if (fwReferencesTab != null)
+                {
+                    fwReferencesTab.Text = "References";
+                }
+                return;
+            }
+
+            int loadVersion = ++referencesTabLoadVersion;
+            SetEmbeddedReferencesLoadingState();
+
+            eListCollection listCollection = sessionService != null ? sessionService.ListCollection : null;
+            CacheSave database = sessionService != null ? sessionService.Database : null;
+            if (listCollection == null || database == null || itemReferenceService == null)
+            {
+                return;
+            }
+
+            if (!EnsureReferenceIndexAvailable())
+            {
+                return;
+            }
+
+            System.Threading.Tasks.Task.Run(() =>
+            {
+                return BuildReferenceRows(listCollection, database, listIndex, id, loadVersion);
+            }).ContinueWith(task =>
+            {
+                if (IsDisposed || !IsHandleCreated)
+                {
+                    return;
+                }
+
+                BeginInvoke((Action)(() =>
+                {
+                    if (IsDisposed
+                        || loadVersion != referencesTabLoadVersion
+                        || fwReferencesGrid == null
+                        || fwReferencesGrid.IsDisposed
+                        || !IsReferencesTabActive()
+                        || task.IsFaulted
+                        || task.Result == null)
+                    {
+                        return;
+                    }
+
+                    PopulateEmbeddedReferencesGrid(task.Result);
+                }));
+            });
+        }
+
+        private void SetEmbeddedReferencesLoadingState()
+        {
+            if (fwReferencesGrid == null || fwReferencesGrid.IsDisposed)
+            {
+                return;
+            }
+
+            fwReferencesGrid.Rows.Clear();
+            fwReferencesGrid.Rows.Add(string.Empty, string.Empty, Properties.Resources.blank, "Loading references...", string.Empty, string.Empty);
+            if (fwReferencesTab != null)
+            {
+                fwReferencesTab.Text = "References";
+            }
+        }
+
+        private void PopulateEmbeddedReferencesGrid(List<ReferenceGridRowData> rows)
+        {
+            if (fwReferencesGrid == null || fwReferencesGrid.IsDisposed)
+            {
+                return;
+            }
+
+            fwReferencesGrid.SuspendLayout();
+            try
+            {
+                fwReferencesGrid.Rows.Clear();
+                if (rows != null && rows.Count > 0)
+                {
+                    DataGridViewRow[] gridRows = new DataGridViewRow[rows.Count];
+                    for (int i = 0; i < rows.Count; i++)
+                    {
+                        ReferenceGridRowData data = rows[i];
+                        DataGridViewRow row = (DataGridViewRow)fwReferencesGrid.RowTemplate.Clone();
+                        row.CreateCells(fwReferencesGrid, new object[]
+                        {
+                            data.ListLabel ?? string.Empty,
+                            data.SourceId ?? string.Empty,
+                            data.Icon,
+                            data.Name ?? string.Empty,
+                            data.FieldLabel ?? string.Empty,
+                            data.RawValue ?? string.Empty
+                        });
+                        row.Tag = data;
+                        ApplyReferenceRowStyle(row, data.Quality, fwReferencesGrid);
+                        gridRows[i] = row;
+                    }
+
+                    fwReferencesGrid.Rows.AddRange(gridRows);
+                }
+                else
+                {
+                    fwReferencesGrid.Rows.Add(string.Empty, string.Empty, Properties.Resources.blank, "No references found.", string.Empty, string.Empty);
+                }
+            }
+            finally
+            {
+                fwReferencesGrid.ResumeLayout();
+            }
+
+            if (fwReferencesTab != null)
+            {
+                fwReferencesTab.Text = BuildReferencesTabTitle("References", rows != null ? rows.Count : 0);
+            }
         }
 
         private void ScheduleReferencesTabRefresh()
@@ -1118,6 +1258,10 @@ namespace FWEledit
             }
 
             ScheduleVisibleReferenceCountRefresh();
+            if (IsReferencesTabActive())
+            {
+                LoadEmbeddedReferencesTabForSelectionAsync();
+            }
             if (referencesViewerForm != null && !referencesViewerForm.IsDisposed && referencesViewerForm.Visible)
             {
                 ScheduleReferencesTabRefresh();
@@ -1143,6 +1287,10 @@ namespace FWEledit
                 || sessionService.ListCollection == null)
             {
                 ScheduleVisibleReferenceCountRefresh();
+                if (IsReferencesTabActive())
+                {
+                    LoadEmbeddedReferencesTabForSelectionAsync();
+                }
                 if (referencesViewerForm != null && !referencesViewerForm.IsDisposed && referencesViewerForm.Visible)
                 {
                     ScheduleReferencesTabRefresh();
@@ -1158,6 +1306,10 @@ namespace FWEledit
                 elementIndex);
 
             ScheduleVisibleReferenceCountRefresh();
+            if (IsReferencesTabActive())
+            {
+                LoadEmbeddedReferencesTabForSelectionAsync();
+            }
             if (referencesViewerForm != null && !referencesViewerForm.IsDisposed && referencesViewerForm.Visible)
             {
                 ScheduleReferencesTabRefresh();

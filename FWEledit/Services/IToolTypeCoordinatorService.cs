@@ -60,13 +60,37 @@ namespace FWEledit
                 return;
             }
 
-            owner.Height = 50 + previewBox.Height;
+            const int minWidth = 360;
+            const int maxWidth = 460;
+            const int horizontalPadding = 24;
+            const int headerHeight = 58;
+            const int bottomPadding = 12;
+            const int maxHeight = 560;
+
+            int measuredWidth = TextRenderer.MeasureText(
+                previewBox.Text ?? string.Empty,
+                previewBox.Font,
+                new Size(maxWidth - horizontalPadding, int.MaxValue),
+                TextFormatFlags.WordBreak).Width + horizontalPadding + 8;
+            owner.Width = Math.Max(minWidth, Math.Min(maxWidth, measuredWidth));
+            previewBox.Width = owner.Width - horizontalPadding;
+
+            int desiredTextHeight = Math.Max(42, previewBox.Height);
+            int desiredHeight = headerHeight + desiredTextHeight + bottomPadding;
+            owner.Height = Math.Min(maxHeight, desiredHeight);
+            previewBox.Height = Math.Max(42, owner.Height - headerHeight - bottomPadding);
 
             Size screen = Screen.PrimaryScreen.WorkingArea.Size;
             int bottomLimit = screen.Height;
             if (owner.Bottom > bottomLimit)
             {
                 owner.Top = owner.Top - owner.Height;
+            }
+
+            int rightLimit = screen.Width;
+            if (owner.Right > rightLimit)
+            {
+                owner.Left = Math.Max(0, rightLimit - owner.Width);
             }
         }
 
@@ -77,7 +101,7 @@ namespace FWEledit
                 return;
             }
 
-            previewBox.Height = e.NewRectangle.Height + 5;
+            previewBox.Height = Math.Min(490, e.NewRectangle.Height + 8);
         }
 
         public void HandleFadeTick(Form owner, Timer timer, double increment)

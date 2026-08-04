@@ -7,6 +7,12 @@ namespace FWEledit
     {
         private void cellMouseMove_ToolTip(object sender, DataGridViewCellMouseEventArgs e)
 		{
+            if (TryShowValueReferenceHoverPreview(sender as Control, e))
+            {
+                return;
+            }
+
+            CloseHoverPreview();
             mainWindowTooltipCoordinatorService.HandleCellMouseMove(
                 itemTooltipUiService,
                 sessionService.ListCollection,

@@ -41,6 +41,20 @@ namespace FWEledit
         {
             UpdateCurrentIdUsageIndicator();
         }
+
+        private void addon_package_desc_editor_leave(object sender, EventArgs e)
+        {
+            ApplyAddonPackageDescEditorToCurrentCell();
+        }
+
+        private void addon_package_desc_editor_key_down(object sender, KeyEventArgs e)
+        {
+            if (e != null && e.KeyCode == Keys.Enter && e.Control)
+            {
+                ApplyAddonPackageDescEditorToCurrentCell();
+                e.SuppressKeyPress = true;
+            }
+        }
     }
 }
 

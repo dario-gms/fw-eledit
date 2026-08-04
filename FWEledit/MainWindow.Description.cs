@@ -70,8 +70,10 @@ namespace FWEledit
                 return;
             }
 
-            if (TryApplyAddonPackageDescModeForSelection())
+            if (CurrentListIsAddonPackageConfig())
             {
+                RemoveDescriptionTabForAddonPackageConfig();
+                ConfigureAddonPackageDescMode(false);
                 return;
             }
 
@@ -122,6 +124,44 @@ namespace FWEledit
             {
                 LoadItemDescriptionsFromConfigs();
                 ApplyDescriptionTabSelection();
+            }
+        }
+
+        private bool CurrentListIsAddonPackageConfig()
+        {
+            if (comboBox_lists == null || sessionService == null || sessionService.ListCollection == null)
+            {
+                return false;
+            }
+
+            int listIndex = comboBox_lists.SelectedIndex;
+            if (listIndex < 0 || listIndex >= sessionService.ListCollection.Lists.Length)
+            {
+                return false;
+            }
+
+            return IsNamedConfigList(
+                sessionService.ListCollection.Lists[listIndex].listName,
+                "ADDON_PACKAGE_CONFIG");
+        }
+
+        private void RemoveDescriptionTabForAddonPackageConfig()
+        {
+            if (fwRightTabs == null || fwDescriptionTab == null)
+            {
+                return;
+            }
+
+            if (fwRightTabs.SelectedTab == fwDescriptionTab)
+            {
+                fwRightTabs.SelectedTab = fwValuesTab != null && fwRightTabs.TabPages.Contains(fwValuesTab)
+                    ? fwValuesTab
+                    : (fwRightTabs.TabPages.Count > 0 ? fwRightTabs.TabPages[0] : null);
+            }
+
+            if (fwRightTabs.TabPages.Contains(fwDescriptionTab))
+            {
+                fwRightTabs.TabPages.Remove(fwDescriptionTab);
             }
         }
 
