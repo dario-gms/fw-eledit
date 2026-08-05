@@ -41,8 +41,11 @@ namespace FWEledit
         private TabPage fwEquipmentTabDecompose;
         private TabPage fwEquipmentTabOther;
         private TabPage fwReferencesTab;
+        private TabControl fwReferencesTabs;
         private DataGridView fwReferencesGrid;
+        private readonly Dictionary<string, DataGridView> fwReferencesGridsByKey = new Dictionary<string, DataGridView>();
         private Form referencesViewerForm;
+        private GameShopEditorWindow gameShopEditorWindow;
         private Label referencesViewerLabel;
         private TabControl referencesViewerTabs;
         private DataGridView referencesViewerGrid;
@@ -108,6 +111,7 @@ namespace FWEledit
         private readonly ItemFieldClassifierService itemFieldClassifierService = new ItemFieldClassifierService();
         private readonly ItemReferenceService itemReferenceService;
         private readonly ReferenceIndexService referenceIndexService = new ReferenceIndexService();
+        private readonly GameShopDataService gameShopDataService = new GameShopDataService();
         private readonly EquipmentFieldService equipmentFieldService = new EquipmentFieldService();
         private readonly EquipmentTabService equipmentTabService = new EquipmentTabService();
         private readonly ModelPickerCacheService modelPickerCacheService = new ModelPickerCacheService();

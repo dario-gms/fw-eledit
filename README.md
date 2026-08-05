@@ -12,6 +12,20 @@ FWEledit is based on [sELedit++ by Wrechid](https://github.com/Wrechid/sELedit-)
 
 ---
 
+## What's New in v0.9.5.18
+
+- Added the first integrated `gshop.data` editor, available from Tools and from `Goods in Game shop` references, with search, item icons, editable known fields, save support, and preservation of the unknown binary record data.
+- Added GShop-specific item and gift selectors, a dedicated qshop icon picker, currency selection for Eyrda Leaf / Soul Leaf / All Leaves, and sharper shop-icon previews through the improved DDS loading path.
+- Expanded `Goods in Game shop` reference support so shop entries participate in the same reference workflow as `elements.data` lists.
+- Reworked reference browsing with grouped source-list tabs, automatic refresh while switching elements, smoother repainting, inherited icon resolution, and clearer nonzero/zero reference counts in the Elements list.
+- Improved reference coverage for item-bearing lists such as medicine, material, skilltome, transmit roll, NPC sell service, and trade-page style tables.
+- Reorganized Equipment values into gameplay-focused groups while keeping important recast and special-addon fields in Values, added parsers/selectors for equip masks, equip location, equip type, file matter/model paths, medicine/material types, and related subtype fields.
+- Added Yes/No rendering and double-click toggles for common boolean fields such as transfer chance, alpha fashion equip, can decompose, can auction, and sell for bind money.
+- Improved value readability with humanized field labels, large-number dot separators, better tooltip previews, and NPC-specific name coloring.
+- Project/app version metadata updated to `v0.9.5.18`.
+
+---
+
 ## What's New in v0.9.5.17
 
 - Added a dedicated multiline bottom editor for the `desc` field in `[105] ADDON_PACKAGE_CONFIG`, making line breaks practical without using the old Description tab workflow.

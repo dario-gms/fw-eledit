@@ -39,6 +39,7 @@ namespace FWEledit
             bool isRefine = equipmentFieldService.IsEquipmentRefineField(fieldName);
             bool isDecompose = equipmentFieldService.IsEquipmentDecomposeField(fieldName);
             bool isOther = equipmentFieldService.IsEquipmentOtherField(fieldName);
+            bool isMainPinned = equipmentFieldService.IsEquipmentMainPinnedField(fieldName);
 
             switch (tab)
             {
@@ -49,10 +50,10 @@ namespace FWEledit
                 case EquipmentValuesTab.Decompose:
                     return isDecompose;
                 case EquipmentValuesTab.Other:
-                    return isOther;
+                    return !isMainPinned && (isOther || isDecompose);
                 case EquipmentValuesTab.Main:
                 default:
-                    return !isModels && !isRefine && !isDecompose;
+                    return isMainPinned || (!isModels && !isRefine && !isDecompose && !isOther);
             }
         }
 
@@ -77,25 +78,27 @@ namespace FWEledit
                 SelectTaggedTab(tabs, EquipmentValuesTab.Refine);
                 return;
             }
-            if (equipmentFieldService.IsEquipmentDecomposeField(fieldName))
+            if (equipmentFieldService.IsEquipmentDecomposeField(fieldName)
+                || equipmentFieldService.IsEquipmentOtherField(fieldName))
             {
-                SelectTaggedTab(tabs, EquipmentValuesTab.Decompose);
+                SelectTaggedTab(tabs, EquipmentValuesTab.Other);
                 return;
             }
 
             SelectTaggedTab(tabs, EquipmentValuesTab.Main);
         }
 
-        public void UpdateVisibility(TabControl tabs, bool show, TabPage modelsTab, TabPage refineTab, TabPage decomposeTab, TabPage descriptionTab)
+        public void UpdateVisibility(TabControl tabs, bool show, TabPage modelsTab, TabPage refineTab, TabPage decomposeTab, TabPage otherTab, TabPage descriptionTab)
         {
             if (tabs == null)
             {
                 return;
             }
 
-            SetEquipmentPageVisible(tabs, modelsTab, show, descriptionTab);
             SetEquipmentPageVisible(tabs, refineTab, show, descriptionTab);
-            SetEquipmentPageVisible(tabs, decomposeTab, show, descriptionTab);
+            SetEquipmentPageVisible(tabs, modelsTab, show, descriptionTab);
+            SetEquipmentPageVisible(tabs, otherTab, show, descriptionTab);
+            SetEquipmentPageVisible(tabs, decomposeTab, false, descriptionTab);
 
             if (!show && tabs.SelectedTab != null && tabs.SelectedTab.Tag is EquipmentValuesTab)
             {

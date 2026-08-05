@@ -76,6 +76,11 @@ namespace FWEledit
                 return false;
             }
 
+            if (TryLoadPreviewMeshFast(assetManager, mappedModelPath, package, relativeModelPath, out previewData, out error))
+            {
+                return true;
+            }
+
             string modelExtension = (Path.GetExtension(relativeModelPath) ?? string.Empty).ToLowerInvariant();
             if (string.Equals(modelExtension, ".ski", StringComparison.OrdinalIgnoreCase))
             {
@@ -359,6 +364,263 @@ namespace FWEledit
 
             error = string.Empty;
             return true;
+        }
+
+        private bool TryLoadPreviewMeshFast(
+            AssetManager assetManager,
+            string mappedModelPath,
+            string package,
+            string relativeModelPath,
+            out ModelPreviewMeshData previewData,
+            out string error)
+        {
+            previewData = new ModelPreviewMeshData();
+            error = string.Empty;
+
+            string modelExtension = (Path.GetExtension(relativeModelPath) ?? string.Empty).ToLowerInvariant();
+            if (string.Equals(modelExtension, ".ski", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!pckEntryReaderService.TryReadFileFast(package, relativeModelPath, out byte[] skiBytes, out string resolvedSkiRelative, out string readError))
+                {
+                    error = readError;
+                    return false;
+                }
+
+                return TryBuildPreviewDataFromResolvedSki(
+                    assetManager,
+                    mappedModelPath,
+                    string.Empty,
+                    string.Empty,
+                    package,
+                    resolvedSkiRelative,
+                    package,
+                    resolvedSkiRelative,
+                    Path.ChangeExtension(resolvedSkiRelative, ".bon"),
+                    package,
+                    resolvedSkiRelative,
+                    skiBytes,
+                    5,
+                    6,
+                    0,
+                    unchecked((int)0xFFFFFFFF),
+                    0,
+                    new float[0],
+                    new string[0],
+                    out previewData,
+                    out error);
+            }
+
+            if (string.Equals(modelExtension, ".smd", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!pckEntryReaderService.TryReadFileFast(package, relativeModelPath, out byte[] smdBytes, out string resolvedSmdRelative, out string readError))
+                {
+                    error = readError;
+                    return false;
+                }
+
+                string skiReference;
+                if (!TryExtractReferencedFileFromSmd(smdBytes, ".ski", out skiReference))
+                {
+                    skiReference = Path.ChangeExtension(resolvedSmdRelative, ".ski");
+                }
+
+                string bonReference;
+                if (!TryExtractReferencedFileFromSmd(smdBytes, ".bon", out bonReference))
+                {
+                    bonReference = Path.ChangeExtension(resolvedSmdRelative, ".bon");
+                }
+
+                if (!TryReadSkiWithFastFallback(package, resolvedSmdRelative, skiReference, out string resolvedSkiRelative, out byte[] skiBytes, out error))
+                {
+                    return false;
+                }
+
+                return TryBuildPreviewDataFromResolvedSki(
+                    assetManager,
+                    mappedModelPath,
+                    string.Empty,
+                    string.Empty,
+                    package,
+                    resolvedSmdRelative,
+                    package,
+                    resolvedSmdRelative,
+                    bonReference,
+                    package,
+                    resolvedSkiRelative,
+                    skiBytes,
+                    5,
+                    6,
+                    0,
+                    unchecked((int)0xFFFFFFFF),
+                    0,
+                    new float[0],
+                    new string[0],
+                    out previewData,
+                    out error);
+            }
+
+            if (!string.Equals(modelExtension, ".ecm", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(modelExtension, ".gfx", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            if (!pckEntryReaderService.TryReadFileFast(package, relativeModelPath, out byte[] ecmBytes, out string resolvedEcmRelative, out string ecmReadError))
+            {
+                error = ecmReadError;
+                return false;
+            }
+
+            if (!TryDecodeText(ecmBytes, out string ecmText))
+            {
+                error = "Failed to decode .ecm file content.";
+                return false;
+            }
+
+            if (!TryExtractFieldValue(ecmText, "SkinModelPath", out string skinModelPath) || string.IsNullOrWhiteSpace(skinModelPath))
+            {
+                error = string.Empty;
+                return false;
+            }
+
+            int srcBlend = ParseIntFieldOrDefault(ecmText, "SrcBlend", 5);
+            int destBlend = ParseIntFieldOrDefault(ecmText, "DestBlend", 6);
+            int emissiveColorArgb = ParseColorFieldOrDefault(ecmText, "EmissiveCol", 0);
+            int orgColorArgb = ParseColorFieldOrDefault(ecmText, "OrgColor", unchecked((int)0xFFFFFFFF));
+            int outerNum = ParseIntFieldOrDefault(ecmText, "OuterNum", 0);
+            float[] shaderFloats = ParseFloatParameters(ecmText, outerNum);
+            string[] addiSkinPaths = ExtractRepeatedFieldValues(ecmText, "AddiSkinPath");
+
+            ResolveReferencedPath(package, resolvedEcmRelative, skinModelPath, out string smdPackage, out string relativeSmd);
+            if (string.IsNullOrWhiteSpace(relativeSmd) || !string.Equals(smdPackage, package, StringComparison.OrdinalIgnoreCase))
+            {
+                error = string.Empty;
+                return false;
+            }
+
+            string resolvedSmdRelativeFast = relativeSmd;
+            byte[] smdBytesFast = null;
+            string skiReferenceFast = relativeSmd;
+            string bonReferenceFast = Path.ChangeExtension(relativeSmd, ".bon");
+            if (!string.Equals(Path.GetExtension(relativeSmd), ".ski", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!pckEntryReaderService.TryReadFileFast(package, relativeSmd, out smdBytesFast, out resolvedSmdRelativeFast, out string smdReadError))
+                {
+                    error = smdReadError;
+                    return false;
+                }
+
+                if (!TryExtractReferencedFileFromSmd(smdBytesFast, ".ski", out skiReferenceFast))
+                {
+                    skiReferenceFast = Path.ChangeExtension(resolvedSmdRelativeFast, ".ski");
+                }
+                if (!TryExtractReferencedFileFromSmd(smdBytesFast, ".bon", out bonReferenceFast))
+                {
+                    bonReferenceFast = Path.ChangeExtension(resolvedSmdRelativeFast, ".bon");
+                }
+            }
+
+            List<string> skiReferenceCandidates = new List<string>(8);
+            if (!string.IsNullOrWhiteSpace(skiReferenceFast))
+            {
+                skiReferenceCandidates.Add(skiReferenceFast);
+            }
+            if (addiSkinPaths != null)
+            {
+                for (int i = 0; i < addiSkinPaths.Length; i++)
+                {
+                    if (!string.IsNullOrWhiteSpace(addiSkinPaths[i]))
+                    {
+                        skiReferenceCandidates.Add(addiSkinPaths[i]);
+                    }
+                }
+            }
+            if (skiReferenceCandidates.Count == 0)
+            {
+                skiReferenceCandidates.Add(Path.ChangeExtension(resolvedSmdRelativeFast, ".ski"));
+            }
+
+            string resolvedSkiRelativeFast = string.Empty;
+            byte[] skiBytesFast = null;
+            for (int i = 0; i < skiReferenceCandidates.Count; i++)
+            {
+                if (TryReadSkiWithFastFallback(package, resolvedSmdRelativeFast, skiReferenceCandidates[i], out resolvedSkiRelativeFast, out skiBytesFast, out string _))
+                {
+                    break;
+                }
+            }
+
+            if (skiBytesFast == null || string.IsNullOrWhiteSpace(resolvedSkiRelativeFast))
+            {
+                error = string.Empty;
+                return false;
+            }
+
+            return TryBuildPreviewDataFromResolvedSki(
+                assetManager,
+                mappedModelPath,
+                package,
+                resolvedEcmRelative,
+                package,
+                resolvedSmdRelativeFast,
+                package,
+                resolvedSmdRelativeFast,
+                bonReferenceFast,
+                package,
+                resolvedSkiRelativeFast,
+                skiBytesFast,
+                srcBlend,
+                destBlend,
+                emissiveColorArgb,
+                orgColorArgb,
+                outerNum,
+                shaderFloats,
+                addiSkinPaths,
+                out previewData,
+                out error);
+        }
+
+        private bool TryReadSkiWithFastFallback(
+            string package,
+            string relativeSmd,
+            string skiReference,
+            out string resolvedRelativeSki,
+            out byte[] skiBytes,
+            out string error)
+        {
+            resolvedRelativeSki = string.Empty;
+            skiBytes = null;
+            error = string.Empty;
+
+            string[] candidates = BuildSkiPathCandidates(relativeSmd, skiReference);
+            for (int i = 0; i < candidates.Length; i++)
+            {
+                string candidate = candidates[i];
+                if (string.IsNullOrWhiteSpace(candidate))
+                {
+                    continue;
+                }
+
+                ResolveReferencedPath(package, relativeSmd, candidate, out string probePackage, out string probeRelative);
+                if (!string.Equals(probePackage, package, StringComparison.OrdinalIgnoreCase) || string.IsNullOrWhiteSpace(probeRelative))
+                {
+                    continue;
+                }
+
+                if (pckEntryReaderService.TryReadFileFast(package, probeRelative, out skiBytes, out resolvedRelativeSki, out string _))
+                {
+                    return true;
+                }
+
+                if (pckEntryReaderService.TryResolveSiblingByExtension(package, probeRelative, ".ski", out string siblingRelative, out string _)
+                    && pckEntryReaderService.TryReadFileFast(package, siblingRelative, out skiBytes, out resolvedRelativeSki, out string _))
+                {
+                    return true;
+                }
+            }
+
+            error = "Failed to resolve .ski path for preview.";
+            return false;
         }
 
         private static void SplitPackagePath(string mappedPath, out string package, out string relative)
@@ -3926,7 +4188,7 @@ namespace FWEledit
                     continue;
                 }
 
-                if (TryReadTextureBytesWithPackageFallback(assetManager, texPackage, texRelative, out byte[] bytes, out string resolvedTexturePath)
+                if (TryReadTextureBytesWithPackageFallback(assetManager, texPackage, relativeSkiPath, texRelative, out byte[] bytes, out string resolvedTexturePath)
                     && TryDecodeTextureData(texRelative, bytes, alphaPolicy, out PreviewTextureData decoded))
                 {
                     decoded.Name = resolvedTexturePath;
@@ -4063,6 +4325,7 @@ namespace FWEledit
         private bool TryReadTextureBytesWithPackageFallback(
             AssetManager assetManager,
             string preferredPackage,
+            string anchorRelativePath,
             string textureRelativePath,
             out byte[] bytes,
             out string resolvedPath)
@@ -4080,9 +4343,33 @@ namespace FWEledit
             AddUniquePackage(packageCandidates, seenPackages, "configs");
             AddUniquePackage(packageCandidates, seenPackages, string.Empty);
 
+            string normalizedPreferredPackage = (preferredPackage ?? string.Empty).Trim();
+            if (!string.IsNullOrWhiteSpace(normalizedPreferredPackage)
+                && pckEntryReaderService.TryReadFileFast(normalizedPreferredPackage, textureRelativePath, out bytes, out string preferredResolvedRelative, out string _))
+            {
+                resolvedPath = BuildMappedPath(normalizedPreferredPackage, preferredResolvedRelative);
+                return true;
+            }
+
+            string[] nearbyTextureFileNames = BuildTextureFileCandidates(textureRelativePath);
+            if (!string.IsNullOrWhiteSpace(normalizedPreferredPackage)
+                && !string.IsNullOrWhiteSpace(anchorRelativePath)
+                && nearbyTextureFileNames.Length > 0
+                && pckEntryReaderService.TryResolveNearestEntryByFileNames(normalizedPreferredPackage, anchorRelativePath, nearbyTextureFileNames, out string nearbyRelative, out string _)
+                && pckEntryReaderService.TryReadFileFast(normalizedPreferredPackage, nearbyRelative, out bytes, out string resolvedNearbyRelative, out string _))
+            {
+                resolvedPath = BuildMappedPath(normalizedPreferredPackage, resolvedNearbyRelative);
+                return true;
+            }
+
             for (int i = 0; i < packageCandidates.Count; i++)
             {
                 string pkg = packageCandidates[i];
+                if (string.IsNullOrWhiteSpace(pkg))
+                {
+                    continue;
+                }
+
                 if (TryReadModelFile(assetManager, pkg, textureRelativePath, out bytes, out string _))
                 {
                     resolvedPath = BuildMappedPath(pkg, textureRelativePath);

@@ -146,6 +146,7 @@ namespace FWEledit
             fwEquipmentTabDecompose = layout.EquipmentTabDecompose;
             fwEquipmentTabOther = layout.EquipmentTabOther;
             fwReferencesTab = layout.ReferencesTab;
+            fwReferencesTabs = layout.ReferencesTabs;
             fwReferencesGrid = layout.ReferencesGrid;
             fwDescriptionTab = layout.DescriptionTab;
             fwDescriptionEditor = layout.DescriptionEditor;
@@ -324,6 +325,19 @@ namespace FWEledit
             {
                 fwRightTabs.TabPages.Remove(fwReferencesTab);
             }
+
+            if (toolStripMenuItem3 != null && !toolStripMenuItem3.DropDownItems.ContainsKey("gShopEditorToolStripMenuItem"))
+            {
+                ToolStripMenuItem gShopItem = new ToolStripMenuItem();
+                gShopItem.Name = "gShopEditorToolStripMenuItem";
+                gShopItem.Text = "GShop Editor...";
+                gShopItem.Click += click_gShopEditor;
+
+                int insertIndex = toolStripMenuItem3.DropDownItems.ContainsKey("fieldCompareToolStripMenuItem")
+                    ? toolStripMenuItem3.DropDownItems.IndexOfKey("fieldCompareToolStripMenuItem") + 1
+                    : Math.Min(4, toolStripMenuItem3.DropDownItems.Count);
+                toolStripMenuItem3.DropDownItems.Insert(insertIndex, gShopItem);
+            }
         }
 
         private void InitializeEmbeddedReferencesTab()
@@ -335,6 +349,8 @@ namespace FWEledit
 
             fwReferencesGrid.CellDoubleClick += referencesViewerGrid_CellDoubleClick;
             fwReferencesGrid.KeyDown += referencesViewerGrid_KeyDown;
+            fwReferencesGridsByKey.Clear();
+            fwReferencesGridsByKey["all"] = fwReferencesGrid;
             EnsureReferencesTabIsLast();
         }
 
@@ -638,6 +654,7 @@ namespace FWEledit
                 fwDarkMode);
             UpdateThemeToggleButton();
             ApplyReferencesViewerTheme();
+            ApplyEmbeddedReferencesTabsTheme();
             if (fwReferencesGrid != null)
             {
                 fwReferencesGrid.Invalidate();
@@ -665,6 +682,7 @@ namespace FWEledit
                 fwReferencesGrid.Invalidate();
             }
             ApplyReferencesViewerTheme();
+            ApplyEmbeddedReferencesTabsTheme();
         }
 
         private void UpdateThemeToggleButton()

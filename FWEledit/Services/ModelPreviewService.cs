@@ -9,6 +9,42 @@ namespace FWEledit
 {
     public sealed class ModelPreviewService
     {
+        private static void ClearWaitCursorState()
+        {
+            try
+            {
+                Application.UseWaitCursor = false;
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                Cursor.Current = Cursors.Default;
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                foreach (Form form in Application.OpenForms)
+                {
+                    if (form == null || form.IsDisposed)
+                    {
+                        continue;
+                    }
+
+                    form.UseWaitCursor = false;
+                    form.Cursor = Cursors.Default;
+                }
+            }
+            catch
+            {
+            }
+        }
+
         private sealed class WindowHandleWrapper : IWin32Window
         {
             public WindowHandleWrapper(IntPtr handle)
@@ -171,6 +207,7 @@ namespace FWEledit
 
         public void ShowPreviewWindow(ModelPreviewMeshData meshData, bool activateWindow, IntPtr nonActivatingOwnerHandle)
         {
+            ClearWaitCursorState();
             if (meshData == null)
             {
                 AppendPreviewTrace("show-window skipped reason=null-mesh");
@@ -230,6 +267,7 @@ namespace FWEledit
                 }
                 if (activePreviewWindow != null)
                 {
+                    ClearWaitCursorState();
                     return;
                 }
             }
@@ -242,6 +280,7 @@ namespace FWEledit
                 {
                     activePreviewWindow = null;
                 }
+                ClearWaitCursorState();
             };
             IWin32Window ownerWindow = null;
             if (nonActivatingOwnerHandle != IntPtr.Zero)
@@ -298,6 +337,7 @@ namespace FWEledit
             finally
             {
                 activePreviewWindow = null;
+                ClearWaitCursorState();
             }
         }
 
@@ -336,6 +376,7 @@ namespace FWEledit
 
         public void ShowPreviewMessage(string message, bool activateWindow, IntPtr nonActivatingOwnerHandle)
         {
+            ClearWaitCursorState();
             string safeMessage = string.IsNullOrWhiteSpace(message)
                 ? "Model preview unavailable for this file."
                 : message.Trim();
@@ -379,6 +420,7 @@ namespace FWEledit
                     activePreviewWindow.BringToFront();
                     activePreviewWindow.Activate();
                 }
+                ClearWaitCursorState();
                 return;
             }
 
@@ -390,6 +432,7 @@ namespace FWEledit
                 {
                     activePreviewWindow = null;
                 }
+                ClearWaitCursorState();
             };
 
             IWin32Window ownerWindow = null;
@@ -418,6 +461,15 @@ namespace FWEledit
             {
                 window.BringToFront();
                 window.Activate();
+            }
+
+            ClearWaitCursorState();
+            try
+            {
+                window.BeginInvoke((Action)ClearWaitCursorState);
+            }
+            catch
+            {
             }
         }
 

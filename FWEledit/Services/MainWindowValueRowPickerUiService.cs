@@ -341,6 +341,63 @@ namespace FWEledit
                 owner);
         }
 
+        public void OpenEquipmentMaskPickerForValueRow(
+            ValueRowPickerUiService valueRowPickerUiService,
+            DataGridView valuesGrid,
+            int rowIndex,
+            ItemFieldClassifierService fieldClassifierService,
+            IWin32Window owner)
+        {
+            if (valueRowPickerUiService == null)
+            {
+                return;
+            }
+
+            valueRowPickerUiService.OpenEquipmentMaskPickerForValueRow(
+                valuesGrid,
+                rowIndex,
+                fieldClassifierService,
+                owner);
+        }
+
+        public void OpenEquipmentLocationPickerForValueRow(
+            ValueRowPickerUiService valueRowPickerUiService,
+            DataGridView valuesGrid,
+            int rowIndex,
+            ItemFieldClassifierService fieldClassifierService,
+            IWin32Window owner)
+        {
+            if (valueRowPickerUiService == null)
+            {
+                return;
+            }
+
+            valueRowPickerUiService.OpenEquipmentLocationPickerForValueRow(
+                valuesGrid,
+                rowIndex,
+                fieldClassifierService,
+                owner);
+        }
+
+        public void OpenEquipmentTypePickerForValueRow(
+            ValueRowPickerUiService valueRowPickerUiService,
+            DataGridView valuesGrid,
+            int rowIndex,
+            ItemFieldClassifierService fieldClassifierService,
+            IWin32Window owner)
+        {
+            if (valueRowPickerUiService == null)
+            {
+                return;
+            }
+
+            valueRowPickerUiService.OpenEquipmentTypePickerForValueRow(
+                valuesGrid,
+                rowIndex,
+                fieldClassifierService,
+                owner);
+        }
+
         public void OpenModelProfessionPickerForValueRow(
             ValueRowPickerUiService valueRowPickerUiService,
             DataGridView valuesGrid,
@@ -575,6 +632,9 @@ namespace FWEledit
             Action<int> openProcTypePicker,
             Action<int> openProfessionMaskPicker,
             Action<int> openRaceMaskPicker,
+            Action<int> openEquipmentMaskPicker,
+            Action<int> openEquipmentLocationPicker,
+            Action<int> openEquipmentTypePicker,
             Action<int> openModelProfessionPicker,
             Action<int> openModelRacePicker,
             Action<int> openCombinedServicesPicker,
@@ -610,6 +670,9 @@ namespace FWEledit
                 openProcTypePicker,
                 openProfessionMaskPicker,
                 openRaceMaskPicker,
+                openEquipmentMaskPicker,
+                openEquipmentLocationPicker,
+                openEquipmentTypePicker,
                 openModelProfessionPicker,
                 openModelRacePicker,
                 openCombinedServicesPicker,

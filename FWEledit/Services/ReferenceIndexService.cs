@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 
 namespace FWEledit
@@ -5,12 +6,16 @@ namespace FWEledit
     public sealed class ReferenceIndexService
     {
         private readonly object syncRoot = new object();
+        private readonly GameShopDataService gameShopDataService = new GameShopDataService();
         private eListCollection cachedListCollection;
         private ItemReferenceService cachedReferenceService;
+        private string cachedElementsPath = string.Empty;
         private readonly Dictionary<string, List<ReferenceUsage>> referencesByTarget = new Dictionary<string, List<ReferenceUsage>>();
         private Dictionary<int, List<int>> itemListIndexesById = new Dictionary<int, List<int>>();
         private readonly Dictionary<int, int[]> referenceFieldIndexesBySourceList = new Dictionary<int, int[]>();
         private bool indexBuilt;
+
+        public string ElementsPath { get; set; } = string.Empty;
 
         public void Clear()
         {
@@ -18,6 +23,7 @@ namespace FWEledit
             {
                 cachedListCollection = null;
                 cachedReferenceService = null;
+                cachedElementsPath = string.Empty;
                 referencesByTarget.Clear();
                 itemListIndexesById.Clear();
                 referenceFieldIndexesBySourceList.Clear();
@@ -53,6 +59,7 @@ namespace FWEledit
             {
                 cachedListCollection = listCollection;
                 cachedReferenceService = referenceService;
+                cachedElementsPath = ElementsPath ?? string.Empty;
                 referencesByTarget.Clear();
 
                 if (cache != null)
@@ -125,13 +132,20 @@ namespace FWEledit
             {
                 EnsureIndex(listCollection, referenceService);
 
+                List<ReferenceUsage> merged = new List<ReferenceUsage>();
                 List<ReferenceUsage> usages;
                 if (referencesByTarget.TryGetValue(BuildKey(targetListIndex, targetId), out usages))
                 {
-                    return usages;
+                    AddUniqueUsages(merged, usages);
                 }
 
-                return new List<ReferenceUsage>();
+                if (referenceService.IsItemBearingList(listCollection, targetListIndex)
+                    && referencesByTarget.TryGetValue(BuildKey(-1, targetId), out usages))
+                {
+                    AddUniqueUsages(merged, usages);
+                }
+
+                return merged;
             }
         }
 
@@ -145,6 +159,7 @@ namespace FWEledit
 
             if (object.ReferenceEquals(cachedListCollection, listCollection)
                 && object.ReferenceEquals(cachedReferenceService, referenceService)
+                && string.Equals(cachedElementsPath, ElementsPath ?? string.Empty, StringComparison.OrdinalIgnoreCase)
                 && indexBuilt)
             {
                 return;
@@ -152,10 +167,12 @@ namespace FWEledit
 
             cachedListCollection = listCollection;
             cachedReferenceService = referenceService;
+            cachedElementsPath = ElementsPath ?? string.Empty;
             referencesByTarget.Clear();
             itemListIndexesById = BuildItemListIndexMap(listCollection, referenceService);
             BuildReferenceFieldIndexMap(listCollection, referenceService);
             BuildIndex(listCollection, referenceService);
+            AddGameShopUsages(itemListIndexesById);
             indexBuilt = true;
         }
 
@@ -339,10 +356,11 @@ namespace FWEledit
             int targetId,
             ReferenceUsage usage)
         {
+            AddUsage(-1, targetId, usage);
+
             List<int> listIndexes;
             if (itemListIndexesById == null || !itemListIndexesById.TryGetValue(targetId, out listIndexes))
             {
-                AddUsage(-1, targetId, usage);
                 return;
             }
 
@@ -350,6 +368,81 @@ namespace FWEledit
             {
                 AddUsage(listIndexes[i], targetId, usage);
             }
+        }
+
+        private void AddGameShopUsages(Dictionary<int, List<int>> itemListIndexesById)
+        {
+            if (itemListIndexesById == null || itemListIndexesById.Count == 0)
+            {
+                return;
+            }
+
+            HashSet<int> knownItemIds = new HashSet<int>(itemListIndexesById.Keys);
+            List<GameShopEntry> entries = gameShopDataService.LoadEntries(ElementsPath);
+            for (int i = 0; i < entries.Count; i++)
+            {
+                GameShopEntry entry = entries[i];
+                int targetId = entry != null ? entry.ItemId : 0;
+                if (targetId <= 0 || !knownItemIds.Contains(targetId))
+                {
+                    continue;
+                }
+
+                ReferenceUsage usage = new ReferenceUsage
+                {
+                    SourceListIndex = GameShopDataService.SourceListIndex,
+                    SourceElementIndex = entry.RowIndex,
+                    SourceFieldIndex = -1,
+                    SourceListName = GameShopDataService.SourceListName,
+                    SourceItemId = entry.Id > 0 ? entry.Id.ToString() : entry.RowIndex.ToString(),
+                    SourceItemName = entry.Name,
+                    SourceFieldName = "Item",
+                    RawValue = targetId.ToString()
+                };
+
+                AddUsageForItemTargets(itemListIndexesById, targetId, usage);
+            }
+        }
+
+        private static void AddUniqueUsages(List<ReferenceUsage> target, List<ReferenceUsage> source)
+        {
+            if (target == null || source == null)
+            {
+                return;
+            }
+
+            for (int i = 0; i < source.Count; i++)
+            {
+                ReferenceUsage usage = source[i];
+                if (usage == null || ContainsUsage(target, usage))
+                {
+                    continue;
+                }
+
+                target.Add(usage);
+            }
+        }
+
+        private static bool ContainsUsage(List<ReferenceUsage> usages, ReferenceUsage candidate)
+        {
+            if (usages == null || candidate == null)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < usages.Count; i++)
+            {
+                ReferenceUsage usage = usages[i];
+                if (usage != null
+                    && usage.SourceListIndex == candidate.SourceListIndex
+                    && usage.SourceElementIndex == candidate.SourceElementIndex
+                    && usage.SourceFieldIndex == candidate.SourceFieldIndex)
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private static ReferenceUsage BuildUsage(

@@ -48,6 +48,7 @@ namespace FWEledit
         {
             ValueChangeResult result = new ValueChangeResult();
             string valueToSet = NormalizeClearedValue(request != null ? request.FieldType : null, request != null ? request.NewValue : null);
+            valueToSet = ValueDisplayFormatCatalog.NormalizeLargeNumberInput(request != null ? request.FieldType : null, valueToSet);
             ItemReferenceOption resolvedReferenceOption = null;
             if (request.ListIndex < 0 || request.FieldIndex < 0)
             {
@@ -99,6 +100,22 @@ namespace FWEledit
             else if (BindFlagCatalog.IsBindFlagFieldName(request.FieldName))
             {
                 valueToSet = BindFlagCatalog.NormalizeInput(request.FieldName, valueToSet);
+            }
+            else if (BooleanFlagCatalog.IsYesNoFieldName(request.FieldName))
+            {
+                valueToSet = BooleanFlagCatalog.NormalizeInput(valueToSet);
+            }
+            else if (EquipmentMaskCatalog.IsEquipmentMaskFieldName(request.FieldName))
+            {
+                valueToSet = EquipmentMaskCatalog.NormalizeInput(valueToSet);
+            }
+            else if (EquipmentLocationCatalog.IsEquipmentLocationFieldName(request.FieldName))
+            {
+                valueToSet = EquipmentLocationCatalog.NormalizeInput(valueToSet);
+            }
+            else if (EquipmentTypeCatalog.IsEquipmentTypeFieldName(request.FieldName))
+            {
+                valueToSet = EquipmentTypeCatalog.NormalizeInput(valueToSet);
             }
             else if (NpcSellMoneyTypeCatalog.IsMoneyTypeField(request.ListCollection, request.ListIndex, request.FieldIndex, request.FieldName))
             {
@@ -223,6 +240,11 @@ namespace FWEledit
                 request.ClearFieldInvalid?.Invoke(request.ListIndex, request.SelectedElementIndices[i], request.FieldIndex);
             }
 
+            if (request.Database != null)
+            {
+                request.Database.model_picker_revision++;
+            }
+
             if (itemReferenceService != null && AffectsItemReferenceCache(request.FieldName))
             {
                 itemReferenceService.ClearCache();
@@ -260,6 +282,22 @@ namespace FWEledit
             else if (BindFlagCatalog.IsBindFlagFieldName(request.FieldName))
             {
                 result.DisplayValue = BindFlagCatalog.FormatDisplay(request.FieldName, valueToSet);
+            }
+            else if (BooleanFlagCatalog.IsYesNoFieldName(request.FieldName))
+            {
+                result.DisplayValue = BooleanFlagCatalog.FormatDisplay(valueToSet);
+            }
+            else if (EquipmentMaskCatalog.IsEquipmentMaskFieldName(request.FieldName))
+            {
+                result.DisplayValue = EquipmentMaskCatalog.FormatDisplay(valueToSet);
+            }
+            else if (EquipmentLocationCatalog.IsEquipmentLocationFieldName(request.FieldName))
+            {
+                result.DisplayValue = EquipmentLocationCatalog.FormatDisplay(valueToSet);
+            }
+            else if (EquipmentTypeCatalog.IsEquipmentTypeFieldName(request.FieldName))
+            {
+                result.DisplayValue = EquipmentTypeCatalog.FormatDisplay(valueToSet);
             }
             else if (NpcSellMoneyTypeCatalog.IsMoneyTypeField(request.ListCollection, request.ListIndex, request.FieldIndex, request.FieldName))
             {
@@ -364,6 +402,8 @@ namespace FWEledit
             {
                 result.DisplayValue = addonParamService.FormatAddonParamValueForUi(request.ListCollection, request.ListIndex, request.CurrentElementIndex, request.FieldName, valueToSet);
             }
+
+            result.DisplayValue = ValueDisplayFormatCatalog.FormatLargeNumber(request.FieldName, result.DisplayValue);
 
             int namePosForStar = -1;
             for (int i = 0; i < request.ListCollection.Lists[request.ListIndex].elementFields.Length; i++)

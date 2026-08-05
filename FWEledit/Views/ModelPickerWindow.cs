@@ -27,6 +27,8 @@ namespace FWEledit
         private readonly Dictionary<string, List<ModelPickerEntry>> entriesByPackage;
         private readonly Dictionary<string, List<string>> folderNamesByPackageCache;
         private readonly Dictionary<string, Dictionary<string, List<ModelPickerEntry>>> entriesByPackageAndFolder;
+        private readonly Dictionary<int, string> packageByPathId;
+        private readonly Dictionary<int, string> folderByPathId;
         private readonly HashSet<string> loadingPackages;
         private string activeLoadingPackage;
         private readonly ComboBox packageFilter;
@@ -51,6 +53,7 @@ namespace FWEledit
         private readonly System.Windows.Forms.Timer autoPreviewTimer;
         private readonly AssetManager previewAssetManager;
         private readonly ModelPreviewService modelPreviewService;
+        private static readonly List<ModelPickerEntry> EmptyEntries = new List<ModelPickerEntry>();
         private bool previewWindowOpened;
         private int previewLoadInProgress;
         private int previewPendingAuto;
@@ -84,6 +87,8 @@ namespace FWEledit
             entriesByPackage = new Dictionary<string, List<ModelPickerEntry>>(StringComparer.OrdinalIgnoreCase);
             folderNamesByPackageCache = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
             entriesByPackageAndFolder = new Dictionary<string, Dictionary<string, List<ModelPickerEntry>>>(StringComparer.OrdinalIgnoreCase);
+            packageByPathId = new Dictionary<int, string>();
+            folderByPathId = new Dictionary<int, string>();
             loadingPackages = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             activeLoadingPackage = string.Empty;
             SelectedPathId = currentPathId;
@@ -487,6 +492,11 @@ namespace FWEledit
             folderNamesByPackageCache.Remove(package);
 
             string folder = ExtractTopFolder(entry.RelativePath, package);
+            if (entry.PathId > 0)
+            {
+                packageByPathId[entry.PathId] = package ?? string.Empty;
+                folderByPathId[entry.PathId] = folder ?? string.Empty;
+            }
             if (!entriesByPackageAndFolder.TryGetValue(package, out Dictionary<string, List<ModelPickerEntry>> byFolder) || byFolder == null)
             {
                 byFolder = new Dictionary<string, List<ModelPickerEntry>>(StringComparer.OrdinalIgnoreCase);
@@ -506,7 +516,7 @@ namespace FWEledit
         {
             if (string.IsNullOrWhiteSpace(package))
             {
-                return new List<ModelPickerEntry>();
+                return EmptyEntries;
             }
 
             if (entriesByPackage.TryGetValue(package, out List<ModelPickerEntry> packageEntries) && packageEntries != null)
@@ -514,7 +524,7 @@ namespace FWEledit
                 return packageEntries;
             }
 
-            return new List<ModelPickerEntry>();
+            return EmptyEntries;
         }
 
         private List<string> GetSortedFoldersForPackage(string package)
@@ -553,7 +563,7 @@ namespace FWEledit
         {
             if (string.IsNullOrWhiteSpace(package) || string.IsNullOrWhiteSpace(folder))
             {
-                return new List<ModelPickerEntry>();
+                return EmptyEntries;
             }
 
             if (entriesByPackageAndFolder.TryGetValue(package, out Dictionary<string, List<ModelPickerEntry>> byFolder)
@@ -564,7 +574,7 @@ namespace FWEledit
                 return folderEntries;
             }
 
-            return new List<ModelPickerEntry>();
+            return EmptyEntries;
         }
 
         private void ScheduleFilterApply()
@@ -923,7 +933,7 @@ namespace FWEledit
             PreparedPackageData prepared = new PreparedPackageData
             {
                 Package = package ?? string.Empty,
-                Entries = new List<ModelPickerEntry>(loaded != null ? loaded.Count : 0),
+                Entries = loaded ?? EmptyEntries,
                 EntriesByFolder = new Dictionary<string, List<ModelPickerEntry>>(StringComparer.OrdinalIgnoreCase)
             };
 
@@ -948,8 +958,6 @@ namespace FWEledit
                 {
                     entry.SearchKey = BuildEntrySearchKey(entry);
                 }
-
-                prepared.Entries.Add(entry);
 
                 string folder = ExtractTopFolder(entry.RelativePath, prepared.Package) ?? string.Empty;
                 if (!prepared.EntriesByFolder.TryGetValue(folder, out List<ModelPickerEntry> folderEntries) || folderEntries == null)
@@ -1011,6 +1019,11 @@ namespace FWEledit
                     }
 
                     string package = ModelPickerCatalog.PackageOrder[i];
+                    if (loadedPackages.Contains(package))
+                    {
+                        continue;
+                    }
+
                     PreparedPackageData prepared = null;
                     try
                     {
@@ -1238,13 +1251,12 @@ namespace FWEledit
             {
                 return string.Empty;
             }
-            for (int i = 0; i < allEntries.Count; i++)
+
+            if (packageByPathId.TryGetValue(pathId, out string package))
             {
-                if (allEntries[i].PathId == pathId)
-                {
-                    return allEntries[i].Package;
-                }
+                return package ?? string.Empty;
             }
+
             return string.Empty;
         }
 
@@ -1255,13 +1267,11 @@ namespace FWEledit
                 return string.Empty;
             }
 
-            for (int i = 0; i < allEntries.Count; i++)
+            if (folderByPathId.TryGetValue(pathId, out string folder))
             {
-                if (allEntries[i].PathId == pathId)
-                {
-                    return ExtractTopFolder(allEntries[i].RelativePath, allEntries[i].Package);
-                }
+                return folder ?? string.Empty;
             }
+
             return string.Empty;
         }
 

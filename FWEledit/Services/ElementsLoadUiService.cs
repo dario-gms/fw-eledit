@@ -124,9 +124,9 @@ namespace FWEledit
                     assetManager.SetGameRootFromElements(result.ElementsPath ?? string.Empty);
                     SetProgress(progressBar, 73);
                     assetManager.load(false);
-                    SetProgress(progressBar, 84);
+                    SetProgress(progressBar, 80);
                     assetManager.EnsureVisualAssetsLoaded();
-                    SetProgress(progressBar, 92);
+                    SetProgress(progressBar, 88);
                     if (viewModel != null && viewModel.Session != null)
                     {
                         viewModel.Session.AssetManager = assetManager;
@@ -186,6 +186,7 @@ namespace FWEledit
                     beginIconWarmup,
                     applyTheme,
                     loadDescriptions,
+                    listDisplayService,
                     owner,
                     itemGrid,
                     elementGrid);
@@ -259,6 +260,7 @@ namespace FWEledit
             Action beginIconWarmup,
             Action applyTheme,
             Action loadDescriptions,
+            ListDisplayService listDisplayService,
             Form owner,
             DataGridView itemGrid,
             DataGridView elementGrid)
@@ -272,7 +274,17 @@ namespace FWEledit
             {
                 Task.Run(() =>
                 {
+                    bool visualsLoaded = false;
                     bool metadataLoaded = false;
+                    try
+                    {
+                        visualsLoaded = true;
+                    }
+                    catch
+                    {
+                        visualsLoaded = false;
+                    }
+
                     try
                     {
                         metadataLoaded = assetManager.EnsureDeferredMetadataLoaded();
@@ -280,6 +292,14 @@ namespace FWEledit
                     catch
                     {
                         metadataLoaded = false;
+                    }
+
+                    try
+                    {
+                        assetManager.PrewarmCommonPckIndexes();
+                    }
+                    catch
+                    {
                     }
 
                     if (owner == null || owner.IsDisposed)
@@ -297,14 +317,16 @@ namespace FWEledit
                             }
 
                             applyTheme?.Invoke();
-                            if (metadataLoaded)
+                            if (visualsLoaded && listDisplayService != null)
+                            {
+                                listDisplayService.ResetList0DisplayCache();
+                                listDisplayService.ClearListDisplayCache();
+                            }
+                            if (visualsLoaded || metadataLoaded)
                             {
                                 loadDescriptions?.Invoke();
                             }
                             beginIconWarmup?.Invoke();
-
-                            TryClearOwnerHashSetField(owner, "hydratedElementRowIconKeys");
-                            TryInvokeOwnerMethod(owner, "ScheduleVisibleElementIconHydration");
                             TryInvokeOwnerMethod(owner, "ScheduleVisibleReferenceCountRefresh");
                             TryInvokeOwnerMethod(owner, "change_item", null, null);
 

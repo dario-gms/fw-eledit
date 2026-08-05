@@ -51,6 +51,7 @@ namespace FWEledit
         private Control activeViewport;
         private readonly CheckBox wireframeCheck;
         private readonly CheckBox animationCheck;
+        private readonly CheckBox trueScaleCheck;
         private readonly CheckBox hardwareCheck;
         private readonly ComboBox backendCombo;
         private readonly Label backendLabel;
@@ -77,6 +78,8 @@ namespace FWEledit
             BackColor = Color.FromArgb(20, 20, 20);
             ForeColor = Color.Gainsboro;
             Font = new Font("Segoe UI", 9F, FontStyle.Regular, GraphicsUnit.Point, ((byte)(0)));
+            UseWaitCursor = false;
+            Cursor = Cursors.Default;
 
             summaryLabel = new Label();
             summaryLabel.Dock = DockStyle.Top;
@@ -178,6 +181,22 @@ namespace FWEledit
             };
             footer.Controls.Add(animationCheck);
 
+            trueScaleCheck = new CheckBox();
+            trueScaleCheck.Dock = DockStyle.Right;
+            trueScaleCheck.Width = 96;
+            trueScaleCheck.Checked = false;
+            trueScaleCheck.Text = "True Scale";
+            trueScaleCheck.ForeColor = Color.Gainsboro;
+            trueScaleCheck.BackColor = footer.BackColor;
+            trueScaleCheck.CheckedChanged += (s, e) =>
+            {
+                ApplyTrueScaleMode();
+                UpdateHelpLabel();
+                ResetActiveViewport();
+                InvalidateActiveViewport();
+            };
+            footer.Controls.Add(trueScaleCheck);
+
             wireframeCheck = new CheckBox();
             wireframeCheck.Dock = DockStyle.Right;
             wireframeCheck.Width = 90;
@@ -257,6 +276,12 @@ namespace FWEledit
                     cameraPersistenceTimer.Stop();
                     cameraPersistenceTimer.Dispose();
                 }
+            };
+            FormClosed += (s, e) =>
+            {
+                UseWaitCursor = false;
+                Cursor = Cursors.Default;
+                Cursor.Current = Cursors.Default;
             };
             Shown += (s, e) =>
             {
@@ -372,9 +397,15 @@ namespace FWEledit
                 }
             }
 
+            float extentX;
+            float extentY;
+            float extentZ;
+            ModelPreviewViewport.ComputeExtents(meshData.Vertices, out extentX, out extentY, out extentZ);
+
             return "Vertices: " + meshData.VertexCount
                 + "    Triangles: " + meshData.TriangleCount
-                + "    Textures: " + loadedTextures + "/" + totalTextures;
+                + "    Textures: " + loadedTextures + "/" + totalTextures
+                + "    Size: " + extentX.ToString("0.##") + " x " + extentY.ToString("0.##") + " x " + extentZ.ToString("0.##");
         }
 
         private static string BuildSourceText(ModelPreviewMeshData meshData)
@@ -872,6 +903,7 @@ namespace FWEledit
             activeViewport = null;
             ApplyWireframeMode();
             ApplyAnimationMode();
+            ApplyTrueScaleMode();
             EnsureActiveViewport(hardwareCheck != null && hardwareCheck.Checked);
 
             if (cameraState.IsValid)
@@ -934,6 +966,7 @@ namespace FWEledit
 
             ApplyWireframeMode();
             ApplyAnimationMode();
+            ApplyTrueScaleMode();
             EnsureActiveViewport(useHardware);
 
             bool hardwareEnabled = useHardware;
@@ -962,6 +995,23 @@ namespace FWEledit
             if (gpuViewport != null)
             {
                 gpuViewport.ExperimentalAnimationEnabled = enabled;
+            }
+        }
+
+        private void ApplyTrueScaleMode()
+        {
+            bool enabled = trueScaleCheck != null && trueScaleCheck.Checked;
+            if (cpuViewport != null)
+            {
+                cpuViewport.UseTrueScale = enabled;
+            }
+            if (dx11Viewport != null)
+            {
+                dx11Viewport.UseTrueScale = enabled;
+            }
+            if (gpuViewport != null)
+            {
+                gpuViewport.UseTrueScale = enabled;
             }
         }
 
@@ -1033,6 +1083,10 @@ namespace FWEledit
             if (animationCheck != null && animationCheck.Checked)
             {
                 text += " | Auto orbit";
+            }
+            if (trueScaleCheck != null && trueScaleCheck.Checked)
+            {
+                text += " | True scale";
             }
 
             helpLabel.Text = text;
@@ -1405,6 +1459,7 @@ namespace FWEledit
             private float pitch;
             private float zoom;
             private bool experimentalAnimationEnabled;
+            private bool useTrueScale;
             private bool isDragging;
             private System.Drawing.Point lastMouse;
             private const float PitchLimit = 1.35f;
@@ -1435,6 +1490,15 @@ namespace FWEledit
             private D3D11.Texture2D[] textureResources = new D3D11.Texture2D[0];
 
             public bool ShowWireframe { get; set; }
+            public bool UseTrueScale
+            {
+                get { return useTrueScale; }
+                set
+                {
+                    useTrueScale = value;
+                    Invalidate();
+                }
+            }
             public HardwareRenderBackend PreferredHardwareBackend { get; set; }
             public bool IsGpuReady { get { return dxResourcesInitialized; } }
             public string GpuInitializationError { get { return gpuInitializationError ?? string.Empty; } }
@@ -2006,9 +2070,9 @@ float4 PSMain(PS_INPUT input) : SV_Target
 
                 float aspect = width / (float)Math.Max(1, height);
                 SharpDX.Matrix projection = SharpDX.Matrix.PerspectiveFovRH((float)(Math.PI / 4.0), aspect, 0.05f, 200.0f);
-                float normRadius = Math.Max(0.0001f, radius);
+                float modelScale = UseTrueScale ? 1f : (1f / Math.Max(0.0001f, radius));
                 SharpDX.Matrix world = SharpDX.Matrix.Translation(-center.X, -center.Y, -center.Z)
-                    * SharpDX.Matrix.Scaling(1f / normRadius)
+                    * SharpDX.Matrix.Scaling(modelScale)
                     * SharpDX.Matrix.RotationY(yaw)
                     * SharpDX.Matrix.RotationX(pitch);
                 float cameraDistance = 3.2f / Math.Max(0.15f, zoom);
@@ -2367,6 +2431,7 @@ float4 PSMain(PS_INPUT input) : SV_Target
             private float pitch;
             private float zoom;
             private bool experimentalAnimationEnabled;
+            private bool useTrueScale;
             private bool isDragging;
             private System.Drawing.Point lastMouse;
             private bool glResourcesInitialized;
@@ -2374,6 +2439,15 @@ float4 PSMain(PS_INPUT input) : SV_Target
             private int[] textureHandles = new int[0];
 
             public bool ShowWireframe { get; set; }
+            public bool UseTrueScale
+            {
+                get { return useTrueScale; }
+                set
+                {
+                    useTrueScale = value;
+                    Invalidate();
+                }
+            }
             public HardwareRenderBackend PreferredHardwareBackend { get; set; }
             public bool IsGpuReady { get { return glResourcesInitialized; } }
             public string GpuInitializationError { get { return gpuInitializationError ?? string.Empty; } }
@@ -2779,9 +2853,12 @@ float4 PSMain(PS_INPUT input) : SV_Target
                     200.0f);
 
                 Matrix4 model = Matrix4.Identity;
-                float normRadius = Math.Max(0.0001f, radius);
                 model *= Matrix4.CreateTranslation(-center.X, -center.Y, -center.Z);
-                model *= Matrix4.CreateScale(1f / normRadius);
+                if (!UseTrueScale)
+                {
+                    float normRadius = Math.Max(0.0001f, radius);
+                    model *= Matrix4.CreateScale(1f / normRadius);
+                }
                 model *= Matrix4.CreateRotationY(yaw);
                 model *= Matrix4.CreateRotationX(pitch);
                 float cameraDistance = 3.2f / Math.Max(0.15f, zoom);
@@ -3074,12 +3151,22 @@ float4 PSMain(PS_INPUT input) : SV_Target
             private float pitch;
             private float zoom;
             private bool experimentalAnimationEnabled;
+            private bool useTrueScale;
             private bool isDragging;
             private System.Drawing.Point lastMouse;
             private bool useHardwareRendering;
             private HardwareRenderBackend preferredHardwareBackend;
 
             public bool ShowWireframe { get; set; }
+            public bool UseTrueScale
+            {
+                get { return useTrueScale; }
+                set
+                {
+                    useTrueScale = value;
+                    Invalidate();
+                }
+            }
             public bool ExperimentalAnimationEnabled
             {
                 get { return experimentalAnimationEnabled; }
@@ -3258,11 +3345,15 @@ float4 PSMain(PS_INPUT input) : SV_Target
 
                 float baseScale = Math.Min(renderWidth, renderHeight) * 0.42f;
                 float cameraDistance = 3.2f / Math.Max(0.15f, zoom);
-                float normRadius = Math.Max(0.0001f, radius);
+                float modelScale = UseTrueScale ? 1f : (1f / Math.Max(0.0001f, radius));
 
                 for (int i = 0; i < vertices.Length; i++)
                 {
-                    Vector3f local = (vertices[i] - center) / normRadius;
+                    Vector3f offset = vertices[i] - center;
+                    Vector3f local = new Vector3f(
+                        offset.X * modelScale,
+                        offset.Y * modelScale,
+                        offset.Z * modelScale);
 
                     float x = local.X;
                     float y = local.Y;
