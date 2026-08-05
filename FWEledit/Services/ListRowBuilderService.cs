@@ -106,11 +106,21 @@ namespace FWEledit
             bool isItemTradePageList = string.Equals(normalizedListName, "ITEM_TRADE_PAGE_CONFIG", System.StringComparison.OrdinalIgnoreCase);
             bool isNpcSellServiceList = string.Equals(normalizedListName, "NPC_SELL_SERVICE", System.StringComparison.OrdinalIgnoreCase);
             bool isAddonPackageList = string.Equals(normalizedListName, "ADDON_PACKAGE_CONFIG", System.StringComparison.OrdinalIgnoreCase);
+            string inheritedTypeSourceListName;
+            string inheritedTypeFieldName;
+            bool isInheritedTypeList = TryGetInheritedTypeIconSource(normalizedListName, out inheritedTypeSourceListName, out inheritedTypeFieldName);
             int isCategoryFieldIndex = isDropTableList ? GetFieldIndex(listCollection.Lists[listIndex].elementFields, "is_category") : -1;
             List<int> dropFieldIndexes = isDropTableList ? GetDropFieldIndexes(listCollection.Lists[listIndex].elementFields) : null;
             List<int> tradePageGoodsFieldIndexes = isItemTradePageList ? GetTradePageGoodsFieldIndexes(listCollection.Lists[listIndex].elementFields) : null;
             Dictionary<int, int> dropTableRowById = includeIcons && isDropTableList ? BuildDropTableRowIndexMap(listCollection, listIndex) : null;
             Dictionary<int, Bitmap> addonPackageIconById = includeIcons && isAddonPackageList ? BuildAddonPackageIconMap(listCollection, database) : null;
+            Dictionary<int, Bitmap> inheritedTypeIconById = includeIcons && isInheritedTypeList
+                ? BuildInheritedTypeIconMap(
+                    listCollection,
+                    database,
+                    inheritedTypeSourceListName,
+                    inheritedTypeFieldName)
+                : null;
             bool requiresInheritedItemIcons = includeIcons && (isDropTableList || isItemTradePageList);
             Dictionary<int, ItemIconSource> itemIconSourcesById = requiresInheritedItemIcons ? BuildItemIconSourceMap(listCollection) : null;
             Dictionary<int, Bitmap> itemIconById = requiresInheritedItemIcons ? new Dictionary<int, Bitmap>() : null;
@@ -201,6 +211,16 @@ namespace FWEledit
                             && addonPackageIcon != null)
                         {
                             img = addonPackageIcon;
+                        }
+                    }
+                    else if (includeIcons && isInheritedTypeList)
+                    {
+                        if (int.TryParse(listCollection.GetValue(listIndex, e, 0), out int inheritedTypeId)
+                            && inheritedTypeIconById != null
+                            && inheritedTypeIconById.TryGetValue(inheritedTypeId, out Bitmap inheritedTypeIcon)
+                            && inheritedTypeIcon != null)
+                        {
+                            img = inheritedTypeIcon;
                         }
                     }
                     rows.Add(new object[] { listCollection.GetValue(listIndex, e, 0), img, composeDisplayName(listIndex, e, pos), string.Empty });
@@ -526,6 +546,62 @@ namespace FWEledit
             return map;
         }
 
+        private Dictionary<int, Bitmap> BuildInheritedTypeIconMap(eListCollection listCollection, CacheSave database, string sourceListName, string typeFieldName)
+        {
+            Dictionary<int, Bitmap> map = new Dictionary<int, Bitmap>();
+            if (listCollection == null || listCollection.Lists == null)
+            {
+                return map;
+            }
+
+            for (int listIndex = 0; listIndex < listCollection.Lists.Length; listIndex++)
+            {
+                eList list = listCollection.Lists[listIndex];
+                if (list == null
+                    || list.elementFields == null
+                    || list.elementValues == null
+                    || !string.Equals(NormalizeListName(list.listName), sourceListName, System.StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                int typeFieldIndex = GetFieldIndex(list.elementFields, typeFieldName);
+                if (typeFieldIndex < 0 && string.Equals(typeFieldName, "id_major_type", System.StringComparison.OrdinalIgnoreCase))
+                {
+                    typeFieldIndex = GetFieldIndex(list.elementFields, "major_type");
+                }
+                else if (typeFieldIndex < 0 && string.Equals(typeFieldName, "id_sub_type", System.StringComparison.OrdinalIgnoreCase))
+                {
+                    typeFieldIndex = GetFieldIndex(list.elementFields, "sub_type");
+                }
+
+                int iconFieldIndex = GetIconFieldIndex(list.elementFields);
+                if (typeFieldIndex < 0 || iconFieldIndex < 0)
+                {
+                    continue;
+                }
+
+                for (int elementIndex = 0; elementIndex < list.elementValues.Length; elementIndex++)
+                {
+                    int typeId;
+                    if (!int.TryParse(listCollection.GetValue(listIndex, elementIndex, typeFieldIndex), out typeId)
+                        || typeId <= 0
+                        || map.ContainsKey(typeId))
+                    {
+                        continue;
+                    }
+
+                    Bitmap sourceIcon = ResolveRowIcon(listCollection, database, listIndex, elementIndex, iconFieldIndex);
+                    if (sourceIcon != null)
+                    {
+                        map[typeId] = sourceIcon;
+                    }
+                }
+            }
+
+            return map;
+        }
+
         private static bool IsAddonPackageReferenceField(string fieldName)
         {
             string normalized = fieldName ?? string.Empty;
@@ -618,6 +694,34 @@ namespace FWEledit
             return GetFieldIndex(fields, "file_icon") >= 0
                 ? GetFieldIndex(fields, "file_icon")
                 : GetFieldIndex(fields, "file_icon1");
+        }
+
+        private static bool TryGetInheritedTypeIconSource(string normalizedListName, out string sourceListName, out string typeFieldName)
+        {
+            sourceListName = string.Empty;
+            typeFieldName = string.Empty;
+            if (string.IsNullOrWhiteSpace(normalizedListName))
+            {
+                return false;
+            }
+
+            const string majorSuffix = "_MAJOR_TYPE";
+            const string subSuffix = "_SUB_TYPE";
+            if (normalizedListName.EndsWith(majorSuffix, System.StringComparison.OrdinalIgnoreCase))
+            {
+                sourceListName = normalizedListName.Substring(0, normalizedListName.Length - majorSuffix.Length) + "_ESSENCE";
+                typeFieldName = "id_major_type";
+                return true;
+            }
+
+            if (normalizedListName.EndsWith(subSuffix, System.StringComparison.OrdinalIgnoreCase))
+            {
+                sourceListName = normalizedListName.Substring(0, normalizedListName.Length - subSuffix.Length) + "_ESSENCE";
+                typeFieldName = "id_sub_type";
+                return true;
+            }
+
+            return false;
         }
 
         private static bool HasPrimaryIdField(string[] fields)

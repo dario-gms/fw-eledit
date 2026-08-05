@@ -218,6 +218,22 @@ namespace FWEledit
                 {
                     fieldValue = BindFlagCatalog.FormatDisplay(fieldName, fieldValue);
                 }
+                else if (BooleanFlagCatalog.IsYesNoFieldName(fieldName))
+                {
+                    fieldValue = BooleanFlagCatalog.FormatDisplay(fieldValue);
+                }
+                else if (EquipmentMaskCatalog.IsEquipmentMaskFieldName(fieldName))
+                {
+                    fieldValue = EquipmentMaskCatalog.FormatDisplay(fieldValue);
+                }
+                else if (EquipmentLocationCatalog.IsEquipmentLocationFieldName(fieldName))
+                {
+                    fieldValue = EquipmentLocationCatalog.FormatDisplay(fieldValue);
+                }
+                else if (EquipmentTypeCatalog.IsEquipmentTypeFieldName(fieldName))
+                {
+                    fieldValue = EquipmentTypeCatalog.FormatDisplay(fieldValue);
+                }
                 else if (NpcSellMoneyTypeCatalog.IsMoneyTypeField(listCollection, listIndex, f, fieldName))
                 {
                     fieldValue = NpcSellMoneyTypeCatalog.FormatDisplay(fieldValue);
@@ -307,16 +323,20 @@ namespace FWEledit
                     }
                 }
 
+                fieldValue = ValueDisplayFormatCatalog.FormatLargeNumber(fieldName, fieldValue);
+                string displayFieldName = ModelFieldLabelCatalog.GetDisplayFieldName(
+                    listCollection,
+                    listCollection.Lists[listIndex].listName,
+                    listIndex,
+                    f,
+                    fieldName);
+                displayFieldName = ValueDisplayFormatCatalog.FormatDisplayFieldName(fieldName, displayFieldName);
+
                 ValueRowDisplay row = new ValueRowDisplay
                 {
                     FieldIndex = f,
                     FieldName = fieldName,
-                    DisplayFieldName = ModelFieldLabelCatalog.GetDisplayFieldName(
-                        listCollection,
-                        listCollection.Lists[listIndex].listName,
-                        listIndex,
-                        f,
-                        fieldName),
+                    DisplayFieldName = displayFieldName,
                     FieldType = listCollection.Lists[listIndex].elementTypes[f],
                     DisplayValue = fieldValue,
                     RawValue = rawValue,

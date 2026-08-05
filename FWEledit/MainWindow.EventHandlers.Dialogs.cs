@@ -244,6 +244,12 @@ namespace FWEledit
 		}
 
 
+        private void click_gShopEditor(object sender, EventArgs e)
+        {
+            ShowGameShopEditor(0, 0);
+        }
+
+
         private void toolStripMenuItem4_Click(object sender, EventArgs e)
         {
             mainWindowDialogsCoordinatorService.HandleAbout(

@@ -128,6 +128,9 @@ namespace FWEledit
             Action<int> openProcTypePicker,
             Action<int> openProfessionMaskPicker,
             Action<int> openRaceMaskPicker,
+            Action<int> openEquipmentMaskPicker,
+            Action<int> openEquipmentLocationPicker,
+            Action<int> openEquipmentTypePicker,
             Action<int> openModelProfessionPicker,
             Action<int> openModelRacePicker,
             Action<int> openCombinedServicesPicker,
@@ -151,6 +154,10 @@ namespace FWEledit
                     {
                         openIconPicker(e.RowIndex);
                     }
+                }
+                else if (BooleanFlagCatalog.IsYesNoFieldName(fieldName))
+                {
+                    ToggleBooleanValue(itemGrid, e.RowIndex);
                 }
                 else if (fieldClassifier.IsAddonTypeField(listCollection, listIndex, fieldName))
                 {
@@ -247,6 +254,27 @@ namespace FWEledit
                         openRaceMaskPicker(e.RowIndex);
                     }
                 }
+                else if (fieldClassifier.IsEquipmentMaskFieldName(fieldName))
+                {
+                    if (openEquipmentMaskPicker != null)
+                    {
+                        openEquipmentMaskPicker(e.RowIndex);
+                    }
+                }
+                else if (fieldClassifier.IsEquipmentLocationFieldName(fieldName))
+                {
+                    if (openEquipmentLocationPicker != null)
+                    {
+                        openEquipmentLocationPicker(e.RowIndex);
+                    }
+                }
+                else if (fieldClassifier.IsEquipmentTypeFieldName(fieldName))
+                {
+                    if (openEquipmentTypePicker != null)
+                    {
+                        openEquipmentTypePicker(e.RowIndex);
+                    }
+                }
                 else if (fieldClassifier.IsModelProfessionFieldName(fieldName))
                 {
                     if (openModelProfessionPicker != null)
@@ -302,6 +330,23 @@ namespace FWEledit
                     showError("This field picker could not be opened right now.\n\nDetails: " + ex.Message);
                 }
             }
+        }
+
+        private static void ToggleBooleanValue(DataGridView itemGrid, int rowIndex)
+        {
+            if (itemGrid == null || rowIndex < 0 || rowIndex >= itemGrid.Rows.Count)
+            {
+                return;
+            }
+
+            string rawValue = GetValueCellRawValue(itemGrid, rowIndex);
+            string toggled = BooleanFlagCatalog.ToggleInput(rawValue);
+            if (itemGrid.CurrentCell == null || itemGrid.CurrentCell.RowIndex != rowIndex)
+            {
+                itemGrid.CurrentCell = itemGrid.Rows[rowIndex].Cells[2];
+            }
+
+            SetValueCellRawValue(itemGrid, rowIndex, toggled);
         }
 
         public void OpenModelPickerForValueRow(
@@ -1207,6 +1252,104 @@ namespace FWEledit
             }
         }
 
+        public void OpenEquipmentMaskPickerForValueRow(
+            DataGridView itemGrid,
+            int rowIndex,
+            ItemFieldClassifierService fieldClassifier,
+            IWin32Window owner)
+        {
+            if (itemGrid == null || fieldClassifier == null || rowIndex < 0 || rowIndex >= itemGrid.Rows.Count)
+            {
+                return;
+            }
+
+            string fieldName = ValueGridFieldNameService.GetFieldName(itemGrid, rowIndex);
+            if (!fieldClassifier.IsEquipmentMaskFieldName(fieldName))
+            {
+                return;
+            }
+
+            string rawValue = GetValueCellRawValue(itemGrid, rowIndex);
+            uint currentValue;
+            EquipmentMaskCatalog.TryParseValue(rawValue, out currentValue);
+
+            using (EquipmentMaskPickerWindow picker = new EquipmentMaskPickerWindow(currentValue))
+            {
+                if (picker.ShowDialog(owner) != DialogResult.OK)
+                {
+                    return;
+                }
+
+                SetValueCellRawValue(itemGrid, rowIndex, picker.SelectedValue.ToString(CultureInfo.InvariantCulture));
+            }
+        }
+
+        public void OpenEquipmentLocationPickerForValueRow(
+            DataGridView itemGrid,
+            int rowIndex,
+            ItemFieldClassifierService fieldClassifier,
+            IWin32Window owner)
+        {
+            if (itemGrid == null || fieldClassifier == null || rowIndex < 0 || rowIndex >= itemGrid.Rows.Count)
+            {
+                return;
+            }
+
+            string fieldName = ValueGridFieldNameService.GetFieldName(itemGrid, rowIndex);
+            if (!fieldClassifier.IsEquipmentLocationFieldName(fieldName))
+            {
+                return;
+            }
+
+            string rawValue = GetValueCellRawValue(itemGrid, rowIndex);
+            int currentValue = 0;
+            int.TryParse(EquipmentLocationCatalog.NormalizeInput(rawValue), NumberStyles.Integer, CultureInfo.InvariantCulture, out currentValue);
+
+            using (QualityPickerWindow picker = new QualityPickerWindow(new List<QualityOption>(BuildEquipmentLocationOptions()), currentValue))
+            {
+                picker.Text = "Choose equipment location...";
+                if (picker.ShowDialog(owner) != DialogResult.OK)
+                {
+                    return;
+                }
+
+                SetValueCellRawValue(itemGrid, rowIndex, picker.SelectedValue.ToString(CultureInfo.InvariantCulture));
+            }
+        }
+
+        public void OpenEquipmentTypePickerForValueRow(
+            DataGridView itemGrid,
+            int rowIndex,
+            ItemFieldClassifierService fieldClassifier,
+            IWin32Window owner)
+        {
+            if (itemGrid == null || fieldClassifier == null || rowIndex < 0 || rowIndex >= itemGrid.Rows.Count)
+            {
+                return;
+            }
+
+            string fieldName = ValueGridFieldNameService.GetFieldName(itemGrid, rowIndex);
+            if (!fieldClassifier.IsEquipmentTypeFieldName(fieldName))
+            {
+                return;
+            }
+
+            string rawValue = GetValueCellRawValue(itemGrid, rowIndex);
+            int currentValue = 0;
+            EquipmentTypeCatalog.TryParseValue(rawValue, out currentValue);
+
+            using (QualityPickerWindow picker = new QualityPickerWindow(new List<QualityOption>(BuildEquipmentTypeOptions()), currentValue))
+            {
+                picker.Text = "Choose equipment type...";
+                if (picker.ShowDialog(owner) != DialogResult.OK)
+                {
+                    return;
+                }
+
+                SetValueCellRawValue(itemGrid, rowIndex, picker.SelectedValue.ToString(CultureInfo.InvariantCulture));
+            }
+        }
+
         public void OpenModelProfessionPickerForValueRow(
             DataGridView itemGrid,
             int rowIndex,
@@ -1504,7 +1647,9 @@ namespace FWEledit
                 if (owner != null && !owner.IsDisposed)
                 {
                     owner.UseWaitCursor = restoreWaitCursor;
+                    owner.Cursor = Cursors.Default;
                 }
+                Cursor.Current = Cursors.Default;
                 Interlocked.Exchange(ref previewLoadInProgress, 0);
             }
         }
@@ -1583,7 +1728,6 @@ namespace FWEledit
                 int rows = 0;
                 int fields = 0;
                 string listName = string.Empty;
-                ulong usageHash = 1469598103934665603UL;
                 if (listCollection != null
                     && listIndex >= 0
                     && listIndex < listCollection.Lists.Length
@@ -1596,25 +1740,6 @@ namespace FWEledit
                         ? listCollection.Lists[listIndex].elementFields.Length
                         : 0;
                     listName = listCollection.Lists[listIndex].listName ?? string.Empty;
-
-                    if (modelPickerService != null && rows > 0)
-                    {
-                        int[] modelUsageFields = modelPickerService.GetModelUsageFieldIndices(listCollection, listIndex);
-                        for (int row = 0; row < rows; row++)
-                        {
-                            for (int mf = 0; mf < modelUsageFields.Length; mf++)
-                            {
-                                string value = listCollection.GetValue(listIndex, row, modelUsageFields[mf]) ?? string.Empty;
-                                for (int i = 0; i < value.Length; i++)
-                                {
-                                    usageHash ^= value[i];
-                                    usageHash *= 1099511628211UL;
-                                }
-                                usageHash ^= ';';
-                                usageHash *= 1099511628211UL;
-                            }
-                        }
-                    }
                 }
 
                 int pathCount = database?.pathById?.Count ?? 0;
@@ -1625,6 +1750,8 @@ namespace FWEledit
                     minPath = database.pathById.Keys[0];
                     maxPath = database.pathById.Keys[database.pathById.Count - 1];
                 }
+                int pathRevision = database != null ? database.path_data_revision : 0;
+                int modelPickerRevision = database != null ? database.model_picker_revision : 0;
 
                 return listIndex.ToString(System.Globalization.CultureInfo.InvariantCulture)
                     + "|"
@@ -1640,7 +1767,9 @@ namespace FWEledit
                     + "|"
                     + listName
                     + "|"
-                    + usageHash.ToString("X16", System.Globalization.CultureInfo.InvariantCulture);
+                    + pathRevision.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                    + "|"
+                    + modelPickerRevision.ToString(System.Globalization.CultureInfo.InvariantCulture);
             }
             catch
             {
@@ -1703,6 +1832,42 @@ namespace FWEledit
             }
 
             return -1;
+        }
+
+        private static IEnumerable<QualityOption> BuildEquipmentLocationOptions()
+        {
+            for (int i = 0; i < EquipmentLocationCatalog.Options.Count; i++)
+            {
+                EquipmentLocationOption option = EquipmentLocationCatalog.Options[i];
+                if (option == null)
+                {
+                    continue;
+                }
+
+                yield return new QualityOption
+                {
+                    Value = option.Value,
+                    Label = option.Label
+                };
+            }
+        }
+
+        private static IEnumerable<QualityOption> BuildEquipmentTypeOptions()
+        {
+            for (int i = 0; i < EquipmentTypeCatalog.Options.Count; i++)
+            {
+                EquipmentTypeOption option = EquipmentTypeCatalog.Options[i];
+                if (option == null)
+                {
+                    continue;
+                }
+
+                yield return new QualityOption
+                {
+                    Value = option.Value,
+                    Label = option.Label
+                };
+            }
         }
 
         private static void SetValueCellRawValue(DataGridView itemGrid, int rowIndex, string rawValue, ItemReferenceOption referenceOption = null)

@@ -37,6 +37,7 @@ namespace FWEledit
                 fwEquipmentTabModels,
                 fwEquipmentTabRefine,
                 fwEquipmentTabDecompose,
+                fwEquipmentTabOther,
                 fwDescriptionTab);
         }
 
@@ -207,6 +208,39 @@ namespace FWEledit
         private void OpenRaceMaskPickerForValueRow(int rowIndex)
         {
             mainWindowValuePickerCoordinatorService.OpenRaceMaskPickerForValueRow(
+                mainWindowValueRowPickerUiService,
+                valueRowPickerUiService,
+                dataGridView_item,
+                rowIndex,
+                itemFieldClassifierService,
+                this);
+        }
+
+        private void OpenEquipmentMaskPickerForValueRow(int rowIndex)
+        {
+            mainWindowValuePickerCoordinatorService.OpenEquipmentMaskPickerForValueRow(
+                mainWindowValueRowPickerUiService,
+                valueRowPickerUiService,
+                dataGridView_item,
+                rowIndex,
+                itemFieldClassifierService,
+                this);
+        }
+
+        private void OpenEquipmentLocationPickerForValueRow(int rowIndex)
+        {
+            mainWindowValuePickerCoordinatorService.OpenEquipmentLocationPickerForValueRow(
+                mainWindowValueRowPickerUiService,
+                valueRowPickerUiService,
+                dataGridView_item,
+                rowIndex,
+                itemFieldClassifierService,
+                this);
+        }
+
+        private void OpenEquipmentTypePickerForValueRow(int rowIndex)
+        {
+            mainWindowValuePickerCoordinatorService.OpenEquipmentTypePickerForValueRow(
                 mainWindowValueRowPickerUiService,
                 valueRowPickerUiService,
                 dataGridView_item,
@@ -1552,6 +1586,18 @@ namespace FWEledit
             {
                 OpenRaceMaskPickerForValueRow(targetRow);
             }
+            else if (itemFieldClassifierService.IsEquipmentMaskFieldName(fieldName))
+            {
+                OpenEquipmentMaskPickerForValueRow(targetRow);
+            }
+            else if (itemFieldClassifierService.IsEquipmentLocationFieldName(fieldName))
+            {
+                OpenEquipmentLocationPickerForValueRow(targetRow);
+            }
+            else if (itemFieldClassifierService.IsEquipmentTypeFieldName(fieldName))
+            {
+                OpenEquipmentTypePickerForValueRow(targetRow);
+            }
             else if (itemFieldClassifierService.IsModelProfessionFieldName(fieldName))
             {
                 OpenModelProfessionPickerForValueRow(targetRow);
@@ -1605,6 +1651,9 @@ namespace FWEledit
                 OpenProcTypePickerForValueRow,
                 OpenProfessionMaskPickerForValueRow,
                 OpenRaceMaskPickerForValueRow,
+                OpenEquipmentMaskPickerForValueRow,
+                OpenEquipmentLocationPickerForValueRow,
+                OpenEquipmentTypePickerForValueRow,
                 OpenModelProfessionPickerForValueRow,
                 OpenModelRacePickerForValueRow,
                 OpenCombinedServicesPickerForValueRow,
@@ -1735,6 +1784,9 @@ namespace FWEledit
                     fieldName);
             bool isProfessionMaskField = itemFieldClassifierService != null && itemFieldClassifierService.IsProfessionMaskFieldName(fieldName);
             bool isRaceMaskField = itemFieldClassifierService != null && itemFieldClassifierService.IsRaceMaskFieldName(fieldName);
+            bool isEquipmentMaskField = itemFieldClassifierService != null && itemFieldClassifierService.IsEquipmentMaskFieldName(fieldName);
+            bool isEquipmentLocationField = itemFieldClassifierService != null && itemFieldClassifierService.IsEquipmentLocationFieldName(fieldName);
+            bool isEquipmentTypeField = itemFieldClassifierService != null && itemFieldClassifierService.IsEquipmentTypeFieldName(fieldName);
             bool isModelProfessionField = itemFieldClassifierService != null && itemFieldClassifierService.IsModelProfessionFieldName(fieldName);
             bool isModelRaceField = itemFieldClassifierService != null && itemFieldClassifierService.IsModelRaceFieldName(fieldName);
             bool isCombinedServicesField = itemFieldClassifierService != null && itemFieldClassifierService.IsCombinedServicesFieldName(fieldName);
@@ -1909,6 +1961,33 @@ namespace FWEledit
                     menu.Items.Add(new ToolStripSeparator());
                 }
                 menu.Items.Add("Choose Allowed Races...", null, (menuSender, args) => OpenRaceMaskPickerForValueRow(rowIndex));
+            }
+
+            if (isEquipmentMaskField)
+            {
+                if (menu.Items.Count > 0)
+                {
+                    menu.Items.Add(new ToolStripSeparator());
+                }
+                menu.Items.Add("Choose Equipment Slots...", null, (menuSender, args) => OpenEquipmentMaskPickerForValueRow(rowIndex));
+            }
+
+            if (isEquipmentLocationField)
+            {
+                if (menu.Items.Count > 0)
+                {
+                    menu.Items.Add(new ToolStripSeparator());
+                }
+                menu.Items.Add("Choose Equipment Location...", null, (menuSender, args) => OpenEquipmentLocationPickerForValueRow(rowIndex));
+            }
+
+            if (isEquipmentTypeField)
+            {
+                if (menu.Items.Count > 0)
+                {
+                    menu.Items.Add(new ToolStripSeparator());
+                }
+                menu.Items.Add("Choose Equipment Type...", null, (menuSender, args) => OpenEquipmentTypePickerForValueRow(rowIndex));
             }
 
             if (isModelProfessionField)

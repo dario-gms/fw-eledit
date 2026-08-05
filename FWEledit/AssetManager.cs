@@ -180,6 +180,18 @@ namespace FWEledit
             return Path.Combine(dataRoot, "path.data");
         }
 
+        private void TouchPathDataRevision()
+        {
+            try
+            {
+                database.path_data_revision++;
+                database.model_picker_revision++;
+            }
+            catch
+            {
+            }
+        }
+
         private bool EnsureWorkspacePckPrepared(string packageName, bool ensureExtracted)
         {
             try
@@ -1020,7 +1032,10 @@ namespace FWEledit
                     database.pathById = LoadPathById();
                 }
 
-                EnsureTaskReferencesUpToDate();
+                if (includeHeavyAssets)
+                {
+                    EnsureTaskReferencesUpToDate();
+                }
                 EnsureDeferredMetadataLoadedInternal(includeHeavyAssets);
                 sessionService.Database = database;
             }
@@ -1360,6 +1375,7 @@ namespace FWEledit
 
                 database.pathById = entries;
                 pendingPathDataEntries.Clear();
+                TouchPathDataRevision();
                 sessionService.Database = database;
                 MarkWorkspaceFileChanged(workspacePathData);
                 pathDataDirty = false;
@@ -1405,6 +1421,7 @@ namespace FWEledit
                     if (database.pathById != null && database.pathById.ContainsKey(pathId))
                     {
                         database.pathById.Remove(pathId);
+                        TouchPathDataRevision();
                     }
                     pendingPathDataEntries.Remove(pathId);
                     sessionService.Database = database;
@@ -1478,6 +1495,7 @@ namespace FWEledit
                     database.pathById.Remove(pathId);
                 }
                 database.pathById = entries;
+                TouchPathDataRevision();
                 pendingPathDataEntries.Remove(pathId);
                 sessionService.Database = database;
                 MarkWorkspaceFileChanged(workspacePathData);
@@ -3073,33 +3091,44 @@ namespace FWEledit
                     return false;
                 }
 
-                string normalizedPackage = packageName.Trim();
-                string resourcesRoot = Path.Combine(GameRootPath, "resources");
-                string workspaceResources = GetWorkspaceResourcesRoot();
-                string pckPath = Path.Combine(resourcesRoot, normalizedPackage + ".pck");
-                if (!File.Exists(pckPath) && !string.IsNullOrWhiteSpace(workspaceResources))
-                {
-                    pckPath = Path.Combine(workspaceResources, normalizedPackage + ".pck");
-                }
-                if (!File.Exists(pckPath))
-                {
-                    return false;
-                }
-                string pkxPath = Path.Combine(resourcesRoot, normalizedPackage + ".pkx");
-                if (!File.Exists(pkxPath) && !string.IsNullOrWhiteSpace(workspaceResources))
-                {
-                    pkxPath = Path.Combine(workspaceResources, normalizedPackage + ".pkx");
-                }
-                if (!File.Exists(pkxPath))
-                {
-                    pkxPath = string.Empty;
-                }
-
-                return PckIndexReader.TryEnumerateEntries(normalizedPackage, pckPath, pkxPath, entries);
+                string error;
+                return pckEntryReaderService.TryEnumerateEntries(packageName.Trim(), out entries, out error);
             }
             catch
             {
                 return false;
+            }
+        }
+
+        public void PrewarmCommonPckIndexes()
+        {
+            if (string.IsNullOrWhiteSpace(GameRootPath) || !Directory.Exists(GameRootPath))
+            {
+                return;
+            }
+
+            string[] packages =
+            {
+                "configs",
+                "surfaces",
+                "models",
+                "gfx",
+                "grasses",
+                "litmodels",
+                "moxing"
+            };
+
+            for (int i = 0; i < packages.Length; i++)
+            {
+                try
+                {
+                    List<string> entries;
+                    string error;
+                    pckEntryReaderService.TryEnumerateEntries(packages[i], out entries, out error);
+                }
+                catch
+                {
+                }
             }
         }
 

@@ -368,6 +368,69 @@ namespace FWEledit
                 owner);
         }
 
+        public void OpenEquipmentMaskPickerForValueRow(
+            MainWindowValueRowPickerUiService mainWindowValueRowPickerUiService,
+            ValueRowPickerUiService valueRowPickerUiService,
+            DataGridView valuesGrid,
+            int rowIndex,
+            ItemFieldClassifierService fieldClassifierService,
+            IWin32Window owner)
+        {
+            if (mainWindowValueRowPickerUiService == null)
+            {
+                return;
+            }
+
+            mainWindowValueRowPickerUiService.OpenEquipmentMaskPickerForValueRow(
+                valueRowPickerUiService,
+                valuesGrid,
+                rowIndex,
+                fieldClassifierService,
+                owner);
+        }
+
+        public void OpenEquipmentLocationPickerForValueRow(
+            MainWindowValueRowPickerUiService mainWindowValueRowPickerUiService,
+            ValueRowPickerUiService valueRowPickerUiService,
+            DataGridView valuesGrid,
+            int rowIndex,
+            ItemFieldClassifierService fieldClassifierService,
+            IWin32Window owner)
+        {
+            if (mainWindowValueRowPickerUiService == null)
+            {
+                return;
+            }
+
+            mainWindowValueRowPickerUiService.OpenEquipmentLocationPickerForValueRow(
+                valueRowPickerUiService,
+                valuesGrid,
+                rowIndex,
+                fieldClassifierService,
+                owner);
+        }
+
+        public void OpenEquipmentTypePickerForValueRow(
+            MainWindowValueRowPickerUiService mainWindowValueRowPickerUiService,
+            ValueRowPickerUiService valueRowPickerUiService,
+            DataGridView valuesGrid,
+            int rowIndex,
+            ItemFieldClassifierService fieldClassifierService,
+            IWin32Window owner)
+        {
+            if (mainWindowValueRowPickerUiService == null)
+            {
+                return;
+            }
+
+            mainWindowValueRowPickerUiService.OpenEquipmentTypePickerForValueRow(
+                valueRowPickerUiService,
+                valuesGrid,
+                rowIndex,
+                fieldClassifierService,
+                owner);
+        }
+
         public void OpenModelProfessionPickerForValueRow(
             MainWindowValueRowPickerUiService mainWindowValueRowPickerUiService,
             ValueRowPickerUiService valueRowPickerUiService,
@@ -617,6 +680,9 @@ namespace FWEledit
             Action<int> openProcTypePickerForValueRow,
             Action<int> openProfessionMaskPickerForValueRow,
             Action<int> openRaceMaskPickerForValueRow,
+            Action<int> openEquipmentMaskPickerForValueRow,
+            Action<int> openEquipmentLocationPickerForValueRow,
+            Action<int> openEquipmentTypePickerForValueRow,
             Action<int> openModelProfessionPickerForValueRow,
             Action<int> openModelRacePickerForValueRow,
             Action<int> openCombinedServicesPickerForValueRow,
@@ -653,6 +719,9 @@ namespace FWEledit
                 openProcTypePickerForValueRow,
                 openProfessionMaskPickerForValueRow,
                 openRaceMaskPickerForValueRow,
+                openEquipmentMaskPickerForValueRow,
+                openEquipmentLocationPickerForValueRow,
+                openEquipmentTypePickerForValueRow,
                 openModelProfessionPickerForValueRow,
                 openModelRacePickerForValueRow,
                 openCombinedServicesPickerForValueRow,

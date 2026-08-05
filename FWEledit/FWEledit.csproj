@@ -22,7 +22,7 @@
     <UpdateRequired>false</UpdateRequired>
     <MapFileExtensions>true</MapFileExtensions>
     <ApplicationRevision>0</ApplicationRevision>
-    <ApplicationVersion>0.9.5.17</ApplicationVersion>
+    <ApplicationVersion>0.9.5.18</ApplicationVersion>
     <IsWebBootstrapper>false</IsWebBootstrapper>
     <UseApplicationTrust>false</UseApplicationTrust>
     <BootstrapperEnabled>true</BootstrapperEnabled>
@@ -142,8 +142,13 @@
     </Compile>
     <Compile Include="AssetManager.cs" />
     <Compile Include="Catalogs\ItemQualityCatalog.cs" />
+    <Compile Include="Catalogs\EntityTypeColorCatalog.cs" />
+    <Compile Include="Catalogs\BooleanFlagCatalog.cs" />
     <Compile Include="Catalogs\CombinedServicesCatalog.cs" />
     <Compile Include="Catalogs\BindFlagCatalog.cs" />
+    <Compile Include="Catalogs\EquipmentLocationCatalog.cs" />
+    <Compile Include="Catalogs\EquipmentMaskCatalog.cs" />
+    <Compile Include="Catalogs\EquipmentTypeCatalog.cs" />
     <Compile Include="Catalogs\ImmuneTypeCatalog.cs" />
     <Compile Include="Catalogs\ProcTypeCatalog.cs" />
     <Compile Include="Catalogs\PetFoodTypeCatalog.cs" />
@@ -155,6 +160,7 @@
     <Compile Include="Catalogs\SkillReferenceCatalog.cs" />
     <Compile Include="Catalogs\SoulToolRewardTypeCatalog.cs" />
     <Compile Include="Catalogs\TitleDefinitionCatalog.cs" />
+    <Compile Include="Catalogs\ValueDisplayFormatCatalog.cs" />
     <Compile Include="Catalogs\NpcSellMoneyTypeCatalog.cs" />
     <Compile Include="Catalogs\NpcSellPriceCatalog.cs" />
     <Compile Include="Catalogs\NpcSellServiceCatalog.cs" />
@@ -448,6 +454,8 @@
     <Compile Include="Models\ModelPickerPackageCacheEntry.cs" />
     <Compile Include="Models\QualityOption.cs" />
     <Compile Include="Models\ReferenceUsage.cs" />
+    <Compile Include="Models\GameShopEntry.cs" />
+    <Compile Include="Models\GameShopIconOption.cs" />
     <Compile Include="Models\ReplaceParameters.cs" />
     <Compile Include="Models\ReplaceResult.cs" />
     <Compile Include="Models\ReplacementSummary.cs" />
@@ -833,6 +841,8 @@
     <Compile Include="Services\ItemFieldClassifierService.cs" />
     <Compile Include="Services\ItemReferenceService.cs" />
     <Compile Include="Services\ItemTooltipService.cs" />
+    <Compile Include="Services\GameShopDataService.cs" />
+    <Compile Include="Services\GameShopIconService.cs" />
     <Compile Include="Services\ReferenceIndexService.cs" />
     <Compile Include="Services\FieldValueValidationService.cs" />
     <Compile Include="Services\ValueCompatibilityService.cs" />
@@ -1023,6 +1033,15 @@
     <Compile Include="ViewModels\RulesWindowViewModel.cs" />
     <Compile Include="ViewModels\ViewModelBase.cs" />
     <Compile Include="Views\AddonTypePickerWindow.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Views\GameShopEditorWindow.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Views\GameShopIconPickerWindow.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Views\EquipmentMaskPickerWindow.cs">
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="Views\ItemReferencePickerWindow.cs">

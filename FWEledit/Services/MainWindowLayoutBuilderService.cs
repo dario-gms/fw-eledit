@@ -418,7 +418,9 @@ namespace FWEledit
             TabPage equipmentTabDecompose = new TabPage("Decompose");
             equipmentTabDecompose.Padding = new Padding(0, 6, 0, 0);
             equipmentTabDecompose.Tag = EquipmentValuesTab.Decompose;
-            TabPage equipmentTabOther = null;
+            TabPage equipmentTabOther = new TabPage("Other");
+            equipmentTabOther.Padding = new Padding(0, 6, 0, 0);
+            equipmentTabOther.Tag = EquipmentValuesTab.Other;
             TabPage referencesTab = new TabPage("References");
             referencesTab.Padding = new Padding(0, 6, 0, 0);
 
@@ -452,6 +454,11 @@ namespace FWEledit
             referencesCaption.Dock = DockStyle.Top;
             referencesCaption.Height = 30;
 
+            TabControl referencesTabs = new ThemedTabControl();
+            referencesTabs.Dock = DockStyle.Fill;
+            referencesTabs.Margin = new Padding(0);
+            referencesTabs.Padding = new Point(14, 5);
+
             DataGridView referencesGrid = new DataGridView();
             referencesGrid.Dock = DockStyle.Fill;
             referencesGrid.Margin = new Padding(0);
@@ -483,9 +490,12 @@ namespace FWEledit
             referencesGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "refName", HeaderText = "Name", AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill, MinimumWidth = 180, ReadOnly = true });
             referencesGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "refField", HeaderText = "Field", Width = 220, ReadOnly = true });
             referencesGrid.Columns.Add(new DataGridViewTextBoxColumn { Name = "refValue", HeaderText = "Value", Width = 70, ReadOnly = true });
-            referencesTab.Controls.Add(referencesGrid);
+            TabPage allReferencesPage = new TabPage("All");
+            allReferencesPage.Controls.Add(referencesGrid);
+            referencesTabs.TabPages.Add(allReferencesPage);
+            referencesTab.Controls.Add(referencesTabs);
             referencesTab.Controls.Add(referencesCaption);
-            referencesTab.Controls.SetChildIndex(referencesGrid, 0);
+            referencesTab.Controls.SetChildIndex(referencesTabs, 0);
             referencesTab.Controls.SetChildIndex(referencesCaption, 1);
 
             Button inlinePickIconButton = new Button();
@@ -604,9 +614,9 @@ namespace FWEledit
             descriptionTab.Controls.Add(descriptionLayout);
 
             rightTabs.TabPages.Add(valuesTab);
-            rightTabs.TabPages.Add(equipmentTabModels);
             rightTabs.TabPages.Add(equipmentTabRefine);
-            rightTabs.TabPages.Add(equipmentTabDecompose);
+            rightTabs.TabPages.Add(equipmentTabModels);
+            rightTabs.TabPages.Add(equipmentTabOther);
             rightTabs.TabPages.Add(descriptionTab);
             rightTabs.TabPages.Add(referencesTab);
 
@@ -656,6 +666,7 @@ namespace FWEledit
                 EquipmentTabDecompose = equipmentTabDecompose,
                 EquipmentTabOther = equipmentTabOther,
                 ReferencesTab = referencesTab,
+                ReferencesTabs = referencesTabs,
                 ReferencesGrid = referencesGrid,
                 DescriptionTab = descriptionTab,
                 DescriptionEditor = descriptionEditor,

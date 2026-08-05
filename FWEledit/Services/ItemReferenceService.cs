@@ -21,6 +21,7 @@ namespace FWEledit
         private readonly Dictionary<int, Dictionary<int, ItemReferenceOption>> optionsByIdByListIndex = new Dictionary<int, Dictionary<int, ItemReferenceOption>>();
         private readonly Dictionary<int, Dictionary<string, ItemReferenceOption>> optionsByNameByListIndex = new Dictionary<int, Dictionary<string, ItemReferenceOption>>();
         private readonly Dictionary<int, Dictionary<int, int>> elementIndexByIdByListIndex = new Dictionary<int, Dictionary<int, int>>();
+        private readonly Dictionary<string, Dictionary<int, string>> inheritedTypeIconKeyCache = new Dictionary<string, Dictionary<int, string>>(StringComparer.OrdinalIgnoreCase);
         private List<ItemReferenceOption> searchableOptions;
         private Dictionary<int, ItemReferenceOption> searchableOptionsById;
         private Dictionary<string, ItemReferenceOption> searchableOptionsByName;
@@ -39,6 +40,7 @@ namespace FWEledit
             optionsByIdByListIndex.Clear();
             optionsByNameByListIndex.Clear();
             elementIndexByIdByListIndex.Clear();
+            inheritedTypeIconKeyCache.Clear();
             searchableOptions = null;
             searchableOptionsById = null;
             searchableOptionsByName = null;
@@ -275,6 +277,10 @@ namespace FWEledit
                 || string.Equals(name, "reidentify_extend_identify_attr_tool_id", StringComparison.OrdinalIgnoreCase))
             {
                 targetListIndex = ItemListsTargetIndex;
+                return true;
+            }
+            else if (TryGetConventionalTypeTargetListIndex(listCollection, sourceListName, name, out targetListIndex))
+            {
                 return true;
             }
             else if (TryGetMappedTargetListName(sourceListName, normalizedName, out targetListName))
@@ -583,6 +589,11 @@ namespace FWEledit
             Dictionary<int, ItemReferenceOption> addonPackageUsageMap = string.Equals(normalizedListName, "ADDON_PACKAGE_CONFIG", StringComparison.OrdinalIgnoreCase)
                 ? BuildAddonPackageUsageMap(listCollection, targetListIndex, database, iconResolutionService)
                 : null;
+            string inheritedTypeSourceListName;
+            string inheritedTypeFieldName;
+            Dictionary<int, string> inheritedTypeIconKeyById = TryGetInheritedTypeIconSource(normalizedListName, out inheritedTypeSourceListName, out inheritedTypeFieldName)
+                ? BuildInheritedTypeIconKeyMap(listCollection, database, iconResolutionService, inheritedTypeSourceListName, inheritedTypeFieldName)
+                : null;
             for (int i = 0; i < listCollection.Lists[targetListIndex].elementValues.Length; i++)
             {
                 int id;
@@ -593,6 +604,12 @@ namespace FWEledit
 
                 string name = nameIndex >= 0 ? listCollection.GetValue(targetListIndex, i, nameIndex) : string.Empty;
                 string iconKey = ResolveOptionIconKey(listCollection, database, iconResolutionService, targetListIndex, i, iconIndex);
+                if (string.IsNullOrWhiteSpace(iconKey)
+                    && inheritedTypeIconKeyById != null
+                    && inheritedTypeIconKeyById.TryGetValue(id, out string inheritedIconKey))
+                {
+                    iconKey = inheritedIconKey;
+                }
                 int quality = ResolveOptionQuality(listCollection, targetListIndex, i, qualityIndex);
                 if (string.Equals(normalizedListName, "EQUIPMENT_ADDON", StringComparison.OrdinalIgnoreCase))
                 {
@@ -1226,6 +1243,7 @@ namespace FWEledit
             if (optionsByIdByListIndex.TryGetValue(targetListIndex, out byId)
                 && byId.TryGetValue(id, out option))
             {
+                EnsureInheritedOptionIcon(listCollection, targetListIndex, option, database, iconResolutionService);
                 return true;
             }
             return false;
@@ -1495,6 +1513,38 @@ namespace FWEledit
                 return false;
             }
 
+            if (string.Equals(sourceListName, "MEDICINE_ESSENCE", StringComparison.OrdinalIgnoreCase)
+                && (string.Equals(fieldName, "major_type", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(fieldName, "id_major_type", StringComparison.OrdinalIgnoreCase)))
+            {
+                targetListName = "MEDICINE_MAJOR_TYPE";
+                return true;
+            }
+
+            if (string.Equals(sourceListName, "MEDICINE_ESSENCE", StringComparison.OrdinalIgnoreCase)
+                && (string.Equals(fieldName, "sub_type", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(fieldName, "id_sub_type", StringComparison.OrdinalIgnoreCase)))
+            {
+                targetListName = "MEDICINE_SUB_TYPE";
+                return true;
+            }
+
+            if (string.Equals(sourceListName, "MATERIAL_ESSENCE", StringComparison.OrdinalIgnoreCase)
+                && (string.Equals(fieldName, "major_type", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(fieldName, "id_major_type", StringComparison.OrdinalIgnoreCase)))
+            {
+                targetListName = "MATERIAL_MAJOR_TYPE";
+                return true;
+            }
+
+            if (string.Equals(sourceListName, "MATERIAL_ESSENCE", StringComparison.OrdinalIgnoreCase)
+                && (string.Equals(fieldName, "sub_type", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(fieldName, "id_sub_type", StringComparison.OrdinalIgnoreCase)))
+            {
+                targetListName = "MATERIAL_SUB_TYPE";
+                return true;
+            }
+
             if (fieldName.StartsWith("id_addon_prop_", StringComparison.OrdinalIgnoreCase)
                 || fieldName.StartsWith("addons_", StringComparison.OrdinalIgnoreCase)
                 || fieldName.StartsWith("addon_props_", StringComparison.OrdinalIgnoreCase)
@@ -1656,6 +1706,52 @@ namespace FWEledit
             return false;
         }
 
+        private static bool TryGetConventionalTypeTargetListIndex(
+            eListCollection listCollection,
+            string sourceListName,
+            string fieldName,
+            out int targetListIndex)
+        {
+            targetListIndex = -1;
+            if (listCollection == null
+                || string.IsNullOrWhiteSpace(sourceListName)
+                || string.IsNullOrWhiteSpace(fieldName)
+                || !sourceListName.EndsWith("_ESSENCE", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            string suffix = null;
+            if (IsMajorTypeField(fieldName))
+            {
+                suffix = "_MAJOR_TYPE";
+            }
+            else if (IsSubTypeField(fieldName))
+            {
+                suffix = "_SUB_TYPE";
+            }
+
+            if (string.IsNullOrWhiteSpace(suffix))
+            {
+                return false;
+            }
+
+            string prefix = sourceListName.Substring(0, sourceListName.Length - "_ESSENCE".Length);
+            return TryFindListIndexByName(listCollection, prefix + suffix, out targetListIndex);
+        }
+
+        private static bool IsMajorTypeField(string fieldName)
+        {
+            return string.Equals(fieldName, "major_type", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(fieldName, "id_major_type", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsSubTypeField(string fieldName)
+        {
+            return string.Equals(fieldName, "sub_type", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(fieldName, "id_sub_type", StringComparison.OrdinalIgnoreCase);
+        }
+
         private static bool TryGetNpcServiceTargetListName(string fieldName, out string targetListName)
         {
             targetListName = null;
@@ -1779,6 +1875,7 @@ namespace FWEledit
 
             if (IsNumberedIdField(fieldName, "gift_")
                 || IsNumberedIdField(fieldName, "reward_")
+                || IsProductIdToMakeField(fieldName)
                 || IsNumberedIdField(fieldName, "materials_")
                 || IsNumberedIdField(fieldName, "acquired_")
                 || IsNumberedIdField(fieldName, "decompose_main_result_")
@@ -1804,6 +1901,13 @@ namespace FWEledit
             }
 
             return false;
+        }
+
+        private static bool IsProductIdToMakeField(string fieldName)
+        {
+            return !string.IsNullOrWhiteSpace(fieldName)
+                && fieldName.StartsWith("products_", StringComparison.OrdinalIgnoreCase)
+                && fieldName.IndexOf("id_to_make", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private static bool IsItemTradePageField(string fieldName)
@@ -1973,6 +2077,168 @@ namespace FWEledit
 
             string rawIcon = listCollection.GetValue(listIndex, elementIndex, iconIndex);
             return iconResolutionService.ResolveIconKeyForList(database, listCollection, listIndex, rawIcon);
+        }
+
+        private void EnsureInheritedOptionIcon(
+            eListCollection listCollection,
+            int targetListIndex,
+            ItemReferenceOption option,
+            CacheSave database,
+            IconResolutionService iconResolutionService)
+        {
+            if (option == null || !string.IsNullOrWhiteSpace(option.IconKey))
+            {
+                return;
+            }
+
+            string normalizedListName = GetNormalizedListName(listCollection, targetListIndex);
+            string inheritedTypeSourceListName;
+            string inheritedTypeFieldName;
+            if (!TryGetInheritedTypeIconSource(normalizedListName, out inheritedTypeSourceListName, out inheritedTypeFieldName))
+            {
+                return;
+            }
+
+            Dictionary<int, string> iconKeyById = BuildInheritedTypeIconKeyMap(
+                listCollection,
+                database,
+                iconResolutionService,
+                inheritedTypeSourceListName,
+                inheritedTypeFieldName);
+            string iconKey;
+            if (iconKeyById.TryGetValue(option.Id, out iconKey) && !string.IsNullOrWhiteSpace(iconKey))
+            {
+                option.IconKey = iconKey;
+            }
+        }
+
+        private Dictionary<int, string> BuildInheritedTypeIconKeyMap(
+            eListCollection listCollection,
+            CacheSave database,
+            IconResolutionService iconResolutionService,
+            string sourceListName,
+            string typeFieldName)
+        {
+            string cacheKey = (sourceListName ?? string.Empty) + "|" + (typeFieldName ?? string.Empty);
+            Dictionary<int, string> cached;
+            if (inheritedTypeIconKeyCache.TryGetValue(cacheKey, out cached))
+            {
+                return cached;
+            }
+
+            Dictionary<int, string> map = new Dictionary<int, string>();
+            inheritedTypeIconKeyCache[cacheKey] = map;
+            if (listCollection == null || listCollection.Lists == null || iconResolutionService == null)
+            {
+                return map;
+            }
+
+            for (int listIndex = 0; listIndex < listCollection.Lists.Length; listIndex++)
+            {
+                if (!string.Equals(GetNormalizedListName(listCollection, listIndex), sourceListName, StringComparison.OrdinalIgnoreCase)
+                    || listCollection.Lists[listIndex] == null
+                    || listCollection.Lists[listIndex].elementFields == null
+                    || listCollection.Lists[listIndex].elementValues == null)
+                {
+                    continue;
+                }
+
+                int typeFieldIndex = GetFieldIndex(listCollection.Lists[listIndex].elementFields, typeFieldName);
+                if (typeFieldIndex < 0 && string.Equals(typeFieldName, "id_major_type", StringComparison.OrdinalIgnoreCase))
+                {
+                    typeFieldIndex = GetFieldIndex(listCollection.Lists[listIndex].elementFields, "major_type");
+                }
+                else if (typeFieldIndex < 0 && string.Equals(typeFieldName, "id_sub_type", StringComparison.OrdinalIgnoreCase))
+                {
+                    typeFieldIndex = GetFieldIndex(listCollection.Lists[listIndex].elementFields, "sub_type");
+                }
+
+                int iconFieldIndex = GetIconFieldIndex(listCollection, listIndex);
+                if (typeFieldIndex < 0 || iconFieldIndex < 0)
+                {
+                    continue;
+                }
+
+                for (int elementIndex = 0; elementIndex < listCollection.Lists[listIndex].elementValues.Length; elementIndex++)
+                {
+                    int typeId;
+                    if (!int.TryParse(listCollection.GetValue(listIndex, elementIndex, typeFieldIndex), out typeId)
+                        || typeId <= 0
+                        || map.ContainsKey(typeId))
+                    {
+                        continue;
+                    }
+
+                    string iconKey = ResolveOptionIconKey(listCollection, database, iconResolutionService, listIndex, elementIndex, iconFieldIndex);
+                    if (!string.IsNullOrWhiteSpace(iconKey))
+                    {
+                        map[typeId] = iconKey;
+                    }
+                }
+            }
+
+            return map;
+        }
+
+        private static bool TryGetInheritedTypeIconSource(string normalizedListName, out string sourceListName, out string typeFieldName)
+        {
+            sourceListName = string.Empty;
+            typeFieldName = string.Empty;
+
+            if (string.IsNullOrWhiteSpace(normalizedListName))
+            {
+                return false;
+            }
+
+            const string majorSuffix = "_MAJOR_TYPE";
+            const string subSuffix = "_SUB_TYPE";
+            if (normalizedListName.EndsWith(majorSuffix, StringComparison.OrdinalIgnoreCase))
+            {
+                sourceListName = normalizedListName.Substring(0, normalizedListName.Length - majorSuffix.Length) + "_ESSENCE";
+                typeFieldName = "id_major_type";
+                return true;
+            }
+
+            if (normalizedListName.EndsWith(subSuffix, StringComparison.OrdinalIgnoreCase))
+            {
+                sourceListName = normalizedListName.Substring(0, normalizedListName.Length - subSuffix.Length) + "_ESSENCE";
+                typeFieldName = "id_sub_type";
+                return true;
+            }
+
+            return false;
+        }
+
+        private static string GetNormalizedListName(eListCollection listCollection, int listIndex)
+        {
+            if (listCollection == null
+                || listCollection.Lists == null
+                || listIndex < 0
+                || listIndex >= listCollection.Lists.Length
+                || listCollection.Lists[listIndex] == null)
+            {
+                return string.Empty;
+            }
+
+            return NormalizeListName(listCollection.Lists[listIndex].listName);
+        }
+
+        private static int GetFieldIndex(string[] fields, string fieldName)
+        {
+            if (fields == null)
+            {
+                return -1;
+            }
+
+            for (int i = 0; i < fields.Length; i++)
+            {
+                if (string.Equals(fields[i], fieldName, StringComparison.OrdinalIgnoreCase))
+                {
+                    return i;
+                }
+            }
+
+            return -1;
         }
 
         private static int ResolveOptionQuality(eListCollection listCollection, int listIndex, int elementIndex, int qualityIndex)

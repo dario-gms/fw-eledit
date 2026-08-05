@@ -22,14 +22,426 @@ namespace FWEledit
             payload = null;
             error = string.Empty;
 
-            if (string.IsNullOrWhiteSpace(packageName))
-            {
-                error = "Invalid package name.";
-                return false;
-            }
             if (string.IsNullOrWhiteSpace(relativePath))
             {
                 error = "Invalid package entry path.";
+                return false;
+            }
+
+            if (!TryGetPackagePaths(packageName, out string normalizedPackage, out string pckPath, out string pkxPath, out error))
+            {
+                return false;
+            }
+
+            string normalizedEntry = NormalizeLookupKey(relativePath);
+            if (normalizedEntry.StartsWith(normalizedPackage.ToLowerInvariant() + "\\", StringComparison.OrdinalIgnoreCase))
+            {
+                normalizedEntry = normalizedEntry.Substring(normalizedPackage.Length + 1);
+            }
+
+            PckPackageIndex index;
+            string managedError = string.Empty;
+            if (TryGetPackageIndex(normalizedPackage, pckPath, pkxPath, out index, out managedError) && index != null)
+            {
+                if (TryResolveIndexedEntry(index, normalizedPackage, normalizedEntry, out PckFileEntry entry, out string resolvedRelativePath)
+                    && TryReadIndexedEntry(pckPath, pkxPath, resolvedRelativePath, entry, out payload, out error))
+                {
+                    return true;
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(error))
+            {
+                return false;
+            }
+
+            error = !string.IsNullOrWhiteSpace(managedError)
+                ? managedError
+                : "Entry not found in " + normalizedPackage + ".pck: " + relativePath;
+            return false;
+        }
+
+        public bool TryReadFileFast(
+            string packageName,
+            string relativePath,
+            out byte[] payload,
+            out string resolvedRelativePath,
+            out string error)
+        {
+            payload = null;
+            resolvedRelativePath = string.Empty;
+            error = string.Empty;
+
+            if (string.IsNullOrWhiteSpace(relativePath))
+            {
+                error = "Invalid package entry path.";
+                return false;
+            }
+
+            if (!TryGetPackagePaths(packageName, out string normalizedPackage, out string pckPath, out string pkxPath, out error))
+            {
+                return false;
+            }
+
+            PckPackageIndex index;
+            if (!TryGetPackageIndex(normalizedPackage, pckPath, pkxPath, out index, out error) || index == null)
+            {
+                return false;
+            }
+
+            string normalizedEntry = NormalizeLookupKey(relativePath);
+            if (normalizedEntry.StartsWith(normalizedPackage.ToLowerInvariant() + "\\", StringComparison.OrdinalIgnoreCase))
+            {
+                normalizedEntry = normalizedEntry.Substring(normalizedPackage.Length + 1);
+            }
+
+            if (!TryResolveIndexedEntry(index, normalizedPackage, normalizedEntry, out PckFileEntry entry, out resolvedRelativePath))
+            {
+                error = "Entry not found in " + normalizedPackage + ".pck: " + relativePath;
+                return false;
+            }
+
+            return TryReadIndexedEntry(pckPath, pkxPath, resolvedRelativePath, entry, out payload, out error);
+        }
+
+        public bool TryResolveSiblingByExtension(
+            string packageName,
+            string anchorRelativePath,
+            string desiredExtension,
+            out string resolvedRelativePath,
+            out string error)
+        {
+            resolvedRelativePath = string.Empty;
+            error = string.Empty;
+
+            if (!TryGetPackagePaths(packageName, out string normalizedPackage, out string pckPath, out string pkxPath, out error))
+            {
+                return false;
+            }
+
+            PckPackageIndex index;
+            if (!TryGetPackageIndex(normalizedPackage, pckPath, pkxPath, out index, out error) || index == null)
+            {
+                return false;
+            }
+
+            string normalizedAnchor = NormalizeLookupKey(anchorRelativePath);
+            string normalizedExtension = NormalizeExtension(desiredExtension);
+            if (string.IsNullOrWhiteSpace(normalizedAnchor) || string.IsNullOrWhiteSpace(normalizedExtension))
+            {
+                error = "Invalid sibling preview lookup.";
+                return false;
+            }
+
+            string exactCandidate = NormalizeLookupKey(Path.ChangeExtension(normalizedAnchor, normalizedExtension));
+            if (TryResolveCanonicalEntry(index, exactCandidate, out resolvedRelativePath))
+            {
+                return true;
+            }
+
+            string anchorDirectory = NormalizeLookupKey(Path.GetDirectoryName(normalizedAnchor) ?? string.Empty);
+            string anchorFileName = NormalizeLookupKey(Path.GetFileNameWithoutExtension(normalizedAnchor) ?? string.Empty);
+            if (string.IsNullOrWhiteSpace(anchorFileName))
+            {
+                error = "Failed to resolve sibling preview path.";
+                return false;
+            }
+
+            if (!index.EntriesByExtension.TryGetValue(normalizedExtension, out List<string> extensionEntries) || extensionEntries == null)
+            {
+                error = "No sibling entries found for " + normalizedExtension + ".";
+                return false;
+            }
+
+            int anchorPosition = GetEntryPosition(index, normalizedPackage, normalizedAnchor);
+            int bestDistance = int.MaxValue;
+            int bestPosition = int.MaxValue;
+            string bestEntry = string.Empty;
+            for (int i = 0; i < extensionEntries.Count; i++)
+            {
+                string candidate = extensionEntries[i] ?? string.Empty;
+                if (string.IsNullOrWhiteSpace(candidate))
+                {
+                    continue;
+                }
+
+                string candidateFileName = NormalizeLookupKey(Path.GetFileNameWithoutExtension(candidate) ?? string.Empty);
+                if (!string.Equals(candidateFileName, anchorFileName, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                string candidateDirectory = NormalizeLookupKey(Path.GetDirectoryName(candidate) ?? string.Empty);
+                int directoryPenalty = string.Equals(candidateDirectory, anchorDirectory, StringComparison.OrdinalIgnoreCase) ? 0 : 1000000;
+                int candidatePosition = GetEntryPosition(index, normalizedPackage, candidate);
+                int distance = directoryPenalty + ComputeEntryDistance(anchorPosition, candidatePosition);
+                if (distance < bestDistance || (distance == bestDistance && candidatePosition < bestPosition))
+                {
+                    bestDistance = distance;
+                    bestPosition = candidatePosition;
+                    bestEntry = candidate;
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(bestEntry))
+            {
+                resolvedRelativePath = bestEntry;
+                return true;
+            }
+
+            error = "Failed to resolve sibling preview path.";
+            return false;
+        }
+
+        public bool TryResolveNearestEntryByFileNames(
+            string packageName,
+            string anchorRelativePath,
+            IEnumerable<string> candidateFileNames,
+            out string resolvedRelativePath,
+            out string error)
+        {
+            resolvedRelativePath = string.Empty;
+            error = string.Empty;
+
+            if (!TryGetPackagePaths(packageName, out string normalizedPackage, out string pckPath, out string pkxPath, out error))
+            {
+                return false;
+            }
+
+            PckPackageIndex index;
+            if (!TryGetPackageIndex(normalizedPackage, pckPath, pkxPath, out index, out error) || index == null)
+            {
+                return false;
+            }
+
+            string normalizedAnchor = NormalizeLookupKey(anchorRelativePath);
+            int anchorPosition = GetEntryPosition(index, normalizedPackage, normalizedAnchor);
+            int bestDistance = int.MaxValue;
+            int bestPosition = int.MaxValue;
+            string bestEntry = string.Empty;
+            HashSet<string> seenNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            IEnumerable<string> safeFileNames = candidateFileNames ?? new string[0];
+            foreach (string rawName in safeFileNames)
+            {
+                string fileName = NormalizeLookupKey(Path.GetFileName(rawName ?? string.Empty) ?? string.Empty);
+                if (string.IsNullOrWhiteSpace(fileName) || !seenNames.Add(fileName))
+                {
+                    continue;
+                }
+
+                if (!index.EntriesByFileName.TryGetValue(fileName, out List<string> matches) || matches == null)
+                {
+                    continue;
+                }
+
+                for (int i = 0; i < matches.Count; i++)
+                {
+                    string candidate = matches[i] ?? string.Empty;
+                    if (string.IsNullOrWhiteSpace(candidate))
+                    {
+                        continue;
+                    }
+
+                    int candidatePosition = GetEntryPosition(index, normalizedPackage, candidate);
+                    int distance = ComputeEntryDistance(anchorPosition, candidatePosition);
+                    if (distance < bestDistance || (distance == bestDistance && candidatePosition < bestPosition))
+                    {
+                        bestDistance = distance;
+                        bestPosition = candidatePosition;
+                        bestEntry = candidate;
+                    }
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(bestEntry))
+            {
+                resolvedRelativePath = bestEntry;
+                return true;
+            }
+
+            error = "Failed to resolve nearby package entry.";
+            return false;
+        }
+
+        public bool TryEnumerateEntries(string packageName, out List<string> entries, out string error)
+        {
+            entries = new List<string>();
+            error = string.Empty;
+
+            if (!TryGetPackagePaths(packageName, out string normalizedPackage, out string pckPath, out string pkxPath, out error))
+            {
+                return false;
+            }
+
+            PckPackageIndex index;
+            if (!TryGetPackageIndex(normalizedPackage, pckPath, pkxPath, out index, out error) || index == null)
+            {
+                return false;
+            }
+
+            HashSet<string> unique = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (string key in index.Entries.Keys)
+            {
+                if (string.IsNullOrWhiteSpace(key))
+                {
+                    continue;
+                }
+
+                string normalizedKey = key.Trim().Replace('/', '\\').TrimStart('\\');
+                string packagePrefix = normalizedPackage + "\\";
+                if (normalizedKey.StartsWith(packagePrefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    normalizedKey = normalizedKey.Substring(packagePrefix.Length);
+                }
+
+                if (string.IsNullOrWhiteSpace(normalizedKey) || !unique.Add(normalizedKey))
+                {
+                    continue;
+                }
+
+                entries.Add(normalizedKey);
+            }
+
+            return entries.Count > 0;
+        }
+
+        private static bool TryResolveIndexedEntry(
+            PckPackageIndex index,
+            string packageName,
+            string normalizedEntry,
+            out PckFileEntry entry,
+            out string resolvedRelativePath)
+        {
+            entry = null;
+            resolvedRelativePath = string.Empty;
+            if (index == null || string.IsNullOrWhiteSpace(normalizedEntry))
+            {
+                return false;
+            }
+
+            if (index.Entries.TryGetValue(normalizedEntry, out entry))
+            {
+                resolvedRelativePath = NormalizeRelativeForPackage(packageName, normalizedEntry);
+                return true;
+            }
+
+            string prefixed = NormalizeLookupKey((packageName ?? string.Empty).Trim() + "\\" + normalizedEntry);
+            if (!string.Equals(prefixed, normalizedEntry, StringComparison.OrdinalIgnoreCase)
+                && index.Entries.TryGetValue(prefixed, out entry))
+            {
+                resolvedRelativePath = NormalizeRelativeForPackage(packageName, prefixed);
+                return true;
+            }
+
+            return false;
+        }
+
+        private static bool TryResolveCanonicalEntry(
+            PckPackageIndex index,
+            string normalizedRelativePath,
+            out string resolvedRelativePath)
+        {
+            resolvedRelativePath = string.Empty;
+            if (index == null || string.IsNullOrWhiteSpace(normalizedRelativePath))
+            {
+                return false;
+            }
+
+            if (!index.Entries.TryGetValue(normalizedRelativePath, out PckFileEntry entry) || entry == null)
+            {
+                return false;
+            }
+
+            resolvedRelativePath = !string.IsNullOrWhiteSpace(entry.CanonicalPath)
+                ? entry.CanonicalPath
+                : normalizedRelativePath;
+            return !string.IsNullOrWhiteSpace(resolvedRelativePath);
+        }
+
+        private static int GetEntryPosition(PckPackageIndex index, string packageName, string normalizedRelativePath)
+        {
+            if (index == null)
+            {
+                return int.MaxValue;
+            }
+
+            string normalized = NormalizeLookupKey(normalizedRelativePath);
+            if (string.IsNullOrWhiteSpace(normalized))
+            {
+                return int.MaxValue;
+            }
+
+            if (index.EntryPositions.TryGetValue(normalized, out int position))
+            {
+                return position;
+            }
+
+            string normalizedPackage = NormalizeLookupKey(packageName);
+            if (!string.IsNullOrWhiteSpace(normalizedPackage))
+            {
+                string prefixed = NormalizeLookupKey(normalizedPackage + "\\" + normalized);
+                if (index.EntryPositions.TryGetValue(prefixed, out position))
+                {
+                    return position;
+                }
+            }
+
+            return int.MaxValue;
+        }
+
+        private static int ComputeEntryDistance(int anchorPosition, int candidatePosition)
+        {
+            if (candidatePosition == int.MaxValue)
+            {
+                return int.MaxValue;
+            }
+
+            if (anchorPosition == int.MaxValue)
+            {
+                return candidatePosition;
+            }
+
+            long delta = (long)anchorPosition - candidatePosition;
+            if (delta < 0)
+            {
+                delta = -delta;
+            }
+
+            return delta > int.MaxValue ? int.MaxValue : (int)delta;
+        }
+
+        private static string NormalizeExtension(string extension)
+        {
+            string normalized = (extension ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(normalized))
+            {
+                return string.Empty;
+            }
+
+            if (!normalized.StartsWith("."))
+            {
+                normalized = "." + normalized;
+            }
+
+            return normalized.ToLowerInvariant();
+        }
+
+        private static bool TryGetPackagePaths(
+            string packageName,
+            out string normalizedPackage,
+            out string pckPath,
+            out string pkxPath,
+            out string error)
+        {
+            normalizedPackage = string.Empty;
+            pckPath = string.Empty;
+            pkxPath = string.Empty;
+            error = string.Empty;
+
+            if (string.IsNullOrWhiteSpace(packageName))
+            {
+                error = "Invalid package name.";
                 return false;
             }
 
@@ -40,23 +452,17 @@ namespace FWEledit
                 return false;
             }
 
-            string normalizedPackage = packageName.Trim();
-            string normalizedEntry = NormalizeLookupKey(relativePath);
-            if (normalizedEntry.StartsWith(normalizedPackage.ToLowerInvariant() + "\\", StringComparison.OrdinalIgnoreCase))
-            {
-                normalizedEntry = normalizedEntry.Substring(normalizedPackage.Length + 1);
-            }
-
+            normalizedPackage = packageName.Trim();
             string resourcesRoot = Path.Combine(gameRoot, "resources");
             string workspaceResources = string.IsNullOrWhiteSpace(AssetManager.WorkspaceRootPath)
                 ? string.Empty
                 : Path.Combine(AssetManager.WorkspaceRootPath, "resources");
-            string pckPath = Path.Combine(resourcesRoot, normalizedPackage + ".pck");
+            pckPath = Path.Combine(resourcesRoot, normalizedPackage + ".pck");
             if (!File.Exists(pckPath) && !string.IsNullOrWhiteSpace(workspaceResources))
             {
                 pckPath = Path.Combine(workspaceResources, normalizedPackage + ".pck");
             }
-            string pkxPath = Path.Combine(resourcesRoot, normalizedPackage + ".pkx");
+            pkxPath = Path.Combine(resourcesRoot, normalizedPackage + ".pkx");
             if (!File.Exists(pkxPath) && !string.IsNullOrWhiteSpace(workspaceResources))
             {
                 pkxPath = Path.Combine(workspaceResources, normalizedPackage + ".pkx");
@@ -71,46 +477,23 @@ namespace FWEledit
                 pkxPath = string.Empty;
             }
 
-            PckPackageIndex index;
-            string managedError = string.Empty;
-            if (TryGetPackageIndex(normalizedPackage, pckPath, pkxPath, out index, out managedError) && index != null)
-            {
-                PckFileEntry entry;
-                if (index.Entries.TryGetValue(normalizedEntry, out entry))
-                {
-                    if (TryReadIndexedEntry(pckPath, pkxPath, relativePath, entry, out payload, out error))
-                    {
-                        return true;
-                    }
+            return true;
+        }
 
-                string fallback = NormalizeLookupKey(normalizedPackage + "\\" + normalizedEntry);
-                    if (!string.Equals(fallback, normalizedEntry, StringComparison.OrdinalIgnoreCase)
-                        && index.Entries.TryGetValue(fallback, out entry)
-                        && TryReadIndexedEntry(pckPath, pkxPath, relativePath, entry, out payload, out error))
-                    {
-                        return true;
-                    }
-                }
-                else
+        private static string NormalizeRelativeForPackage(string packageName, string relativePath)
+        {
+            string normalized = NormalizeLookupKey(relativePath);
+            string normalizedPackage = NormalizeLookupKey(packageName);
+            if (!string.IsNullOrWhiteSpace(normalizedPackage))
+            {
+                string prefix = normalizedPackage + "\\";
+                if (normalized.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
                 {
-                    string fallback = NormalizeLookupKey(normalizedPackage + "\\" + normalizedEntry);
-                    if (index.Entries.TryGetValue(fallback, out entry)
-                        && TryReadIndexedEntry(pckPath, pkxPath, relativePath, entry, out payload, out error))
-                    {
-                        return true;
-                    }
+                    normalized = normalized.Substring(prefix.Length);
                 }
             }
 
-            if (!string.IsNullOrWhiteSpace(error))
-            {
-                return false;
-            }
-
-            error = !string.IsNullOrWhiteSpace(managedError)
-                ? managedError
-                : "Entry not found in " + normalizedPackage + ".pck: " + relativePath;
-            return false;
+            return normalized;
         }
 
         private static bool TryReadIndexedEntry(
@@ -181,7 +564,20 @@ namespace FWEledit
             }
 
             Dictionary<string, PckFileEntry> decodedEntries;
-            if (!TryDecodeIndexEntries(packageName, pckPath, pkxPath, out decodedEntries, out error))
+            List<string> orderedEntries;
+            Dictionary<string, int> entryPositions;
+            Dictionary<string, List<string>> entriesByExtension;
+            Dictionary<string, List<string>> entriesByFileName;
+            if (!TryDecodeIndexEntries(
+                packageName,
+                pckPath,
+                pkxPath,
+                out decodedEntries,
+                out orderedEntries,
+                out entryPositions,
+                out entriesByExtension,
+                out entriesByFileName,
+                out error))
             {
                 return false;
             }
@@ -189,7 +585,11 @@ namespace FWEledit
             PckPackageIndex built = new PckPackageIndex
             {
                 Signature = signature,
-                Entries = decodedEntries
+                Entries = decodedEntries,
+                OrderedEntries = orderedEntries,
+                EntryPositions = entryPositions,
+                EntriesByExtension = entriesByExtension,
+                EntriesByFileName = entriesByFileName
             };
 
             lock (syncRoot)
@@ -232,9 +632,17 @@ namespace FWEledit
             string pckPath,
             string pkxPath,
             out Dictionary<string, PckFileEntry> entries,
+            out List<string> orderedEntries,
+            out Dictionary<string, int> entryPositions,
+            out Dictionary<string, List<string>> entriesByExtension,
+            out Dictionary<string, List<string>> entriesByFileName,
             out string error)
         {
             entries = new Dictionary<string, PckFileEntry>(StringComparer.OrdinalIgnoreCase);
+            orderedEntries = new List<string>();
+            entryPositions = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            entriesByExtension = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+            entriesByFileName = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
             error = string.Empty;
 
             try
@@ -299,14 +707,49 @@ namespace FWEledit
                             continue;
                         }
 
+                        string normalized = NormalizeLookupKey(path);
                         PckFileEntry value = new PckFileEntry
                         {
                             Offset = offset,
-                            CompressedSize = (int)rawCompressedSize
+                            CompressedSize = (int)rawCompressedSize,
+                            CanonicalPath = normalized
                         };
-
-                        string normalized = NormalizeLookupKey(path);
                         entries[normalized] = value;
+                        if (!entryPositions.ContainsKey(normalized))
+                        {
+                            entryPositions[normalized] = orderedEntries.Count;
+                            orderedEntries.Add(normalized);
+                        }
+
+                        string normalizedExtension = NormalizeExtension(Path.GetExtension(normalized));
+                        if (!string.IsNullOrWhiteSpace(normalizedExtension))
+                        {
+                            if (!entriesByExtension.TryGetValue(normalizedExtension, out List<string> extensionEntries))
+                            {
+                                extensionEntries = new List<string>();
+                                entriesByExtension[normalizedExtension] = extensionEntries;
+                            }
+
+                            if (!extensionEntries.Contains(normalized))
+                            {
+                                extensionEntries.Add(normalized);
+                            }
+                        }
+
+                        string fileName = NormalizeLookupKey(Path.GetFileName(normalized) ?? string.Empty);
+                        if (!string.IsNullOrWhiteSpace(fileName))
+                        {
+                            if (!entriesByFileName.TryGetValue(fileName, out List<string> fileEntries))
+                            {
+                                fileEntries = new List<string>();
+                                entriesByFileName[fileName] = fileEntries;
+                            }
+
+                            if (!fileEntries.Contains(normalized))
+                            {
+                                fileEntries.Add(normalized);
+                            }
+                        }
 
                         string packagePrefix = packageName.Trim().ToLowerInvariant() + "\\";
                         if (normalized.StartsWith(packagePrefix, StringComparison.OrdinalIgnoreCase))
@@ -555,12 +998,17 @@ namespace FWEledit
         {
             public string Signature { get; set; } = string.Empty;
             public Dictionary<string, PckFileEntry> Entries { get; set; } = new Dictionary<string, PckFileEntry>(StringComparer.OrdinalIgnoreCase);
+            public List<string> OrderedEntries { get; set; } = new List<string>();
+            public Dictionary<string, int> EntryPositions { get; set; } = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            public Dictionary<string, List<string>> EntriesByExtension { get; set; } = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+            public Dictionary<string, List<string>> EntriesByFileName { get; set; } = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
         }
 
         private sealed class PckFileEntry
         {
             public long Offset { get; set; }
             public int CompressedSize { get; set; }
+            public string CanonicalPath { get; set; } = string.Empty;
         }
 
         private sealed class PckConcatStream : Stream

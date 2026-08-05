@@ -57,6 +57,19 @@ namespace FWEledit
                 || string.Equals(name, "can_sign", StringComparison.OrdinalIgnoreCase);
         }
 
+        public bool IsEquipmentMainPinnedField(string fieldName)
+        {
+            if (string.IsNullOrWhiteSpace(fieldName))
+            {
+                return false;
+            }
+
+            string name = fieldName.Trim();
+            return name.StartsWith("max_recast_", StringComparison.OrdinalIgnoreCase)
+                || name.StartsWith("min_recast_", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(name, "id_special_addon_package", StringComparison.OrdinalIgnoreCase);
+        }
+
         public bool IsEquipmentDecomposeField(string fieldName)
         {
             if (string.IsNullOrWhiteSpace(fieldName))
@@ -76,8 +89,6 @@ namespace FWEledit
             }
             string name = fieldName.Trim();
             return name.StartsWith("color_", StringComparison.OrdinalIgnoreCase)
-                || name.StartsWith("max_recast_", StringComparison.OrdinalIgnoreCase)
-                || name.StartsWith("min_recast_", StringComparison.OrdinalIgnoreCase)
                 || name.StartsWith("extend_identify_", StringComparison.OrdinalIgnoreCase)
                 || name.StartsWith("auction_", StringComparison.OrdinalIgnoreCase)
                 || name.StartsWith("fashion_", StringComparison.OrdinalIgnoreCase)
@@ -87,7 +98,6 @@ namespace FWEledit
                 || string.Equals(name, "can_auction", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(name, "auction_fee", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(name, "show_gfx_need_gem_value", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(name, "id_special_addon_package", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(name, "equip_transform_cfg_id", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(name, "fashion_dye_cfg_id", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(name, "fashion_adorn_hook_name", StringComparison.OrdinalIgnoreCase)

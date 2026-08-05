@@ -94,6 +94,10 @@ namespace FWEledit
         public int task_items_revision = 0;
         [JsonIgnore]
         public string task_items_signature = string.Empty;
+        [JsonIgnore]
+        public int path_data_revision = 0;
+        [JsonIgnore]
+        public int model_picker_revision = 0;
         public string[] task_items_list = null;
         public SortedList monsters_npcs_mines = null;
         public SortedList titles = null;

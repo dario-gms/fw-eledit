@@ -58,6 +58,21 @@ namespace FWEledit
             return RaceMaskCatalog.IsRaceMaskFieldName(fieldName);
         }
 
+        public bool IsEquipmentMaskFieldName(string fieldName)
+        {
+            return EquipmentMaskCatalog.IsEquipmentMaskFieldName(fieldName);
+        }
+
+        public bool IsEquipmentLocationFieldName(string fieldName)
+        {
+            return EquipmentLocationCatalog.IsEquipmentLocationFieldName(fieldName);
+        }
+
+        public bool IsEquipmentTypeFieldName(string fieldName)
+        {
+            return EquipmentTypeCatalog.IsEquipmentTypeFieldName(fieldName);
+        }
+
         public bool IsModelProfessionFieldName(string fieldName)
         {
             return ModelProfessionCatalog.IsModelProfessionFieldName(fieldName);
@@ -119,6 +134,9 @@ namespace FWEledit
                 || IsProcTypeFieldName(fieldName)
                 || IsProfessionMaskFieldName(fieldName)
                 || IsRaceMaskFieldName(fieldName)
+                || IsEquipmentMaskFieldName(fieldName)
+                || IsEquipmentLocationFieldName(fieldName)
+                || IsEquipmentTypeFieldName(fieldName)
                 || IsModelProfessionFieldName(fieldName)
                 || IsModelRaceFieldName(fieldName)
                 || IsCombinedServicesFieldName(fieldName)
@@ -137,6 +155,7 @@ namespace FWEledit
             string normalized = fieldName.Trim();
             return normalized.StartsWith("file_model", StringComparison.OrdinalIgnoreCase)
                 || normalized.StartsWith("file_models", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(normalized, "file_matter", StringComparison.OrdinalIgnoreCase)
                 || normalized.StartsWith("model_name", StringComparison.OrdinalIgnoreCase)
                 // Legacy FW lists encode model fields as "..._file_model_..."
                 // (for example: models_1_file_model_male, data_1_race_data_1_file_model_female).

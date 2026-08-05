@@ -68,7 +68,7 @@ namespace FWEledit
                     && cached.Files != null
                     && string.Equals(cached.PackageSignature ?? string.Empty, packageSignature ?? string.Empty, StringComparison.Ordinal))
                 {
-                    files = new List<string>(cached.Files);
+                    files = cached.Files;
                     return true;
                 }
                 return false;
@@ -86,7 +86,7 @@ namespace FWEledit
                 modelPickerPackageCache[cacheKey] = new ModelPickerPackageCacheEntry
                 {
                     PackageSignature = packageSignature ?? string.Empty,
-                    Files = files != null ? new List<string>(files) : new List<string>()
+                    Files = files ?? new List<string>()
                 };
             }
         }
@@ -122,9 +122,7 @@ namespace FWEledit
                     && bySignature != null
                     && bySignature.TryGetValue(signature, out List<ModelPickerEntry> cachedEntries))
                 {
-                    entries = cachedEntries != null
-                        ? new List<ModelPickerEntry>(cachedEntries)
-                        : new List<ModelPickerEntry>();
+                    entries = cachedEntries ?? new List<ModelPickerEntry>();
                     return true;
                 }
 
@@ -148,7 +146,7 @@ namespace FWEledit
                     modelPickerEntriesCache[listIndex] = bySignature;
                 }
 
-                bySignature[signature] = entries != null ? new List<ModelPickerEntry>(entries) : new List<ModelPickerEntry>();
+                bySignature[signature] = entries ?? new List<ModelPickerEntry>();
             }
         }
 
