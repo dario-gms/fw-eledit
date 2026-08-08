@@ -73,6 +73,8 @@ namespace FWEledit
 
                 ReportProgress(progress, "Collecting equipment assets", "Finding direct model, icon and file paths from this equipment item...", 0, 0, true);
                 Dictionary<string, ItemTransferAssetEntry> assetsByKey = CollectDirectAssets(manifest, database, assetManager);
+
+                ExpandEquipmentGfxDependencies(assetsByKey, assetManager, progress, cancellationToken);
                 manifest.Assets = assetsByKey.Values.OrderBy(a => a.Package).ThenBy(a => a.RelativePath).ToList();
 
                 string folder = Path.GetDirectoryName(outputFile);
@@ -299,6 +301,147 @@ namespace FWEledit
             return true;
         }
 
+        private static void ExpandEquipmentGfxDependencies(
+            Dictionary<string, ItemTransferAssetEntry> assets,
+            AssetManager assetManager,
+            Action<ItemTransferProgressInfo> progress,
+            CancellationToken cancellationToken)
+        {
+            Queue<ItemTransferAssetEntry> pending = new Queue<ItemTransferAssetEntry>(
+                assets.Values.Where(IsGfxAsset).ToArray());
+            HashSet<string> processed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            const int MaxProcessedGfx = 256;
+
+            while (pending.Count > 0 && processed.Count < MaxProcessedGfx)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                ItemTransferAssetEntry current = pending.Dequeue();
+                if (current == null || !processed.Add(current.Package + "|" + current.RelativePath))
+                {
+                    continue;
+                }
+
+                ReportProgress(
+                    progress,
+                    "Resolving GFX dependencies",
+                    current.MappedPath ?? current.RelativePath ?? string.Empty,
+                    processed.Count,
+                    Math.Max(processed.Count + pending.Count, assets.Count),
+                    false);
+
+                byte[] payload;
+                string error;
+                if (!assetManager.TryReadPackageEntry(current.Package, current.RelativePath, out payload, out error) || payload == null)
+                {
+                    continue;
+                }
+
+                foreach (string dependency in CollectGfxReferenceCandidates(current, payload))
+                {
+                    ItemTransferAssetEntry addedAsset;
+                    if (TryAddExistingAsset(assets, dependency, assetManager, out addedAsset)
+                        && IsGfxAsset(addedAsset))
+                    {
+                        pending.Enqueue(addedAsset);
+                    }
+                }
+            }
+        }
+
+        private static bool IsGfxAsset(ItemTransferAssetEntry asset)
+        {
+            return asset != null
+                && string.Equals(asset.Package, "gfx", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(Path.GetExtension(asset.RelativePath), ".gfx", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool TryAddExistingAsset(
+            Dictionary<string, ItemTransferAssetEntry> assets,
+            string mappedPath,
+            AssetManager assetManager,
+            out ItemTransferAssetEntry addedAsset)
+        {
+            addedAsset = null;
+            string package;
+            string relative;
+            if (!TrySplitPackagePath(mappedPath, out package, out relative))
+            {
+                return false;
+            }
+
+            string key = package + "|" + relative;
+            if (assets.TryGetValue(key, out addedAsset))
+            {
+                return false;
+            }
+
+            byte[] payload;
+            string error;
+            if (!assetManager.TryReadPackageEntry(package, relative, out payload, out error) || payload == null)
+            {
+                return false;
+            }
+
+            AddAsset(assets, package + "\\" + relative, assetManager);
+            addedAsset = assets[key];
+            return true;
+        }
+
+        private static IEnumerable<string> CollectGfxReferenceCandidates(ItemTransferAssetEntry current, byte[] payload)
+        {
+            if (current == null || payload == null || payload.Length == 0)
+            {
+                yield break;
+            }
+
+            HashSet<string> yielded = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            string text = DecodeGbkPayload(payload);
+            MatchCollection matches = Regex.Matches(
+                text,
+                @"[^\0\r\n\t""'<>|:*?]{1,220}\.(?:dds|tga|bmp|png|jpg|jpeg|smd|gfx)",
+                RegexOptions.IgnoreCase);
+
+            for (int i = 0; i < matches.Count; i++)
+            {
+                string raw = NormalizePath(matches[i].Value.Trim().Trim('\0').TrimStart('.', '\\', '/'));
+                if (string.IsNullOrWhiteSpace(raw))
+                {
+                    continue;
+                }
+
+                foreach (string candidate in ResolveGfxDependencyCandidates(current, raw))
+                {
+                    if (yielded.Add(candidate))
+                    {
+                        yield return candidate;
+                    }
+                }
+            }
+        }
+
+        private static IEnumerable<string> ResolveGfxDependencyCandidates(ItemTransferAssetEntry current, string reference)
+        {
+            string package;
+            string relative;
+            if (TrySplitPackagePath(reference, out package, out relative))
+            {
+                yield return package + "\\" + relative;
+                yield break;
+            }
+
+            string currentPackage = current.Package ?? string.Empty;
+            string currentDirectory = Path.GetDirectoryName(current.RelativePath) ?? string.Empty;
+
+            yield return currentPackage + "\\" + reference;
+            if (!string.IsNullOrWhiteSpace(currentDirectory))
+            {
+                yield return currentPackage + "\\" + currentDirectory + "\\" + reference;
+            }
+
+            yield return currentPackage + "\\models\\" + reference;
+            yield return currentPackage + "\\textures\\" + reference;
+        }
+
         private static void ExpandAssetDependencies(
             Dictionary<string, ItemTransferAssetEntry> assets,
             AssetManager assetManager,
@@ -506,6 +649,23 @@ namespace FWEledit
             }
 
             return new string(chars);
+        }
+
+        private static string DecodeGbkPayload(byte[] payload)
+        {
+            if (payload == null || payload.Length == 0)
+            {
+                return string.Empty;
+            }
+
+            try
+            {
+                return Encoding.GetEncoding("GBK").GetString(payload).Replace('\0', '\n');
+            }
+            catch
+            {
+                return DecodePrintablePayload(payload);
+            }
         }
 
         private static bool IsModelLikeExtension(string ext)
