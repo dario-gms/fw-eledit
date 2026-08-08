@@ -145,6 +145,9 @@ namespace FWEledit
             fwEquipmentTabRefine = layout.EquipmentTabRefine;
             fwEquipmentTabDecompose = layout.EquipmentTabDecompose;
             fwEquipmentTabOther = layout.EquipmentTabOther;
+            fwMonsterMasteryTab = layout.MonsterMasteryTab;
+            fwMonsterLevelUpTab = layout.MonsterLevelUpTab;
+            fwMonsterOtherTab = layout.MonsterOtherTab;
             fwReferencesTab = layout.ReferencesTab;
             fwReferencesTabs = layout.ReferencesTabs;
             fwReferencesGrid = layout.ReferencesGrid;
@@ -760,6 +763,7 @@ namespace FWEledit
                 },
                 listDisplayService,
                 listComboPopulationService,
+                listRowBuilderService,
                 exportRulesMenuService,
                 xrefMenuService,
                 navigationSelectionService,

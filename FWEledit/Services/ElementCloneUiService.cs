@@ -52,7 +52,10 @@ namespace FWEledit
             string friendlyListName = getFriendlyListName != null
                 ? getFriendlyListName(listIndex)
                 : listCollection.Lists[listIndex].listName;
-            listComboBox.Items[listIndex] = "[" + listIndex + "] " + friendlyListName + " (" + listCollection.Lists[listIndex].elementValues.Length + ")";
+            ListComboPopulationService.SetItemTextPreservingIcon(
+                listComboBox,
+                listIndex,
+                "[" + listIndex + "] " + friendlyListName + " (" + listCollection.Lists[listIndex].elementValues.Length + ")");
 
             elementGrid.ClearSelection();
             for (int i = 0; i < result.NewIndices.Length; i++)
@@ -122,7 +125,10 @@ namespace FWEledit
             string friendlyListName = getFriendlyListName != null
                 ? getFriendlyListName(listIndex)
                 : listCollection.Lists[listIndex].listName;
-            listComboBox.Items[listIndex] = "[" + listIndex + "] " + friendlyListName + " (" + listCollection.Lists[listIndex].elementValues.Length + ")";
+            ListComboPopulationService.SetItemTextPreservingIcon(
+                listComboBox,
+                listIndex,
+                "[" + listIndex + "] " + friendlyListName + " (" + listCollection.Lists[listIndex].elementValues.Length + ")");
 
             elementGrid.ClearSelection();
             for (int i = 0; i < result.NewIndices.Length; i++)

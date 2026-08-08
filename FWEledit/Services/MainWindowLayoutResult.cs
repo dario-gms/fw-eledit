@@ -13,6 +13,9 @@ namespace FWEledit
         public TabPage EquipmentTabRefine { get; set; }
         public TabPage EquipmentTabDecompose { get; set; }
         public TabPage EquipmentTabOther { get; set; }
+        public TabPage MonsterMasteryTab { get; set; }
+        public TabPage MonsterLevelUpTab { get; set; }
+        public TabPage MonsterOtherTab { get; set; }
         public TabPage ReferencesTab { get; set; }
         public TabControl ReferencesTabs { get; set; }
         public DataGridView ReferencesGrid { get; set; }

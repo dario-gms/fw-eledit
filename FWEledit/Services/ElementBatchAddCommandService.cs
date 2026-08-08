@@ -62,7 +62,7 @@ namespace FWEledit
 
             if (listComboBox != null && buildListLabel != null && listIndex >= 0 && listIndex < listComboBox.Items.Count)
             {
-                listComboBox.Items[listIndex] = buildListLabel(listIndex);
+                ListComboPopulationService.SetItemTextPreservingIcon(listComboBox, listIndex, buildListLabel(listIndex));
             }
 
             if (progressBar != null)
@@ -159,7 +159,7 @@ namespace FWEledit
 
             if (listComboBox != null && buildListLabel != null && listIndex >= 0 && listIndex < listComboBox.Items.Count)
             {
-                listComboBox.Items[listIndex] = buildListLabel(listIndex);
+                ListComboPopulationService.SetItemTextPreservingIcon(listComboBox, listIndex, buildListLabel(listIndex));
             }
 
             if (progressBar != null)

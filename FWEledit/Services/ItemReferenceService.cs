@@ -13,6 +13,7 @@ namespace FWEledit
         private readonly NpcTradePortraitService npcTradePortraitService = new NpcTradePortraitService();
         private readonly NpcSellPortraitService npcSellPortraitService = new NpcSellPortraitService();
         private readonly MonsterDropPortraitService monsterDropPortraitService = new MonsterDropPortraitService();
+        private readonly CreaturePortraitIconService creaturePortraitIconService = new CreaturePortraitIconService();
 
         private eListCollection cachedListCollection;
         private CacheSave cachedDatabase;
@@ -358,6 +359,10 @@ namespace FWEledit
             {
                 return string.IsNullOrWhiteSpace(option.Name) ? rawValue : option.Name;
             }
+            if (IsStrictTargetReferenceField(listCollection, listIndex, fieldName))
+            {
+                return rawValue ?? string.Empty;
+            }
 
             if (targetListIndex == ItemListsTargetIndex)
             {
@@ -396,6 +401,7 @@ namespace FWEledit
 
             if (TryGetPreferredReferenceOption(listIndex, elementIndex, fieldName, id, out option))
             {
+                option = ApplySourceMonsterIcon(listCollection, listIndex, elementIndex, fieldName, option, database, iconResolutionService);
                 return true;
             }
 
@@ -415,15 +421,30 @@ namespace FWEledit
 
             if (targetListIndex >= 0 && TryFindOptionById(listCollection, targetListIndex, id, database, iconResolutionService, out option))
             {
+                option = ApplySourceMonsterIcon(listCollection, listIndex, elementIndex, fieldName, option, database, iconResolutionService);
                 return true;
+            }
+            if (IsStrictTargetReferenceField(listCollection, listIndex, fieldName))
+            {
+                return false;
             }
 
             if (targetListIndex == ItemListsTargetIndex)
             {
-                return TryFindItemOptionByIdAcrossLists(listCollection, id, database, iconResolutionService, out option);
+                bool foundItem = TryFindItemOptionByIdAcrossLists(listCollection, id, database, iconResolutionService, out option);
+                if (foundItem)
+                {
+                    option = ApplySourceMonsterIcon(listCollection, listIndex, elementIndex, fieldName, option, database, iconResolutionService);
+                }
+                return foundItem;
             }
 
-            return TryFindOptionByIdAcrossLists(listCollection, id, database, iconResolutionService, out option);
+            bool found = TryFindOptionByIdAcrossLists(listCollection, id, database, iconResolutionService, out option);
+            if (found)
+            {
+                option = ApplySourceMonsterIcon(listCollection, listIndex, elementIndex, fieldName, option, database, iconResolutionService);
+            }
+            return found;
         }
 
         public string NormalizeReferenceInput(eListCollection listCollection, int listIndex, string fieldName, string value)
@@ -464,6 +485,10 @@ namespace FWEledit
             if (targetListIndex >= 0 && TryFindOptionByName(listCollection, targetListIndex, value.Trim(), out option))
             {
                 return option.Id.ToString();
+            }
+            if (IsStrictTargetReferenceField(listCollection, listIndex, fieldName))
+            {
+                return value;
             }
 
             if (targetListIndex == ItemListsTargetIndex && TryFindItemOptionByNameAcrossLists(listCollection, value.Trim(), out option))
@@ -1545,6 +1570,20 @@ namespace FWEledit
                 return true;
             }
 
+            if (string.Equals(sourceListName, "MONSTER_ESSENCE", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(fieldName, "id_type", StringComparison.OrdinalIgnoreCase))
+            {
+                targetListName = "MONSTER_TYPE";
+                return true;
+            }
+
+            if (string.Equals(sourceListName, "MONSTER_ESSENCE", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(fieldName, "id_adjust_config", StringComparison.OrdinalIgnoreCase))
+            {
+                targetListName = "KM_PARAM_ADJUST_CONFIG";
+                return true;
+            }
+
             if (fieldName.StartsWith("id_addon_prop_", StringComparison.OrdinalIgnoreCase)
                 || fieldName.StartsWith("addons_", StringComparison.OrdinalIgnoreCase)
                 || fieldName.StartsWith("addon_props_", StringComparison.OrdinalIgnoreCase)
@@ -1704,6 +1743,19 @@ namespace FWEledit
             }
 
             return false;
+        }
+
+        private static bool IsStrictTargetReferenceField(eListCollection listCollection, int sourceListIndex, string fieldName)
+        {
+            string sourceListName = GetNormalizedListName(listCollection, sourceListIndex);
+            if (!string.Equals(sourceListName, "MONSTER_ESSENCE", StringComparison.OrdinalIgnoreCase)
+                || string.IsNullOrWhiteSpace(fieldName))
+            {
+                return false;
+            }
+
+            return string.Equals(fieldName, "id_type", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(fieldName, "id_adjust_config", StringComparison.OrdinalIgnoreCase);
         }
 
         private static bool TryGetConventionalTypeTargetListIndex(
@@ -2079,6 +2131,63 @@ namespace FWEledit
             return iconResolutionService.ResolveIconKeyForList(database, listCollection, listIndex, rawIcon);
         }
 
+        private ItemReferenceOption ApplySourceMonsterIcon(
+            eListCollection listCollection,
+            int sourceListIndex,
+            int sourceElementIndex,
+            string fieldName,
+            ItemReferenceOption option,
+            CacheSave database,
+            IconResolutionService iconResolutionService)
+        {
+            if (option == null
+                || listCollection == null
+                || sourceElementIndex < 0
+                || !IsMonsterInheritedIconField(listCollection, sourceListIndex, fieldName))
+            {
+                return option;
+            }
+
+            int iconIndex = GetIconFieldIndex(listCollection, sourceListIndex);
+            if (iconIndex < 0)
+            {
+                return option;
+            }
+
+            string iconKey = ResolveSourceElementIconKey(listCollection, database, iconResolutionService, sourceListIndex, sourceElementIndex, iconIndex);
+            if (string.IsNullOrWhiteSpace(iconKey))
+            {
+                return option;
+            }
+
+            return new ItemReferenceOption
+            {
+                ListIndex = option.ListIndex,
+                ElementIndex = option.ElementIndex,
+                Id = option.Id,
+                Name = option.Name,
+                ListName = option.ListName,
+                IconKey = iconKey,
+                Quality = option.Quality,
+                Description = option.Description,
+                SecondaryText = option.SecondaryText,
+                AccentHex = option.AccentHex,
+                Kind = option.Kind
+            };
+        }
+
+        private static bool IsMonsterInheritedIconField(eListCollection listCollection, int sourceListIndex, string fieldName)
+        {
+            if (!string.Equals(GetNormalizedListName(listCollection, sourceListIndex), "MONSTER_ESSENCE", StringComparison.OrdinalIgnoreCase)
+                || string.IsNullOrWhiteSpace(fieldName))
+            {
+                return false;
+            }
+
+            return string.Equals(fieldName, "id_type", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(fieldName, "id_adjust_config", StringComparison.OrdinalIgnoreCase);
+        }
+
         private void EnsureInheritedOptionIcon(
             eListCollection listCollection,
             int targetListIndex,
@@ -2169,7 +2278,7 @@ namespace FWEledit
                         continue;
                     }
 
-                    string iconKey = ResolveOptionIconKey(listCollection, database, iconResolutionService, listIndex, elementIndex, iconFieldIndex);
+                    string iconKey = ResolveSourceElementIconKey(listCollection, database, iconResolutionService, listIndex, elementIndex, iconFieldIndex);
                     if (!string.IsNullOrWhiteSpace(iconKey))
                     {
                         map[typeId] = iconKey;
@@ -2178,6 +2287,43 @@ namespace FWEledit
             }
 
             return map;
+        }
+
+        private string ResolveSourceElementIconKey(
+            eListCollection listCollection,
+            CacheSave database,
+            IconResolutionService iconResolutionService,
+            int listIndex,
+            int elementIndex,
+            int iconIndex)
+        {
+            if (listCollection == null
+                || listIndex < 0
+                || listIndex >= listCollection.Lists.Length
+                || iconIndex < 0
+                || elementIndex < 0
+                || elementIndex >= listCollection.Lists[listIndex].elementValues.Length)
+            {
+                return string.Empty;
+            }
+
+            string rawIcon = listCollection.GetValue(listIndex, elementIndex, iconIndex);
+            string iconFieldName = listCollection.Lists[listIndex].elementFields != null
+                && iconIndex < listCollection.Lists[listIndex].elementFields.Length
+                ? listCollection.Lists[listIndex].elementFields[iconIndex]
+                : string.Empty;
+
+            if (creaturePortraitIconService.IsCreaturePortraitField(listCollection, listIndex, iconFieldName))
+            {
+                int pathId;
+                string mappedPath;
+                if (creaturePortraitIconService.TryResolvePortraitPath(database, rawIcon, out pathId, out mappedPath))
+                {
+                    return mappedPath;
+                }
+            }
+
+            return ResolveOptionIconKey(listCollection, database, iconResolutionService, listIndex, elementIndex, iconIndex);
         }
 
         private static bool TryGetInheritedTypeIconSource(string normalizedListName, out string sourceListName, out string typeFieldName)
@@ -2192,6 +2338,20 @@ namespace FWEledit
 
             const string majorSuffix = "_MAJOR_TYPE";
             const string subSuffix = "_SUB_TYPE";
+            if (string.Equals(normalizedListName, "MONSTER_TYPE", StringComparison.OrdinalIgnoreCase))
+            {
+                sourceListName = "MONSTER_ESSENCE";
+                typeFieldName = "id_type";
+                return true;
+            }
+
+            if (string.Equals(normalizedListName, "KM_PARAM_ADJUST_CONFIG", StringComparison.OrdinalIgnoreCase))
+            {
+                sourceListName = "MONSTER_ESSENCE";
+                typeFieldName = "id_adjust_config";
+                return true;
+            }
+
             if (normalizedListName.EndsWith(majorSuffix, StringComparison.OrdinalIgnoreCase))
             {
                 sourceListName = normalizedListName.Substring(0, normalizedListName.Length - majorSuffix.Length) + "_ESSENCE";

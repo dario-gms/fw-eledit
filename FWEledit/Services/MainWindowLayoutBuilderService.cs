@@ -421,6 +421,15 @@ namespace FWEledit
             TabPage equipmentTabOther = new TabPage("Other");
             equipmentTabOther.Padding = new Padding(0, 6, 0, 0);
             equipmentTabOther.Tag = EquipmentValuesTab.Other;
+            TabPage monsterMasteryTab = new TabPage("Immunities");
+            monsterMasteryTab.Padding = new Padding(0, 6, 0, 0);
+            monsterMasteryTab.Tag = EquipmentValuesTab.MonsterMastery;
+            TabPage monsterLevelUpTab = new TabPage("Level Up");
+            monsterLevelUpTab.Padding = new Padding(0, 6, 0, 0);
+            monsterLevelUpTab.Tag = EquipmentValuesTab.MonsterLevelUp;
+            TabPage monsterOtherTab = new TabPage("Other");
+            monsterOtherTab.Padding = new Padding(0, 6, 0, 0);
+            monsterOtherTab.Tag = EquipmentValuesTab.MonsterOther;
             TabPage referencesTab = new TabPage("References");
             referencesTab.Padding = new Padding(0, 6, 0, 0);
 
@@ -617,6 +626,9 @@ namespace FWEledit
             rightTabs.TabPages.Add(equipmentTabRefine);
             rightTabs.TabPages.Add(equipmentTabModels);
             rightTabs.TabPages.Add(equipmentTabOther);
+            rightTabs.TabPages.Add(monsterMasteryTab);
+            rightTabs.TabPages.Add(monsterLevelUpTab);
+            rightTabs.TabPages.Add(monsterOtherTab);
             rightTabs.TabPages.Add(descriptionTab);
             rightTabs.TabPages.Add(referencesTab);
 
@@ -665,6 +677,9 @@ namespace FWEledit
                 EquipmentTabRefine = equipmentTabRefine,
                 EquipmentTabDecompose = equipmentTabDecompose,
                 EquipmentTabOther = equipmentTabOther,
+                MonsterMasteryTab = monsterMasteryTab,
+                MonsterLevelUpTab = monsterLevelUpTab,
+                MonsterOtherTab = monsterOtherTab,
                 ReferencesTab = referencesTab,
                 ReferencesTabs = referencesTabs,
                 ReferencesGrid = referencesGrid,

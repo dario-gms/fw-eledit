@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Drawing;
 using System.Globalization;
 using System.Threading;
 using System.Threading.Tasks;
@@ -9,7 +10,7 @@ namespace FWEledit
 {
     public sealed class ValueRowPickerUiService
     {
-        private int previewLoadInProgress;
+        private int previewRequestId;
         private bool liveModelPreviewEnabled;
         private int lastPreviewPathId;
         private int lastPreviewListIndex;
@@ -296,6 +297,10 @@ namespace FWEledit
                         openCombinedServicesPicker(e.RowIndex);
                     }
                 }
+                else if (fieldClassifier.IsMonsterOptionFieldName(listCollection, listIndex, fieldName))
+                {
+                    OpenMonsterOptionPickerForValueRow(listCollection, listIndex, itemGrid, e.RowIndex, fieldClassifier, itemGrid.FindForm());
+                }
                 else if (fieldClassifier.IsSkillFieldName(fieldName))
                 {
                     if (openSkillPicker != null)
@@ -329,6 +334,40 @@ namespace FWEledit
                 {
                     showError("This field picker could not be opened right now.\n\nDetails: " + ex.Message);
                 }
+            }
+        }
+
+        public void OpenMonsterOptionPickerForValueRow(
+            eListCollection listCollection,
+            int listIndex,
+            DataGridView itemGrid,
+            int rowIndex,
+            ItemFieldClassifierService fieldClassifier,
+            IWin32Window owner)
+        {
+            if (itemGrid == null || rowIndex < 0 || rowIndex >= itemGrid.Rows.Count)
+            {
+                return;
+            }
+
+            string fieldName = ValueGridFieldNameService.GetFieldName(itemGrid, rowIndex);
+            if (fieldClassifier == null || !fieldClassifier.IsMonsterOptionFieldName(listCollection, listIndex, fieldName))
+            {
+                return;
+            }
+
+            int currentValue = 0;
+            string rawValue = GetValueCellRawValue(itemGrid, rowIndex);
+            int.TryParse(rawValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out currentValue);
+
+            using (QualityPickerWindow picker = new QualityPickerWindow(new List<QualityOption>(MonsterFieldCatalog.GetOptions(fieldName)), currentValue))
+            {
+                if (picker.ShowDialog(owner) != DialogResult.OK)
+                {
+                    return;
+                }
+
+                SetValueCellRawValue(itemGrid, rowIndex, picker.SelectedValue.ToString(CultureInfo.InvariantCulture));
             }
         }
 
@@ -1579,19 +1618,21 @@ namespace FWEledit
                 return;
             }
 
-            if (Interlocked.CompareExchange(ref previewLoadInProgress, 1, 0) != 0)
-            {
-                if (!suppressBusyMessage && showMessage != null)
-                {
-                    showMessage("A model preview is already loading. Please wait.");
-                }
-                return;
-            }
+            int requestId = Interlocked.Increment(ref previewRequestId);
 
             bool restoreWaitCursor = owner != null && !owner.IsDisposed && owner.UseWaitCursor;
             try
             {
-                if (owner != null && !owner.IsDisposed)
+                if (suppressBusyMessage)
+                {
+                    await Task.Delay(80);
+                    if (requestId != previewRequestId)
+                    {
+                        return;
+                    }
+                }
+
+                if (!suppressBusyMessage && owner != null && !owner.IsDisposed)
                 {
                     owner.UseWaitCursor = true;
                 }
@@ -1616,6 +1657,11 @@ namespace FWEledit
                     buildResult.MeshData = meshData;
                     return buildResult;
                 });
+
+                if (requestId != previewRequestId)
+                {
+                    return;
+                }
 
                 if (!result.Success)
                 {
@@ -1650,7 +1696,6 @@ namespace FWEledit
                     owner.Cursor = Cursors.Default;
                 }
                 Cursor.Current = Cursors.Default;
-                Interlocked.Exchange(ref previewLoadInProgress, 0);
             }
         }
 

@@ -84,7 +84,7 @@ namespace FWEledit
             string modelExtension = (Path.GetExtension(relativeModelPath) ?? string.Empty).ToLowerInvariant();
             if (string.Equals(modelExtension, ".ski", StringComparison.OrdinalIgnoreCase))
             {
-                if (!TryReadModelFile(assetManager, package, relativeModelPath, out string directSkiPackage, out string directSkiRelative, out byte[] directSkiBytes, out error))
+                if (!TryReadDirectSkiWithFallback(assetManager, package, relativeModelPath, out string directSkiPackage, out string directSkiRelative, out byte[] directSkiBytes, out error))
                 {
                     return false;
                 }
@@ -593,6 +593,7 @@ namespace FWEledit
             error = string.Empty;
 
             string[] candidates = BuildSkiPathCandidates(relativeSmd, skiReference);
+            List<string> unresolvedCandidates = new List<string>(candidates.Length);
             for (int i = 0; i < candidates.Length; i++)
             {
                 string candidate = candidates[i];
@@ -607,6 +608,8 @@ namespace FWEledit
                     continue;
                 }
 
+                unresolvedCandidates.Add(probeRelative);
+
                 if (pckEntryReaderService.TryReadFileFast(package, probeRelative, out skiBytes, out resolvedRelativeSki, out string _))
                 {
                     return true;
@@ -617,6 +620,12 @@ namespace FWEledit
                 {
                     return true;
                 }
+            }
+
+            if (TryResolveNearestSkiByFileName(package, relativeSmd, unresolvedCandidates, out resolvedRelativeSki)
+                && pckEntryReaderService.TryReadFileFast(package, resolvedRelativeSki, out skiBytes, out resolvedRelativeSki, out string _))
+            {
+                return true;
             }
 
             error = "Failed to resolve .ski path for preview.";
@@ -1851,6 +1860,7 @@ namespace FWEledit
                 return false;
             }
 
+            List<string> unresolvedCandidates = new List<string>(skiPathCandidates.Length);
             List<string> packageFallbacks = new List<string>(8);
             HashSet<string> seenPackages = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             AddUniquePackage(packageFallbacks, seenPackages, smdPackage);
@@ -1878,6 +1888,8 @@ namespace FWEledit
                     continue;
                 }
 
+                unresolvedCandidates.Add(baseRelative);
+
                 for (int p = 0; p < packageFallbacks.Count; p++)
                 {
                     string probePackage = packageFallbacks[p];
@@ -1900,10 +1912,237 @@ namespace FWEledit
                 }
             }
 
+            string nearestError = string.Empty;
+            if (TryResolveNearestSkiByFileName(smdPackage, relativeSmd, unresolvedCandidates, out string nearestRelative)
+                && TryReadModelFile(assetManager, smdPackage, nearestRelative, out skiBytes, out nearestError))
+            {
+                resolvedPackage = smdPackage;
+                resolvedRelative = nearestRelative;
+                return true;
+            }
+            if (string.IsNullOrWhiteSpace(lastProbeError) && !string.IsNullOrWhiteSpace(nearestError))
+            {
+                lastProbeError = nearestError;
+            }
+
             error = string.IsNullOrWhiteSpace(lastProbeError)
                 ? "Failed to resolve .ski path for preview."
                 : lastProbeError;
             return false;
+        }
+
+        private bool TryResolveNearestSkiByFileName(
+            string package,
+            string anchorRelativePath,
+            IEnumerable<string> relativeCandidates,
+            out string resolvedRelativePath)
+        {
+            resolvedRelativePath = string.Empty;
+
+            string normalizedPackage = (package ?? string.Empty).Trim();
+            string normalizedAnchor = NormalizeRelativePath(anchorRelativePath);
+            if (string.IsNullOrWhiteSpace(normalizedPackage)
+                || string.IsNullOrWhiteSpace(normalizedAnchor)
+                || relativeCandidates == null)
+            {
+                return false;
+            }
+
+            List<string> fileNames = new List<string>();
+            HashSet<string> seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (string candidate in relativeCandidates)
+            {
+                string normalized = NormalizeRelativePath(candidate);
+                if (string.IsNullOrWhiteSpace(normalized)
+                    || !string.Equals(Path.GetExtension(normalized), ".ski", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                string fileName = Path.GetFileName(normalized) ?? string.Empty;
+                if (string.IsNullOrWhiteSpace(fileName) || !seen.Add(fileName))
+                {
+                    continue;
+                }
+
+                fileNames.Add(fileName);
+            }
+
+            if (fileNames.Count == 0)
+            {
+                return false;
+            }
+
+            return pckEntryReaderService.TryResolveNearestEntryByFileNames(
+                normalizedPackage,
+                normalizedAnchor,
+                fileNames,
+                out resolvedRelativePath,
+                out string _);
+        }
+
+        private bool TryReadDirectSkiWithFallback(
+            AssetManager assetManager,
+            string package,
+            string relativeSki,
+            out string resolvedPackage,
+            out string resolvedRelativeSki,
+            out byte[] skiBytes,
+            out string error)
+        {
+            resolvedPackage = string.Empty;
+            resolvedRelativeSki = string.Empty;
+            skiBytes = null;
+            error = string.Empty;
+
+            if (TryReadModelFile(assetManager, package, relativeSki, out resolvedPackage, out resolvedRelativeSki, out skiBytes, out error))
+            {
+                return true;
+            }
+
+            string firstError = error;
+            string[] aliases = BuildDirectSkiPathAliases(relativeSki);
+            for (int i = 0; i < aliases.Length; i++)
+            {
+                if (TryReadModelFile(assetManager, package, aliases[i], out resolvedPackage, out resolvedRelativeSki, out skiBytes, out error))
+                {
+                    return true;
+                }
+
+                if (string.IsNullOrWhiteSpace(firstError) && !string.IsNullOrWhiteSpace(error))
+                {
+                    firstError = error;
+                }
+            }
+
+            if (TryResolveNearestSkiInSameDirectory(package, relativeSki, out string nearestRelative)
+                && TryReadModelFile(assetManager, package, nearestRelative, out resolvedPackage, out resolvedRelativeSki, out skiBytes, out error))
+            {
+                return true;
+            }
+
+            error = string.IsNullOrWhiteSpace(firstError)
+                ? "Entry not found in " + package + ".pck: " + relativeSki
+                : firstError;
+            return false;
+        }
+
+        private static string[] BuildDirectSkiPathAliases(string relativeSki)
+        {
+            List<string> aliases = new List<string>(4);
+            HashSet<string> seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            string normalized = NormalizeRelativePath(relativeSki);
+            AddUniquePathCandidate(aliases, seen, normalized);
+
+            if (!string.IsNullOrWhiteSpace(normalized)
+                && normalized.IndexOf("\\护肩\\", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                AddUniquePathCandidate(aliases, seen, normalized.Replace("盾", "护肩"));
+            }
+
+            return aliases.ToArray();
+        }
+
+        private bool TryResolveNearestSkiInSameDirectory(
+            string package,
+            string missingRelativeSki,
+            out string resolvedRelativeSki)
+        {
+            resolvedRelativeSki = string.Empty;
+
+            string normalizedPackage = (package ?? string.Empty).Trim();
+            string normalizedMissing = NormalizeRelativePath(missingRelativeSki);
+            if (string.IsNullOrWhiteSpace(normalizedPackage) || string.IsNullOrWhiteSpace(normalizedMissing))
+            {
+                return false;
+            }
+
+            string missingDirectory = NormalizeRelativePath(Path.GetDirectoryName(normalizedMissing) ?? string.Empty);
+            string missingStem = Path.GetFileNameWithoutExtension(normalizedMissing) ?? string.Empty;
+            string missingSuffix = ExtractTrailingModelNumberSuffix(missingStem);
+            if (string.IsNullOrWhiteSpace(missingDirectory) || string.IsNullOrWhiteSpace(missingSuffix))
+            {
+                return false;
+            }
+
+            if (!pckEntryReaderService.TryEnumerateEntries(normalizedPackage, out List<string> entries, out string _)
+                || entries == null)
+            {
+                return false;
+            }
+
+            string best = string.Empty;
+            int bestScore = int.MaxValue;
+            for (int i = 0; i < entries.Count; i++)
+            {
+                string candidate = NormalizeRelativePath(entries[i]);
+                if (string.IsNullOrWhiteSpace(candidate)
+                    || !string.Equals(Path.GetExtension(candidate), ".ski", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                string candidateDirectory = NormalizeRelativePath(Path.GetDirectoryName(candidate) ?? string.Empty);
+                if (!string.Equals(candidateDirectory, missingDirectory, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                string candidateStem = Path.GetFileNameWithoutExtension(candidate) ?? string.Empty;
+                if (!string.Equals(ExtractTrailingModelNumberSuffix(candidateStem), missingSuffix, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                int score = ComputeDirectSkiFallbackScore(missingStem, candidateStem);
+                if (score < bestScore)
+                {
+                    bestScore = score;
+                    best = candidate;
+                }
+            }
+
+            resolvedRelativeSki = best;
+            return !string.IsNullOrWhiteSpace(resolvedRelativeSki);
+        }
+
+        private static int ComputeDirectSkiFallbackScore(string missingStem, string candidateStem)
+        {
+            string normalizedMissing = NormalizeEquipmentShoulderStem(missingStem);
+            string normalizedCandidate = NormalizeEquipmentShoulderStem(candidateStem);
+            if (string.Equals(normalizedMissing, normalizedCandidate, StringComparison.OrdinalIgnoreCase))
+            {
+                return 0;
+            }
+
+            int common = 0;
+            int length = Math.Min(normalizedMissing.Length, normalizedCandidate.Length);
+            while (common < length && normalizedMissing[common] == normalizedCandidate[common])
+            {
+                common++;
+            }
+
+            return Math.Abs(normalizedMissing.Length - normalizedCandidate.Length) + (length - common);
+        }
+
+        private static string NormalizeEquipmentShoulderStem(string value)
+        {
+            return (value ?? string.Empty)
+                .Replace("盾", "护肩")
+                .Replace("男", string.Empty)
+                .Replace("女", string.Empty)
+                .Trim();
+        }
+
+        private static string ExtractTrailingModelNumberSuffix(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return string.Empty;
+            }
+
+            Match match = Regex.Match(value, @"(\d+(?:_\d+)*)$");
+            return match.Success ? match.Groups[1].Value : string.Empty;
         }
 
         private static string[] BuildSkiPathCandidates(string relativeSmd, string skiReference)

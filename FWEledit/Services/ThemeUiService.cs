@@ -488,10 +488,21 @@ namespace FWEledit
 
             if (e.Index >= 0 && e.Index < combo.Items.Count)
             {
-                Rectangle textBounds = new Rectangle(e.Bounds.X + 6, e.Bounds.Y, e.Bounds.Width - 12, e.Bounds.Height);
+                object item = combo.Items[e.Index];
+                ListComboPopulationService.ListComboItem listItem = item as ListComboPopulationService.ListComboItem;
+                int textLeft = e.Bounds.X + 6;
+                if (listItem != null && listItem.Icon != null)
+                {
+                    int iconSize = Math.Min(18, Math.Max(12, e.Bounds.Height - 4));
+                    Rectangle iconBounds = new Rectangle(e.Bounds.X + 5, e.Bounds.Y + ((e.Bounds.Height - iconSize) / 2), iconSize, iconSize);
+                    e.Graphics.DrawImage(listItem.Icon, iconBounds);
+                    textLeft = iconBounds.Right + 6;
+                }
+
+                Rectangle textBounds = new Rectangle(textLeft, e.Bounds.Y, e.Bounds.Right - textLeft - 6, e.Bounds.Height);
                 TextRenderer.DrawText(
                     e.Graphics,
-                    combo.Items[e.Index].ToString(),
+                    item != null ? item.ToString() : string.Empty,
                     e.Font,
                     textBounds,
                     text,

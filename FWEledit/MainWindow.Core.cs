@@ -61,7 +61,18 @@ namespace FWEledit
 
         private void UpdateEquipmentTabsVisibility(int listIndex)
         {
-            equipmentTabService.UpdateVisibility(fwEquipmentTabs, equipmentFieldService.IsEquipmentEssenceList(eLC, listIndex));
+            equipmentTabService.UpdateVisibility(
+                fwEquipmentTabs,
+                equipmentFieldService.IsEquipmentEssenceList(eLC, listIndex),
+                fwEquipmentTabModels,
+                fwEquipmentTabRefine,
+                fwEquipmentTabDecompose,
+                fwEquipmentTabOther,
+                fwDescriptionTab,
+                MonsterFieldCatalog.IsMonsterEssenceList(eLC, listIndex),
+                fwMonsterMasteryTab,
+                fwMonsterLevelUpTab,
+                fwMonsterOtherTab);
         }
 
         private void ClearDirtyTrackingAfterSave()
@@ -377,6 +388,9 @@ namespace FWEledit
             fwEquipmentTabRefine = layout.EquipmentTabRefine;
             fwEquipmentTabModels = layout.EquipmentTabModels;
             fwEquipmentTabOther = layout.EquipmentTabOther;
+            fwMonsterMasteryTab = layout.MonsterMasteryTab;
+            fwMonsterLevelUpTab = layout.MonsterLevelUpTab;
+            fwMonsterOtherTab = layout.MonsterOtherTab;
             fwDescriptionTab = layout.DescriptionTab;
             fwDescriptionEditor = layout.DescriptionEditor;
             fwDescriptionPreview = layout.DescriptionPreview;
@@ -506,6 +520,7 @@ namespace FWEledit
                 },
                 listDisplayService,
                 listComboPopulationService,
+                listRowBuilderService,
                 exportRulesMenuService,
                 xrefMenuService,
                 navigationSelectionService,

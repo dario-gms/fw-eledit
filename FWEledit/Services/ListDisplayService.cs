@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 
 namespace FWEledit
 {
@@ -9,7 +10,9 @@ namespace FWEledit
         private readonly Dictionary<int, List<object[]>> listDisplayRowsCache = new Dictionary<int, List<object[]>>();
         private readonly Dictionary<string, string> listFriendlyNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
-            { "EQUIPMENT_ADDON", "Added Attribute" }
+            { "Equipment", "Equipment Essence" },
+            { "EQUIPMENT_ESSENCE", "Equipment Essence" },
+            { "EQUIPMENT_ADDON", "Equipment Addon" }
         };
 
         public int List0DisplayNameCount
@@ -60,7 +63,40 @@ namespace FWEledit
             {
                 return friendly;
             }
-            return key;
+
+            return HumanizeListName(key);
+        }
+
+        private static string HumanizeListName(string rawListName)
+        {
+            string normalized = (rawListName ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(normalized))
+            {
+                return "Unknown";
+            }
+
+            normalized = normalized.Replace('_', ' ');
+            normalized = CollapseWhitespace(normalized);
+
+            TextInfo textInfo = CultureInfo.InvariantCulture.TextInfo;
+            return textInfo.ToTitleCase(normalized.ToLowerInvariant());
+        }
+
+        private static string CollapseWhitespace(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return string.Empty;
+            }
+
+            List<string> parts = new List<string>();
+            string[] split = value.Split(new char[] { ' ', '\t', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+            for (int i = 0; i < split.Length; i++)
+            {
+                parts.Add(split[i]);
+            }
+
+            return string.Join(" ", parts.ToArray());
         }
 
         public string GetDisplayEntryName(ISessionService sessionService, eListCollection listCollection, int listIndex, int entryIndex, int nameFieldIndex)

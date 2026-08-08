@@ -157,6 +157,11 @@ namespace FWEledit
             {
                 valueToSet = CombinedServicesCatalog.NormalizeInput(valueToSet);
             }
+            else if (MonsterFieldCatalog.IsMonsterEssenceList(request.ListCollection, request.ListIndex)
+                && MonsterFieldCatalog.IsOptionFieldName(request.FieldName))
+            {
+                valueToSet = MonsterFieldCatalog.NormalizeInput(request.FieldName, valueToSet);
+            }
             else if (MovementSpeedDisplayService.IsSupportedField(request.ListCollection, request.ListIndex, request.FieldName))
             {
                 valueToSet = MovementSpeedDisplayService.NormalizeInput(
@@ -338,6 +343,12 @@ namespace FWEledit
             else if (CombinedServicesCatalog.IsCombinedServicesFieldName(request.FieldName))
             {
                 result.DisplayValue = CombinedServicesCatalog.FormatDisplay(request.ListCollection, request.ListIndex, request.FieldName, valueToSet);
+            }
+            else if (MonsterFieldCatalog.IsMonsterEssenceList(request.ListCollection, request.ListIndex)
+                && (MonsterFieldCatalog.IsOptionFieldName(request.FieldName)
+                    || string.Equals(request.FieldName, "name_color", StringComparison.OrdinalIgnoreCase)))
+            {
+                result.DisplayValue = MonsterFieldCatalog.FormatDisplay(request.FieldName, valueToSet);
             }
             else if (MovementSpeedDisplayService.IsSupportedField(request.ListCollection, request.ListIndex, request.FieldName))
             {

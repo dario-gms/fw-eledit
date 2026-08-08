@@ -168,6 +168,7 @@
     <Compile Include="Catalogs\ModelFieldLabelCatalog.cs" />
     <Compile Include="Catalogs\ModelProfessionCatalog.cs" />
     <Compile Include="Catalogs\ModelRaceCatalog.cs" />
+    <Compile Include="Catalogs\MonsterFieldCatalog.cs" />
     <Compile Include="ClassMaskWindow.cs">
       <SubType>Form</SubType>
     </Compile>
@@ -780,6 +781,7 @@
     <Compile Include="Services\ElementsSessionService.cs" />
     <Compile Include="Services\ElementIndexResolverService.cs" />
     <Compile Include="Services\EquipmentTabService.cs" />
+    <Compile Include="Services\MonsterFieldService.cs" />
     <Compile Include="Services\GridActiveRowService.cs" />
     <Compile Include="Services\GridSelectionService.cs" />
     <Compile Include="Services\GridDoubleBufferService.cs" />

@@ -31,14 +31,19 @@ namespace FWEledit
 
         private void UpdateEquipmentTabsVisibility(int listIndex)
         {
+            eListCollection lists = sessionService != null ? sessionService.ListCollection : null;
             equipmentTabService.UpdateVisibility(
                 fwEquipmentTabs,
-                equipmentFieldService.IsEquipmentEssenceList(sessionService.ListCollection, listIndex),
+                equipmentFieldService.IsEquipmentEssenceList(lists, listIndex),
                 fwEquipmentTabModels,
                 fwEquipmentTabRefine,
                 fwEquipmentTabDecompose,
                 fwEquipmentTabOther,
-                fwDescriptionTab);
+                fwDescriptionTab,
+                MonsterFieldCatalog.IsMonsterEssenceList(lists, listIndex),
+                fwMonsterMasteryTab,
+                fwMonsterLevelUpTab,
+                fwMonsterOtherTab);
         }
 
         private void OpenModelPickerForValueRow(int rowIndex)
@@ -284,6 +289,22 @@ namespace FWEledit
                 this);
         }
 
+        private void OpenMonsterOptionPickerForValueRow(int rowIndex)
+        {
+            if (valueRowPickerUiService == null || sessionService == null || comboBox_lists == null)
+            {
+                return;
+            }
+
+            valueRowPickerUiService.OpenMonsterOptionPickerForValueRow(
+                sessionService.ListCollection,
+                comboBox_lists.SelectedIndex,
+                dataGridView_item,
+                rowIndex,
+                itemFieldClassifierService,
+                this);
+        }
+
         private void OpenSkillPickerForValueRow(int rowIndex)
         {
             mainWindowValuePickerCoordinatorService.OpenSkillPickerForValueRow(
@@ -390,10 +411,24 @@ namespace FWEledit
             }
 
             string listName = sessionService.ListCollection.Lists[listIndex].listName ?? string.Empty;
+            int requestId = System.Threading.Interlocked.Increment(ref currentItemModelPreviewRequestId);
             bool restoreWaitCursor = UseWaitCursor;
             try
             {
-                UseWaitCursor = true;
+                if (!showMessages)
+                {
+                    await Task.Delay(80);
+                    if (requestId != currentItemModelPreviewRequestId)
+                    {
+                        return;
+                    }
+                }
+
+                if (showMessages)
+                {
+                    UseWaitCursor = true;
+                }
+
                 CurrentItemModelPreviewResult result = await Task.Run(delegate
                 {
                     CurrentItemModelPreviewResult buildResult = new CurrentItemModelPreviewResult();
@@ -414,6 +449,11 @@ namespace FWEledit
                     buildResult.MeshData = meshData;
                     return buildResult;
                 });
+
+                if (requestId != currentItemModelPreviewRequestId)
+                {
+                    return;
+                }
 
                 if (!result.Success)
                 {
@@ -1610,6 +1650,13 @@ namespace FWEledit
             {
                 OpenCombinedServicesPickerForValueRow(targetRow);
             }
+            else if (itemFieldClassifierService.IsMonsterOptionFieldName(
+                sessionService != null ? sessionService.ListCollection : null,
+                listIndex,
+                fieldName))
+            {
+                OpenMonsterOptionPickerForValueRow(targetRow);
+            }
             else if (itemFieldClassifierService.IsSkillFieldName(fieldName))
             {
                 OpenSkillPickerForValueRow(targetRow);
@@ -1790,6 +1837,11 @@ namespace FWEledit
             bool isModelProfessionField = itemFieldClassifierService != null && itemFieldClassifierService.IsModelProfessionFieldName(fieldName);
             bool isModelRaceField = itemFieldClassifierService != null && itemFieldClassifierService.IsModelRaceFieldName(fieldName);
             bool isCombinedServicesField = itemFieldClassifierService != null && itemFieldClassifierService.IsCombinedServicesFieldName(fieldName);
+            bool isMonsterOptionField = itemFieldClassifierService != null
+                && itemFieldClassifierService.IsMonsterOptionFieldName(
+                    sessionService != null ? sessionService.ListCollection : null,
+                    comboBox_lists.SelectedIndex,
+                    fieldName);
             bool isSkillField = itemFieldClassifierService != null && itemFieldClassifierService.IsSkillFieldName(fieldName);
             bool isReferenceField = itemReferenceService != null
                 && sessionService != null
@@ -2015,6 +2067,18 @@ namespace FWEledit
                     menu.Items.Add(new ToolStripSeparator());
                 }
                 menu.Items.Add("Choose Portable Services...", null, (menuSender, args) => OpenCombinedServicesPickerForValueRow(rowIndex));
+            }
+
+            if (isMonsterOptionField)
+            {
+                if (menu.Items.Count > 0)
+                {
+                    menu.Items.Add(new ToolStripSeparator());
+                }
+                string optionLabel = MonsterFieldCatalog.IsNameColorFieldName(fieldName)
+                    ? "Choose Name Color..."
+                    : "Choose Monster Option...";
+                menu.Items.Add(optionLabel, null, (menuSender, args) => OpenMonsterOptionPickerForValueRow(rowIndex));
             }
 
             if (isSkillField)

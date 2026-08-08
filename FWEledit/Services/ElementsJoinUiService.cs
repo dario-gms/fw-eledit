@@ -63,7 +63,10 @@ namespace FWEledit
                 {
                     for (int l = 0; l < listCollection.Lists.Length; l++)
                     {
-                        listComboBox.Items[l] = "[" + l + "]: " + listCollection.Lists[l].listName + " (" + listCollection.Lists[l].elementValues.Length + ")";
+                        ListComboPopulationService.SetItemTextPreservingIcon(
+                            listComboBox,
+                            l,
+                            "[" + l + "]: " + listCollection.Lists[l].listName + " (" + listCollection.Lists[l].elementValues.Length + ")");
                     }
                 }
 

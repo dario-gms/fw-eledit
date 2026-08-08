@@ -11,7 +11,7 @@ namespace FWEledit
 {
     public partial class MainWindow : Form
     {
-        private const string ReferenceCacheSchemaVersion = "references-v12";
+        private const string ReferenceCacheSchemaVersion = "references-v16";
 
         private sealed class VisibleReferenceTarget
         {
@@ -1581,19 +1581,23 @@ namespace FWEledit
             return int.TryParse(sessionService.ListCollection.GetValue(listIndex, elementIndex, 0), out id) && id > 0;
         }
 
-        private static string BuildReferenceListLabel(ReferenceUsage usage)
+        private string BuildReferenceListLabel(ReferenceUsage usage)
         {
             if (usage == null)
             {
                 return string.Empty;
             }
 
+            string friendlyListName = listDisplayService != null
+                ? listDisplayService.GetFriendlyListName(usage.SourceListName)
+                : usage.SourceListName ?? string.Empty;
+
             if (usage.SourceListIndex < 0)
             {
-                return usage.SourceListName ?? string.Empty;
+                return friendlyListName;
             }
 
-            return "[" + usage.SourceListIndex.ToString() + "] " + (usage.SourceListName ?? string.Empty);
+            return "[" + usage.SourceListIndex.ToString() + "] " + friendlyListName;
         }
 
         private void ApplyReferenceRowStyle(DataGridViewRow row, int quality, DataGridView targetGrid)
@@ -1606,7 +1610,7 @@ namespace FWEledit
             DataGridViewCell nameCell = row.Cells[3];
             ReferenceGridRowData data = row.Tag as ReferenceGridRowData;
             Color entityColor;
-            if (data != null && EntityTypeColorCatalog.TryGetNameColor(sessionService != null ? sessionService.ListCollection : null, data.SourceListIndex, out entityColor))
+            if (data != null && EntityTypeColorCatalog.TryGetNameColor(sessionService != null ? sessionService.ListCollection : null, data.SourceListIndex, data.SourceElementIndex, out entityColor))
             {
                 nameCell.Style.ForeColor = entityColor;
                 nameCell.Style.SelectionForeColor = entityColor;
@@ -1626,10 +1630,10 @@ namespace FWEledit
             }
         }
 
-        private Color? GetEntityNameColor(int listIndex)
+        private Color? GetEntityNameColor(int listIndex, int entryIndex)
         {
             Color color;
-            if (EntityTypeColorCatalog.TryGetNameColor(sessionService != null ? sessionService.ListCollection : null, listIndex, out color))
+            if (EntityTypeColorCatalog.TryGetNameColor(sessionService != null ? sessionService.ListCollection : null, listIndex, entryIndex, out color))
             {
                 return color;
             }
