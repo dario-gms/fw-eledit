@@ -264,7 +264,15 @@ namespace FWEledit
                         {
                             manifest.PathDataEntries.Add(new ItemTransferPathDataEntry { PathId = pathId, MappedPath = NormalizePath(mapped) });
                         }
-                        AddAsset(assets, mapped, assetManager);
+                        if (IsIconAssetPathIdField(fieldName))
+                        {
+                            ItemTransferAssetEntry ignored;
+                            TryAddExistingAsset(assets, mapped, assetManager, out ignored);
+                        }
+                        else
+                        {
+                            AddAsset(assets, mapped, assetManager);
+                        }
                     }
                 }
 
@@ -1100,6 +1108,12 @@ namespace FWEledit
                 || normalized.StartsWith("gfx_", StringComparison.OrdinalIgnoreCase)
                 || normalized.Contains("_gfx_")
                 || normalized.EndsWith("_gfx", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsIconAssetPathIdField(string fieldName)
+        {
+            return string.Equals(fieldName, "file_icon", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(fieldName, "file_icon1", StringComparison.OrdinalIgnoreCase);
         }
 
         private static bool LooksLikeAssetPath(string value)
