@@ -1053,6 +1053,9 @@
     <Compile Include="Views\ItemReferencePickerWindow.cs">
       <SubType>Form</SubType>
     </Compile>
+    <Compile Include="Views\ItemTransferProgressWindow.cs">
+      <SubType>Form</SubType>
+    </Compile>
     <Compile Include="Views\ModelPickerWindow.cs">
       <SubType>Form</SubType>
     </Compile>

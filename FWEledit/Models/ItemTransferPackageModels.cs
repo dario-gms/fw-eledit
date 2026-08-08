@@ -48,6 +48,15 @@ namespace FWEledit
         public int MissingAssetCount { get; set; }
     }
 
+    public sealed class ItemTransferProgressInfo
+    {
+        public string Stage { get; set; }
+        public string Detail { get; set; }
+        public int Current { get; set; }
+        public int Total { get; set; }
+        public bool IsIndeterminate { get; set; }
+    }
+
     public sealed class ItemTransferImportResult
     {
         public bool Success { get; set; }

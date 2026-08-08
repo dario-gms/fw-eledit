@@ -7,6 +7,7 @@ using System.IO.Compression;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Text;
+using System.Threading;
 
 namespace FWEledit
 {
@@ -30,74 +31,106 @@ namespace FWEledit
             AssetManager assetManager,
             int listIndex,
             int itemIndex,
-            string outputFile)
+            string outputFile,
+            Action<ItemTransferProgressInfo> progress = null,
+            CancellationToken cancellationToken = default(CancellationToken))
         {
             ItemTransferExportResult result = new ItemTransferExportResult();
-            if (listCollection == null || database == null || assetManager == null)
+            try
             {
-                result.ErrorMessage = "No loaded elements data.";
-                return result;
-            }
-            if (listIndex < 0 || listIndex >= listCollection.Lists.Length)
-            {
-                result.ErrorMessage = "Invalid source list.";
-                return result;
-            }
-            eList list = listCollection.Lists[listIndex];
-            if (list == null || itemIndex < 0 || itemIndex >= list.elementValues.Length)
-            {
-                result.ErrorMessage = "Invalid source item.";
-                return result;
-            }
-            if (string.IsNullOrWhiteSpace(outputFile))
-            {
-                result.ErrorMessage = "Invalid output file.";
-                return result;
-            }
+                ReportProgress(progress, "Preparing export", "Validating selected item...", 0, 0, true);
+                cancellationToken.ThrowIfCancellationRequested();
 
-            ItemTransferPackageManifest manifest = BuildManifest(listCollection, database, listIndex, itemIndex);
-            Dictionary<string, ItemTransferAssetEntry> assetsByKey = CollectDirectAssets(manifest, database, assetManager);
-            ExpandAssetDependencies(assetsByKey, assetManager);
-            manifest.Assets = assetsByKey.Values.OrderBy(a => a.Package).ThenBy(a => a.RelativePath).ToList();
-
-            string folder = Path.GetDirectoryName(outputFile);
-            if (!string.IsNullOrWhiteSpace(folder))
-            {
-                Directory.CreateDirectory(folder);
-            }
-            if (File.Exists(outputFile))
-            {
-                File.Delete(outputFile);
-            }
-
-            using (ZipArchive archive = ZipFile.Open(outputFile, ZipArchiveMode.Create))
-            {
-                WriteTextEntry(archive, "manifest.json", JsonConvert.SerializeObject(manifest, Formatting.Indented));
-                int missingAssets = 0;
-                foreach (ItemTransferAssetEntry asset in manifest.Assets)
+                if (listCollection == null || database == null || assetManager == null)
                 {
-                    byte[] payload;
-                    string error;
-                    if (assetManager.TryReadPackageEntry(asset.Package, asset.RelativePath, out payload, out error) && payload != null)
+                    result.ErrorMessage = "No loaded elements data.";
+                    return result;
+                }
+                if (listIndex < 0 || listIndex >= listCollection.Lists.Length)
+                {
+                    result.ErrorMessage = "Invalid source list.";
+                    return result;
+                }
+                eList list = listCollection.Lists[listIndex];
+                if (list == null || itemIndex < 0 || itemIndex >= list.elementValues.Length)
+                {
+                    result.ErrorMessage = "Invalid source item.";
+                    return result;
+                }
+                if (string.IsNullOrWhiteSpace(outputFile))
+                {
+                    result.ErrorMessage = "Invalid output file.";
+                    return result;
+                }
+
+                ReportProgress(progress, "Reading item", "Collecting element fields and path.data entries...", 0, 0, true);
+                ItemTransferPackageManifest manifest = BuildManifest(listCollection, database, listIndex, itemIndex);
+
+                ReportProgress(progress, "Collecting assets", "Finding direct model, texture and icon files...", 0, 0, true);
+                Dictionary<string, ItemTransferAssetEntry> assetsByKey = CollectDirectAssets(manifest, database, assetManager);
+
+                ExpandAssetDependencies(assetsByKey, assetManager, progress, cancellationToken);
+                manifest.Assets = assetsByKey.Values.OrderBy(a => a.Package).ThenBy(a => a.RelativePath).ToList();
+
+                string folder = Path.GetDirectoryName(outputFile);
+                if (!string.IsNullOrWhiteSpace(folder))
+                {
+                    Directory.CreateDirectory(folder);
+                }
+                if (File.Exists(outputFile))
+                {
+                    File.Delete(outputFile);
+                }
+
+                ReportProgress(progress, "Creating package", "Writing manifest and assets...", 0, manifest.Assets.Count, false);
+                using (ZipArchive archive = ZipFile.Open(outputFile, ZipArchiveMode.Create))
+                {
+                    WriteTextEntry(archive, "manifest.json", JsonConvert.SerializeObject(manifest, Formatting.Indented));
+                    int written = 0;
+                    foreach (ItemTransferAssetEntry asset in manifest.Assets)
                     {
-                        asset.Size = payload.Length;
-                        ZipArchiveEntry entry = archive.CreateEntry(asset.ZipPath, CompressionLevel.Optimal);
-                        using (Stream stream = entry.Open())
+                        cancellationToken.ThrowIfCancellationRequested();
+                        ReportProgress(
+                            progress,
+                            "Writing package",
+                            asset.MappedPath ?? asset.RelativePath ?? string.Empty,
+                            written,
+                            manifest.Assets.Count,
+                            false);
+
+                        byte[] payload;
+                        string error;
+                        if (assetManager.TryReadPackageEntry(asset.Package, asset.RelativePath, out payload, out error) && payload != null)
                         {
-                            stream.Write(payload, 0, payload.Length);
+                            asset.Size = payload.Length;
+                            ZipArchiveEntry entry = archive.CreateEntry(asset.ZipPath, CompressionLevel.Optimal);
+                            using (Stream stream = entry.Open())
+                            {
+                                stream.Write(payload, 0, payload.Length);
+                            }
                         }
-                    }
-                    else
-                    {
-                        missingAssets++;
+                        written++;
                     }
                 }
-            }
 
-            result.Success = true;
-            result.AssetCount = manifest.Assets.Count;
-            result.MissingAssetCount = result.AssetCount - CountPackageAssets(outputFile);
-            return result;
+                result.Success = true;
+                result.AssetCount = manifest.Assets.Count;
+                result.MissingAssetCount = result.AssetCount - CountPackageAssets(outputFile);
+                ReportProgress(progress, "Export complete", "Item package created.", result.AssetCount, result.AssetCount, false);
+                return result;
+            }
+            catch (OperationCanceledException)
+            {
+                TryDeletePartialPackage(outputFile);
+                result.ErrorMessage = "Export cancelled.";
+                return result;
+            }
+            catch (Exception ex)
+            {
+                TryDeletePartialPackage(outputFile);
+                result.ErrorMessage = ex.Message;
+                return result;
+            }
         }
 
         public ItemTransferImportResult ImportItemPackage(
@@ -259,17 +292,32 @@ namespace FWEledit
             return true;
         }
 
-        private static void ExpandAssetDependencies(Dictionary<string, ItemTransferAssetEntry> assets, AssetManager assetManager)
+        private static void ExpandAssetDependencies(
+            Dictionary<string, ItemTransferAssetEntry> assets,
+            AssetManager assetManager,
+            Action<ItemTransferProgressInfo> progress,
+            CancellationToken cancellationToken)
         {
             Queue<ItemTransferAssetEntry> pending = new Queue<ItemTransferAssetEntry>(assets.Values.ToArray());
             HashSet<string> processed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            HashSet<string> processedCompanionPrefixes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            Dictionary<string, List<string>> entriesByPackage = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
             while (pending.Count > 0 && processed.Count < 4000)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 ItemTransferAssetEntry current = pending.Dequeue();
                 if (current == null || !processed.Add(current.Package + "|" + current.RelativePath))
                 {
                     continue;
                 }
+
+                ReportProgress(
+                    progress,
+                    "Resolving dependencies",
+                    current.MappedPath ?? current.RelativePath ?? string.Empty,
+                    processed.Count,
+                    Math.Max(processed.Count + pending.Count, assets.Count),
+                    false);
 
                 byte[] payload;
                 string error;
@@ -284,7 +332,7 @@ namespace FWEledit
                     }
                 }
 
-                foreach (string companion in CollectCompanionAssets(current, assetManager))
+                foreach (string companion in CollectCompanionAssets(current, assetManager, entriesByPackage, processedCompanionPrefixes))
                 {
                     if (AddAsset(assets, companion, assetManager))
                     {
@@ -320,7 +368,11 @@ namespace FWEledit
             }
         }
 
-        private static IEnumerable<string> CollectCompanionAssets(ItemTransferAssetEntry current, AssetManager assetManager)
+        private static IEnumerable<string> CollectCompanionAssets(
+            ItemTransferAssetEntry current,
+            AssetManager assetManager,
+            Dictionary<string, List<string>> entriesByPackage,
+            HashSet<string> processedCompanionPrefixes)
         {
             string ext = Path.GetExtension(current.RelativePath);
             if (!IsModelLikeExtension(ext))
@@ -329,7 +381,15 @@ namespace FWEledit
             }
 
             List<string> entries;
-            if (!assetManager.TryEnumeratePckIndexEntries(current.Package, out entries) || entries == null || entries.Count == 0)
+            if (!entriesByPackage.TryGetValue(current.Package, out entries))
+            {
+                if (!assetManager.TryEnumeratePckIndexEntries(current.Package, out entries))
+                {
+                    entries = new List<string>();
+                }
+                entriesByPackage[current.Package] = entries;
+            }
+            if (entries == null || entries.Count == 0)
             {
                 yield break;
             }
@@ -350,6 +410,10 @@ namespace FWEledit
                 if (!normalizedPrefix.EndsWith("\\", StringComparison.Ordinal))
                 {
                     normalizedPrefix += "\\";
+                }
+                if (!processedCompanionPrefixes.Add(current.Package + "|" + normalizedPrefix))
+                {
+                    continue;
                 }
 
                 foreach (string entry in entries)
@@ -446,6 +510,43 @@ namespace FWEledit
                 || string.Equals(ext, ".stck", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(ext, ".att", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(ext, ".sgc", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static void ReportProgress(
+            Action<ItemTransferProgressInfo> progress,
+            string stage,
+            string detail,
+            int current,
+            int total,
+            bool indeterminate)
+        {
+            if (progress == null)
+            {
+                return;
+            }
+
+            progress(new ItemTransferProgressInfo
+            {
+                Stage = stage,
+                Detail = detail,
+                Current = current,
+                Total = total,
+                IsIndeterminate = indeterminate
+            });
+        }
+
+        private static void TryDeletePartialPackage(string outputFile)
+        {
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(outputFile) && File.Exists(outputFile))
+                {
+                    File.Delete(outputFile);
+                }
+            }
+            catch
+            {
+            }
         }
 
         private static string BuildAssetKey(string mappedPath)

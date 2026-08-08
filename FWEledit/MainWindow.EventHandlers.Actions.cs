@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 
 namespace FWEledit
@@ -197,7 +198,7 @@ namespace FWEledit
 		}
 
 
-        private void click_exportItemPackage(object sender, EventArgs ea)
+        private async void click_exportItemPackage(object sender, EventArgs ea)
         {
             if (sessionService == null
                 || sessionService.ListCollection == null
@@ -246,17 +247,28 @@ namespace FWEledit
                     return;
                 }
 
-                Cursor previousCursor = Cursor;
-                Cursor = Cursors.AppStarting;
-                try
+                using (ItemTransferProgressWindow progressWindow = new ItemTransferProgressWindow("Export Item Package"))
                 {
-                    ItemTransferExportResult result = itemTransferPackageService.ExportItemPackage(
-                        sessionService.ListCollection,
-                        sessionService.Database,
-                        sessionService.AssetManager,
-                        listIndex,
-                        elementIndex,
-                        dialog.FileName);
+                    progressWindow.StartPosition = FormStartPosition.CenterParent;
+                    progressWindow.Show(this);
+
+                    ItemTransferExportResult result;
+                    try
+                    {
+                        result = await Task.Run(() => itemTransferPackageService.ExportItemPackage(
+                            sessionService.ListCollection,
+                            sessionService.Database,
+                            sessionService.AssetManager,
+                            listIndex,
+                            elementIndex,
+                            dialog.FileName,
+                            progressWindow.UpdateProgress,
+                            progressWindow.Cancellation.Token));
+                    }
+                    finally
+                    {
+                        progressWindow.AllowCloseAndClose();
+                    }
 
                     if (!result.Success)
                     {
@@ -270,10 +282,6 @@ namespace FWEledit
                         message += "\nMissing assets: " + result.MissingAssetCount.ToString();
                     }
                     MessageBox.Show(message);
-                }
-                finally
-                {
-                    Cursor = previousCursor;
                 }
             }
         }
