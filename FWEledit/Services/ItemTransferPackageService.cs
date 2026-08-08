@@ -75,6 +75,7 @@ namespace FWEledit
                 Dictionary<string, ItemTransferAssetEntry> assetsByKey = CollectDirectAssets(manifest, database, assetManager);
 
                 ExpandEquipmentGfxDependencies(assetsByKey, assetManager, progress, cancellationToken);
+                ExpandEquipmentModelCompanions(assetsByKey, assetManager, progress, cancellationToken);
                 manifest.Assets = assetsByKey.Values.OrderBy(a => a.Package).ThenBy(a => a.RelativePath).ToList();
 
                 string folder = Path.GetDirectoryName(outputFile);
@@ -353,6 +354,102 @@ namespace FWEledit
             return asset != null
                 && string.Equals(asset.Package, "gfx", StringComparison.OrdinalIgnoreCase)
                 && string.Equals(Path.GetExtension(asset.RelativePath), ".gfx", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static void ExpandEquipmentModelCompanions(
+            Dictionary<string, ItemTransferAssetEntry> assets,
+            AssetManager assetManager,
+            Action<ItemTransferProgressInfo> progress,
+            CancellationToken cancellationToken)
+        {
+            if (assets == null || assets.Count == 0 || assetManager == null)
+            {
+                return;
+            }
+
+            Dictionary<string, List<string>> entriesByPackage = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+            HashSet<string> processedCompanionPrefixes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            Queue<ItemTransferAssetEntry> pending = new Queue<ItemTransferAssetEntry>(
+                assets.Values.Where(a => a != null && IsModelLikeExtension(Path.GetExtension(a.RelativePath))).ToArray());
+            HashSet<string> processed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            const int MaxProcessedModels = 512;
+
+            while (pending.Count > 0 && processed.Count < MaxProcessedModels)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                ItemTransferAssetEntry current = pending.Dequeue();
+                if (current == null || !processed.Add(current.Package + "|" + current.RelativePath))
+                {
+                    continue;
+                }
+
+                ReportProgress(
+                    progress,
+                    "Collecting model companions",
+                    current.MappedPath ?? current.RelativePath ?? string.Empty,
+                    processed.Count,
+                    Math.Max(processed.Count + pending.Count, assets.Count),
+                    false);
+
+                byte[] payload;
+                string error;
+                if (assetManager.TryReadPackageEntry(current.Package, current.RelativePath, out payload, out error) && payload != null)
+                {
+                    foreach (string dependency in CollectModelReferenceCandidates(current.MappedPath, payload))
+                    {
+                        ItemTransferAssetEntry addedAsset;
+                        if (TryAddExistingAsset(assets, dependency, assetManager, out addedAsset)
+                            && addedAsset != null
+                            && IsModelLikeExtension(Path.GetExtension(addedAsset.RelativePath)))
+                        {
+                            pending.Enqueue(addedAsset);
+                        }
+                    }
+                }
+
+                foreach (string companion in CollectCompanionAssets(current, assetManager, entriesByPackage, processedCompanionPrefixes))
+                {
+                    ItemTransferAssetEntry addedAsset;
+                    if (TryAddExistingAsset(assets, companion, assetManager, out addedAsset)
+                        && addedAsset != null
+                        && IsModelLikeExtension(Path.GetExtension(addedAsset.RelativePath)))
+                    {
+                        pending.Enqueue(addedAsset);
+                    }
+                }
+            }
+        }
+
+        private static IEnumerable<string> CollectModelReferenceCandidates(string currentMappedPath, byte[] payload)
+        {
+            if (payload == null || payload.Length == 0)
+            {
+                yield break;
+            }
+
+            HashSet<string> yielded = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            string text = DecodeGbkPayload(payload);
+            MatchCollection matches = Regex.Matches(
+                text,
+                @"[^\0\r\n\t""'<>|:*?]{1,220}\.(?:dds|tga|bmp|png|jpg|jpeg|ski|smd|ecm|att|sgc|bon|stck|sdr)",
+                RegexOptions.IgnoreCase);
+
+            for (int i = 0; i < matches.Count; i++)
+            {
+                string raw = NormalizePath(matches[i].Value.Trim().Trim('\0').TrimStart('.', '\\', '/'));
+                if (string.IsNullOrWhiteSpace(raw))
+                {
+                    continue;
+                }
+
+                foreach (string candidate in ResolveReferenceCandidates(currentMappedPath, raw))
+                {
+                    if (yielded.Add(candidate))
+                    {
+                        yield return candidate;
+                    }
+                }
+            }
         }
 
         private static bool TryAddExistingAsset(
