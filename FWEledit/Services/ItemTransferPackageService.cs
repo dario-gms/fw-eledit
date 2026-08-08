@@ -367,8 +367,6 @@ namespace FWEledit
                 return;
             }
 
-            Dictionary<string, List<string>> entriesByPackage = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
-            HashSet<string> processedCompanionPrefixes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             Queue<ItemTransferAssetEntry> pending = new Queue<ItemTransferAssetEntry>(
                 assets.Values.Where(a => a != null && IsModelLikeExtension(Path.GetExtension(a.RelativePath))).ToArray());
             HashSet<string> processed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -404,17 +402,6 @@ namespace FWEledit
                         {
                             pending.Enqueue(addedAsset);
                         }
-                    }
-                }
-
-                foreach (string companion in CollectCompanionAssets(current, assetManager, entriesByPackage, processedCompanionPrefixes))
-                {
-                    ItemTransferAssetEntry addedAsset;
-                    if (TryAddExistingAsset(assets, companion, assetManager, out addedAsset)
-                        && addedAsset != null
-                        && IsModelLikeExtension(Path.GetExtension(addedAsset.RelativePath)))
-                    {
-                        pending.Enqueue(addedAsset);
                     }
                 }
             }
