@@ -57,6 +57,11 @@ namespace FWEledit
                     result.ErrorMessage = "Invalid source item.";
                     return result;
                 }
+                if (!IsEquipmentEssenceList(list))
+                {
+                    result.ErrorMessage = "Item package export currently supports only Equipment Essence.";
+                    return result;
+                }
                 if (string.IsNullOrWhiteSpace(outputFile))
                 {
                     result.ErrorMessage = "Invalid output file.";
@@ -66,10 +71,8 @@ namespace FWEledit
                 ReportProgress(progress, "Reading item", "Collecting element fields and path.data entries...", 0, 0, true);
                 ItemTransferPackageManifest manifest = BuildManifest(listCollection, database, listIndex, itemIndex);
 
-                ReportProgress(progress, "Collecting assets", "Finding direct model, texture and icon files...", 0, 0, true);
+                ReportProgress(progress, "Collecting equipment assets", "Finding direct model, icon and file paths from this equipment item...", 0, 0, true);
                 Dictionary<string, ItemTransferAssetEntry> assetsByKey = CollectDirectAssets(manifest, database, assetManager);
-
-                ExpandAssetDependencies(assetsByKey, assetManager, progress, cancellationToken);
                 manifest.Assets = assetsByKey.Values.OrderBy(a => a.Package).ThenBy(a => a.RelativePath).ToList();
 
                 string folder = Path.GetDirectoryName(outputFile);
@@ -741,6 +744,14 @@ namespace FWEledit
             }
 
             return -1;
+        }
+
+        private static bool IsEquipmentEssenceList(eList list)
+        {
+            string listName = list != null ? list.listName : string.Empty;
+            return string.Equals(listName, "Equipment", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(listName, "Equipment Essence", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(listName, "EQUIPMENT_ESSENCE", StringComparison.OrdinalIgnoreCase);
         }
 
         private static void WriteTextEntry(ZipArchive archive, string name, string text)

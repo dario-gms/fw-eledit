@@ -215,6 +215,11 @@ namespace FWEledit
             {
                 return;
             }
+            if (!IsEquipmentEssenceListForTransferPackage(sessionService.ListCollection, listIndex))
+            {
+                MessageBox.Show("Item package export currently supports only Equipment Essence.");
+                return;
+            }
 
             int rowIndex = dataGridView_elems.CurrentCell != null ? dataGridView_elems.CurrentCell.RowIndex : -1;
             if (rowIndex < 0)
@@ -247,7 +252,7 @@ namespace FWEledit
                     return;
                 }
 
-                using (ItemTransferProgressWindow progressWindow = new ItemTransferProgressWindow("Export Item Package"))
+                using (ItemTransferProgressWindow progressWindow = new ItemTransferProgressWindow("Export Equipment Package"))
                 {
                     progressWindow.StartPosition = FormStartPosition.CenterParent;
                     progressWindow.Show(this);
@@ -444,6 +449,19 @@ namespace FWEledit
             }
 
             return string.IsNullOrWhiteSpace(safe) ? "item" : safe;
+        }
+
+        private static bool IsEquipmentEssenceListForTransferPackage(eListCollection listCollection, int listIndex)
+        {
+            if (listCollection == null || listIndex < 0 || listIndex >= listCollection.Lists.Length)
+            {
+                return false;
+            }
+
+            string listName = listCollection.Lists[listIndex] != null ? listCollection.Lists[listIndex].listName : string.Empty;
+            return string.Equals(listName, "Equipment", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(listName, "Equipment Essence", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(listName, "EQUIPMENT_ESSENCE", StringComparison.OrdinalIgnoreCase);
         }
     }
 }
