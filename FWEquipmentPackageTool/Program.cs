@@ -29,6 +29,9 @@ namespace FWEquipmentPackageTool
         {
             try
             {
+                Console.OutputEncoding = Encoding.UTF8;
+                Console.InputEncoding = Encoding.UTF8;
+
                 if (args.Length < 1 || !string.Equals(args[0], "export-equipment", StringComparison.OrdinalIgnoreCase))
                 {
                     PrintUsage();
