@@ -282,7 +282,7 @@ namespace FWEquipmentPackageTool
 
         private static IEnumerable<string> CollectGfxReferenceCandidates(ItemTransferAssetEntry current, byte[] payload)
         {
-            string text = DecodePrintablePayload(payload);
+            string text = DecodeGbkPayload(payload);
             MatchCollection matches = Regex.Matches(text, @"[A-Za-z0-9_\-./\\\u0080-\uFFFF ]{1,220}\.(?:dds|tga|bmp|png|jpg|jpeg|gfx)", RegexOptions.IgnoreCase);
             HashSet<string> yielded = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             for (int i = 0; i < matches.Count; i++)
