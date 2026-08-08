@@ -3168,6 +3168,12 @@ namespace FWEledit
                     pkxPath = string.Empty;
                 }
 
+                string resolvedRelativePath;
+                if (pckEntryReaderService.TryReadFileFast(normalizedPackage, relativePath, out payload, out resolvedRelativePath, out error))
+                {
+                    return true;
+                }
+
                 return PckIndexReader.TryReadEntry(normalizedPackage, pckPath, pkxPath, relativePath, out payload, out error);
             }
             catch (Exception ex)

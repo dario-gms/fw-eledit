@@ -46,6 +46,7 @@ namespace FWEledit
         public string ErrorMessage { get; set; }
         public int AssetCount { get; set; }
         public int MissingAssetCount { get; set; }
+        public List<string> MissingAssets { get; set; }
     }
 
     public sealed class ItemTransferProgressInfo

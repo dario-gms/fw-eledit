@@ -285,6 +285,18 @@ namespace FWEledit
                     if (result.MissingAssetCount > 0)
                     {
                         message += "\nMissing assets: " + result.MissingAssetCount.ToString();
+                        if (result.MissingAssets != null && result.MissingAssets.Count > 0)
+                        {
+                            int maxToShow = Math.Min(5, result.MissingAssets.Count);
+                            for (int i = 0; i < maxToShow; i++)
+                            {
+                                message += "\n- " + result.MissingAssets[i];
+                            }
+                            if (result.MissingAssets.Count > maxToShow)
+                            {
+                                message += "\n- ...";
+                            }
+                        }
                     }
                     MessageBox.Show(message);
                 }

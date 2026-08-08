@@ -35,7 +35,7 @@ namespace FWEledit
             Action<ItemTransferProgressInfo> progress = null,
             CancellationToken cancellationToken = default(CancellationToken))
         {
-            ItemTransferExportResult result = new ItemTransferExportResult();
+            ItemTransferExportResult result = new ItemTransferExportResult { MissingAssets = new List<string>() };
             try
             {
                 ReportProgress(progress, "Preparing export", "Validating selected item...", 0, 0, true);
@@ -112,13 +112,17 @@ namespace FWEledit
                                 stream.Write(payload, 0, payload.Length);
                             }
                         }
+                        else
+                        {
+                            result.MissingAssets.Add(asset.MappedPath ?? asset.RelativePath ?? string.Empty);
+                        }
                         written++;
                     }
                 }
 
                 result.Success = true;
                 result.AssetCount = manifest.Assets.Count;
-                result.MissingAssetCount = result.AssetCount - CountPackageAssets(outputFile);
+                result.MissingAssetCount = result.MissingAssets.Count;
                 ReportProgress(progress, "Export complete", "Item package created.", result.AssetCount, result.AssetCount, false);
                 return result;
             }
@@ -247,7 +251,7 @@ namespace FWEledit
             {
                 string fieldName = field.Name ?? string.Empty;
                 string value = field.Value ?? string.Empty;
-                if (LooksLikePathIdField(fieldName) && database.pathById != null)
+                if (IsPackageAssetPathIdField(fieldName) && database.pathById != null)
                 {
                     int pathId = TryParseInt(value);
                     string mapped;
@@ -701,7 +705,7 @@ namespace FWEledit
                 }
 
                 string value = source.Value ?? string.Empty;
-                if (LooksLikePathIdField(source.Name))
+                if (IsPackageAssetPathIdField(source.Name))
                 {
                     int oldPathId = TryParseInt(value);
                     int mappedPathId;
@@ -831,15 +835,27 @@ namespace FWEledit
             }
         }
 
-        private static bool LooksLikePathIdField(string fieldName)
+        private static bool IsPackageAssetPathIdField(string fieldName)
         {
             string normalized = (fieldName ?? string.Empty).ToLowerInvariant();
-            return normalized.Contains("file")
-                || normalized.Contains("icon")
-                || normalized.Contains("model")
-                || normalized.Contains("gfx")
-                || normalized.Contains("portrait")
-                || normalized.Contains("head");
+            if (string.IsNullOrWhiteSpace(normalized))
+            {
+                return false;
+            }
+
+            return string.Equals(normalized, "file_matter", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(normalized, "file_icon", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(normalized, "file_icon1", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(normalized, "normal_attack_sfx", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(normalized, "music_pick", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(normalized, "music_drop", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(normalized, "id_change_model", StringComparison.OrdinalIgnoreCase)
+                || normalized.StartsWith("file_model", StringComparison.OrdinalIgnoreCase)
+                || (normalized.StartsWith("models_", StringComparison.OrdinalIgnoreCase)
+                    && normalized.Contains("_file_model"))
+                || normalized.StartsWith("gfx_", StringComparison.OrdinalIgnoreCase)
+                || normalized.Contains("_gfx_")
+                || normalized.EndsWith("_gfx", StringComparison.OrdinalIgnoreCase);
         }
 
         private static bool LooksLikeAssetPath(string value)
