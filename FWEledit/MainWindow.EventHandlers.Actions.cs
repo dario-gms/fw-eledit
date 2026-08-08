@@ -1,7 +1,11 @@
 using System;
+using System.Diagnostics;
 using System.IO;
+using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using Newtonsoft.Json;
 
 namespace FWEledit
 {
@@ -260,10 +264,7 @@ namespace FWEledit
                     ItemTransferExportResult result;
                     try
                     {
-                        result = await Task.Run(() => itemTransferPackageService.ExportItemPackage(
-                            sessionService.ListCollection,
-                            sessionService.Database,
-                            sessionService.AssetManager,
+                        result = await Task.Run(() => ExportEquipmentPackageWithCli(
                             listIndex,
                             elementIndex,
                             dialog.FileName,
@@ -300,6 +301,252 @@ namespace FWEledit
                     }
                     MessageBox.Show(message);
                 }
+            }
+        }
+
+        private ItemTransferExportResult ExportEquipmentPackageWithCli(
+            int listIndex,
+            int elementIndex,
+            string outputFile,
+            Action<ItemTransferProgressInfo> progress,
+            CancellationToken cancellationToken)
+        {
+            ItemTransferExportResult result = new ItemTransferExportResult();
+            string toolPath = FindEquipmentPackageToolPath();
+            if (string.IsNullOrWhiteSpace(toolPath) || !File.Exists(toolPath))
+            {
+                result.ErrorMessage = "Equipment package tool was not found.";
+                return result;
+            }
+
+            if (string.IsNullOrWhiteSpace(AssetManager.GameRootPath) || !Directory.Exists(AssetManager.GameRootPath))
+            {
+                result.ErrorMessage = "Game root path is not configured.";
+                return result;
+            }
+
+            ItemTransferPackageManifest manifest = itemTransferPackageService.BuildEquipmentExportManifest(
+                sessionService.ListCollection,
+                sessionService.Database,
+                listIndex,
+                elementIndex);
+            if (manifest == null)
+            {
+                result.ErrorMessage = "Failed to build equipment export manifest.";
+                return result;
+            }
+
+            string tempDir = Path.Combine(Path.GetTempPath(), "FWEledit", "equipment-package");
+            Directory.CreateDirectory(tempDir);
+            string token = Guid.NewGuid().ToString("N");
+            string requestFile = Path.Combine(tempDir, token + ".request.json");
+            string resultFile = Path.Combine(tempDir, token + ".result.json");
+
+            try
+            {
+                var request = new
+                {
+                    GameRootPath = AssetManager.GameRootPath,
+                    WorkspaceRootPath = AssetManager.WorkspaceRootPath,
+                    OutputFile = outputFile,
+                    ResultFile = resultFile,
+                    Manifest = manifest
+                };
+
+                File.WriteAllText(requestFile, JsonConvert.SerializeObject(request, Formatting.Indented), Encoding.UTF8);
+                progress?.Invoke(new ItemTransferProgressInfo
+                {
+                    Stage = "Starting equipment package tool",
+                    Detail = Path.GetFileName(toolPath),
+                    Current = 0,
+                    Total = 0,
+                    IsIndeterminate = true
+                });
+
+                StringBuilder stderr = new StringBuilder();
+                ProcessStartInfo startInfo = new ProcessStartInfo
+                {
+                    FileName = toolPath,
+                    Arguments = "export-equipment --request " + QuoteArgument(requestFile),
+                    CreateNoWindow = true,
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    StandardOutputEncoding = Encoding.UTF8,
+                    StandardErrorEncoding = Encoding.UTF8,
+                    WorkingDirectory = Path.GetDirectoryName(toolPath)
+                };
+
+                using (Process process = new Process())
+                {
+                    process.StartInfo = startInfo;
+                    process.OutputDataReceived += (sender, e) =>
+                    {
+                        if (!string.IsNullOrWhiteSpace(e.Data))
+                        {
+                            HandleEquipmentPackageToolOutput(e.Data, progress);
+                        }
+                    };
+                    process.ErrorDataReceived += (sender, e) =>
+                    {
+                        if (!string.IsNullOrWhiteSpace(e.Data))
+                        {
+                            lock (stderr)
+                            {
+                                stderr.AppendLine(e.Data);
+                            }
+                        }
+                    };
+
+                    if (!process.Start())
+                    {
+                        result.ErrorMessage = "Failed to start equipment package tool.";
+                        return result;
+                    }
+
+                    process.BeginOutputReadLine();
+                    process.BeginErrorReadLine();
+                    while (!process.WaitForExit(100))
+                    {
+                        if (cancellationToken.IsCancellationRequested)
+                        {
+                            TryKillProcess(process);
+                            result.ErrorMessage = "Export cancelled.";
+                            return result;
+                        }
+                    }
+
+                    process.WaitForExit();
+                    if (File.Exists(resultFile))
+                    {
+                        result = JsonConvert.DeserializeObject<ItemTransferExportResult>(File.ReadAllText(resultFile, Encoding.UTF8))
+                            ?? new ItemTransferExportResult();
+                    }
+
+                    if (process.ExitCode != 0)
+                    {
+                        if (string.IsNullOrWhiteSpace(result.ErrorMessage))
+                        {
+                            string toolError;
+                            lock (stderr)
+                            {
+                                toolError = stderr.ToString().Trim();
+                            }
+                            result.ErrorMessage = string.IsNullOrWhiteSpace(toolError)
+                                ? "Equipment package tool failed."
+                                : toolError;
+                        }
+                        result.Success = false;
+                    }
+
+                    return result;
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                result.ErrorMessage = "Export cancelled.";
+                return result;
+            }
+            catch (Exception ex)
+            {
+                result.ErrorMessage = ex.Message;
+                return result;
+            }
+            finally
+            {
+                TryDeleteTempFile(requestFile);
+                TryDeleteTempFile(resultFile);
+            }
+        }
+
+        private static void HandleEquipmentPackageToolOutput(string line, Action<ItemTransferProgressInfo> progress)
+        {
+            if (progress == null || string.IsNullOrWhiteSpace(line) || !line.StartsWith("PROGRESS|", StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            string[] parts = line.Split(new char[] { '|' }, 6);
+            if (parts.Length < 6)
+            {
+                return;
+            }
+
+            int current;
+            int total;
+            int.TryParse(parts[3], out current);
+            int.TryParse(parts[4], out total);
+            progress(new ItemTransferProgressInfo
+            {
+                Stage = parts[1] ?? string.Empty,
+                Detail = parts[2] ?? string.Empty,
+                Current = current,
+                Total = total,
+                IsIndeterminate = string.Equals(parts[5], "1", StringComparison.Ordinal)
+            });
+        }
+
+        private static string FindEquipmentPackageToolPath()
+        {
+            string fileName = "FWEquipmentPackageTool.exe";
+            string[] directCandidates =
+            {
+                Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "tools", "equipment-package", fileName),
+                Path.Combine(Environment.CurrentDirectory, "tools", "equipment-package", fileName),
+                Path.Combine(AssetManager.WorkspaceRootPath ?? string.Empty, "tools", "equipment-package", fileName)
+            };
+
+            for (int i = 0; i < directCandidates.Length; i++)
+            {
+                if (!string.IsNullOrWhiteSpace(directCandidates[i]) && File.Exists(directCandidates[i]))
+                {
+                    return directCandidates[i];
+                }
+            }
+
+            DirectoryInfo directory = new DirectoryInfo(AppDomain.CurrentDomain.BaseDirectory);
+            for (int i = 0; i < 8 && directory != null; i++, directory = directory.Parent)
+            {
+                string candidate = Path.Combine(directory.FullName, "tools", "equipment-package", fileName);
+                if (File.Exists(candidate))
+                {
+                    return candidate;
+                }
+            }
+
+            return string.Empty;
+        }
+
+        private static string QuoteArgument(string value)
+        {
+            return "\"" + (value ?? string.Empty).Replace("\"", "\\\"") + "\"";
+        }
+
+        private static void TryKillProcess(Process process)
+        {
+            try
+            {
+                if (process != null && !process.HasExited)
+                {
+                    process.Kill();
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        private static void TryDeleteTempFile(string path)
+        {
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(path) && File.Exists(path))
+                {
+                    File.Delete(path);
+                }
+            }
+            catch
+            {
             }
         }
 

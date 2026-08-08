@@ -205,6 +205,28 @@ namespace FWEledit
             }
         }
 
+        public ItemTransferPackageManifest BuildEquipmentExportManifest(
+            eListCollection listCollection,
+            CacheSave database,
+            int listIndex,
+            int itemIndex)
+        {
+            if (listCollection == null
+                || database == null
+                || listIndex < 0
+                || listIndex >= listCollection.Lists.Length
+                || listCollection.Lists[listIndex] == null
+                || itemIndex < 0
+                || itemIndex >= listCollection.Lists[listIndex].elementValues.Length)
+            {
+                return null;
+            }
+
+            ItemTransferPackageManifest manifest = BuildManifest(listCollection, database, listIndex, itemIndex);
+            CollectDirectPathDataEntries(manifest, database);
+            return manifest;
+        }
+
         private static ItemTransferPackageManifest BuildManifest(eListCollection listCollection, CacheSave database, int listIndex, int itemIndex)
         {
             eList list = listCollection.Lists[listIndex];
@@ -283,6 +305,38 @@ namespace FWEledit
             }
 
             return assets;
+        }
+
+        private static void CollectDirectPathDataEntries(ItemTransferPackageManifest manifest, CacheSave database)
+        {
+            if (manifest == null || manifest.Fields == null || database == null || database.pathById == null)
+            {
+                return;
+            }
+
+            if (manifest.PathDataEntries == null)
+            {
+                manifest.PathDataEntries = new List<ItemTransferPathDataEntry>();
+            }
+
+            HashSet<int> addedPathIds = new HashSet<int>(manifest.PathDataEntries.Select(p => p.PathId));
+            foreach (ItemTransferFieldValue field in manifest.Fields)
+            {
+                if (field == null || !IsPackageAssetPathIdField(field.Name))
+                {
+                    continue;
+                }
+
+                int pathId = TryParseInt(field.Value);
+                string mapped;
+                if (pathId > 0
+                    && database.pathById.TryGetValue(pathId, out mapped)
+                    && !string.IsNullOrWhiteSpace(mapped)
+                    && addedPathIds.Add(pathId))
+                {
+                    manifest.PathDataEntries.Add(new ItemTransferPathDataEntry { PathId = pathId, MappedPath = NormalizePath(mapped) });
+                }
+            }
         }
 
         private static bool AddAsset(Dictionary<string, ItemTransferAssetEntry> assets, string mappedPath, AssetManager assetManager)
