@@ -746,12 +746,65 @@ namespace FWEledit
             return -1;
         }
 
-        private static bool IsEquipmentEssenceList(eList list)
+        public static bool IsEquipmentEssenceList(eList list)
         {
             string listName = list != null ? list.listName : string.Empty;
-            return string.Equals(listName, "Equipment", StringComparison.OrdinalIgnoreCase)
+            if (string.Equals(listName, "Equipment", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(listName, "Equipment Essence", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(listName, "EQUIPMENT_ESSENCE", StringComparison.OrdinalIgnoreCase);
+                || string.Equals(listName, "EQUIPMENT_ESSENCE", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            string normalizedName = NormalizeListName(listName);
+            if (string.Equals(normalizedName, "Equipment", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(normalizedName, "Equipment Essence", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(normalizedName, "EQUIPMENT_ESSENCE", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            return HasEquipmentEssenceFields(list);
+        }
+
+        private static bool HasEquipmentEssenceFields(eList list)
+        {
+            if (list == null || list.elementFields == null)
+            {
+                return false;
+            }
+
+            bool hasItemQuality = false;
+            bool hasEquipMask = false;
+            bool hasFileMatter = false;
+            bool hasFileIcon = false;
+            bool hasModelPath = false;
+            for (int i = 0; i < list.elementFields.Length; i++)
+            {
+                string field = list.elementFields[i] ?? string.Empty;
+                hasItemQuality |= string.Equals(field, "item_quality", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(field, "id_quality", StringComparison.OrdinalIgnoreCase);
+                hasEquipMask |= string.Equals(field, "equip_mask", StringComparison.OrdinalIgnoreCase);
+                hasFileMatter |= string.Equals(field, "file_matter", StringComparison.OrdinalIgnoreCase);
+                hasFileIcon |= string.Equals(field, "file_icon", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(field, "file_icon1", StringComparison.OrdinalIgnoreCase);
+                hasModelPath |= field.StartsWith("models_", StringComparison.OrdinalIgnoreCase)
+                    || field.StartsWith("file_model", StringComparison.OrdinalIgnoreCase)
+                    || field.StartsWith("model_", StringComparison.OrdinalIgnoreCase);
+            }
+
+            return hasItemQuality && hasEquipMask && hasFileMatter && hasFileIcon && hasModelPath;
+        }
+
+        private static string NormalizeListName(string listName)
+        {
+            if (string.IsNullOrWhiteSpace(listName))
+            {
+                return string.Empty;
+            }
+
+            string[] split = listName.Split(new string[] { " - " }, StringSplitOptions.None);
+            return split.Length > 1 ? split[1].Trim() : listName.Trim();
         }
 
         private static void WriteTextEntry(ZipArchive archive, string name, string text)

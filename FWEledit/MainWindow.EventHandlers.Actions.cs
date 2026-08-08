@@ -215,7 +215,7 @@ namespace FWEledit
             {
                 return;
             }
-            if (!IsEquipmentEssenceListForTransferPackage(sessionService.ListCollection, listIndex))
+            if (!ItemTransferPackageService.IsEquipmentEssenceList(sessionService.ListCollection.Lists[listIndex]))
             {
                 MessageBox.Show("Item package export currently supports only Equipment Essence.");
                 return;
@@ -451,18 +451,6 @@ namespace FWEledit
             return string.IsNullOrWhiteSpace(safe) ? "item" : safe;
         }
 
-        private static bool IsEquipmentEssenceListForTransferPackage(eListCollection listCollection, int listIndex)
-        {
-            if (listCollection == null || listIndex < 0 || listIndex >= listCollection.Lists.Length)
-            {
-                return false;
-            }
-
-            string listName = listCollection.Lists[listIndex] != null ? listCollection.Lists[listIndex].listName : string.Empty;
-            return string.Equals(listName, "Equipment", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(listName, "Equipment Essence", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(listName, "EQUIPMENT_ESSENCE", StringComparison.OrdinalIgnoreCase);
-        }
     }
 }
 
