@@ -112,6 +112,8 @@
     </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
+    <Reference Include="System.IO.Compression" />
+    <Reference Include="System.IO.Compression.FileSystem" />
     <Reference Include="System.Management" />
     <Reference Include="System.Numerics" />
     <Reference Include="System.Runtime.Serialization" />
@@ -476,6 +478,7 @@
     <Compile Include="Models\DescriptionChangeResult.cs" />
     <Compile Include="Models\DescriptionFlushResult.cs" />
     <Compile Include="Models\EquipmentValuesTab.cs" />
+    <Compile Include="Models\ItemTransferPackageModels.cs" />
     <Compile Include="Models\ElementSearchRequest.cs" />
     <Compile Include="Models\ElementSearchResult.cs" />
     <Compile Include="Models\ElementDeleteResult.cs" />
@@ -843,6 +846,7 @@
     <Compile Include="Services\ItemFieldClassifierService.cs" />
     <Compile Include="Services\ItemReferenceService.cs" />
     <Compile Include="Services\ItemTooltipService.cs" />
+    <Compile Include="Services\ItemTransferPackageService.cs" />
     <Compile Include="Services\GameShopDataService.cs" />
     <Compile Include="Services\GameShopIconService.cs" />
     <Compile Include="Services\ReferenceIndexService.cs" />

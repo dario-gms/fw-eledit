@@ -131,6 +131,7 @@ namespace FWEledit
         private readonly ItemValueRowBuilderService itemValueRowBuilderService;
         private readonly ItemSelectionWorkflowService itemSelectionWorkflowService;
         private readonly ItemTooltipService itemTooltipService = new ItemTooltipService();
+        private readonly ItemTransferPackageService itemTransferPackageService = new ItemTransferPackageService();
         private readonly ItemQualityColorService itemQualityColorService = new ItemQualityColorService();
         private readonly GridSelectionService gridSelectionService = new GridSelectionService();
         private readonly GridActiveRowService gridActiveRowService = new GridActiveRowService();
