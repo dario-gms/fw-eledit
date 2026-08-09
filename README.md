@@ -21,7 +21,6 @@ FWEledit is based on [sELedit++ by Wrechid](https://github.com/Wrechid/sELedit-)
 - Improved package asset discovery for equipment models by following model dependencies such as `.ecm`, `.ski`, `.smd`, `.gfx`, textures, surfaces, normal maps, and shader-side references.
 - Improved model preview startup behavior with reusable warm caches, background cache preparation, fewer blocking popups, and better handling of preview errors inside the preview flow.
 - Refined model package behavior after testing cross-client imports, keeping imported model data faithful to the package instead of applying speculative Angelica 2 to Angelica 1 field remapping.
-- Cleaned generated Debug-folder test artifacts from the local build output.
 - Project/app version metadata updated to `v0.9.5.19`.
 
 ---
