@@ -520,6 +520,64 @@ namespace FWEledit
             { }
         }
 
+        public bool ImportStagedPackageAssets(string packageName, string stagingDirectory, out string error)
+        {
+            error = string.Empty;
+            try
+            {
+                if (string.IsNullOrWhiteSpace(packageName))
+                {
+                    error = "Package name not set.";
+                    return false;
+                }
+                if (string.IsNullOrWhiteSpace(stagingDirectory) || !Directory.Exists(stagingDirectory))
+                {
+                    error = "Staging directory not found.";
+                    return false;
+                }
+                if (string.IsNullOrWhiteSpace(GameRootPath) || !Directory.Exists(GameRootPath))
+                {
+                    error = "Game folder not set.";
+                    return false;
+                }
+
+                string package = packageName.Trim();
+                string gameResources = Path.Combine(GameRootPath, "resources");
+                Directory.CreateDirectory(gameResources);
+                string gamePck = Path.Combine(gameResources, package + ".pck");
+                string gamePkx = Path.Combine(gameResources, package + ".pkx");
+
+                if (File.Exists(gamePck))
+                {
+                    File.Copy(gamePck, gamePck + ".bak", true);
+                }
+                if (File.Exists(gamePkx))
+                {
+                    File.Copy(gamePkx, gamePkx + ".bak", true);
+                }
+
+                int timeoutMs = GetPckOperationTimeoutMs(gamePck, true);
+                if (!RunWinPckHelper("update", stagingDirectory, gamePck, 1, timeoutMs))
+                {
+                    System.Threading.Thread.Sleep(750);
+                    if (!RunWinPckHelper("update", stagingDirectory, gamePck, 1, timeoutMs))
+                    {
+                        error = "Failed to update " + package + ".pck";
+                        return false;
+                    }
+                }
+
+                PckEntryReaderService.InvalidatePackageGlobally(package);
+                PrewarmPackageIndexInBackground(package);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = ex.Message;
+                return false;
+            }
+        }
+
         private bool RunPckCompress(string extractedDirectory, int compressionLevel)
         {
             try
@@ -900,6 +958,8 @@ namespace FWEledit
                     File.Copy(workspacePck, gamePck, true);
                     actions.Add(package + ".pck");
                     dirtyPackages.Remove(package);
+                    PckEntryReaderService.InvalidatePackageGlobally(package);
+                    PrewarmPackageIndexInBackground(package);
                 }
 
                 if (pathDataDirty)
@@ -1001,6 +1061,8 @@ namespace FWEledit
 
                 File.Copy(workspacePck, gamePck, true);
                 dirtyPackages.Remove(package);
+                PckEntryReaderService.InvalidatePackageGlobally(package);
+                PrewarmPackageIndexInBackground(package);
                 summary = "Updated " + package + ".pck";
                 return true;
             }
@@ -2637,6 +2699,8 @@ namespace FWEledit
             {
                 string[] candidates = new string[]
                 {
+                    Path.Combine(root, "fELedit", "tools", "FWPck", "FWPckUpdater.exe"),
+                    Path.Combine(root, "tools", "FWPck", "FWPckUpdater.exe"),
                     Path.Combine(root, "fELedit", "tools", "winpck", "FWPckUpdater.exe"),
                     Path.Combine(root, "tools", "winpck", "FWPckUpdater.exe"),
                     Path.Combine(root, "FWPckUpdater.exe")
@@ -3122,14 +3186,36 @@ namespace FWEledit
             {
                 try
                 {
-                    List<string> entries;
                     string error;
-                    pckEntryReaderService.TryEnumerateEntries(packages[i], out entries, out error);
+                    pckEntryReaderService.TryWarmPackageIndex(packages[i], out error);
                 }
                 catch
                 {
                 }
             }
+        }
+
+        public void PrewarmPackageIndexInBackground(string packageName)
+        {
+            if (string.IsNullOrWhiteSpace(packageName)
+                || string.IsNullOrWhiteSpace(GameRootPath)
+                || !Directory.Exists(GameRootPath))
+            {
+                return;
+            }
+
+            string package = packageName.Trim();
+            System.Threading.Tasks.Task.Run(() =>
+            {
+                try
+                {
+                    string error;
+                    pckEntryReaderService.TryWarmPackageIndex(package, out error);
+                }
+                catch
+                {
+                }
+            });
         }
 
         public bool TryReadPackageEntry(string packageName, string relativePath, out byte[] payload, out string error)

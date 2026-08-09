@@ -22,7 +22,7 @@
     <UpdateRequired>false</UpdateRequired>
     <MapFileExtensions>true</MapFileExtensions>
     <ApplicationRevision>0</ApplicationRevision>
-    <ApplicationVersion>0.9.5.18</ApplicationVersion>
+    <ApplicationVersion>0.9.5.19</ApplicationVersion>
     <IsWebBootstrapper>false</IsWebBootstrapper>
     <UseApplicationTrust>false</UseApplicationTrust>
     <BootstrapperEnabled>true</BootstrapperEnabled>
@@ -479,6 +479,8 @@
     <Compile Include="Models\DescriptionFlushResult.cs" />
     <Compile Include="Models\EquipmentValuesTab.cs" />
     <Compile Include="Models\ItemTransferPackageModels.cs" />
+    <Compile Include="ItemTransferImportModeWindow.cs" />
+    <Compile Include="ItemTransferModelsOnlyResultWindow.cs" />
     <Compile Include="Models\ElementSearchRequest.cs" />
     <Compile Include="Models\ElementSearchResult.cs" />
     <Compile Include="Models\ElementDeleteResult.cs" />
@@ -1196,12 +1198,12 @@
       <Link>configs\sequel_scanner.txt</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <Content Include="..\tools\winpck\FWPckUpdater.exe">
-      <Link>tools\winpck\FWPckUpdater.exe</Link>
+    <Content Include="..\tools\FWPck\FWPckUpdater.exe">
+      <Link>tools\FWPck\FWPckUpdater.exe</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <Content Include="..\tools\winpck\pckdll_x64.dll">
-      <Link>tools\winpck\pckdll_x64.dll</Link>
+    <Content Include="..\tools\FWPck\pckdll_x64.dll">
+      <Link>tools\FWPck\pckdll_x64.dll</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <Content Include="..\tools\7za.exe">

@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -551,7 +552,7 @@ namespace FWEledit
         }
 
 
-        private void click_importItemPackage(object sender, EventArgs ea)
+        private async void click_importItemPackage(object sender, EventArgs ea)
         {
             if (sessionService == null
                 || sessionService.ListCollection == null
@@ -570,20 +571,48 @@ namespace FWEledit
                     return;
                 }
 
-                Cursor previousCursor = Cursor;
-                Cursor = Cursors.AppStarting;
-                try
+                ItemTransferImportMode importMode = AskItemTransferImportMode();
+                if (importMode != ItemTransferImportMode.FullStructure
+                    && importMode != ItemTransferImportMode.ModelsOnly)
                 {
-                    ItemTransferImportResult result = itemTransferPackageService.ImportItemPackage(
-                        sessionService.ListCollection,
-                        sessionService.Database,
-                        sessionService.AssetManager,
-                        idGenerationService,
-                        dialog.FileName);
+                    return;
+                }
+
+                using (ItemTransferProgressWindow progressWindow = new ItemTransferProgressWindow("Import Equipment Package"))
+                {
+                    progressWindow.StartPosition = FormStartPosition.CenterParent;
+                    progressWindow.Show(this);
+
+                    ItemTransferImportResult result;
+                    try
+                    {
+                        result = await Task.Run(() => itemTransferPackageService.ImportItemPackage(
+                            sessionService.ListCollection,
+                            sessionService.Database,
+                            sessionService.AssetManager,
+                            idGenerationService,
+                            dialog.FileName,
+                            importMode,
+                            progressWindow.UpdateProgress,
+                            progressWindow.Cancellation.Token));
+                    }
+                    finally
+                    {
+                        progressWindow.AllowCloseAndClose();
+                    }
 
                     if (!result.Success)
                     {
                         MessageBox.Show(result.ErrorMessage ?? "Failed to import item package.");
+                        return;
+                    }
+
+                    if (result.Mode == ItemTransferImportMode.ModelsOnly)
+                    {
+                        viewModel.HasUnsavedChanges = true;
+                        InvalidateItemReferenceOptionCaches();
+                        ScheduleVisibleReferenceCountRefresh();
+                        ShowModelsOnlyImportResult(result);
                         return;
                     }
 
@@ -619,6 +648,15 @@ namespace FWEledit
 
                     string message = "Item package imported.\nNew ID: " + result.NewId.ToString();
                     message += "\nAssets imported: " + result.ImportedAssetCount.ToString();
+                    message += "\nAssets already present: " + result.ExistingAssetCount.ToString();
+                    if (result.UpdatedPackageCount > 0)
+                    {
+                        message += "\nPCK packages updated: " + result.UpdatedPackageCount.ToString();
+                    }
+                    if (result.FallbackPackageCount > 0)
+                    {
+                        message += "\nMissing source packages redirected to models.pck: " + result.FallbackPackageCount.ToString();
+                    }
                     if (result.RemappedPathIdCount > 0)
                     {
                         message += "\nPathIDs remapped: " + result.RemappedPathIdCount.ToString();
@@ -629,11 +667,186 @@ namespace FWEledit
                     }
                     MessageBox.Show(message);
                 }
-                finally
+            }
+        }
+
+        private ItemTransferImportMode AskItemTransferImportMode()
+        {
+            using (ItemTransferImportModeWindow window = new ItemTransferImportModeWindow())
+            {
+                return window.ShowDialog(this) == DialogResult.OK
+                    ? window.SelectedMode
+                    : (ItemTransferImportMode)(-1);
+            }
+        }
+
+        private void ShowModelsOnlyImportResult(ItemTransferImportResult result)
+        {
+            string importDetails = BuildModelsOnlyImportDetailsText(result);
+            string message = "Assets imported: " + result.ImportedAssetCount.ToString();
+            message += "\nAssets already present: " + result.ExistingAssetCount.ToString();
+            if (result.UpdatedPackageCount > 0)
+            {
+                message += "\nPCK packages updated: " + result.UpdatedPackageCount.ToString();
+            }
+            if (result.FallbackPackageCount > 0)
+            {
+                message += "\nMissing source packages redirected to models.pck: " + result.FallbackPackageCount.ToString();
+            }
+            if (result.RemappedPathIdCount > 0)
+            {
+                message += "\nPathIDs remapped: " + result.RemappedPathIdCount.ToString();
+            }
+            if (result.MissingAssetCount > 0)
+            {
+                message += "\nWarnings: " + result.MissingAssetCount.ToString();
+            }
+            if (!string.IsNullOrWhiteSpace(importDetails))
+            {
+                using (ItemTransferModelsOnlyResultWindow window = new ItemTransferModelsOnlyResultWindow(message, importDetails))
                 {
-                    Cursor = previousCursor;
+                    window.ShowDialog(this);
                 }
             }
+            else
+            {
+                MessageBox.Show(this, message + "\n\nNo model path IDs were found in this package.", "Import Models Only", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+        }
+
+        private static string BuildModelsOnlyImportDetailsText(ItemTransferImportResult result)
+        {
+            if (result == null)
+            {
+                return string.Empty;
+            }
+
+            StringBuilder builder = new StringBuilder();
+            string packageSummary = BuildPackageAssetSummaryText(result);
+            if (!string.IsNullOrWhiteSpace(packageSummary))
+            {
+                builder.AppendLine("Package assets");
+                builder.AppendLine(packageSummary);
+            }
+
+            string modelSummary = BuildImportedModelPathSummaryText(result);
+            if (!string.IsNullOrWhiteSpace(modelSummary))
+            {
+                if (builder.Length > 0)
+                {
+                    builder.AppendLine();
+                }
+                builder.AppendLine("Model path IDs");
+                builder.AppendLine(modelSummary);
+            }
+
+            string dependencySummary = BuildDependencyAssetSummaryText(result);
+            if (!string.IsNullOrWhiteSpace(dependencySummary))
+            {
+                if (builder.Length > 0)
+                {
+                    builder.AppendLine();
+                }
+                builder.AppendLine("Dependency assets");
+                builder.AppendLine(dependencySummary);
+            }
+
+            return builder.ToString().TrimEnd();
+        }
+
+        private static string BuildPackageAssetSummaryText(ItemTransferImportResult result)
+        {
+            if (result == null || result.AssetSummaries == null || result.AssetSummaries.Count == 0)
+            {
+                return string.Empty;
+            }
+
+            StringBuilder builder = new StringBuilder();
+            foreach (ItemTransferPackageAssetSummary summary in result.AssetSummaries.OrderBy(s => s.Package))
+            {
+                if (summary == null || string.IsNullOrWhiteSpace(summary.Package))
+                {
+                    continue;
+                }
+
+                if (builder.Length > 0)
+                {
+                    builder.AppendLine();
+                }
+
+                builder.Append(summary.Package);
+                builder.Append(": imported ");
+                builder.Append(summary.ImportedCount.ToString());
+                builder.Append(", already present ");
+                builder.Append(summary.ExistingCount.ToString());
+            }
+
+            return builder.ToString();
+        }
+
+        private static string BuildDependencyAssetSummaryText(ItemTransferImportResult result)
+        {
+            if (result == null || result.DependencyAssetPaths == null || result.DependencyAssetPaths.Count == 0)
+            {
+                return string.Empty;
+            }
+
+            StringBuilder builder = new StringBuilder();
+            foreach (string path in result.DependencyAssetPaths.OrderBy(path => path, StringComparer.OrdinalIgnoreCase))
+            {
+                if (string.IsNullOrWhiteSpace(path))
+                {
+                    continue;
+                }
+
+                if (builder.Length > 0)
+                {
+                    builder.AppendLine();
+                }
+                builder.Append(path);
+            }
+
+            return builder.ToString();
+        }
+
+        private static string BuildImportedModelPathSummaryText(ItemTransferImportResult result)
+        {
+            if (result == null || result.ImportedModelPaths == null || result.ImportedModelPaths.Count == 0)
+            {
+                return string.Empty;
+            }
+
+            StringBuilder builder = new StringBuilder();
+            for (int i = 0; i < result.ImportedModelPaths.Count; i++)
+            {
+                ItemTransferImportedPath item = result.ImportedModelPaths[i];
+                if (item == null)
+                {
+                    continue;
+                }
+
+                if (builder.Length > 0)
+                {
+                    builder.AppendLine();
+                }
+
+                builder.Append(item.FieldName);
+                builder.Append(": ");
+                builder.Append(item.TargetPathId.ToString());
+                if (item.OriginalPathId > 0 && item.OriginalPathId != item.TargetPathId)
+                {
+                    builder.Append(" (from ");
+                    builder.Append(item.OriginalPathId.ToString());
+                    builder.Append(")");
+                }
+                if (!string.IsNullOrWhiteSpace(item.MappedPath))
+                {
+                    builder.Append(" - ");
+                    builder.Append(item.MappedPath);
+                }
+            }
+
+            return builder.ToString();
         }
 
         private string ResolveItemNameForTransferPackage(int listIndex, int elementIndex)

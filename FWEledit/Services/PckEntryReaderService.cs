@@ -1,6 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
+using System.Linq;
+using System.Security.Cryptography;
 using System.Text;
 
 namespace FWEledit
@@ -13,9 +16,44 @@ namespace FWEledit
         private const int PathBytes = 260;
         private const int MinEntrySize = PathBytes + 12;
         private const int MaxEntrySize = 1024 * 1024;
+        private const int DiskCacheVersion = 1;
 
+        private static readonly object globalInvalidationSync = new object();
+        private static readonly Dictionary<string, int> globalPackageVersions = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         private readonly object syncRoot = new object();
         private readonly Dictionary<string, PckPackageIndex> packageCache = new Dictionary<string, PckPackageIndex>(StringComparer.OrdinalIgnoreCase);
+        public static Action<string, string, TimeSpan, int> ProfileEvent;
+
+        public static void InvalidatePackageGlobally(string packageName)
+        {
+            if (string.IsNullOrWhiteSpace(packageName))
+            {
+                return;
+            }
+
+            lock (globalInvalidationSync)
+            {
+                string normalized = packageName.Trim();
+                int version;
+                globalPackageVersions.TryGetValue(normalized, out version);
+                globalPackageVersions[normalized] = version + 1;
+            }
+
+            DeletePackageIndexDiskCache(packageName);
+        }
+
+        public bool TryWarmPackageIndex(string packageName, out string error)
+        {
+            error = string.Empty;
+
+            if (!TryGetPackagePaths(packageName, out string normalizedPackage, out string pckPath, out string pkxPath, out error))
+            {
+                return false;
+            }
+
+            PckPackageIndex index;
+            return TryGetPackageIndex(normalizedPackage, pckPath, pkxPath, out index, out error) && index != null;
+        }
 
         public bool TryReadFile(string packageName, string relativePath, out byte[] payload, out string error)
         {
@@ -44,7 +82,7 @@ namespace FWEledit
             if (TryGetPackageIndex(normalizedPackage, pckPath, pkxPath, out index, out managedError) && index != null)
             {
                 if (TryResolveIndexedEntry(index, normalizedPackage, normalizedEntry, out PckFileEntry entry, out string resolvedRelativePath)
-                    && TryReadIndexedEntry(pckPath, pkxPath, resolvedRelativePath, entry, out payload, out error))
+                    && TryReadIndexedEntry(normalizedPackage, pckPath, pkxPath, resolvedRelativePath, entry, out payload, out error))
                 {
                     return true;
                 }
@@ -101,7 +139,7 @@ namespace FWEledit
                 return false;
             }
 
-            return TryReadIndexedEntry(pckPath, pkxPath, resolvedRelativePath, entry, out payload, out error);
+            return TryReadIndexedEntry(normalizedPackage, pckPath, pkxPath, resolvedRelativePath, entry, out payload, out error);
         }
 
         public bool TryResolveSiblingByExtension(
@@ -497,6 +535,7 @@ namespace FWEledit
         }
 
         private static bool TryReadIndexedEntry(
+            string packageName,
             string pckPath,
             string pkxPath,
             string relativePath,
@@ -509,6 +548,7 @@ namespace FWEledit
 
             try
             {
+                Stopwatch stopwatch = Stopwatch.StartNew();
                 using (PckConcatStream stream = new PckConcatStream(pckPath, pkxPath))
                 {
                     if (entry.Offset < 0 || entry.CompressedSize <= 0 || entry.Offset + entry.CompressedSize > stream.Length)
@@ -528,6 +568,8 @@ namespace FWEledit
 
                     byte[] inflated = TryInflateEntry(compressed);
                     payload = inflated ?? compressed;
+                    stopwatch.Stop();
+                    EmitProfileEvent("read-entry", packageName + ":" + relativePath, stopwatch.Elapsed, payload.Length);
                     return true;
                 }
             }
@@ -548,7 +590,7 @@ namespace FWEledit
             index = null;
             error = string.Empty;
 
-            string signature = BuildPackageSignature(pckPath, pkxPath);
+            string signature = BuildPackageSignature(packageName, pckPath, pkxPath);
             string cacheKey = packageName + "|" + pckPath + "|" + pkxPath;
 
             lock (syncRoot)
@@ -568,6 +610,37 @@ namespace FWEledit
             Dictionary<string, int> entryPositions;
             Dictionary<string, List<string>> entriesByExtension;
             Dictionary<string, List<string>> entriesByFileName;
+            if (TryLoadPackageIndexFromDiskCache(
+                packageName,
+                pckPath,
+                pkxPath,
+                signature,
+                out decodedEntries,
+                out orderedEntries,
+                out entryPositions,
+                out entriesByExtension,
+                out entriesByFileName))
+            {
+                PckPackageIndex cachedFromDisk = new PckPackageIndex
+                {
+                    Signature = signature,
+                    Entries = decodedEntries,
+                    OrderedEntries = orderedEntries,
+                    EntryPositions = entryPositions,
+                    EntriesByExtension = entriesByExtension,
+                    EntriesByFileName = entriesByFileName
+                };
+
+                lock (syncRoot)
+                {
+                    packageCache[cacheKey] = cachedFromDisk;
+                }
+
+                index = cachedFromDisk;
+                return true;
+            }
+
+            Stopwatch decodeStopwatch = Stopwatch.StartNew();
             if (!TryDecodeIndexEntries(
                 packageName,
                 pckPath,
@@ -579,8 +652,13 @@ namespace FWEledit
                 out entriesByFileName,
                 out error))
             {
+                decodeStopwatch.Stop();
+                EmitProfileEvent("decode-index-failed", packageName, decodeStopwatch.Elapsed, 0);
                 return false;
             }
+            decodeStopwatch.Stop();
+            EmitProfileEvent("decode-index", packageName, decodeStopwatch.Elapsed, decodedEntries.Count);
+            SavePackageIndexToDiskCache(packageName, pckPath, pkxPath, signature, orderedEntries, decodedEntries);
 
             PckPackageIndex built = new PckPackageIndex
             {
@@ -601,10 +679,283 @@ namespace FWEledit
             return true;
         }
 
-        private static string BuildPackageSignature(string pckPath, string pkxPath)
+        private static bool TryLoadPackageIndexFromDiskCache(
+            string packageName,
+            string pckPath,
+            string pkxPath,
+            string signature,
+            out Dictionary<string, PckFileEntry> entries,
+            out List<string> orderedEntries,
+            out Dictionary<string, int> entryPositions,
+            out Dictionary<string, List<string>> entriesByExtension,
+            out Dictionary<string, List<string>> entriesByFileName)
+        {
+            entries = new Dictionary<string, PckFileEntry>(StringComparer.OrdinalIgnoreCase);
+            orderedEntries = new List<string>();
+            entryPositions = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            entriesByExtension = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+            entriesByFileName = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+
+            string cacheFile = BuildPackageIndexCacheFilePath(packageName, pckPath, pkxPath, signature);
+            if (string.IsNullOrWhiteSpace(cacheFile) || !File.Exists(cacheFile))
+            {
+                return false;
+            }
+
+            Stopwatch stopwatch = Stopwatch.StartNew();
+            try
+            {
+                using (FileStream fs = File.OpenRead(cacheFile))
+                using (BinaryReader reader = new BinaryReader(fs, Encoding.UTF8))
+                {
+                    string magic = reader.ReadString();
+                    int version = reader.ReadInt32();
+                    string cachedSignature = reader.ReadString();
+                    if (!string.Equals(magic, "FWPCKIDX", StringComparison.Ordinal)
+                        || version != DiskCacheVersion
+                        || !string.Equals(cachedSignature, signature, StringComparison.Ordinal))
+                    {
+                        return false;
+                    }
+
+                    int count = reader.ReadInt32();
+                    if (count < 0 || count > 1000000)
+                    {
+                        return false;
+                    }
+
+                    for (int i = 0; i < count; i++)
+                    {
+                        string normalized = reader.ReadString();
+                        long offset = reader.ReadInt64();
+                        int compressedSize = reader.ReadInt32();
+                        string canonical = reader.ReadString();
+                        if (string.IsNullOrWhiteSpace(normalized) || compressedSize <= 0)
+                        {
+                            continue;
+                        }
+
+                        PckFileEntry entry = new PckFileEntry
+                        {
+                            Offset = offset,
+                            CompressedSize = compressedSize,
+                            CanonicalPath = string.IsNullOrWhiteSpace(canonical) ? normalized : canonical
+                        };
+                        entries[normalized] = entry;
+                        if (!entryPositions.ContainsKey(normalized))
+                        {
+                            entryPositions[normalized] = orderedEntries.Count;
+                            orderedEntries.Add(normalized);
+                        }
+
+                        AddEntryToLookupTables(normalized, entriesByExtension, entriesByFileName);
+                    }
+                }
+
+                stopwatch.Stop();
+                EmitProfileEvent("load-index-cache", packageName, stopwatch.Elapsed, entries.Count);
+                return entries.Count > 0;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static void SavePackageIndexToDiskCache(
+            string packageName,
+            string pckPath,
+            string pkxPath,
+            string signature,
+            List<string> orderedEntries,
+            Dictionary<string, PckFileEntry> entries)
+        {
+            if (orderedEntries == null || entries == null || entries.Count == 0)
+            {
+                return;
+            }
+
+            string cacheFile = BuildPackageIndexCacheFilePath(packageName, pckPath, pkxPath, signature);
+            if (string.IsNullOrWhiteSpace(cacheFile))
+            {
+                return;
+            }
+
+            try
+            {
+                string directory = Path.GetDirectoryName(cacheFile);
+                if (!string.IsNullOrWhiteSpace(directory))
+                {
+                    Directory.CreateDirectory(directory);
+                }
+
+                string tempFile = cacheFile + ".tmp";
+                using (FileStream fs = File.Create(tempFile))
+                using (BinaryWriter writer = new BinaryWriter(fs, Encoding.UTF8))
+                {
+                    writer.Write("FWPCKIDX");
+                    writer.Write(DiskCacheVersion);
+                    writer.Write(signature ?? string.Empty);
+                    writer.Write(orderedEntries.Count);
+                    for (int i = 0; i < orderedEntries.Count; i++)
+                    {
+                        string normalized = orderedEntries[i] ?? string.Empty;
+                        PckFileEntry entry;
+                        if (!entries.TryGetValue(normalized, out entry) || entry == null)
+                        {
+                            writer.Write(string.Empty);
+                            writer.Write(0L);
+                            writer.Write(0);
+                            writer.Write(string.Empty);
+                            continue;
+                        }
+
+                        writer.Write(normalized);
+                        writer.Write(entry.Offset);
+                        writer.Write(entry.CompressedSize);
+                        writer.Write(entry.CanonicalPath ?? normalized);
+                    }
+                }
+
+                if (File.Exists(cacheFile))
+                {
+                    File.Delete(cacheFile);
+                }
+                File.Move(tempFile, cacheFile);
+            }
+            catch
+            {
+            }
+        }
+
+        private static string BuildPackageIndexCacheFilePath(string packageName, string pckPath, string pkxPath, string signature)
         {
             try
             {
+                string baseDir = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "FWEledit",
+                    "pck-index-cache");
+                string key = (packageName ?? string.Empty)
+                    + "|"
+                    + (pckPath ?? string.Empty)
+                    + "|"
+                    + (pkxPath ?? string.Empty)
+                    + "|"
+                    + (signature ?? string.Empty);
+                using (SHA1 sha1 = SHA1.Create())
+                {
+                    byte[] hash = sha1.ComputeHash(Encoding.UTF8.GetBytes(key));
+                    StringBuilder builder = new StringBuilder(hash.Length * 2);
+                    for (int i = 0; i < hash.Length; i++)
+                    {
+                        builder.Append(hash[i].ToString("x2"));
+                    }
+
+                    string safePackage = string.IsNullOrWhiteSpace(packageName)
+                        ? "package"
+                        : packageName.Trim().Replace('\\', '_').Replace('/', '_').Replace(':', '_');
+                    return Path.Combine(baseDir, safePackage + "-" + builder.ToString() + ".idx");
+                }
+            }
+            catch
+            {
+                return string.Empty;
+            }
+        }
+
+        private static void DeletePackageIndexDiskCache(string packageName)
+        {
+            try
+            {
+                string baseDir = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "FWEledit",
+                    "pck-index-cache");
+                if (!Directory.Exists(baseDir))
+                {
+                    return;
+                }
+
+                string safePackage = string.IsNullOrWhiteSpace(packageName)
+                    ? "package"
+                    : packageName.Trim().Replace('\\', '_').Replace('/', '_').Replace(':', '_');
+                string[] files = Directory.GetFiles(baseDir, safePackage + "-*.idx");
+                for (int i = 0; i < files.Length; i++)
+                {
+                    try
+                    {
+                        File.Delete(files[i]);
+                    }
+                    catch
+                    {
+                    }
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        private static void AddEntryToLookupTables(
+            string normalized,
+            Dictionary<string, List<string>> entriesByExtension,
+            Dictionary<string, List<string>> entriesByFileName)
+        {
+            if (string.IsNullOrWhiteSpace(normalized))
+            {
+                return;
+            }
+
+            string normalizedExtension = NormalizeExtension(Path.GetExtension(normalized));
+            if (!string.IsNullOrWhiteSpace(normalizedExtension))
+            {
+                List<string> extensionEntries;
+                if (!entriesByExtension.TryGetValue(normalizedExtension, out extensionEntries))
+                {
+                    extensionEntries = new List<string>();
+                    entriesByExtension[normalizedExtension] = extensionEntries;
+                }
+
+                extensionEntries.Add(normalized);
+            }
+
+            string fileName = NormalizeLookupKey(Path.GetFileName(normalized));
+            if (!string.IsNullOrWhiteSpace(fileName))
+            {
+                List<string> fileNameEntries;
+                if (!entriesByFileName.TryGetValue(fileName, out fileNameEntries))
+                {
+                    fileNameEntries = new List<string>();
+                    entriesByFileName[fileName] = fileNameEntries;
+                }
+
+                fileNameEntries.Add(normalized);
+            }
+        }
+
+        private static void EmitProfileEvent(string operation, string target, TimeSpan elapsed, int count)
+        {
+            Action<string, string, TimeSpan, int> handler = ProfileEvent;
+            if (handler == null)
+            {
+                return;
+            }
+
+            try
+            {
+                handler(operation, target, elapsed, count);
+            }
+            catch
+            {
+            }
+        }
+
+        private static string BuildPackageSignature(string packageName, string pckPath, string pkxPath)
+        {
+            try
+            {
+                int cacheVersion = GetGlobalPackageVersion(packageName);
                 FileInfo pck = new FileInfo(pckPath);
                 string pckSig = pck.Exists
                     ? pck.Length.ToString() + ":" + pck.LastWriteTimeUtc.Ticks.ToString()
@@ -616,14 +967,28 @@ namespace FWEledit
                     string pkxSig = pkx.Exists
                         ? pkx.Length.ToString() + ":" + pkx.LastWriteTimeUtc.Ticks.ToString()
                         : "none";
-                    return pckSig + "|" + pkxSig;
+                    return cacheVersion.ToString() + "|" + pckSig + "|" + pkxSig;
                 }
 
-                return pckSig + "|none";
+                return cacheVersion.ToString() + "|" + pckSig + "|none";
             }
             catch
             {
                 return Guid.NewGuid().ToString("N");
+            }
+        }
+
+        private static int GetGlobalPackageVersion(string packageName)
+        {
+            if (string.IsNullOrWhiteSpace(packageName))
+            {
+                return 0;
+            }
+
+            lock (globalInvalidationSync)
+            {
+                int version;
+                return globalPackageVersions.TryGetValue(packageName.Trim(), out version) ? version : 0;
             }
         }
 

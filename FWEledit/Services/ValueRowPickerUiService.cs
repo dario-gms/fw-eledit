@@ -1665,14 +1665,19 @@ namespace FWEledit
 
                 if (!result.Success)
                 {
-                    if (!string.IsNullOrWhiteSpace(result.Error) && showMessage != null)
+                    if (!string.IsNullOrWhiteSpace(result.Error) && modelPreviewService != null)
                     {
-                        showMessage(result.Error);
+                        IntPtr ownerHandle = owner != null && !owner.IsDisposed ? owner.Handle : IntPtr.Zero;
+                        modelPreviewService.ShowPreviewMessage(result.Error, false, ownerHandle);
                     }
                     return;
                 }
 
-                modelPreviewService.ShowPreviewWindow(result.MeshData);
+                if (!modelPreviewService.TryUpdateOpenPreviewWindow(result.MeshData))
+                {
+                    IntPtr ownerHandle = owner != null && !owner.IsDisposed ? owner.Handle : IntPtr.Zero;
+                    modelPreviewService.ShowPreviewWindow(result.MeshData, false, ownerHandle);
+                }
                 if (enableLivePreview)
                 {
                     liveModelPreviewEnabled = true;
@@ -1683,9 +1688,10 @@ namespace FWEledit
             }
             catch (Exception ex)
             {
-                if (showMessage != null)
+                if (modelPreviewService != null)
                 {
-                    showMessage("MODEL PREVIEW ERROR!\n" + ex.Message);
+                    IntPtr ownerHandle = owner != null && !owner.IsDisposed ? owner.Handle : IntPtr.Zero;
+                    modelPreviewService.ShowPreviewMessage("MODEL PREVIEW ERROR!\n" + ex.Message, false, ownerHandle);
                 }
             }
             finally

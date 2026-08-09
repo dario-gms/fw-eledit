@@ -91,7 +91,7 @@ namespace FWEledit
                 assembly,
                 label_Version,
                 navigationStateService,
-                "0.9.5.17");
+                "0.9.5.19");
 
             fwDarkMode = Properties.Settings.Default.UseDarkMode;
             cpb2.Value = 0;
@@ -280,6 +280,11 @@ namespace FWEledit
                 return;
             }
 
+            if (contextMenuStrip_items.Items.ContainsKey("exportItemToolStripMenuItem"))
+            {
+                contextMenuStrip_items.Items.RemoveByKey("exportItemToolStripMenuItem");
+            }
+
             if (!contextMenuStrip_items.Items.ContainsKey("searchElementToolStripMenuItem"))
             {
                 ToolStripMenuItem searchItem = new ToolStripMenuItem();
@@ -324,8 +329,8 @@ namespace FWEledit
                 exportPackageItem.Text = "Export Item Package...";
                 exportPackageItem.Click += click_exportItemPackage;
 
-                int insertIndex = contextMenuStrip_items.Items.ContainsKey("exportItemToolStripMenuItem")
-                    ? contextMenuStrip_items.Items.IndexOfKey("exportItemToolStripMenuItem") + 1
+                int insertIndex = contextMenuStrip_items.Items.ContainsKey("replaceItemToolStripMenuItem")
+                    ? contextMenuStrip_items.Items.IndexOfKey("replaceItemToolStripMenuItem")
                     : contextMenuStrip_items.Items.Count;
                 contextMenuStrip_items.Items.Insert(insertIndex, exportPackageItem);
             }

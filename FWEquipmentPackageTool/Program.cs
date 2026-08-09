@@ -100,9 +100,10 @@ namespace FWEquipmentPackageTool
             }
 
             Report("Collecting equipment assets", "Finding direct model, icon and file paths from this equipment item...", 0, 0, true);
-            Dictionary<string, ItemTransferAssetEntry> assetsByKey = CollectDirectAssets(manifest, assetManager);
-            ExpandEquipmentGfxDependencies(assetsByKey, assetManager);
+            Dictionary<string, List<string>> entriesByPackage = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+            Dictionary<string, ItemTransferAssetEntry> assetsByKey = CollectDirectAssets(manifest, assetManager, entriesByPackage);
             ExpandEquipmentModelCompanions(assetsByKey, assetManager);
+            ExpandEquipmentGfxDependencies(assetsByKey, assetManager);
             manifest.Assets = assetsByKey.Values.OrderBy(a => a.Package).ThenBy(a => a.RelativePath).ToList();
 
             string folder = Path.GetDirectoryName(request.OutputFile);
@@ -150,7 +151,10 @@ namespace FWEquipmentPackageTool
             return result;
         }
 
-        private static Dictionary<string, ItemTransferAssetEntry> CollectDirectAssets(ItemTransferPackageManifest manifest, AssetManager assetManager)
+        private static Dictionary<string, ItemTransferAssetEntry> CollectDirectAssets(
+            ItemTransferPackageManifest manifest,
+            AssetManager assetManager,
+            Dictionary<string, List<string>> entriesByPackage)
         {
             Dictionary<string, ItemTransferAssetEntry> assets = new Dictionary<string, ItemTransferAssetEntry>(StringComparer.OrdinalIgnoreCase);
             Dictionary<int, string> pathDataById = (manifest.PathDataEntries ?? new List<ItemTransferPathDataEntry>())
@@ -175,14 +179,34 @@ namespace FWEquipmentPackageTool
                         }
                         else
                         {
-                            AddAsset(assets, mapped);
+                            ItemTransferAssetEntry added;
+                            if (!ContainsAsset(assets, mapped)
+                                && !TryAddExistingAsset(assets, mapped, assetManager, out added))
+                            {
+                                string fallback;
+                                if (TryResolveFallbackAssetPath(mapped, assetManager, entriesByPackage, out fallback))
+                                {
+                                    RemapPathDataEntry(manifest, pathId, fallback);
+                                    TryAddExistingAsset(assets, fallback, assetManager, out added);
+                                }
+                                else
+                                {
+                                    AddAsset(assets, mapped);
+                                }
+                            }
                         }
                     }
                 }
 
                 if (LooksLikeAssetPath(value))
                 {
-                    AddAsset(assets, value);
+                    ItemTransferAssetEntry added;
+                    if (!ContainsAsset(assets, value)
+                        && !TryAddExistingAsset(assets, value, assetManager, out added))
+                    {
+                        string fallback;
+                        AddAsset(assets, TryResolveFallbackAssetPath(value, assetManager, entriesByPackage, out fallback) ? fallback : value);
+                    }
                 }
             }
 
@@ -283,12 +307,171 @@ namespace FWEquipmentPackageTool
         private static IEnumerable<string> CollectGfxReferenceCandidates(ItemTransferAssetEntry current, byte[] payload)
         {
             string text = DecodeGbkPayload(payload);
-            MatchCollection matches = Regex.Matches(text, @"[A-Za-z0-9_\-./\\\u0080-\uFFFF ]{1,220}\.(?:dds|tga|bmp|png|jpg|jpeg|gfx)", RegexOptions.IgnoreCase);
             HashSet<string> yielded = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            MatchCollection matches = Regex.Matches(
+                text,
+                @"[A-Za-z0-9_\-./\\\u0080-\uFFFF ]{1,220}\.(?:dds|tga|bmp|png|jpg|jpeg|ski|smd|ecm|gfx|att|sgc|bon|stck|sdr)",
+                RegexOptions.IgnoreCase);
             for (int i = 0; i < matches.Count; i++)
             {
-                string raw = NormalizePath(matches[i].Value.Trim().Trim('\0').TrimStart('.', '\\', '/'));
-                foreach (string candidate in ResolveReferenceCandidates(current.MappedPath, raw))
+                string raw = NormalizeExtractedPathCandidate(matches[i].Value.Trim().Trim('\0').TrimStart('.', '\\', '/'));
+                foreach (string candidate in ResolveGfxDependencyCandidates(current, raw))
+                {
+                    if (yielded.Add(candidate))
+                    {
+                        yield return candidate;
+                    }
+                }
+            }
+
+            string[] extensions = new string[] { ".ecm", ".smd", ".ski", ".gfx", ".att", ".sgc" };
+            for (int i = 0; i < extensions.Length; i++)
+            {
+                foreach (string raw in ExtractPathsByRawByteScan(payload, extensions[i]))
+                {
+                    foreach (string candidate in ResolveGfxDependencyCandidates(current, NormalizeExtractedPathCandidate(raw)))
+                    {
+                        if (yielded.Add(candidate))
+                        {
+                            yield return candidate;
+                        }
+                    }
+                }
+            }
+        }
+
+        private static IEnumerable<string> ExtractPathsByRawByteScan(byte[] bytes, string extension)
+        {
+            if (bytes == null || bytes.Length == 0 || string.IsNullOrWhiteSpace(extension))
+            {
+                yield break;
+            }
+
+            string marker = extension.ToLowerInvariant();
+            byte[] markerBytes = Encoding.ASCII.GetBytes(marker);
+            if (markerBytes.Length == 0)
+            {
+                yield break;
+            }
+
+            HashSet<string> yielded = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            for (int i = 0; i <= bytes.Length - markerBytes.Length; i++)
+            {
+                bool match = true;
+                for (int m = 0; m < markerBytes.Length; m++)
+                {
+                    byte lower = (byte)char.ToLowerInvariant((char)bytes[i + m]);
+                    if (lower != markerBytes[m])
+                    {
+                        match = false;
+                        break;
+                    }
+                }
+                if (!match)
+                {
+                    continue;
+                }
+
+                int start = i - 1;
+                while (start >= 0 && IsPathByte(bytes[start]))
+                {
+                    start--;
+                }
+                start++;
+
+                int end = i + markerBytes.Length;
+                while (end < bytes.Length && IsPathByte(bytes[end]))
+                {
+                    end++;
+                }
+
+                int len = end - start;
+                if (len <= 0 || len > 1024)
+                {
+                    continue;
+                }
+
+                string candidate;
+                try
+                {
+                    candidate = Encoding.GetEncoding("GBK").GetString(bytes, start, len).Trim('\0', ' ', '\t', '\r', '\n');
+                }
+                catch
+                {
+                    continue;
+                }
+
+                candidate = NormalizePath(candidate);
+                if (!string.IsNullOrWhiteSpace(candidate)
+                    && candidate.EndsWith(marker, StringComparison.OrdinalIgnoreCase)
+                    && yielded.Add(candidate))
+                {
+                    yield return candidate;
+                }
+            }
+        }
+
+        private static bool IsPathByte(byte b)
+        {
+            return b != 0 && b != 0xFF && b >= 0x20;
+        }
+
+        private static string NormalizeExtractedPathCandidate(string value)
+        {
+            string candidate = (value ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(candidate))
+            {
+                return string.Empty;
+            }
+
+            candidate = candidate.Trim('"', '\'').Trim();
+            char[] separators = new char[] { ':', '：', '=' };
+            int separatorIndex = -1;
+            for (int i = 0; i < separators.Length; i++)
+            {
+                int idx = candidate.IndexOf(separators[i]);
+                if (idx > 0 && (separatorIndex < 0 || idx < separatorIndex))
+                {
+                    separatorIndex = idx;
+                }
+            }
+
+            if (separatorIndex > 0 && separatorIndex < candidate.Length - 1)
+            {
+                string left = candidate.Substring(0, separatorIndex).Trim();
+                string right = candidate.Substring(separatorIndex + 1).Trim().Trim('"', '\'').Trim();
+                if (!string.IsNullOrWhiteSpace(right)
+                    && left.IndexOf('\\') < 0
+                    && left.IndexOf('/') < 0
+                    && left.IndexOf('.') < 0)
+                {
+                    candidate = right;
+                }
+            }
+
+            return NormalizePath(candidate);
+        }
+
+        private static IEnumerable<string> CollectModelReferenceCandidates(string currentMappedPath, byte[] payload)
+        {
+            string text = DecodeGbkPayload(payload);
+            HashSet<string> yielded = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (string rawFieldReference in CollectNamedPathReferenceCandidates(text))
+            {
+                foreach (string candidate in ResolveReferenceCandidates(currentMappedPath, rawFieldReference))
+                {
+                    if (yielded.Add(candidate))
+                    {
+                        yield return candidate;
+                    }
+                }
+            }
+
+            MatchCollection matches = Regex.Matches(text, @"[^\0\r\n\t""'<>|:*?]{1,220}\.(?:dds|tga|bmp|png|jpg|jpeg|ski|smd|ecm|gfx|att|sgc|bon|stck|sdr)", RegexOptions.IgnoreCase);
+            for (int i = 0; i < matches.Count; i++)
+            {
+                string raw = NormalizeExtractedPathCandidate(matches[i].Value.Trim().Trim('\0').TrimStart('.', '\\', '/'));
+                foreach (string candidate in ResolveReferenceCandidates(currentMappedPath, raw))
                 {
                     if (yielded.Add(candidate))
                     {
@@ -298,22 +481,95 @@ namespace FWEquipmentPackageTool
             }
         }
 
-        private static IEnumerable<string> CollectModelReferenceCandidates(string currentMappedPath, byte[] payload)
+        private static IEnumerable<string> CollectNamedPathReferenceCandidates(string text)
         {
-            string text = DecodeGbkPayload(payload);
-            MatchCollection matches = Regex.Matches(text, @"[^\0\r\n\t""'<>|:*?]{1,220}\.(?:dds|tga|bmp|png|jpg|jpeg|ski|smd|ecm|att|sgc|bon|stck|sdr)", RegexOptions.IgnoreCase);
-            HashSet<string> yielded = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            for (int i = 0; i < matches.Count; i++)
+            if (string.IsNullOrWhiteSpace(text))
             {
-                string raw = NormalizePath(matches[i].Value.Trim().Trim('\0').TrimStart('.', '\\', '/'));
-                foreach (string candidate in ResolveReferenceCandidates(currentMappedPath, raw))
+                yield break;
+            }
+
+            string[] directFields = new string[]
+            {
+                "SkinModelPath",
+                "ModelPath",
+                "ModelFile",
+                "FileModel",
+                "FilePath",
+                "EcmPath",
+                "SmdPath",
+                "SkiPath",
+                "FxFilePath",
+                "GfxPath",
+                "GfxFile",
+                "AttPath",
+                "AttFile",
+                "SgcPath",
+                "SgcFile",
+                "Path"
+            };
+
+            string[] lines = text.Split(new string[] { "\r\n", "\n", "\r" }, StringSplitOptions.RemoveEmptyEntries);
+            for (int lineIndex = 0; lineIndex < lines.Length; lineIndex++)
+            {
+                string line = (lines[lineIndex] ?? string.Empty).Trim();
+                if (string.IsNullOrWhiteSpace(line))
                 {
-                    if (yielded.Add(candidate))
+                    continue;
+                }
+
+                for (int fieldIndex = 0; fieldIndex < directFields.Length; fieldIndex++)
+                {
+                    string field = directFields[fieldIndex];
+                    if (!line.StartsWith(field, StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    int separator = line.IndexOf(':');
+                    if (separator < 0)
+                    {
+                        separator = line.IndexOf('=');
+                    }
+                    if (separator < 0 || separator >= line.Length - 1)
+                    {
+                        continue;
+                    }
+
+                    string candidate = NormalizeExtractedPathCandidate(line.Substring(separator + 1));
+                    if (!string.IsNullOrWhiteSpace(candidate) && AssetExtensionPattern.IsMatch(candidate))
                     {
                         yield return candidate;
                     }
                 }
             }
+        }
+
+        private static IEnumerable<string> ResolveGfxDependencyCandidates(ItemTransferAssetEntry current, string reference)
+        {
+            if (current == null)
+            {
+                yield break;
+            }
+
+            string package;
+            string relative;
+            if (TrySplitPackagePath(reference, out package, out relative))
+            {
+                yield return package + "\\" + relative;
+                yield break;
+            }
+
+            string currentPackage = current.Package ?? string.Empty;
+            string currentDirectory = Path.GetDirectoryName(current.RelativePath) ?? string.Empty;
+
+            yield return currentPackage + "\\" + reference;
+            if (!string.IsNullOrWhiteSpace(currentDirectory))
+            {
+                yield return currentPackage + "\\" + currentDirectory + "\\" + reference;
+            }
+
+            yield return currentPackage + "\\models\\" + reference;
+            yield return currentPackage + "\\textures\\" + reference;
         }
 
         private static bool TryAddExistingAsset(Dictionary<string, ItemTransferAssetEntry> assets, string mappedPath, AssetManager assetManager, out ItemTransferAssetEntry addedAsset)
@@ -344,6 +600,198 @@ namespace FWEquipmentPackageTool
             return true;
         }
 
+        private static bool ContainsAsset(Dictionary<string, ItemTransferAssetEntry> assets, string mappedPath)
+        {
+            string package;
+            string relative;
+            return TrySplitPackagePath(mappedPath, out package, out relative)
+                && assets.ContainsKey(package + "|" + relative);
+        }
+
+        private static bool TryResolveFallbackAssetPath(
+            string mappedPath,
+            AssetManager assetManager,
+            Dictionary<string, List<string>> entriesByPackage,
+            out string fallbackMappedPath)
+        {
+            fallbackMappedPath = string.Empty;
+
+            string package;
+            string relative;
+            if (!TrySplitPackagePath(mappedPath, out package, out relative))
+            {
+                return false;
+            }
+
+            string extension = Path.GetExtension(relative);
+            if (string.IsNullOrWhiteSpace(extension) || !IsModelLikeExtension(extension))
+            {
+                return false;
+            }
+
+            List<string> entries;
+            if (!entriesByPackage.TryGetValue(package, out entries))
+            {
+                if (!assetManager.TryEnumeratePckIndexEntries(package, out entries))
+                {
+                    entries = new List<string>();
+                }
+                entriesByPackage[package] = entries;
+            }
+
+            if (entries == null || entries.Count == 0)
+            {
+                return false;
+            }
+
+            string normalizedRelative = NormalizePath(relative);
+            string directory = NormalizePath(Path.GetDirectoryName(normalizedRelative) ?? string.Empty);
+            string fileName = Path.GetFileNameWithoutExtension(normalizedRelative) ?? string.Empty;
+            string looseFileName = NormalizeModelVariantName(fileName);
+
+            string best = string.Empty;
+            int bestScore = 0;
+            foreach (string entry in entries)
+            {
+                string normalizedEntry = NormalizePath(entry);
+                if (!string.Equals(Path.GetExtension(normalizedEntry), extension, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                string entryDirectory = NormalizePath(Path.GetDirectoryName(normalizedEntry) ?? string.Empty);
+                if (!string.Equals(entryDirectory, directory, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                string entryFileName = Path.GetFileNameWithoutExtension(normalizedEntry) ?? string.Empty;
+                int score = ScoreFallbackName(fileName, looseFileName, entryFileName);
+                if (score > bestScore)
+                {
+                    bestScore = score;
+                    best = normalizedEntry;
+                }
+            }
+
+            if (bestScore < 50 || string.IsNullOrWhiteSpace(best))
+            {
+                return false;
+            }
+
+            fallbackMappedPath = package + "\\" + best;
+            Report("Resolved missing model fallback", NormalizePath(mappedPath) + " -> " + fallbackMappedPath, 0, 0, true);
+            return true;
+        }
+
+        private static int ScoreFallbackName(string missingFileName, string normalizedMissingFileName, string candidateFileName)
+        {
+            if (string.IsNullOrWhiteSpace(missingFileName) || string.IsNullOrWhiteSpace(candidateFileName))
+            {
+                return 0;
+            }
+
+            string normalizedCandidate = NormalizeModelVariantName(candidateFileName);
+            int score = LongestCommonSubsequenceLength(missingFileName, candidateFileName);
+            if (string.Equals(normalizedMissingFileName, normalizedCandidate, StringComparison.OrdinalIgnoreCase))
+            {
+                score += 100;
+            }
+            if (StartsWithSameToken(missingFileName, candidateFileName))
+            {
+                score += 20;
+            }
+            if (EndsWithSameToken(missingFileName, candidateFileName))
+            {
+                score += 20;
+            }
+
+            return score;
+        }
+
+        private static string NormalizeModelVariantName(string value)
+        {
+            string normalized = (value ?? string.Empty).ToLowerInvariant();
+            normalized = normalized.Replace("female", string.Empty)
+                .Replace("male", string.Empty)
+                .Replace("女", string.Empty)
+                .Replace("男", string.Empty);
+            return normalized.Trim();
+        }
+
+        private static bool StartsWithSameToken(string left, string right)
+        {
+            string leftToken = FirstToken(left);
+            string rightToken = FirstToken(right);
+            return !string.IsNullOrWhiteSpace(leftToken)
+                && string.Equals(leftToken, rightToken, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool EndsWithSameToken(string left, string right)
+        {
+            string leftToken = LastToken(left);
+            string rightToken = LastToken(right);
+            return !string.IsNullOrWhiteSpace(leftToken)
+                && string.Equals(leftToken, rightToken, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string FirstToken(string value)
+        {
+            string[] parts = (value ?? string.Empty).Split(new char[] { '_', ' ', '-' }, StringSplitOptions.RemoveEmptyEntries);
+            return parts.Length > 0 ? parts[0] : string.Empty;
+        }
+
+        private static string LastToken(string value)
+        {
+            string[] parts = (value ?? string.Empty).Split(new char[] { '_', ' ', '-' }, StringSplitOptions.RemoveEmptyEntries);
+            return parts.Length > 0 ? parts[parts.Length - 1] : string.Empty;
+        }
+
+        private static int LongestCommonSubsequenceLength(string left, string right)
+        {
+            if (string.IsNullOrEmpty(left) || string.IsNullOrEmpty(right))
+            {
+                return 0;
+            }
+
+            int[] previous = new int[right.Length + 1];
+            int[] current = new int[right.Length + 1];
+            for (int i = 1; i <= left.Length; i++)
+            {
+                for (int j = 1; j <= right.Length; j++)
+                {
+                    current[j] = char.ToLowerInvariant(left[i - 1]) == char.ToLowerInvariant(right[j - 1])
+                        ? previous[j - 1] + 1
+                        : Math.Max(previous[j], current[j - 1]);
+                }
+
+                int[] swap = previous;
+                previous = current;
+                current = swap;
+                Array.Clear(current, 0, current.Length);
+            }
+
+            return previous[right.Length];
+        }
+
+        private static void RemapPathDataEntry(ItemTransferPackageManifest manifest, int pathId, string mappedPath)
+        {
+            if (manifest == null || manifest.PathDataEntries == null || pathId <= 0 || string.IsNullOrWhiteSpace(mappedPath))
+            {
+                return;
+            }
+
+            for (int i = 0; i < manifest.PathDataEntries.Count; i++)
+            {
+                ItemTransferPathDataEntry entry = manifest.PathDataEntries[i];
+                if (entry != null && entry.PathId == pathId)
+                {
+                    entry.MappedPath = NormalizePath(mappedPath);
+                    return;
+                }
+            }
+        }
+
         private static IEnumerable<string> ResolveReferenceCandidates(string currentMappedPath, string reference)
         {
             string currentPackage;
@@ -370,6 +818,12 @@ namespace FWEquipmentPackageTool
             string currentDirectory = Path.GetDirectoryName(currentRelative) ?? string.Empty;
             if (normalizedReference.Contains("\\"))
             {
+                string referenceExtension = Path.GetExtension(normalizedReference);
+                if (IsEffectDescriptorExtension(referenceExtension))
+                {
+                    yield return "gfx\\" + normalizedReference;
+                }
+
                 yield return currentPackage + "\\" + normalizedReference;
                 if (!string.IsNullOrWhiteSpace(currentDirectory))
                 {
@@ -461,6 +915,13 @@ namespace FWEquipmentPackageTool
                 || string.Equals(ext, ".ski", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(ext, ".bon", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(ext, ".stck", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(ext, ".att", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(ext, ".sgc", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsEffectDescriptorExtension(string ext)
+        {
+            return string.Equals(ext, ".gfx", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(ext, ".att", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(ext, ".sgc", StringComparison.OrdinalIgnoreCase);
         }

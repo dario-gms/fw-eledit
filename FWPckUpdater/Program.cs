@@ -131,81 +131,85 @@ namespace FWPckUpdater
                     return 14;
                 }
 
-                int startIndex = 0;
                 if (!File.Exists(targetPck))
                 {
-                    Console.WriteLine("Creating new package from " + Path.GetFileName(topLevelEntries[0]) + "...");
-                    int createResult = do_CreatePckFile(topLevelEntries[0], targetPck, 0, compressionLevel);
+                    Console.WriteLine("Creating new package from staging folder...");
+                    int createResult = do_CreatePckFile(stagingFolder, targetPck, 0, compressionLevel);
                     if (createResult != WinPckOk)
                     {
                         Console.Error.WriteLine("WinPCK create failed with code " + createResult.ToString() + ".");
                         return 10;
                     }
-
-                    startIndex = 1;
-                }
-
-                if (startIndex >= topLevelEntries.Length)
-                {
                     Console.WriteLine("Package update completed.");
                     return 0;
                 }
 
-                int openResult = pck_open(targetPck);
-                if (openResult != WinPckOk)
+                string[] files = Directory.GetFiles(stagingFolder, "*", SearchOption.AllDirectories)
+                    .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
+                if (files.Length == 0)
                 {
-                    Console.Error.WriteLine("WinPCK open failed with code " + openResult.ToString() + "." + BuildLastErrorSuffix());
-                    return 15;
+                    Console.Error.WriteLine("Staging folder has no files: " + stagingFolder);
+                    return 4;
                 }
 
-                try
+                HashSet<string> rootsAddedAsFolders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                for (int i = 0; i < topLevelEntries.Length; i++)
                 {
-                    pck_setCompressLevel(compressionLevel);
-
-                    int remainingCount = topLevelEntries.Length - startIndex;
-                    for (int i = startIndex; i < topLevelEntries.Length; i++)
+                    string entry = topLevelEntries[i];
+                    if (!Directory.Exists(entry))
                     {
-                        string entry = topLevelEntries[i];
-                        string topLevelName = Path.GetFileName(entry.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-                        IntPtr anchorEntry = string.IsNullOrWhiteSpace(topLevelName)
-                            ? IntPtr.Zero
-                            : pck_getFileEntryByPath(topLevelName);
+                        continue;
+                    }
 
-                        pck_StringArrayReset();
+                    string topLevelName = Path.GetFileName(entry.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+                    if (string.IsNullOrWhiteSpace(topLevelName) || PackageEntryExists(targetPck, topLevelName))
+                    {
+                        continue;
+                    }
 
-                        bool hasAnchor = anchorEntry != IntPtr.Zero;
-                        bool isDirectory = Directory.Exists(entry);
-                        if (hasAnchor && isDirectory)
+                    Console.WriteLine("Adding new root folder: " + topLevelName);
+                    int addRootResult = do_AddFileToPckFile(entry, targetPck, string.Empty, compressionLevel);
+                    if (addRootResult != WinPckOk)
+                    {
+                        Console.Error.WriteLine("WinPCK root add failed with code " + addRootResult.ToString() + " for folder " + topLevelName + "." + BuildLastErrorSuffix());
+                        return 15;
+                    }
+
+                    rootsAddedAsFolders.Add(topLevelName);
+                }
+
+                for (int i = 0; i < files.Length; i++)
+                {
+                    string file = files[i];
+                    string pathInPck = GetRelativePckPath(stagingFolder, file);
+                    string topLevelName = GetTopLevelName(pathInPck);
+                    if (!string.IsNullOrWhiteSpace(topLevelName) && rootsAddedAsFolders.Contains(topLevelName))
+                    {
+                        continue;
+                    }
+
+                    string directoryInPck = Path.GetDirectoryName(pathInPck);
+                    if (directoryInPck == null)
+                    {
+                        directoryInPck = string.Empty;
+                    }
+                    directoryInPck = directoryInPck.Replace(Path.DirectorySeparatorChar, '\\').Replace(Path.AltDirectorySeparatorChar, '\\');
+                    Console.WriteLine("Adding file " + (i + 1).ToString() + "/" + files.Length.ToString() + ": " + pathInPck);
+                    int addResult = do_AddFileToPckFile(file, targetPck, directoryInPck, compressionLevel);
+                    if (addResult != WinPckOk)
+                    {
+                        Console.WriteLine("Direct add failed with code " + addResult.ToString() + "; trying root submit update.");
+                        int rootUpdateResult = UpdatePackageFromRoots(topLevelEntries, targetPck, compressionLevel);
+                        if (rootUpdateResult != WinPckOk)
                         {
-                            string[] children = Directory.GetFileSystemEntries(entry, "*", SearchOption.TopDirectoryOnly);
-                            if (children.Length == 0)
-                            {
-                                Console.WriteLine("Skipping empty root: " + topLevelName);
-                                continue;
-                            }
-
-                            for (int childIndex = 0; childIndex < children.Length; childIndex++)
-                            {
-                                pck_StringArrayAppend(children[childIndex]);
-                            }
-                        }
-                        else
-                        {
-                            pck_StringArrayAppend(entry);
-                        }
-
-                        Console.WriteLine("Adding root " + ((i - startIndex) + 1).ToString() + "/" + remainingCount.ToString() + ": " + topLevelName);
-                        int submitResult = pck_UpdatePckFileSubmit(targetPck, anchorEntry);
-                        if (submitResult != WinPckOk)
-                        {
-                            Console.Error.WriteLine("WinPCK update failed with code " + submitResult.ToString() + " for root " + topLevelName + "." + BuildLastErrorSuffix());
+                            Console.Error.WriteLine("WinPCK update failed with code " + rootUpdateResult.ToString() + " after direct add failed for file " + pathInPck + "." + BuildLastErrorSuffix());
                             return 11;
                         }
+
+                        Console.WriteLine("Package update completed with root submit fallback.");
+                        return 0;
                     }
-                }
-                finally
-                {
-                    pck_close();
                 }
 
                 Console.WriteLine("Package update completed.");
@@ -246,6 +250,46 @@ namespace FWPckUpdater
             }
 
             return value + Path.DirectorySeparatorChar;
+        }
+
+        private static string GetRelativePckPath(string root, string file)
+        {
+            string fullRoot = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            string fullFile = Path.GetFullPath(file);
+            string relative = fullFile.StartsWith(fullRoot, StringComparison.OrdinalIgnoreCase)
+                ? fullFile.Substring(fullRoot.Length).TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                : Path.GetFileName(file);
+            return relative.Replace(Path.DirectorySeparatorChar, '\\').Replace(Path.AltDirectorySeparatorChar, '\\');
+        }
+
+        private static string GetTopLevelName(string pathInPck)
+        {
+            string normalized = (pathInPck ?? string.Empty).Replace(Path.DirectorySeparatorChar, '\\').Replace(Path.AltDirectorySeparatorChar, '\\').TrimStart('\\');
+            int slash = normalized.IndexOf('\\');
+            return slash > 0 ? normalized.Substring(0, slash) : normalized;
+        }
+
+        private static bool PackageEntryExists(string targetPck, string pathInPck)
+        {
+            if (string.IsNullOrWhiteSpace(targetPck) || string.IsNullOrWhiteSpace(pathInPck))
+            {
+                return false;
+            }
+
+            int openResult = pck_open(targetPck);
+            if (openResult != WinPckOk)
+            {
+                return false;
+            }
+
+            try
+            {
+                return pck_getFileEntryByPath(pathInPck) != IntPtr.Zero;
+            }
+            finally
+            {
+                pck_close();
+            }
         }
 
         private static int ParseCompressionLevel(string value)
@@ -296,6 +340,68 @@ namespace FWPckUpdater
                 pck_setCompressLevel(compressionLevel);
 
                 for (int i = 1; i < topLevelEntries.Length; i++)
+                {
+                    string entry = topLevelEntries[i];
+                    string topLevelName = Path.GetFileName(entry.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+                    IntPtr anchorEntry = string.IsNullOrWhiteSpace(topLevelName)
+                        ? IntPtr.Zero
+                        : pck_getFileEntryByPath(topLevelName);
+
+                    pck_StringArrayReset();
+
+                    bool hasAnchor = anchorEntry != IntPtr.Zero;
+                    bool isDirectory = Directory.Exists(entry);
+                    if (hasAnchor && isDirectory)
+                    {
+                        string[] children = Directory.GetFileSystemEntries(entry, "*", SearchOption.TopDirectoryOnly);
+                        if (children.Length == 0)
+                        {
+                            continue;
+                        }
+
+                        for (int childIndex = 0; childIndex < children.Length; childIndex++)
+                        {
+                            pck_StringArrayAppend(children[childIndex]);
+                        }
+                    }
+                    else
+                    {
+                        pck_StringArrayAppend(entry);
+                    }
+
+                    int submitResult = pck_UpdatePckFileSubmit(targetPck, anchorEntry);
+                    if (submitResult != WinPckOk)
+                    {
+                        return submitResult;
+                    }
+                }
+            }
+            finally
+            {
+                pck_close();
+            }
+
+            return WinPckOk;
+        }
+
+        private static int UpdatePackageFromRoots(string[] topLevelEntries, string targetPck, int compressionLevel)
+        {
+            if (topLevelEntries == null || topLevelEntries.Length == 0 || string.IsNullOrWhiteSpace(targetPck))
+            {
+                return 1;
+            }
+
+            int openResult = pck_open(targetPck);
+            if (openResult != WinPckOk)
+            {
+                return openResult;
+            }
+
+            try
+            {
+                pck_setCompressLevel(compressionLevel);
+
+                for (int i = 0; i < topLevelEntries.Length; i++)
                 {
                     string entry = topLevelEntries[i];
                     string topLevelName = Path.GetFileName(entry.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));

@@ -12,6 +12,20 @@ FWEledit is based on [sELedit++ by Wrechid](https://github.com/Wrechid/sELedit-)
 
 ---
 
+## What's New in v0.9.5.19
+
+- Added the first equipment package export/import workflow for `Equipment Essence`, focused on moving item model assets between Forsaken World clients with `.fweitem` packages.
+- Added a standalone equipment package tool and integrated it into the editor through context-menu export and Tools-based import, including full-structure import and models-only import modes.
+- Added import progress/result windows, copyable model PathID summaries, package dependency summaries, and safer ID generation that uses the next available item ID near the end of the target list.
+- Added FWPck-based package update support with backups, package-existence detection, fallback insertion into `models.pck`, and cache invalidation after package writes.
+- Improved package asset discovery for equipment models by following model dependencies such as `.ecm`, `.ski`, `.smd`, `.gfx`, textures, surfaces, normal maps, and shader-side references.
+- Improved model preview startup behavior with reusable warm caches, background cache preparation, fewer blocking popups, and better handling of preview errors inside the preview flow.
+- Refined model package behavior after testing cross-client imports, keeping imported model data faithful to the package instead of applying speculative Angelica 2 to Angelica 1 field remapping.
+- Cleaned generated Debug-folder test artifacts from the local build output.
+- Project/app version metadata updated to `v0.9.5.19`.
+
+---
+
 ## What's New in v0.9.5.18
 
 - Added the first integrated `gshop.data` editor, available from Tools and from `Goods in Game shop` references, with search, item icons, editable known fields, save support, and preservation of the unknown binary record data.

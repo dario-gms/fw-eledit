@@ -4,6 +4,7 @@ using System.Drawing;
 using System.Drawing.Imaging;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Reflection;
 using System.Text;
@@ -33,6 +34,8 @@ namespace FWEledit
         private static List<string> cachedResourcePackages = new List<string>();
         private static Dictionary<string, string> crossPackagePathCache = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         private static HashSet<string> crossPackageMissCache = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        [ThreadStatic]
+        private static HashSet<string> capturedDependencyPaths;
         private const int MaxGfxReferenceDepth = 6;
         private static readonly float[] IdentitySkinMatrix = new float[]
         {
@@ -632,6 +635,27 @@ namespace FWEledit
             return false;
         }
 
+        public bool TryCollectDependencyPaths(
+            AssetManager assetManager,
+            string mappedModelPath,
+            out List<string> mappedPaths,
+            out string error)
+        {
+            mappedPaths = new List<string>();
+            HashSet<string> previousCapture = capturedDependencyPaths;
+            capturedDependencyPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                bool ok = TryLoadPreviewMesh(assetManager, mappedModelPath, out ModelPreviewMeshData _, out error);
+                mappedPaths = capturedDependencyPaths.OrderBy(p => p, StringComparer.OrdinalIgnoreCase).ToList();
+                return ok || mappedPaths.Count > 0;
+            }
+            finally
+            {
+                capturedDependencyPaths = previousCapture;
+            }
+        }
+
         private static void SplitPackagePath(string mappedPath, out string package, out string relative)
         {
             package = "models";
@@ -851,6 +875,7 @@ namespace FWEledit
                 {
                     resolvedPackage = probePackage;
                     resolvedRelativePath = NormalizeRelativeForPackage(probePackage, probeRelative);
+                    CaptureDependencyPath(resolvedPackage, resolvedRelativePath);
                     return true;
                 }
 
@@ -927,6 +952,7 @@ namespace FWEledit
                     {
                         resolvedPackage = cachedPackage;
                         resolvedRelativePath = NormalizeRelativeForPackage(cachedPackage, cachedRelative);
+                        CaptureDependencyPath(resolvedPackage, resolvedRelativePath);
                         return true;
                     }
 
@@ -955,6 +981,7 @@ namespace FWEledit
                         RememberCrossPackagePath(cachedKey, package, relative);
                         resolvedPackage = package;
                         resolvedRelativePath = NormalizeRelativeForPackage(package, relative);
+                        CaptureDependencyPath(resolvedPackage, resolvedRelativePath);
                         return true;
                     }
 
@@ -968,6 +995,23 @@ namespace FWEledit
             }
 
             return false;
+        }
+
+        private static void CaptureDependencyPath(string package, string relativePath)
+        {
+            if (capturedDependencyPaths == null)
+            {
+                return;
+            }
+
+            string normalizedPackage = (package ?? string.Empty).Trim();
+            string normalizedRelative = NormalizeRelativePath(relativePath);
+            if (string.IsNullOrWhiteSpace(normalizedPackage) || string.IsNullOrWhiteSpace(normalizedRelative))
+            {
+                return;
+            }
+
+            capturedDependencyPaths.Add(normalizedPackage + "\\" + normalizedRelative);
         }
 
         private static List<string> GetAvailableResourcePackages()

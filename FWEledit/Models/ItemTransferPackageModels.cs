@@ -62,11 +62,39 @@ namespace FWEledit
     {
         public bool Success { get; set; }
         public string ErrorMessage { get; set; }
+        public ItemTransferImportMode Mode { get; set; }
         public int TargetListIndex { get; set; }
         public int NewItemIndex { get; set; }
         public int NewId { get; set; }
         public int ImportedAssetCount { get; set; }
+        public int ExistingAssetCount { get; set; }
+        public int UpdatedPackageCount { get; set; }
+        public int FallbackPackageCount { get; set; }
         public int RemappedPathIdCount { get; set; }
         public int MissingAssetCount { get; set; }
+        public List<ItemTransferImportedPath> ImportedModelPaths { get; set; }
+        public List<ItemTransferPackageAssetSummary> AssetSummaries { get; set; }
+        public List<string> DependencyAssetPaths { get; set; }
+    }
+
+    public enum ItemTransferImportMode
+    {
+        FullStructure = 0,
+        ModelsOnly = 1
+    }
+
+    public sealed class ItemTransferImportedPath
+    {
+        public string FieldName { get; set; }
+        public int OriginalPathId { get; set; }
+        public int TargetPathId { get; set; }
+        public string MappedPath { get; set; }
+    }
+
+    public sealed class ItemTransferPackageAssetSummary
+    {
+        public string Package { get; set; }
+        public int ImportedCount { get; set; }
+        public int ExistingCount { get; set; }
     }
 }
