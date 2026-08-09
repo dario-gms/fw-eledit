@@ -91,7 +91,7 @@ namespace FWEledit
                 assembly,
                 label_Version,
                 navigationStateService,
-                "0.9.5.17");
+                "0.9.5.19");
 
             fwDarkMode = Properties.Settings.Default.UseDarkMode;
             cpb2.Value = 0;
@@ -145,6 +145,9 @@ namespace FWEledit
             fwEquipmentTabRefine = layout.EquipmentTabRefine;
             fwEquipmentTabDecompose = layout.EquipmentTabDecompose;
             fwEquipmentTabOther = layout.EquipmentTabOther;
+            fwMonsterMasteryTab = layout.MonsterMasteryTab;
+            fwMonsterLevelUpTab = layout.MonsterLevelUpTab;
+            fwMonsterOtherTab = layout.MonsterOtherTab;
             fwReferencesTab = layout.ReferencesTab;
             fwReferencesTabs = layout.ReferencesTabs;
             fwReferencesGrid = layout.ReferencesGrid;
@@ -226,6 +229,7 @@ namespace FWEledit
             }
             InitializeEmbeddedReferencesTab();
             InitializeElementContextActions();
+            InitializeToolMenuActions();
             InitializeDescriptionFormattingActions();
             InitializeAddonPackageDescEditor();
             InitializeRawValueEditor();
@@ -276,6 +280,11 @@ namespace FWEledit
                 return;
             }
 
+            if (contextMenuStrip_items.Items.ContainsKey("exportItemToolStripMenuItem"))
+            {
+                contextMenuStrip_items.Items.RemoveByKey("exportItemToolStripMenuItem");
+            }
+
             if (!contextMenuStrip_items.Items.ContainsKey("searchElementToolStripMenuItem"))
             {
                 ToolStripMenuItem searchItem = new ToolStripMenuItem();
@@ -312,6 +321,53 @@ namespace FWEledit
                 int insertIndex = contextMenuStrip_items.Items.ContainsKey("showReferencesToolStripMenuItem") ? 3 : 0;
                 contextMenuStrip_items.Items.Insert(insertIndex, separator);
             }
+
+            if (!contextMenuStrip_items.Items.ContainsKey("exportItemPackageToolStripMenuItem"))
+            {
+                ToolStripMenuItem exportPackageItem = new ToolStripMenuItem();
+                exportPackageItem.Name = "exportItemPackageToolStripMenuItem";
+                exportPackageItem.Text = "Export Item Package...";
+                exportPackageItem.Click += click_exportItemPackage;
+
+                int insertIndex = contextMenuStrip_items.Items.ContainsKey("replaceItemToolStripMenuItem")
+                    ? contextMenuStrip_items.Items.IndexOfKey("replaceItemToolStripMenuItem")
+                    : contextMenuStrip_items.Items.Count;
+                contextMenuStrip_items.Items.Insert(insertIndex, exportPackageItem);
+            }
+        }
+
+        private void InitializeToolMenuActions()
+        {
+            if (toolStripMenuItem3 == null)
+            {
+                return;
+            }
+
+            if (!toolStripMenuItem3.DropDownItems.ContainsKey("gShopEditorToolStripMenuItem"))
+            {
+                ToolStripMenuItem gShopItem = new ToolStripMenuItem();
+                gShopItem.Name = "gShopEditorToolStripMenuItem";
+                gShopItem.Text = "GShop Editor...";
+                gShopItem.Click += click_gShopEditor;
+
+                int insertIndex = toolStripMenuItem3.DropDownItems.ContainsKey("fieldCompareToolStripMenuItem")
+                    ? toolStripMenuItem3.DropDownItems.IndexOfKey("fieldCompareToolStripMenuItem") + 1
+                    : Math.Min(4, toolStripMenuItem3.DropDownItems.Count);
+                toolStripMenuItem3.DropDownItems.Insert(insertIndex, gShopItem);
+            }
+
+            if (!toolStripMenuItem3.DropDownItems.ContainsKey("importItemPackageToolStripMenuItem"))
+            {
+                ToolStripMenuItem importPackageItem = new ToolStripMenuItem();
+                importPackageItem.Name = "importItemPackageToolStripMenuItem";
+                importPackageItem.Text = "Import Item Package...";
+                importPackageItem.Click += click_importItemPackage;
+
+                int insertIndex = toolStripMenuItem3.DropDownItems.ContainsKey("gShopEditorToolStripMenuItem")
+                    ? toolStripMenuItem3.DropDownItems.IndexOfKey("gShopEditorToolStripMenuItem") + 1
+                    : Math.Min(5, toolStripMenuItem3.DropDownItems.Count);
+                toolStripMenuItem3.DropDownItems.Insert(insertIndex, importPackageItem);
+            }
         }
 
         private void RemoveReferencesTabFromMainView()
@@ -337,6 +393,19 @@ namespace FWEledit
                     ? toolStripMenuItem3.DropDownItems.IndexOfKey("fieldCompareToolStripMenuItem") + 1
                     : Math.Min(4, toolStripMenuItem3.DropDownItems.Count);
                 toolStripMenuItem3.DropDownItems.Insert(insertIndex, gShopItem);
+            }
+
+            if (toolStripMenuItem3 != null && !toolStripMenuItem3.DropDownItems.ContainsKey("importItemPackageToolStripMenuItem"))
+            {
+                ToolStripMenuItem importPackageItem = new ToolStripMenuItem();
+                importPackageItem.Name = "importItemPackageToolStripMenuItem";
+                importPackageItem.Text = "Import Item Package...";
+                importPackageItem.Click += click_importItemPackage;
+
+                int insertIndex = toolStripMenuItem3.DropDownItems.ContainsKey("gShopEditorToolStripMenuItem")
+                    ? toolStripMenuItem3.DropDownItems.IndexOfKey("gShopEditorToolStripMenuItem") + 1
+                    : Math.Min(5, toolStripMenuItem3.DropDownItems.Count);
+                toolStripMenuItem3.DropDownItems.Insert(insertIndex, importPackageItem);
             }
         }
 
@@ -760,6 +829,7 @@ namespace FWEledit
                 },
                 listDisplayService,
                 listComboPopulationService,
+                listRowBuilderService,
                 exportRulesMenuService,
                 xrefMenuService,
                 navigationSelectionService,

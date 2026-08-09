@@ -29,10 +29,21 @@ namespace FWEledit
                 }
                 using (SolidBrush textBrush = new SolidBrush(foreColor))
                 {
-                    Rectangle textBounds = new Rectangle(e.Bounds.X + 4, e.Bounds.Y, e.Bounds.Width - 8, e.Bounds.Height);
+                    object item = combo.Items[e.Index];
+                    ListComboPopulationService.ListComboItem listItem = item as ListComboPopulationService.ListComboItem;
+                    int textLeft = e.Bounds.X + 4;
+                    if (listItem != null && listItem.Icon != null)
+                    {
+                        int iconSize = System.Math.Min(18, System.Math.Max(12, e.Bounds.Height - 4));
+                        Rectangle iconBounds = new Rectangle(e.Bounds.X + 4, e.Bounds.Y + ((e.Bounds.Height - iconSize) / 2), iconSize, iconSize);
+                        e.Graphics.DrawImage(listItem.Icon, iconBounds);
+                        textLeft = iconBounds.Right + 6;
+                    }
+
+                    Rectangle textBounds = new Rectangle(textLeft, e.Bounds.Y, e.Bounds.Right - textLeft - 4, e.Bounds.Height);
                     TextRenderer.DrawText(
                         e.Graphics,
-                        combo.Items[e.Index].ToString(),
+                        item != null ? item.ToString() : string.Empty,
                         e.Font,
                         textBounds,
                         foreColor,

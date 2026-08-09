@@ -21,6 +21,7 @@ namespace FWEledit
             Action<ElementsLoadResult> applyResult,
             ListDisplayService listDisplayService,
             ListComboPopulationService listComboPopulationService,
+            ListRowBuilderService listRowBuilderService,
             ExportRulesMenuService exportRulesMenuService,
             XrefMenuService xrefMenuService,
             NavigationSelectionService navigationSelectionService,
@@ -156,7 +157,10 @@ namespace FWEledit
 
                 if (listComboPopulationService != null)
                 {
-                    listComboPopulationService.PopulateLists(listComboBox, result.ListCollection, listDisplayService);
+                    CacheSave database = viewModel != null && viewModel.Session != null
+                        ? viewModel.Session.Database
+                        : null;
+                    listComboPopulationService.PopulateLists(listComboBox, result.ListCollection, database, listDisplayService, listRowBuilderService);
                 }
 
                 SetProgress(progressBar, 97);

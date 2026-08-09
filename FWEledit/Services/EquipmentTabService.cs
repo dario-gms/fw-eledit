@@ -4,6 +4,8 @@ namespace FWEledit
 {
     public sealed class EquipmentTabService
     {
+        private readonly MonsterFieldService monsterFieldService = new MonsterFieldService();
+
         public EquipmentValuesTab GetSelectedTab(TabControl tabs)
         {
             if (tabs == null || !tabs.Visible)
@@ -24,6 +26,10 @@ namespace FWEledit
             if (equipmentFieldService == null || listCollection == null)
             {
                 return true;
+            }
+            if (monsterFieldService.IsMonsterEssenceList(listCollection, listIndex))
+            {
+                return monsterFieldService.ShouldIncludeField(listCollection, listIndex, fieldName, tab);
             }
             if (!equipmentFieldService.IsEquipmentEssenceList(listCollection, listIndex))
             {
@@ -65,6 +71,7 @@ namespace FWEledit
             }
             if (!equipmentFieldService.IsEquipmentEssenceList(listCollection, listIndex))
             {
+                monsterFieldService.EnsureTabForField(tabs, listCollection, listIndex, fieldName);
                 return;
             }
 
@@ -88,7 +95,18 @@ namespace FWEledit
             SelectTaggedTab(tabs, EquipmentValuesTab.Main);
         }
 
-        public void UpdateVisibility(TabControl tabs, bool show, TabPage modelsTab, TabPage refineTab, TabPage decomposeTab, TabPage otherTab, TabPage descriptionTab)
+        public void UpdateVisibility(
+            TabControl tabs,
+            bool show,
+            TabPage modelsTab,
+            TabPage refineTab,
+            TabPage decomposeTab,
+            TabPage otherTab,
+            TabPage descriptionTab,
+            bool showMonster,
+            TabPage monsterMasteryTab,
+            TabPage monsterLevelUpTab,
+            TabPage monsterOtherTab)
         {
             if (tabs == null)
             {
@@ -99,8 +117,11 @@ namespace FWEledit
             SetEquipmentPageVisible(tabs, modelsTab, show, descriptionTab);
             SetEquipmentPageVisible(tabs, otherTab, show, descriptionTab);
             SetEquipmentPageVisible(tabs, decomposeTab, false, descriptionTab);
+            SetEquipmentPageVisible(tabs, monsterMasteryTab, showMonster, descriptionTab);
+            SetEquipmentPageVisible(tabs, monsterLevelUpTab, showMonster, descriptionTab);
+            SetEquipmentPageVisible(tabs, monsterOtherTab, showMonster, descriptionTab);
 
-            if (!show && tabs.SelectedTab != null && tabs.SelectedTab.Tag is EquipmentValuesTab)
+            if (!show && !showMonster && tabs.SelectedTab != null && tabs.SelectedTab.Tag is EquipmentValuesTab)
             {
                 EquipmentValuesTab selected = (EquipmentValuesTab)tabs.SelectedTab.Tag;
                 if (selected != EquipmentValuesTab.Main)
@@ -154,15 +175,31 @@ namespace FWEledit
             bool isVisible = tabs.TabPages.Contains(page);
             if (show && !isVisible)
             {
-                int insertIndex = descriptionTab != null && tabs.TabPages.Contains(descriptionTab)
-                    ? tabs.TabPages.IndexOf(descriptionTab)
-                    : tabs.TabPages.Count;
+                int insertIndex = GetInsertIndexBeforeTrailingTabs(tabs, descriptionTab);
                 tabs.TabPages.Insert(insertIndex, page);
             }
             else if (!show && isVisible)
             {
                 tabs.TabPages.Remove(page);
             }
+        }
+
+        private static int GetInsertIndexBeforeTrailingTabs(TabControl tabs, TabPage descriptionTab)
+        {
+            if (descriptionTab != null && tabs.TabPages.Contains(descriptionTab))
+            {
+                return tabs.TabPages.IndexOf(descriptionTab);
+            }
+
+            for (int i = 0; i < tabs.TabPages.Count; i++)
+            {
+                if (string.Equals(tabs.TabPages[i].Text, "References", System.StringComparison.OrdinalIgnoreCase))
+                {
+                    return i;
+                }
+            }
+
+            return tabs.TabPages.Count;
         }
     }
 }

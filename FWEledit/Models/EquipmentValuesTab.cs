@@ -6,6 +6,9 @@ namespace FWEledit
         Models,
         Refine,
         Decompose,
+        MonsterMastery,
+        MonsterLevelUp,
+        MonsterOther,
         Other,
         All
     }

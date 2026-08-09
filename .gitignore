@@ -25,6 +25,7 @@ _dist/
 .dotnet/
 _tmp_*
 list0_fw_dump_*.csv
+tools/equipment-package/
 
 # Exceptions - keep these compiled dependencies
 !FWEledit/lib/Ionic.Zlib.dll

@@ -31,14 +31,19 @@ namespace FWEledit
 
         private void UpdateEquipmentTabsVisibility(int listIndex)
         {
+            eListCollection lists = sessionService != null ? sessionService.ListCollection : null;
             equipmentTabService.UpdateVisibility(
                 fwEquipmentTabs,
-                equipmentFieldService.IsEquipmentEssenceList(sessionService.ListCollection, listIndex),
+                equipmentFieldService.IsEquipmentEssenceList(lists, listIndex),
                 fwEquipmentTabModels,
                 fwEquipmentTabRefine,
                 fwEquipmentTabDecompose,
                 fwEquipmentTabOther,
-                fwDescriptionTab);
+                fwDescriptionTab,
+                MonsterFieldCatalog.IsMonsterEssenceList(lists, listIndex),
+                fwMonsterMasteryTab,
+                fwMonsterLevelUpTab,
+                fwMonsterOtherTab);
         }
 
         private void OpenModelPickerForValueRow(int rowIndex)
@@ -284,6 +289,22 @@ namespace FWEledit
                 this);
         }
 
+        private void OpenMonsterOptionPickerForValueRow(int rowIndex)
+        {
+            if (valueRowPickerUiService == null || sessionService == null || comboBox_lists == null)
+            {
+                return;
+            }
+
+            valueRowPickerUiService.OpenMonsterOptionPickerForValueRow(
+                sessionService.ListCollection,
+                comboBox_lists.SelectedIndex,
+                dataGridView_item,
+                rowIndex,
+                itemFieldClassifierService,
+                this);
+        }
+
         private void OpenSkillPickerForValueRow(int rowIndex)
         {
             mainWindowValuePickerCoordinatorService.OpenSkillPickerForValueRow(
@@ -332,6 +353,12 @@ namespace FWEledit
         }
         private void OpenModelPreviewForValueRow(int rowIndex)
         {
+            if (ShouldRedirectEquipmentModelPreviewRowToCurrentItem(rowIndex))
+            {
+                OpenModelPreviewForCurrentItem();
+                return;
+            }
+
             mainWindowValuePickerCoordinatorService.OpenModelPreviewForValueRow(
                 mainWindowValueRowPickerUiService,
                 valueRowPickerUiService,
@@ -390,10 +417,24 @@ namespace FWEledit
             }
 
             string listName = sessionService.ListCollection.Lists[listIndex].listName ?? string.Empty;
+            int requestId = System.Threading.Interlocked.Increment(ref currentItemModelPreviewRequestId);
             bool restoreWaitCursor = UseWaitCursor;
             try
             {
-                UseWaitCursor = true;
+                if (!showMessages)
+                {
+                    await Task.Delay(80);
+                    if (requestId != currentItemModelPreviewRequestId)
+                    {
+                        return;
+                    }
+                }
+
+                if (showMessages)
+                {
+                    UseWaitCursor = true;
+                }
+
                 CurrentItemModelPreviewResult result = await Task.Run(delegate
                 {
                     CurrentItemModelPreviewResult buildResult = new CurrentItemModelPreviewResult();
@@ -415,16 +456,24 @@ namespace FWEledit
                     return buildResult;
                 });
 
+                if (requestId != currentItemModelPreviewRequestId)
+                {
+                    return;
+                }
+
                 if (!result.Success)
                 {
-                    if (showMessages && !string.IsNullOrWhiteSpace(result.Error))
+                    if (!string.IsNullOrWhiteSpace(result.Error))
                     {
-                        MessageBox.Show(result.Error);
+                        modelPreviewService.ShowPreviewMessage(result.Error, false, Handle);
                     }
                     return;
                 }
 
-                modelPreviewService.ShowPreviewWindow(result.MeshData);
+                if (!modelPreviewService.TryUpdateOpenPreviewWindow(result.MeshData))
+                {
+                    modelPreviewService.ShowPreviewWindow(result.MeshData, false, Handle);
+                }
                 if (enableLivePreview && valueRowPickerUiService != null)
                 {
                     valueRowPickerUiService.EnableLiveModelPreview(pathId, listIndex, fieldIndex);
@@ -432,10 +481,7 @@ namespace FWEledit
             }
             catch (Exception ex)
             {
-                if (showMessages)
-                {
-                    MessageBox.Show("MODEL PREVIEW ERROR!\n" + ex.Message);
-                }
+                modelPreviewService.ShowPreviewMessage("MODEL PREVIEW ERROR!\n" + ex.Message, false, Handle);
             }
             finally
             {
@@ -443,6 +489,23 @@ namespace FWEledit
                 Cursor = Cursors.Default;
                 Cursor.Current = Cursors.Default;
             }
+        }
+
+        private bool ShouldRedirectEquipmentModelPreviewRowToCurrentItem(int rowIndex)
+        {
+            if (rowIndex < 0
+                || dataGridView_item == null
+                || rowIndex >= dataGridView_item.Rows.Count
+                || equipmentFieldService == null
+                || sessionService == null
+                || comboBox_lists == null
+                || !equipmentFieldService.IsEquipmentEssenceList(sessionService.ListCollection, comboBox_lists.SelectedIndex))
+            {
+                return false;
+            }
+
+            string fieldName = ValueGridFieldNameService.GetFieldName(dataGridView_item, rowIndex);
+            return !IsEquipmentWearableModelFieldName(fieldName, true);
         }
 
         private bool TryResolveFirstModelPreviewFieldForCurrentItem(
@@ -472,6 +535,15 @@ namespace FWEledit
                 return false;
             }
 
+            if (equipmentFieldService != null && equipmentFieldService.IsEquipmentEssenceList(sessionService.ListCollection, listIndex))
+            {
+                if (TryResolveFirstEquipmentWearableModelPreviewField(listIndex, elementIndex, fields, false, out fieldIndex, out fieldName, out pathId)
+                    || TryResolveFirstEquipmentWearableModelPreviewField(listIndex, elementIndex, fields, true, out fieldIndex, out fieldName, out pathId))
+                {
+                    return true;
+                }
+            }
+
             for (int i = 0; i < fields.Length; i++)
             {
                 string candidateFieldName = fields[i] ?? string.Empty;
@@ -485,6 +557,20 @@ namespace FWEledit
                 if ((modelPickerService.TryExtractPathId(rawValue, out candidatePathId) || int.TryParse(rawValue, out candidatePathId))
                     && candidatePathId > 0)
                 {
+                    int resolvedPathId;
+                    string mappedPath;
+                    if (!modelPickerService.TryResolveModelPathById(
+                        sessionService.Database,
+                        candidatePathId,
+                        candidateFieldName,
+                        sessionService.ListCollection.Lists[listIndex].listName ?? string.Empty,
+                        out resolvedPathId,
+                        out mappedPath,
+                        true))
+                    {
+                        continue;
+                    }
+
                     fieldIndex = i;
                     fieldName = candidateFieldName;
                     pathId = candidatePathId;
@@ -493,6 +579,79 @@ namespace FWEledit
             }
 
             return false;
+        }
+
+        private bool TryResolveFirstEquipmentWearableModelPreviewField(
+            int listIndex,
+            int elementIndex,
+            string[] fields,
+            bool includeLowDetailFields,
+            out int fieldIndex,
+            out string fieldName,
+            out int pathId)
+        {
+            fieldIndex = -1;
+            fieldName = string.Empty;
+            pathId = 0;
+
+            if (fields == null)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < fields.Length; i++)
+            {
+                string candidateFieldName = fields[i] ?? string.Empty;
+                if (!IsEquipmentWearableModelFieldName(candidateFieldName, includeLowDetailFields))
+                {
+                    continue;
+                }
+
+                string rawValue = sessionService.ListCollection.GetValue(listIndex, elementIndex, i);
+                int candidatePathId;
+                if ((modelPickerService.TryExtractPathId(rawValue, out candidatePathId) || int.TryParse(rawValue, out candidatePathId))
+                    && candidatePathId > 0)
+                {
+                    int resolvedPathId;
+                    string mappedPath;
+                    if (!modelPickerService.TryResolveModelPathById(
+                        sessionService.Database,
+                        candidatePathId,
+                        candidateFieldName,
+                        sessionService.ListCollection.Lists[listIndex].listName ?? string.Empty,
+                        out resolvedPathId,
+                        out mappedPath,
+                        true))
+                    {
+                        continue;
+                    }
+
+                    fieldIndex = i;
+                    fieldName = candidateFieldName;
+                    pathId = candidatePathId;
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool IsEquipmentWearableModelFieldName(string fieldName, bool includeLowDetailFields)
+        {
+            if (string.IsNullOrWhiteSpace(fieldName))
+            {
+                return false;
+            }
+
+            string normalized = fieldName.Trim();
+            if (!normalized.StartsWith("models_", StringComparison.OrdinalIgnoreCase)
+                || normalized.IndexOf("_file_model_", StringComparison.OrdinalIgnoreCase) < 0)
+            {
+                return false;
+            }
+
+            bool lowDetailField = normalized.EndsWith("_l", StringComparison.OrdinalIgnoreCase);
+            return includeLowDetailFields || !lowDetailField;
         }
 
         private void dataGridView_item_CurrentCellChanged(object sender, EventArgs e)
@@ -1408,12 +1567,12 @@ namespace FWEledit
 
             if (!preferFirstModelField)
             {
-                if (!IsModelFieldRow(rowIndex))
+                if (!IsLivePreviewModelFieldRow(rowIndex))
                 {
                     return;
                 }
             }
-            else if (!IsModelFieldRow(rowIndex))
+            else if (!IsLivePreviewModelFieldRow(rowIndex))
             {
                 rowIndex = FindFirstModelFieldRow();
             }
@@ -1471,10 +1630,56 @@ namespace FWEledit
             return itemFieldClassifierService.IsModelUsageFieldName(fieldName);
         }
 
+        private bool IsLivePreviewModelFieldRow(int rowIndex)
+        {
+            if (!IsModelFieldRow(rowIndex))
+            {
+                return false;
+            }
+
+            int listIndex = comboBox_lists != null ? comboBox_lists.SelectedIndex : -1;
+            if (equipmentFieldService == null
+                || sessionService == null
+                || !equipmentFieldService.IsEquipmentEssenceList(sessionService.ListCollection, listIndex))
+            {
+                return true;
+            }
+
+            string fieldName = ValueGridFieldNameService.GetFieldName(dataGridView_item, rowIndex);
+            return IsEquipmentWearableModelFieldName(fieldName, true);
+        }
+
         private int FindFirstModelFieldRow()
         {
             if (dataGridView_item == null || itemFieldClassifierService == null)
             {
+                return -1;
+            }
+
+            int listIndex = comboBox_lists != null ? comboBox_lists.SelectedIndex : -1;
+            bool isEquipment = equipmentFieldService != null
+                && sessionService != null
+                && equipmentFieldService.IsEquipmentEssenceList(sessionService.ListCollection, listIndex);
+            if (isEquipment)
+            {
+                for (int i = 0; i < dataGridView_item.Rows.Count; i++)
+                {
+                    string fieldName = ValueGridFieldNameService.GetFieldName(dataGridView_item, i);
+                    if (IsEquipmentWearableModelFieldName(fieldName, false))
+                    {
+                        return i;
+                    }
+                }
+
+                for (int i = 0; i < dataGridView_item.Rows.Count; i++)
+                {
+                    string fieldName = ValueGridFieldNameService.GetFieldName(dataGridView_item, i);
+                    if (IsEquipmentWearableModelFieldName(fieldName, true))
+                    {
+                        return i;
+                    }
+                }
+
                 return -1;
             }
 
@@ -1609,6 +1814,13 @@ namespace FWEledit
             else if (itemFieldClassifierService.IsCombinedServicesFieldName(fieldName))
             {
                 OpenCombinedServicesPickerForValueRow(targetRow);
+            }
+            else if (itemFieldClassifierService.IsMonsterOptionFieldName(
+                sessionService != null ? sessionService.ListCollection : null,
+                listIndex,
+                fieldName))
+            {
+                OpenMonsterOptionPickerForValueRow(targetRow);
             }
             else if (itemFieldClassifierService.IsSkillFieldName(fieldName))
             {
@@ -1790,6 +2002,11 @@ namespace FWEledit
             bool isModelProfessionField = itemFieldClassifierService != null && itemFieldClassifierService.IsModelProfessionFieldName(fieldName);
             bool isModelRaceField = itemFieldClassifierService != null && itemFieldClassifierService.IsModelRaceFieldName(fieldName);
             bool isCombinedServicesField = itemFieldClassifierService != null && itemFieldClassifierService.IsCombinedServicesFieldName(fieldName);
+            bool isMonsterOptionField = itemFieldClassifierService != null
+                && itemFieldClassifierService.IsMonsterOptionFieldName(
+                    sessionService != null ? sessionService.ListCollection : null,
+                    comboBox_lists.SelectedIndex,
+                    fieldName);
             bool isSkillField = itemFieldClassifierService != null && itemFieldClassifierService.IsSkillFieldName(fieldName);
             bool isReferenceField = itemReferenceService != null
                 && sessionService != null
@@ -2015,6 +2232,18 @@ namespace FWEledit
                     menu.Items.Add(new ToolStripSeparator());
                 }
                 menu.Items.Add("Choose Portable Services...", null, (menuSender, args) => OpenCombinedServicesPickerForValueRow(rowIndex));
+            }
+
+            if (isMonsterOptionField)
+            {
+                if (menu.Items.Count > 0)
+                {
+                    menu.Items.Add(new ToolStripSeparator());
+                }
+                string optionLabel = MonsterFieldCatalog.IsNameColorFieldName(fieldName)
+                    ? "Choose Name Color..."
+                    : "Choose Monster Option...";
+                menu.Items.Add(optionLabel, null, (menuSender, args) => OpenMonsterOptionPickerForValueRow(rowIndex));
             }
 
             if (isSkillField)

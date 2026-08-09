@@ -256,10 +256,32 @@ namespace FWEledit
             for (int i = 0; i < listCollection.Lists[listIndex].elementFields.Length; i++)
             {
                 if (string.Equals(listCollection.Lists[listIndex].elementFields[i], "file_icon", System.StringComparison.OrdinalIgnoreCase)
-                    || string.Equals(listCollection.Lists[listIndex].elementFields[i], "file_icon1", System.StringComparison.OrdinalIgnoreCase))
+                    || string.Equals(listCollection.Lists[listIndex].elementFields[i], "file_icon1", System.StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(listCollection.Lists[listIndex].elementFields[i], "file_head_icon", System.StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(listCollection.Lists[listIndex].elementFields[i], "file_self_head_icon", System.StringComparison.OrdinalIgnoreCase))
                 {
                     iconFieldIndex = i;
                     break;
+                }
+            }
+
+            string normalizedListName = NormalizeListName(listCollection.Lists[listIndex].listName);
+            string inheritedTypeSourceListName;
+            string inheritedTypeFieldName;
+            if (TryGetInheritedTypeIconSource(normalizedListName, out inheritedTypeSourceListName, out inheritedTypeFieldName))
+            {
+                int typeId;
+                Dictionary<int, Bitmap> inheritedTypeIconById = BuildInheritedTypeIconMap(
+                    listCollection,
+                    database,
+                    inheritedTypeSourceListName,
+                    inheritedTypeFieldName);
+                if (int.TryParse(listCollection.GetValue(listIndex, elementIndex, 0), out typeId)
+                    && inheritedTypeIconById != null
+                    && inheritedTypeIconById.TryGetValue(typeId, out Bitmap inheritedIcon)
+                    && inheritedIcon != null)
+                {
+                    return inheritedIcon;
                 }
             }
 
@@ -707,6 +729,20 @@ namespace FWEledit
 
             const string majorSuffix = "_MAJOR_TYPE";
             const string subSuffix = "_SUB_TYPE";
+            if (string.Equals(normalizedListName, "MONSTER_TYPE", System.StringComparison.OrdinalIgnoreCase))
+            {
+                sourceListName = "MONSTER_ESSENCE";
+                typeFieldName = "id_type";
+                return true;
+            }
+
+            if (string.Equals(normalizedListName, "KM_PARAM_ADJUST_CONFIG", System.StringComparison.OrdinalIgnoreCase))
+            {
+                sourceListName = "MONSTER_ESSENCE";
+                typeFieldName = "id_adjust_config";
+                return true;
+            }
+
             if (normalizedListName.EndsWith(majorSuffix, System.StringComparison.OrdinalIgnoreCase))
             {
                 sourceListName = normalizedListName.Substring(0, normalizedListName.Length - majorSuffix.Length) + "_ESSENCE";

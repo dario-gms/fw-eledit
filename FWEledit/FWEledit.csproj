@@ -22,7 +22,7 @@
     <UpdateRequired>false</UpdateRequired>
     <MapFileExtensions>true</MapFileExtensions>
     <ApplicationRevision>0</ApplicationRevision>
-    <ApplicationVersion>0.9.5.18</ApplicationVersion>
+    <ApplicationVersion>0.9.5.19</ApplicationVersion>
     <IsWebBootstrapper>false</IsWebBootstrapper>
     <UseApplicationTrust>false</UseApplicationTrust>
     <BootstrapperEnabled>true</BootstrapperEnabled>
@@ -112,6 +112,8 @@
     </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
+    <Reference Include="System.IO.Compression" />
+    <Reference Include="System.IO.Compression.FileSystem" />
     <Reference Include="System.Management" />
     <Reference Include="System.Numerics" />
     <Reference Include="System.Runtime.Serialization" />
@@ -168,6 +170,7 @@
     <Compile Include="Catalogs\ModelFieldLabelCatalog.cs" />
     <Compile Include="Catalogs\ModelProfessionCatalog.cs" />
     <Compile Include="Catalogs\ModelRaceCatalog.cs" />
+    <Compile Include="Catalogs\MonsterFieldCatalog.cs" />
     <Compile Include="ClassMaskWindow.cs">
       <SubType>Form</SubType>
     </Compile>
@@ -475,6 +478,9 @@
     <Compile Include="Models\DescriptionChangeResult.cs" />
     <Compile Include="Models\DescriptionFlushResult.cs" />
     <Compile Include="Models\EquipmentValuesTab.cs" />
+    <Compile Include="Models\ItemTransferPackageModels.cs" />
+    <Compile Include="ItemTransferImportModeWindow.cs" />
+    <Compile Include="ItemTransferModelsOnlyResultWindow.cs" />
     <Compile Include="Models\ElementSearchRequest.cs" />
     <Compile Include="Models\ElementSearchResult.cs" />
     <Compile Include="Models\ElementDeleteResult.cs" />
@@ -780,6 +786,7 @@
     <Compile Include="Services\ElementsSessionService.cs" />
     <Compile Include="Services\ElementIndexResolverService.cs" />
     <Compile Include="Services\EquipmentTabService.cs" />
+    <Compile Include="Services\MonsterFieldService.cs" />
     <Compile Include="Services\GridActiveRowService.cs" />
     <Compile Include="Services\GridSelectionService.cs" />
     <Compile Include="Services\GridDoubleBufferService.cs" />
@@ -841,6 +848,7 @@
     <Compile Include="Services\ItemFieldClassifierService.cs" />
     <Compile Include="Services\ItemReferenceService.cs" />
     <Compile Include="Services\ItemTooltipService.cs" />
+    <Compile Include="Services\ItemTransferPackageService.cs" />
     <Compile Include="Services\GameShopDataService.cs" />
     <Compile Include="Services\GameShopIconService.cs" />
     <Compile Include="Services\ReferenceIndexService.cs" />
@@ -1047,6 +1055,9 @@
     <Compile Include="Views\ItemReferencePickerWindow.cs">
       <SubType>Form</SubType>
     </Compile>
+    <Compile Include="Views\ItemTransferProgressWindow.cs">
+      <SubType>Form</SubType>
+    </Compile>
     <Compile Include="Views\ModelPickerWindow.cs">
       <SubType>Form</SubType>
     </Compile>
@@ -1187,12 +1198,12 @@
       <Link>configs\sequel_scanner.txt</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <Content Include="..\tools\winpck\FWPckUpdater.exe">
-      <Link>tools\winpck\FWPckUpdater.exe</Link>
+    <Content Include="..\tools\FWPck\FWPckUpdater.exe">
+      <Link>tools\FWPck\FWPckUpdater.exe</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <Content Include="..\tools\winpck\pckdll_x64.dll">
-      <Link>tools\winpck\pckdll_x64.dll</Link>
+    <Content Include="..\tools\FWPck\pckdll_x64.dll">
+      <Link>tools\FWPck\pckdll_x64.dll</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <Content Include="..\tools\7za.exe">

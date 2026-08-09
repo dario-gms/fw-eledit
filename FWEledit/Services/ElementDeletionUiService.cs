@@ -46,7 +46,10 @@ namespace FWEledit
             }
 
             hasUnsavedChanges = true;
-            listComboBox.Items[listIndex] = "[" + listIndex + "]: " + listCollection.Lists[listIndex].listName + " (" + listCollection.Lists[listIndex].elementValues.Length + ")";
+            ListComboPopulationService.SetItemTextPreservingIcon(
+                listComboBox,
+                listIndex,
+                "[" + listIndex + "]: " + listCollection.Lists[listIndex].listName + " (" + listCollection.Lists[listIndex].elementValues.Length + ")");
             enableSelectionList = true;
             enableSelectionItem = true;
 
@@ -96,7 +99,10 @@ namespace FWEledit
             }
 
             viewModel.HasUnsavedChanges = true;
-            listComboBox.Items[listIndex] = "[" + listIndex + "]: " + listCollection.Lists[listIndex].listName + " (" + listCollection.Lists[listIndex].elementValues.Length + ")";
+            ListComboPopulationService.SetItemTextPreservingIcon(
+                listComboBox,
+                listIndex,
+                "[" + listIndex + "]: " + listCollection.Lists[listIndex].listName + " (" + listCollection.Lists[listIndex].elementValues.Length + ")");
             viewModel.EnableSelectionList = true;
             viewModel.EnableSelectionItem = true;
 

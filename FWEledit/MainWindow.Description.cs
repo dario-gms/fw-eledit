@@ -70,9 +70,9 @@ namespace FWEledit
                 return;
             }
 
-            if (CurrentListIsAddonPackageConfig())
+            if (CurrentListShouldHideDescriptionTab())
             {
-                RemoveDescriptionTabForAddonPackageConfig();
+                RemoveDescriptionTabForCurrentList();
                 ConfigureAddonPackageDescMode(false);
                 return;
             }
@@ -145,7 +145,24 @@ namespace FWEledit
                 "ADDON_PACKAGE_CONFIG");
         }
 
-        private void RemoveDescriptionTabForAddonPackageConfig()
+        private bool CurrentListShouldHideDescriptionTab()
+        {
+            if (comboBox_lists == null || sessionService == null || sessionService.ListCollection == null)
+            {
+                return false;
+            }
+
+            int listIndex = comboBox_lists.SelectedIndex;
+            if (listIndex < 0 || listIndex >= sessionService.ListCollection.Lists.Length)
+            {
+                return false;
+            }
+
+            return CurrentListIsAddonPackageConfig()
+                || MonsterFieldCatalog.IsMonsterEssenceList(sessionService.ListCollection, listIndex);
+        }
+
+        private void RemoveDescriptionTabForCurrentList()
         {
             if (fwRightTabs == null || fwDescriptionTab == null)
             {
@@ -162,6 +179,11 @@ namespace FWEledit
             if (fwRightTabs.TabPages.Contains(fwDescriptionTab))
             {
                 fwRightTabs.TabPages.Remove(fwDescriptionTab);
+            }
+
+            if (fwColorPreviewTab != null && fwRightTabs.TabPages.Contains(fwColorPreviewTab))
+            {
+                fwRightTabs.TabPages.Remove(fwColorPreviewTab);
             }
         }
 
@@ -464,6 +486,11 @@ namespace FWEledit
 
             if (!fwRightTabs.TabPages.Contains(fwColorPreviewTab))
             {
+                if (!fwRightTabs.TabPages.Contains(fwDescriptionTab))
+                {
+                    fwRightTabs.TabPages.Insert(GetDescriptionTabInsertIndex(), fwDescriptionTab);
+                }
+
                 return;
             }
 
@@ -480,6 +507,25 @@ namespace FWEledit
             {
                 fwRightTabs.SelectedTab = fwDescriptionTab;
             }
+        }
+
+        private int GetDescriptionTabInsertIndex()
+        {
+            if (fwRightTabs == null)
+            {
+                return 0;
+            }
+
+            for (int i = 0; i < fwRightTabs.TabPages.Count; i++)
+            {
+                if (string.Equals(fwRightTabs.TabPages[i].Text, "References", StringComparison.OrdinalIgnoreCase)
+                    || fwRightTabs.TabPages[i] == fwReferencesTab)
+                {
+                    return i;
+                }
+            }
+
+            return fwRightTabs.TabPages.Count;
         }
 
         private void RenderStandaloneColorPreview(

@@ -34,12 +34,16 @@ namespace FWEledit
         private int selectionHistoryIndex = -1;
         private readonly List<NavigationSnapshot> selectionHistory = new List<NavigationSnapshot>();
         private bool liveModelPreviewRefreshInProgress;
+        private int currentItemModelPreviewRequestId;
         private TabControl fwEquipmentTabs;
         private TabPage fwEquipmentTabMain;
         private TabPage fwEquipmentTabModels;
         private TabPage fwEquipmentTabRefine;
         private TabPage fwEquipmentTabDecompose;
         private TabPage fwEquipmentTabOther;
+        private TabPage fwMonsterMasteryTab;
+        private TabPage fwMonsterLevelUpTab;
+        private TabPage fwMonsterOtherTab;
         private TabPage fwReferencesTab;
         private TabControl fwReferencesTabs;
         private DataGridView fwReferencesGrid;
@@ -127,6 +131,7 @@ namespace FWEledit
         private readonly ItemValueRowBuilderService itemValueRowBuilderService;
         private readonly ItemSelectionWorkflowService itemSelectionWorkflowService;
         private readonly ItemTooltipService itemTooltipService = new ItemTooltipService();
+        private readonly ItemTransferPackageService itemTransferPackageService = new ItemTransferPackageService();
         private readonly ItemQualityColorService itemQualityColorService = new ItemQualityColorService();
         private readonly GridSelectionService gridSelectionService = new GridSelectionService();
         private readonly GridActiveRowService gridActiveRowService = new GridActiveRowService();

@@ -104,6 +104,18 @@ namespace FWEledit
             return CombinedServicesCatalog.IsCombinedServicesFieldName(fieldName);
         }
 
+        public bool IsMonsterOptionFieldName(eListCollection listCollection, int listIndex, string fieldName)
+        {
+            return MonsterFieldCatalog.IsMonsterEssenceList(listCollection, listIndex)
+                && MonsterFieldCatalog.IsOptionFieldName(fieldName);
+        }
+
+        public bool IsMonsterNameColorFieldName(eListCollection listCollection, int listIndex, string fieldName)
+        {
+            return MonsterFieldCatalog.IsMonsterEssenceList(listCollection, listIndex)
+                && MonsterFieldCatalog.IsNameColorFieldName(fieldName);
+        }
+
         public bool IsSkillFieldName(string fieldName)
         {
             return SkillReferenceCatalog.IsSkillFieldName(fieldName);
@@ -140,6 +152,8 @@ namespace FWEledit
                 || IsModelProfessionFieldName(fieldName)
                 || IsModelRaceFieldName(fieldName)
                 || IsCombinedServicesFieldName(fieldName)
+                || IsMonsterOptionFieldName(listCollection, listIndex, fieldName)
+                || IsMonsterNameColorFieldName(listCollection, listIndex, fieldName)
                 || IsSkillFieldName(fieldName)
                 || IsModelFieldName(fieldName)
                 || (itemReferenceService != null && itemReferenceService.IsReferenceField(listCollection, listIndex, fieldName));

@@ -274,6 +274,12 @@ namespace FWEledit
                 {
                     fieldValue = CombinedServicesCatalog.FormatDisplay(listCollection, listIndex, fieldName, fieldValue);
                 }
+                else if (MonsterFieldCatalog.IsMonsterEssenceList(listCollection, listIndex)
+                    && (MonsterFieldCatalog.IsOptionFieldName(fieldName)
+                        || string.Equals(fieldName, "name_color", System.StringComparison.OrdinalIgnoreCase)))
+                {
+                    fieldValue = MonsterFieldCatalog.FormatDisplay(fieldName, fieldValue);
+                }
                 else if (MovementSpeedDisplayService.IsSupportedField(listCollection, listIndex, fieldName))
                 {
                     fieldValue = MovementSpeedDisplayService.FormatDisplay(listCollection, listIndex, fieldName, fieldValue);

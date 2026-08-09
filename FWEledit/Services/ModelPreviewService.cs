@@ -576,6 +576,38 @@ namespace FWEledit
             return true;
         }
 
+        public void PrewarmCommonPckIndexes()
+        {
+            string gameRoot = AssetManager.GameRootPath ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(gameRoot) || !Directory.Exists(gameRoot))
+            {
+                return;
+            }
+
+            string[] packages =
+            {
+                "models",
+                "gfx",
+                "surfaces",
+                "litmodels",
+                "moxing",
+                "grasses"
+            };
+
+            for (int i = 0; i < packages.Length; i++)
+            {
+                try
+                {
+                    List<string> entries;
+                    string error;
+                    pckEntryReaderService.TryEnumerateEntries(packages[i], out entries, out error);
+                }
+                catch
+                {
+                }
+            }
+        }
+
         private bool TryLoadPreviewMeshCached(
             AssetManager assetManager,
             string mappedPath,
