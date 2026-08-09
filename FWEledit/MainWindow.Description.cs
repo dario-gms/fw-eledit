@@ -479,12 +479,12 @@ namespace FWEledit
 
         private void RestoreDescriptionTabIfNeeded()
         {
-            if (fwRightTabs == null || fwDescriptionTab == null || fwColorPreviewTab == null)
+            if (fwRightTabs == null || fwDescriptionTab == null)
             {
                 return;
             }
 
-            if (!fwRightTabs.TabPages.Contains(fwColorPreviewTab))
+            if (fwColorPreviewTab == null || !fwRightTabs.TabPages.Contains(fwColorPreviewTab))
             {
                 if (!fwRightTabs.TabPages.Contains(fwDescriptionTab))
                 {
