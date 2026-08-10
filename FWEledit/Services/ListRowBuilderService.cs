@@ -16,6 +16,7 @@ namespace FWEledit
         private readonly CreaturePortraitIconService creaturePortraitIconService;
         private readonly NpcTradePortraitService npcTradePortraitService;
         private readonly NpcSellPortraitService npcSellPortraitService;
+        private readonly NpcTransmitPortraitService npcTransmitPortraitService;
         private readonly MonsterDropPortraitService monsterDropPortraitService;
         private eListCollection cachedItemIconSourceCollection;
         private Dictionary<int, ItemIconSource> cachedItemIconSourcesById;
@@ -26,6 +27,7 @@ namespace FWEledit
             this.creaturePortraitIconService = new CreaturePortraitIconService();
             this.npcTradePortraitService = new NpcTradePortraitService();
             this.npcSellPortraitService = new NpcSellPortraitService();
+            this.npcTransmitPortraitService = new NpcTransmitPortraitService();
             this.monsterDropPortraitService = new MonsterDropPortraitService();
         }
 
@@ -105,13 +107,16 @@ namespace FWEledit
             bool isItemTradeList = string.Equals(normalizedListName, "ITEM_TRADE_ESSENCE", System.StringComparison.OrdinalIgnoreCase);
             bool isItemTradePageList = string.Equals(normalizedListName, "ITEM_TRADE_PAGE_CONFIG", System.StringComparison.OrdinalIgnoreCase);
             bool isNpcSellServiceList = string.Equals(normalizedListName, "NPC_SELL_SERVICE", System.StringComparison.OrdinalIgnoreCase);
+            bool isNpcTransmitServiceList = string.Equals(normalizedListName, "NPC_TRANSMIT_SERVICE", System.StringComparison.OrdinalIgnoreCase);
             bool isAddonPackageList = string.Equals(normalizedListName, "ADDON_PACKAGE_CONFIG", System.StringComparison.OrdinalIgnoreCase);
+            bool isSuiteList = string.Equals(normalizedListName, "SUITE_ESSENCE", System.StringComparison.OrdinalIgnoreCase);
             string inheritedTypeSourceListName;
             string inheritedTypeFieldName;
             bool isInheritedTypeList = TryGetInheritedTypeIconSource(normalizedListName, out inheritedTypeSourceListName, out inheritedTypeFieldName);
             int isCategoryFieldIndex = isDropTableList ? GetFieldIndex(listCollection.Lists[listIndex].elementFields, "is_category") : -1;
             List<int> dropFieldIndexes = isDropTableList ? GetDropFieldIndexes(listCollection.Lists[listIndex].elementFields) : null;
             List<int> tradePageGoodsFieldIndexes = isItemTradePageList ? GetTradePageGoodsFieldIndexes(listCollection.Lists[listIndex].elementFields) : null;
+            List<int> suiteEquipmentFieldIndexes = isSuiteList ? GetSuiteEquipmentFieldIndexes(listCollection.Lists[listIndex].elementFields) : null;
             Dictionary<int, int> dropTableRowById = includeIcons && isDropTableList ? BuildDropTableRowIndexMap(listCollection, listIndex) : null;
             Dictionary<int, Bitmap> addonPackageIconById = includeIcons && isAddonPackageList ? BuildAddonPackageIconMap(listCollection, database) : null;
             Dictionary<int, Bitmap> inheritedTypeIconById = includeIcons && isInheritedTypeList
@@ -121,7 +126,7 @@ namespace FWEledit
                     inheritedTypeSourceListName,
                     inheritedTypeFieldName)
                 : null;
-            bool requiresInheritedItemIcons = includeIcons && (isDropTableList || isItemTradePageList);
+            bool requiresInheritedItemIcons = includeIcons && (isDropTableList || isItemTradePageList || isSuiteList);
             Dictionary<int, ItemIconSource> itemIconSourcesById = requiresInheritedItemIcons ? BuildItemIconSourceMap(listCollection) : null;
             Dictionary<int, Bitmap> itemIconById = requiresInheritedItemIcons ? new Dictionary<int, Bitmap>() : null;
 
@@ -203,6 +208,17 @@ namespace FWEledit
                             }
                         }
                     }
+                    else if (includeIcons && isNpcTransmitServiceList)
+                    {
+                        if (int.TryParse(listCollection.GetValue(listIndex, e, 0), out int transmitServiceId))
+                        {
+                            if (npcTransmitPortraitService.TryResolveTransmitPortrait(listCollection, database, transmitServiceId, out Bitmap transmitIcon)
+                                && transmitIcon != null)
+                            {
+                                img = transmitIcon;
+                            }
+                        }
+                    }
                     else if (includeIcons && isAddonPackageList)
                     {
                         if (int.TryParse(listCollection.GetValue(listIndex, e, 0), out int addonPackageId)
@@ -211,6 +227,21 @@ namespace FWEledit
                             && addonPackageIcon != null)
                         {
                             img = addonPackageIcon;
+                        }
+                    }
+                    else if (includeIcons && isSuiteList)
+                    {
+                        Bitmap suiteIcon = ResolveSuiteIcon(
+                            listCollection,
+                            database,
+                            listIndex,
+                            e,
+                            suiteEquipmentFieldIndexes,
+                            itemIconSourcesById,
+                            itemIconById);
+                        if (suiteIcon != null)
+                        {
+                            img = suiteIcon;
                         }
                     }
                     else if (includeIcons && isInheritedTypeList)
@@ -266,6 +297,22 @@ namespace FWEledit
             }
 
             string normalizedListName = NormalizeListName(listCollection.Lists[listIndex].listName);
+            if (string.Equals(normalizedListName, "SUITE_ESSENCE", System.StringComparison.OrdinalIgnoreCase))
+            {
+                Bitmap suiteIcon = ResolveSuiteIcon(
+                    listCollection,
+                    database,
+                    listIndex,
+                    elementIndex,
+                    GetSuiteEquipmentFieldIndexes(listCollection.Lists[listIndex].elementFields),
+                    BuildItemIconSourceMap(listCollection),
+                    new Dictionary<int, Bitmap>());
+                if (suiteIcon != null)
+                {
+                    return suiteIcon;
+                }
+            }
+
             string inheritedTypeSourceListName;
             string inheritedTypeFieldName;
             if (TryGetInheritedTypeIconSource(normalizedListName, out inheritedTypeSourceListName, out inheritedTypeFieldName))
@@ -374,6 +421,38 @@ namespace FWEledit
 
                 Bitmap icon;
                 if (TryResolveItemIconById(listCollection, database, itemId, itemIconSourcesById, itemIconById, out icon))
+                {
+                    return icon;
+                }
+            }
+
+            return null;
+        }
+
+        private Bitmap ResolveSuiteIcon(
+            eListCollection listCollection,
+            CacheSave database,
+            int listIndex,
+            int elementIndex,
+            List<int> equipmentFieldIndexes,
+            Dictionary<int, ItemIconSource> itemIconSourcesById,
+            Dictionary<int, Bitmap> itemIconById)
+        {
+            if (listCollection == null || equipmentFieldIndexes == null || equipmentFieldIndexes.Count == 0)
+            {
+                return null;
+            }
+
+            for (int i = 0; i < equipmentFieldIndexes.Count; i++)
+            {
+                int equipmentId;
+                if (!int.TryParse(listCollection.GetValue(listIndex, elementIndex, equipmentFieldIndexes[i]), out equipmentId) || equipmentId <= 0)
+                {
+                    continue;
+                }
+
+                Bitmap icon;
+                if (TryResolveItemIconById(listCollection, database, equipmentId, itemIconSourcesById, itemIconById, out icon))
                 {
                     return icon;
                 }
@@ -685,6 +764,27 @@ namespace FWEledit
                 string fieldName = fields[i] ?? string.Empty;
                 if (fieldName.StartsWith("goods_", System.StringComparison.OrdinalIgnoreCase)
                     && fieldName.IndexOf("_1_id_goods", System.StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    indexes.Add(i);
+                }
+            }
+
+            return indexes;
+        }
+
+        private static List<int> GetSuiteEquipmentFieldIndexes(string[] fields)
+        {
+            List<int> indexes = new List<int>();
+            if (fields == null)
+            {
+                return indexes;
+            }
+
+            for (int i = 0; i < fields.Length; i++)
+            {
+                string fieldName = fields[i] ?? string.Empty;
+                if (fieldName.StartsWith("equipments_", System.StringComparison.OrdinalIgnoreCase)
+                    && fieldName.EndsWith("_id", System.StringComparison.OrdinalIgnoreCase))
                 {
                     indexes.Add(i);
                 }

@@ -41,7 +41,19 @@ namespace FWEledit
 
         public bool TryGetListDisplayRows(int listIndex, out List<object[]> rows)
         {
-            return listDisplayRowsCache.TryGetValue(listIndex, out rows);
+            if (!listDisplayRowsCache.TryGetValue(listIndex, out rows))
+            {
+                return false;
+            }
+
+            if (listIndex == 0 && ContainsUnresolvedSkillToken(rows))
+            {
+                listDisplayRowsCache.Remove(listIndex);
+                rows = null;
+                return false;
+            }
+
+            return true;
         }
 
         public void SetListDisplayRows(int listIndex, List<object[]> rows)
@@ -110,7 +122,12 @@ namespace FWEledit
             string cached;
             if (list0DisplayNameCache.TryGetValue(entryIndex, out cached))
             {
-                return cached;
+                if (!HasUnresolvedSkillToken(cached))
+                {
+                    return cached;
+                }
+
+                list0DisplayNameCache.Remove(entryIndex);
             }
 
             try
@@ -129,6 +146,37 @@ namespace FWEledit
 
             list0DisplayNameCache[entryIndex] = fallback;
             return fallback;
+        }
+
+        private static bool ContainsUnresolvedSkillToken(List<object[]> rows)
+        {
+            if (rows == null)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < rows.Count; i++)
+            {
+                object[] row = rows[i];
+                if (row == null || row.Length <= 2)
+                {
+                    continue;
+                }
+
+                string name = row[2] as string;
+                if (HasUnresolvedSkillToken(name))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool HasUnresolvedSkillToken(string value)
+        {
+            return !string.IsNullOrWhiteSpace(value)
+                && value.IndexOf("$skill", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         public string ComposeListDisplayName(ISessionService sessionService, eListCollection listCollection, int listIndex, int entryIndex, int nameFieldIndex, bool isRowDirty)

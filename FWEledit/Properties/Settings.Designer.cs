@@ -44,6 +44,21 @@ namespace FWEledit.Properties
 
 		[global::System.Configuration.UserScopedSettingAttribute()]
 		[global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+		[global::System.Configuration.DefaultSettingValueAttribute("")]
+		public string RecentGameFolders
+		{
+			get
+			{
+				return ((string)(this["RecentGameFolders"]));
+			}
+			set
+			{
+				this["RecentGameFolders"] = value;
+			}
+		}
+
+		[global::System.Configuration.UserScopedSettingAttribute()]
+		[global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
 		[global::System.Configuration.DefaultSettingValueAttribute("0")]
 		public int LastListIndex
 		{

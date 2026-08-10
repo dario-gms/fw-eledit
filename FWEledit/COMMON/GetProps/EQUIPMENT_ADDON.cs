@@ -32,6 +32,17 @@ namespace FWEledit
             }
         }
 
+        private static string FormatFractionPercentParam(string value)
+        {
+            float percent = ToFloatFromParam(value);
+            if (Math.Abs(percent) <= 1f)
+            {
+                percent *= 100f;
+            }
+
+            return percent.ToString("0.##", CultureInfo.CreateSpecificCulture("en-US"));
+        }
+
         private static string CleanSkillName(string raw)
         {
             if (string.IsNullOrWhiteSpace(raw))
@@ -71,14 +82,94 @@ namespace FWEledit
             }
             try
             {
-                string resolved = CleanSkillName(Extensions.SkillName(sessionService, skillId));
-                SkillTokenCache[skillId] = resolved;
+                string resolved = "$skill";
+                SkillReferenceOption option;
+                if (SkillReferenceCatalog.TryGetOption(sessionService.Database, skillId, out option) && option != null)
+                {
+                    resolved = CleanSkillName(option.Label);
+                }
+                if (resolved == "$skill")
+                {
+                    resolved = CleanSkillName(Extensions.SkillName(sessionService, skillId));
+                }
+                if (resolved != "$skill")
+                {
+                    SkillTokenCache[skillId] = resolved;
+                }
                 return resolved;
             }
             catch
             {
                 return "$skill";
             }
+        }
+
+        private static string ResolveUnresolvedSkillAddonText(string text, string addonName)
+        {
+            if (string.IsNullOrWhiteSpace(text) || text.IndexOf("$skill", StringComparison.OrdinalIgnoreCase) < 0)
+            {
+                return text;
+            }
+
+            string skillName = ExtractSkillNameFromAddonName(addonName);
+            if (string.IsNullOrWhiteSpace(skillName))
+            {
+                return text;
+            }
+
+            return text.Replace("$skill", skillName);
+        }
+
+        private static string ExtractSkillNameFromAddonName(string addonName)
+        {
+            string clean = CleanSkillName(addonName);
+            if (string.IsNullOrWhiteSpace(clean) || clean == "$skill")
+            {
+                return string.Empty;
+            }
+
+            const string prefix = "Skill ";
+            if (clean.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            {
+                clean = clean.Substring(prefix.Length).Trim();
+            }
+
+            int levelIndex = clean.LastIndexOf(" Lv", StringComparison.OrdinalIgnoreCase);
+            if (levelIndex > 0)
+            {
+                clean = clean.Substring(0, levelIndex).Trim();
+            }
+
+            return clean.IndexOf("$skill", StringComparison.OrdinalIgnoreCase) >= 0 ? string.Empty : clean;
+        }
+
+        private static bool HasUnresolvedSkillToken(string value)
+        {
+            return !string.IsNullOrWhiteSpace(value)
+                && value.IndexOf("$skill", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static int FindAddonFieldIndex(ISessionService sessionService, string fieldName)
+        {
+            if (sessionService == null
+                || sessionService.ListCollection == null
+                || sessionService.ListCollection.Lists == null
+                || sessionService.ListCollection.Lists.Length <= 0
+                || sessionService.ListCollection.Lists[0].elementFields == null)
+            {
+                return -1;
+            }
+
+            string[] fields = sessionService.ListCollection.Lists[0].elementFields;
+            for (int i = 0; i < fields.Length; i++)
+            {
+                if (string.Equals(fields[i], fieldName, StringComparison.OrdinalIgnoreCase))
+                {
+                    return i;
+                }
+            }
+
+            return -1;
         }
 
         private static bool TryGetFwAddonText(ISessionService sessionService, int addonType, string param1, string param2, out string text)
@@ -336,16 +427,16 @@ namespace FWEledit
                     text = "Increases Damage by " + p1;
                     return true;
                 case 84:
-                    text = "Crit Chance +" + f1.ToString("F1", CultureInfo.CreateSpecificCulture("en-US")) + "%";
+                    text = "Crit Chance +" + FormatFractionPercentParam(param1) + "%";
                     return true;
                 case 85:
-                    text = "Crit Damage +" + f1.ToString("F1", CultureInfo.CreateSpecificCulture("en-US")) + "%";
+                    text = "Crit Damage +" + FormatFractionPercentParam(param1) + "%";
                     return true;
                 case 86:
-                    text = "Crit Dodge +" + f1.ToString("F1", CultureInfo.CreateSpecificCulture("en-US")) + "%";
+                    text = "Crit Dodge +" + FormatFractionPercentParam(param1) + "%";
                     return true;
                 case 87:
-                    text = "Crit Defense +" + f1.ToString("F1", CultureInfo.CreateSpecificCulture("en-US")) + "%";
+                    text = "Crit Defense +" + FormatFractionPercentParam(param1) + "%";
                     return true;
                 case 88:
                     text = "Movement Speed +" + f1.ToString("F2", CultureInfo.CreateSpecificCulture("en-US"));
@@ -646,47 +737,37 @@ namespace FWEledit
                 int k = sessionService.ListCollection.addonIndex[key];
                     if (sessionService.ListCollection.GetValue(0, k, 0) == id)
                     {
-                        for (int t = 0; t < sessionService.ListCollection.Lists[0].elementFields.Length; t++)
+                        int nameFieldIndex = FindAddonFieldIndex(sessionService, "name");
+                        if (nameFieldIndex >= 0)
                         {
-                            if (sessionService.ListCollection.Lists[0].elementFields[t] == "Name")
-                            {
-                                name = sessionService.ListCollection.GetValue(0, k, t);
-                                break;
-                            }
+                            name = sessionService.ListCollection.GetValue(0, k, nameFieldIndex);
                         }
-                        for (int t = 0; t < sessionService.ListCollection.Lists[0].elementFields.Length; t++)
+
+                        int numParamsFieldIndex = FindAddonFieldIndex(sessionService, "num_params");
+                        if (numParamsFieldIndex >= 0)
                         {
-                            if (sessionService.ListCollection.Lists[0].elementFields[t] == "num_params")
-                            {
-                                num_params = sessionService.ListCollection.GetValue(0, k, t);
-                                break;
-                            }
+                            num_params = sessionService.ListCollection.GetValue(0, k, numParamsFieldIndex);
                         }
-                        for (int t = 0; t < sessionService.ListCollection.Lists[0].elementFields.Length; t++)
+
+                        int param1FieldIndex = FindAddonFieldIndex(sessionService, "param1");
+                        if (param1FieldIndex >= 0)
                         {
-                            if (sessionService.ListCollection.Lists[0].elementFields[t] == "param1")
-                            {
-                                param1 = sessionService.ListCollection.GetValue(0, k, t);
-                                param2 = sessionService.ListCollection.GetValue(0, k, t + 1);
-                                param3 = sessionService.ListCollection.GetValue(0, k, t + 2);
-                                break;
-                            }
+                            param1 = sessionService.ListCollection.GetValue(0, k, param1FieldIndex);
+                            param2 = sessionService.ListCollection.GetValue(0, k, param1FieldIndex + 1);
+                            param3 = sessionService.ListCollection.GetValue(0, k, param1FieldIndex + 2);
                         }
                         try
                         {
                             int addon_type = 0;
                             bool hasAddonType = false;
-                            for (int t = 0; t < sessionService.ListCollection.Lists[0].elementFields.Length; t++)
+                            int typeFieldIndex = FindAddonFieldIndex(sessionService, "type");
+                            if (typeFieldIndex >= 0)
                             {
-                                if (sessionService.ListCollection.Lists[0].elementFields[t] == "type")
+                                int parsedType;
+                                if (int.TryParse(sessionService.ListCollection.GetValue(0, k, typeFieldIndex), out parsedType))
                                 {
-                                    int parsedType;
-                                    if (int.TryParse(sessionService.ListCollection.GetValue(0, k, t), out parsedType))
-                                    {
-                                        addon_type = parsedType;
-                                        hasAddonType = true;
-                                    }
-                                    break;
+                                    addon_type = parsedType;
+                                    hasAddonType = true;
                                 }
                             }
                             if (!hasAddonType && sessionService.Database != null && sessionService.Database.addonslist != null && sessionService.Database.addonslist.ContainsKey(id))
@@ -701,7 +782,7 @@ namespace FWEledit
                             string fwLine;
                             if (TryGetFwAddonText(sessionService, addon_type, param1, param2, out fwLine))
                             {
-                                return fwLine;
+                                return ResolveUnresolvedSkillAddonText(fwLine, name);
                             }
                             switch (addon_type)
                             {

@@ -91,7 +91,7 @@ namespace FWEledit
                 assembly,
                 label_Version,
                 navigationStateService,
-                "0.9.5.19");
+                "0.9.5.20");
 
             fwDarkMode = Properties.Settings.Default.UseDarkMode;
             cpb2.Value = 0;
@@ -230,6 +230,7 @@ namespace FWEledit
             InitializeEmbeddedReferencesTab();
             InitializeElementContextActions();
             InitializeToolMenuActions();
+            InitializeRecentFolderMenu();
             InitializeDescriptionFormattingActions();
             InitializeAddonPackageDescEditor();
             InitializeRawValueEditor();
@@ -368,6 +369,106 @@ namespace FWEledit
                     : Math.Min(5, toolStripMenuItem3.DropDownItems.Count);
                 toolStripMenuItem3.DropDownItems.Insert(insertIndex, importPackageItem);
             }
+
+            if (!toolStripMenuItem3.DropDownItems.ContainsKey("npcGenEditorToolStripMenuItem"))
+            {
+                ToolStripMenuItem npcGenItem = new ToolStripMenuItem();
+                npcGenItem.Name = "npcGenEditorToolStripMenuItem";
+                npcGenItem.Text = "NPCGen Editor...";
+                npcGenItem.Click += click_npcGenEditor;
+
+                int insertIndex = toolStripMenuItem3.DropDownItems.ContainsKey("importItemPackageToolStripMenuItem")
+                    ? toolStripMenuItem3.DropDownItems.IndexOfKey("importItemPackageToolStripMenuItem") + 1
+                    : Math.Min(6, toolStripMenuItem3.DropDownItems.Count);
+                toolStripMenuItem3.DropDownItems.Insert(insertIndex, npcGenItem);
+            }
+
+            if (!toolStripMenuItem3.DropDownItems.ContainsKey("openEmptyInstanceToolStripMenuItem"))
+            {
+                ToolStripMenuItem emptyInstanceItem = new ToolStripMenuItem();
+                emptyInstanceItem.Name = "openEmptyInstanceToolStripMenuItem";
+                emptyInstanceItem.Text = "Open Empty Instance";
+                emptyInstanceItem.Click += click_openEmptyInstance;
+
+                int insertIndex = toolStripMenuItem3.DropDownItems.ContainsKey("npcGenEditorToolStripMenuItem")
+                    ? toolStripMenuItem3.DropDownItems.IndexOfKey("npcGenEditorToolStripMenuItem") + 1
+                    : toolStripMenuItem3.DropDownItems.Count;
+                toolStripMenuItem3.DropDownItems.Insert(insertIndex, emptyInstanceItem);
+            }
+        }
+
+        private void InitializeRecentFolderMenu()
+        {
+            if (loadLastFolderToolStripMenuItem == null)
+            {
+                return;
+            }
+
+            loadLastFolderToolStripMenuItem.Text = "Load Recent Folder";
+            loadLastFolderToolStripMenuItem.DropDownOpening -= loadRecentFolderMenu_DropDownOpening;
+            loadLastFolderToolStripMenuItem.DropDownOpening += loadRecentFolderMenu_DropDownOpening;
+            PopulateRecentFolderMenu();
+        }
+
+        private void loadRecentFolderMenu_DropDownOpening(object sender, EventArgs e)
+        {
+            PopulateRecentFolderMenu();
+        }
+
+        private void PopulateRecentFolderMenu()
+        {
+            if (loadLastFolderToolStripMenuItem == null)
+            {
+                return;
+            }
+
+            loadLastFolderToolStripMenuItem.DropDownItems.Clear();
+            System.Collections.Generic.List<string> folders = navigationStateService.GetRecentGameFolders();
+            if (folders.Count == 0)
+            {
+                ToolStripMenuItem emptyItem = new ToolStripMenuItem();
+                emptyItem.Text = "(No recent folders)";
+                emptyItem.Enabled = false;
+                loadLastFolderToolStripMenuItem.DropDownItems.Add(emptyItem);
+            }
+            else
+            {
+                for (int i = 0; i < folders.Count; i++)
+                {
+                    string folder = folders[i];
+                    ToolStripMenuItem folderItem = new ToolStripMenuItem();
+                    folderItem.Text = GetRecentFolderMenuText(folder);
+                    folderItem.ToolTipText = folder;
+                    folderItem.Tag = folder;
+                    folderItem.Click += click_load_recent_folder;
+                    loadLastFolderToolStripMenuItem.DropDownItems.Add(folderItem);
+                }
+            }
+
+            loadLastFolderToolStripMenuItem.DropDownItems.Add(new ToolStripSeparator());
+
+            ToolStripMenuItem clearItem = new ToolStripMenuItem();
+            clearItem.Name = "clearRecentFoldersToolStripMenuItem";
+            clearItem.Text = "Clear Recent Folders";
+            clearItem.Enabled = folders.Count > 0;
+            clearItem.Click += click_clear_recent_folders;
+            loadLastFolderToolStripMenuItem.DropDownItems.Add(clearItem);
+        }
+
+        private string GetRecentFolderMenuText(string folder)
+        {
+            if (string.IsNullOrWhiteSpace(folder))
+            {
+                return folder;
+            }
+
+            string name = System.IO.Path.GetFileName(folder.TrimEnd(System.IO.Path.DirectorySeparatorChar, System.IO.Path.AltDirectorySeparatorChar));
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                return folder;
+            }
+
+            return name + "  (" + folder + ")";
         }
 
         private void RemoveReferencesTabFromMainView()
@@ -784,12 +885,29 @@ namespace FWEledit
 
         private void click_load_last_folder(object sender, EventArgs e)
         {
-            mainWindowElementsLoadUiService.LoadLastFolder(
-                gameFolderLoadUiService,
-                gameFolderDialogService,
-                navigationStateService,
-                LoadGameFolder,
-                message => MessageBox.Show(message));
+            PopulateRecentFolderMenu();
+            if (loadLastFolderToolStripMenuItem != null)
+            {
+                loadLastFolderToolStripMenuItem.ShowDropDown();
+            }
+        }
+
+        private void click_load_recent_folder(object sender, EventArgs e)
+        {
+            ToolStripItem item = sender as ToolStripItem;
+            string folder = item != null ? item.Tag as string : null;
+            if (string.IsNullOrWhiteSpace(folder))
+            {
+                return;
+            }
+
+            LoadGameFolder(folder);
+        }
+
+        private void click_clear_recent_folders(object sender, EventArgs e)
+        {
+            navigationStateService.ClearRecentGameFolders();
+            PopulateRecentFolderMenu();
         }
 
         private void LoadGameFolder(string gameFolderPath)

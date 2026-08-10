@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Windows.Forms;
 
 namespace FWEledit
@@ -247,6 +248,35 @@ namespace FWEledit
         private void click_gShopEditor(object sender, EventArgs e)
         {
             ShowGameShopEditor(0, 0);
+        }
+
+        private void click_npcGenEditor(object sender, EventArgs e)
+        {
+            if (npcGenEditorWindow == null || npcGenEditorWindow.IsDisposed)
+            {
+                npcGenEditorWindow = new NpcGenEditorWindow(sessionService);
+                npcGenEditorWindow.FormClosed += (s, args) => npcGenEditorWindow = null;
+            }
+
+            npcGenEditorWindow.Show(this);
+            npcGenEditorWindow.BringToFront();
+        }
+
+        private void click_openEmptyInstance(object sender, EventArgs e)
+        {
+            try
+            {
+                ProcessStartInfo startInfo = new ProcessStartInfo();
+                startInfo.FileName = Application.ExecutablePath;
+                startInfo.Arguments = "--empty-instance";
+                startInfo.WorkingDirectory = Application.StartupPath;
+                startInfo.UseShellExecute = true;
+                Process.Start(startInfo);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Could not open a new empty instance.\n\n" + ex.Message, "FWEledit");
+            }
         }
 
 
