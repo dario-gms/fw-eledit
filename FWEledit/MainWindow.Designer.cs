@@ -422,7 +422,7 @@ namespace FWEledit
             // 
             this.loadLastFolderToolStripMenuItem.Name = "loadLastFolderToolStripMenuItem";
             this.loadLastFolderToolStripMenuItem.Size = new System.Drawing.Size(168, 22);
-            this.loadLastFolderToolStripMenuItem.Text = "Load Last Folder";
+            this.loadLastFolderToolStripMenuItem.Text = "Load Recent Folder";
             this.loadLastFolderToolStripMenuItem.Click += new System.EventHandler(this.click_load_last_folder);
             // 
             // save2ToolStripMenuItem
@@ -685,7 +685,7 @@ namespace FWEledit
             this.label_Version.Name = "label_Version";
             this.label_Version.Size = new System.Drawing.Size(173, 13);
             this.label_Version.TabIndex = 328;
-            this.label_Version.Text = "FWEledit v0.9.5.19";
+            this.label_Version.Text = "FWEledit v0.9.5.20";
             // 
             // dataGridView_elems
             // 

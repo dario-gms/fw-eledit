@@ -22,7 +22,7 @@
     <UpdateRequired>false</UpdateRequired>
     <MapFileExtensions>true</MapFileExtensions>
     <ApplicationRevision>0</ApplicationRevision>
-    <ApplicationVersion>0.9.5.19</ApplicationVersion>
+    <ApplicationVersion>0.9.5.20</ApplicationVersion>
     <IsWebBootstrapper>false</IsWebBootstrapper>
     <UseApplicationTrust>false</UseApplicationTrust>
     <BootstrapperEnabled>true</BootstrapperEnabled>
@@ -479,6 +479,7 @@
     <Compile Include="Models\DescriptionFlushResult.cs" />
     <Compile Include="Models\EquipmentValuesTab.cs" />
     <Compile Include="Models\ItemTransferPackageModels.cs" />
+    <Compile Include="Models\NpcGenData.cs" />
     <Compile Include="ItemTransferImportModeWindow.cs" />
     <Compile Include="ItemTransferModelsOnlyResultWindow.cs" />
     <Compile Include="Models\ElementSearchRequest.cs" />
@@ -849,6 +850,8 @@
     <Compile Include="Services\ItemReferenceService.cs" />
     <Compile Include="Services\ItemTooltipService.cs" />
     <Compile Include="Services\ItemTransferPackageService.cs" />
+    <Compile Include="Services\NpcGenEntityLookupService.cs" />
+    <Compile Include="Services\NpcGenFileService.cs" />
     <Compile Include="Services\GameShopDataService.cs" />
     <Compile Include="Services\GameShopIconService.cs" />
     <Compile Include="Services\ReferenceIndexService.cs" />
@@ -992,6 +995,7 @@
     <Compile Include="Services\CreaturePortraitIconService.cs" />
     <Compile Include="Services\MonsterDropPortraitService.cs" />
     <Compile Include="Services\NpcSellPortraitService.cs" />
+    <Compile Include="Services\NpcTransmitPortraitService.cs" />
     <Compile Include="Services\NpcTradePortraitService.cs" />
     <Compile Include="Services\IconListAvailabilityService.cs" />
     <Compile Include="Services\WindowTitleService.cs" />
@@ -1047,6 +1051,9 @@
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="Views\GameShopIconPickerWindow.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Views\NpcGenEditorWindow.cs">
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="Views\EquipmentMaskPickerWindow.cs">

@@ -15,6 +15,9 @@ namespace FWEledit
             string normalized = fieldName.Trim();
             return string.Equals(normalized, "is_forbid_transfer_ehance", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(normalized, "is_forbid_transfer_enhance", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(normalized, "bind_return_town", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(normalized, "is_undercity", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(normalized, "is_used_for_transfer_world", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(normalized, "is_alpha_fashion_equip", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(normalized, "can_decompose", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(normalized, "can_auction", StringComparison.OrdinalIgnoreCase)

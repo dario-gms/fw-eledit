@@ -12,6 +12,19 @@ FWEledit is based on [sELedit++ by Wrechid](https://github.com/Wrechid/sELedit-)
 
 ---
 
+## What's New in v0.9.5.20
+
+- Added and polished the first `npcgen.data` editor under Tools, with NPC/monster rows, controllers, position/direction/ext fields, grouped parameters, resource rows, attach rows, save support, and tighter integration with the main editor's icon and name-color lookups.
+- Added the secondary-instance launcher and replaced the old single last-folder action with recent-folder shortcuts for the last five opened client folders plus a clear-history option.
+- Improved `[40] NPC Transmit Service` readability with parser/selector support for linked transmit targets, better service references, and inherited icons from NPCs that use the service.
+- Added `NPC_ESSENCE.id_src_monster` parsing against `MONSTER_ESSENCE`, including inherited monster icons, hover previews, selector support, and reverse references from the source monster.
+- Added `SUITE_ESSENCE` reference coverage, equipment cross-references, and inherited suite icons from the first equipment used by each suite.
+- Improved `EQUIPMENT_ADDON` display for critical percentage addons and skill addons, showing real percentage values and resolving `$skill` names through the skill catalog/fallback text in both Values and the Elements list.
+- Continued equipment package import/export refinement for model-only and full-structure workflows, including clearer import mode selection, copyable PathID/package dependency summaries, and safer model/package handling for equipment assets.
+- Project/app version metadata updated to `v0.9.5.20`.
+
+---
+
 ## What's New in v0.9.5.19
 
 - Added the first equipment package export/import workflow for `Equipment Essence`, focused on moving item model assets between Forsaken World clients with `.fweitem` packages.

@@ -50,6 +50,7 @@ namespace FWEledit
         private readonly Dictionary<string, DataGridView> fwReferencesGridsByKey = new Dictionary<string, DataGridView>();
         private Form referencesViewerForm;
         private GameShopEditorWindow gameShopEditorWindow;
+        private NpcGenEditorWindow npcGenEditorWindow;
         private Label referencesViewerLabel;
         private TabControl referencesViewerTabs;
         private DataGridView referencesViewerGrid;

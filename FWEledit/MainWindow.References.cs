@@ -11,7 +11,7 @@ namespace FWEledit
 {
     public partial class MainWindow : Form
     {
-        private const string ReferenceCacheSchemaVersion = "references-v16";
+        private const string ReferenceCacheSchemaVersion = "references-v18";
 
         private sealed class VisibleReferenceTarget
         {

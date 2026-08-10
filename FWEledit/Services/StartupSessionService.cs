@@ -7,6 +7,11 @@ namespace FWEledit
     {
         public void TryRestoreLastSession(NavigationStateService navigationStateService, Action<string> loadFolder)
         {
+            if (Program.SuppressStartupRestore)
+            {
+                return;
+            }
+
             if (navigationStateService == null || loadFolder == null)
             {
                 return;
