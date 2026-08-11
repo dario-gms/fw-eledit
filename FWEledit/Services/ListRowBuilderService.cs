@@ -297,6 +297,109 @@ namespace FWEledit
             }
 
             string normalizedListName = NormalizeListName(listCollection.Lists[listIndex].listName);
+            bool isDropTableList = string.Equals(normalizedListName, "DROPTABLE_ESSENCE", System.StringComparison.OrdinalIgnoreCase);
+            bool isItemTradeList = string.Equals(normalizedListName, "ITEM_TRADE_ESSENCE", System.StringComparison.OrdinalIgnoreCase);
+            bool isItemTradePageList = string.Equals(normalizedListName, "ITEM_TRADE_PAGE_CONFIG", System.StringComparison.OrdinalIgnoreCase);
+            bool isNpcSellServiceList = string.Equals(normalizedListName, "NPC_SELL_SERVICE", System.StringComparison.OrdinalIgnoreCase);
+            bool isNpcTransmitServiceList = string.Equals(normalizedListName, "NPC_TRANSMIT_SERVICE", System.StringComparison.OrdinalIgnoreCase);
+            bool isAddonPackageList = string.Equals(normalizedListName, "ADDON_PACKAGE_CONFIG", System.StringComparison.OrdinalIgnoreCase);
+
+            if (isDropTableList)
+            {
+                int dropTableId;
+                Bitmap monsterPortrait = null;
+                if (int.TryParse(listCollection.GetValue(listIndex, elementIndex, 0), out dropTableId))
+                {
+                    monsterDropPortraitService.TryResolveDropPortrait(listCollection, database, dropTableId, out monsterPortrait);
+                }
+
+                if (monsterPortrait != null)
+                {
+                    return monsterPortrait;
+                }
+
+                Bitmap dropTableIcon = ResolveDropTableIcon(
+                    listCollection,
+                    database,
+                    listIndex,
+                    elementIndex,
+                    GetFieldIndex(listCollection.Lists[listIndex].elementFields, "is_category"),
+                    GetDropFieldIndexes(listCollection.Lists[listIndex].elementFields),
+                    BuildDropTableRowIndexMap(listCollection, listIndex),
+                    BuildItemIconSourceMap(listCollection),
+                    new Dictionary<int, Bitmap>(),
+                    0);
+                if (dropTableIcon != null)
+                {
+                    return dropTableIcon;
+                }
+            }
+
+            if (isItemTradeList)
+            {
+                int tradeServiceId;
+                Bitmap tradeIcon;
+                if (int.TryParse(listCollection.GetValue(listIndex, elementIndex, 0), out tradeServiceId)
+                    && npcTradePortraitService.TryResolveTradePortrait(listCollection, database, tradeServiceId, out tradeIcon)
+                    && tradeIcon != null)
+                {
+                    return tradeIcon;
+                }
+            }
+
+            if (isItemTradePageList)
+            {
+                Bitmap tradePageIcon = ResolveTradePageIcon(
+                    listCollection,
+                    database,
+                    listIndex,
+                    elementIndex,
+                    GetTradePageGoodsFieldIndexes(listCollection.Lists[listIndex].elementFields),
+                    BuildItemIconSourceMap(listCollection),
+                    new Dictionary<int, Bitmap>());
+                if (tradePageIcon != null)
+                {
+                    return tradePageIcon;
+                }
+            }
+
+            if (isNpcSellServiceList)
+            {
+                int sellServiceId;
+                Bitmap sellIcon;
+                if (int.TryParse(listCollection.GetValue(listIndex, elementIndex, 0), out sellServiceId)
+                    && npcSellPortraitService.TryResolveSellPortrait(listCollection, database, sellServiceId, out sellIcon)
+                    && sellIcon != null)
+                {
+                    return sellIcon;
+                }
+            }
+
+            if (isNpcTransmitServiceList)
+            {
+                int transmitServiceId;
+                Bitmap transmitIcon;
+                if (int.TryParse(listCollection.GetValue(listIndex, elementIndex, 0), out transmitServiceId)
+                    && npcTransmitPortraitService.TryResolveTransmitPortrait(listCollection, database, transmitServiceId, out transmitIcon)
+                    && transmitIcon != null)
+                {
+                    return transmitIcon;
+                }
+            }
+
+            if (isAddonPackageList)
+            {
+                int addonPackageId;
+                Bitmap addonPackageIcon;
+                Dictionary<int, Bitmap> addonPackageIconById = BuildAddonPackageIconMap(listCollection, database);
+                if (int.TryParse(listCollection.GetValue(listIndex, elementIndex, 0), out addonPackageId)
+                    && addonPackageIconById.TryGetValue(addonPackageId, out addonPackageIcon)
+                    && addonPackageIcon != null)
+                {
+                    return addonPackageIcon;
+                }
+            }
+
             if (string.Equals(normalizedListName, "SUITE_ESSENCE", System.StringComparison.OrdinalIgnoreCase))
             {
                 Bitmap suiteIcon = ResolveSuiteIcon(

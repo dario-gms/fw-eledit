@@ -228,40 +228,16 @@ namespace FWEledit
                 return Properties.Resources.NoIcon;
             }
 
-            int iconFieldIndex = fieldIndexLookupService.GetIconFieldIndex(sessionService.ListCollection, suggestion.ListIndex);
-            if (iconFieldIndex < 0)
+            Bitmap resolvedIcon = listRowBuilderService != null
+                ? listRowBuilderService.BuildRowIcon(
+                    sessionService.ListCollection,
+                    sessionService.Database,
+                    suggestion.ListIndex,
+                    suggestion.ElementIndex)
+                : null;
+            if (resolvedIcon != null)
             {
-                return Properties.Resources.NoIcon;
-            }
-
-            string rawIcon = sessionService.ListCollection.GetValue(suggestion.ListIndex, suggestion.ElementIndex, iconFieldIndex);
-            if (string.IsNullOrWhiteSpace(rawIcon))
-            {
-                return Properties.Resources.NoIcon;
-            }
-
-            Bitmap portrait;
-            if (creaturePortraitIconService.TryResolvePortrait(
-                sessionService.Database,
-                sessionService.ListCollection,
-                suggestion.ListIndex,
-                rawIcon,
-                out portrait)
-                && portrait != null)
-            {
-                return portrait;
-            }
-
-            string iconKey = iconResolutionService.ResolveIconKeyForList(
-                sessionService.Database,
-                sessionService.ListCollection,
-                suggestion.ListIndex,
-                rawIcon);
-            if (!string.IsNullOrWhiteSpace(iconKey)
-                && sessionService.Database.sourceBitmap != null
-                && sessionService.Database.ContainsKey(iconKey))
-            {
-                return sessionService.Database.images(iconKey);
+                return resolvedIcon;
             }
 
             return Properties.Resources.NoIcon;

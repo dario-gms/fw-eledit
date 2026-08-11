@@ -23,6 +23,7 @@ logs/
 _build_test/
 _dist/
 .dotnet/
+.tools/
 _tmp_*
 list0_fw_dump_*.csv
 tools/equipment-package/

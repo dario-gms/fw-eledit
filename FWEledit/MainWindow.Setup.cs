@@ -91,7 +91,7 @@ namespace FWEledit
                 assembly,
                 label_Version,
                 navigationStateService,
-                "0.9.5.20");
+                "0.9.5.21");
 
             fwDarkMode = Properties.Settings.Default.UseDarkMode;
             cpb2.Value = 0;
@@ -383,6 +383,19 @@ namespace FWEledit
                 toolStripMenuItem3.DropDownItems.Insert(insertIndex, npcGenItem);
             }
 
+            if (!toolStripMenuItem3.DropDownItems.ContainsKey("advancedTitleEditorToolStripMenuItem"))
+            {
+                ToolStripMenuItem titleEditorItem = new ToolStripMenuItem();
+                titleEditorItem.Name = "advancedTitleEditorToolStripMenuItem";
+                titleEditorItem.Text = "Advanced Title Editor...";
+                titleEditorItem.Click += click_advancedTitleEditor;
+
+                int insertIndex = toolStripMenuItem3.DropDownItems.ContainsKey("npcGenEditorToolStripMenuItem")
+                    ? toolStripMenuItem3.DropDownItems.IndexOfKey("npcGenEditorToolStripMenuItem") + 1
+                    : Math.Min(7, toolStripMenuItem3.DropDownItems.Count);
+                toolStripMenuItem3.DropDownItems.Insert(insertIndex, titleEditorItem);
+            }
+
             if (!toolStripMenuItem3.DropDownItems.ContainsKey("openEmptyInstanceToolStripMenuItem"))
             {
                 ToolStripMenuItem emptyInstanceItem = new ToolStripMenuItem();
@@ -390,8 +403,8 @@ namespace FWEledit
                 emptyInstanceItem.Text = "Open Empty Instance";
                 emptyInstanceItem.Click += click_openEmptyInstance;
 
-                int insertIndex = toolStripMenuItem3.DropDownItems.ContainsKey("npcGenEditorToolStripMenuItem")
-                    ? toolStripMenuItem3.DropDownItems.IndexOfKey("npcGenEditorToolStripMenuItem") + 1
+                int insertIndex = toolStripMenuItem3.DropDownItems.ContainsKey("advancedTitleEditorToolStripMenuItem")
+                    ? toolStripMenuItem3.DropDownItems.IndexOfKey("advancedTitleEditorToolStripMenuItem") + 1
                     : toolStripMenuItem3.DropDownItems.Count;
                 toolStripMenuItem3.DropDownItems.Insert(insertIndex, emptyInstanceItem);
             }
@@ -970,6 +983,7 @@ namespace FWEledit
 
     }
 }
+
 
 
 

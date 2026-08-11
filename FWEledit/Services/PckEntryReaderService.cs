@@ -1149,7 +1149,13 @@ namespace FWEledit
                 return string.Empty;
             }
 
-            return value.Replace('/', '\\').Trim().TrimStart('\\').ToLowerInvariant();
+            string normalized = value.Replace('/', '\\').Trim().TrimStart('\\');
+            while (normalized.Contains("\\\\"))
+            {
+                normalized = normalized.Replace("\\\\", "\\");
+            }
+
+            return normalized.ToLowerInvariant();
         }
 
         private static bool TryReadFooter(Stream stream, BinaryReader br, long length, out long tableOffset, out uint entryCount)

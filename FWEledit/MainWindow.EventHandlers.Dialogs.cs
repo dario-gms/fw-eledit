@@ -262,6 +262,18 @@ namespace FWEledit
             npcGenEditorWindow.BringToFront();
         }
 
+        private void click_advancedTitleEditor(object sender, EventArgs e)
+        {
+            if (titleEditorWindow == null || titleEditorWindow.IsDisposed)
+            {
+                titleEditorWindow = new TitleEditorWindow(sessionService.AssetManager);
+                titleEditorWindow.FormClosed += (s, args) => titleEditorWindow = null;
+            }
+
+            titleEditorWindow.Show(this);
+            titleEditorWindow.BringToFront();
+        }
+
         private void click_openEmptyInstance(object sender, EventArgs e)
         {
             try
