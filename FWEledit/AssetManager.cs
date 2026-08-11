@@ -549,6 +549,21 @@ namespace FWEledit
 
                 if (File.Exists(gamePck))
                 {
+                    if (string.Equals(package, "configs", StringComparison.OrdinalIgnoreCase))
+                    {
+                        string backupDir = Path.Combine(GameRootPath, "backup_configs");
+                        CreateTimestampedZipBackup(gamePck, backupDir, "configs");
+                    }
+                    else if (string.Equals(package, "script", StringComparison.OrdinalIgnoreCase))
+                    {
+                        string backupDir = Path.Combine(GameRootPath, "backup_script");
+                        CreateTimestampedZipBackup(gamePck, backupDir, "script");
+                    }
+                    else if (string.Equals(package, "surfaces", StringComparison.OrdinalIgnoreCase))
+                    {
+                        string backupDir = Path.Combine(GameRootPath, "backup_surfaces");
+                        CreateTimestampedZipBackup(gamePck, backupDir, "surfaces");
+                    }
                     File.Copy(gamePck, gamePck + ".bak", true);
                 }
                 if (File.Exists(gamePkx))
@@ -576,6 +591,102 @@ namespace FWEledit
                 error = ex.Message;
                 return false;
             }
+        }
+
+        private bool ImportStagedPackageAssetsByRebuild(
+            string packageName,
+            string stagingDirectory,
+            string gamePck,
+            string gamePkx,
+            int timeoutMs,
+            out string error)
+        {
+            error = string.Empty;
+            string tempRoot = Path.Combine(Path.GetTempPath(), "FWEledit", "pck-rebuild", packageName + "-" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                Directory.CreateDirectory(tempRoot);
+                if (File.Exists(gamePck))
+                {
+                    if (!PckIndexReader.TryExtractEntries(packageName, gamePck, gamePkx, tempRoot, out error))
+                    {
+                        return false;
+                    }
+                }
+
+                CopyDirectoryContents(stagingDirectory, tempRoot);
+
+                if (!RunWinPckHelper("rebuild", tempRoot, gamePck, 1, timeoutMs))
+                {
+                    error = "Failed to rebuild " + packageName + ".pck";
+                    return false;
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = ex.Message;
+                return false;
+            }
+            finally
+            {
+                try
+                {
+                    string fullTempRoot = Path.GetFullPath(tempRoot);
+                    string allowedRoot = Path.GetFullPath(Path.Combine(Path.GetTempPath(), "FWEledit", "pck-rebuild"));
+                    if (fullTempRoot.StartsWith(allowedRoot, StringComparison.OrdinalIgnoreCase) && Directory.Exists(fullTempRoot))
+                    {
+                        Directory.Delete(fullTempRoot, true);
+                    }
+                }
+                catch
+                { }
+            }
+        }
+
+        private static void CopyDirectoryContents(string sourceDirectory, string targetDirectory)
+        {
+            if (string.IsNullOrWhiteSpace(sourceDirectory) || !Directory.Exists(sourceDirectory))
+            {
+                return;
+            }
+
+            Directory.CreateDirectory(targetDirectory);
+
+            string[] directories = Directory.GetDirectories(sourceDirectory, "*", SearchOption.AllDirectories);
+            for (int i = 0; i < directories.Length; i++)
+            {
+                string relative = GetRelativeFilePath(sourceDirectory, directories[i]);
+                Directory.CreateDirectory(Path.Combine(targetDirectory, relative));
+            }
+
+            string[] files = Directory.GetFiles(sourceDirectory, "*", SearchOption.AllDirectories);
+            for (int i = 0; i < files.Length; i++)
+            {
+                string relative = GetRelativeFilePath(sourceDirectory, files[i]);
+                string targetPath = Path.Combine(targetDirectory, relative);
+                string targetParent = Path.GetDirectoryName(targetPath);
+                if (!string.IsNullOrWhiteSpace(targetParent))
+                {
+                    Directory.CreateDirectory(targetParent);
+                }
+
+                File.Copy(files[i], targetPath, true);
+            }
+        }
+
+        private static string GetRelativeFilePath(string rootDirectory, string fileOrDirectory)
+        {
+            string root = Path.GetFullPath(rootDirectory ?? string.Empty)
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            string path = Path.GetFullPath(fileOrDirectory ?? string.Empty);
+            if (path.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+            {
+                return path.Substring(root.Length).TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            }
+
+            return Path.GetFileName(path);
         }
 
         private bool RunPckCompress(string extractedDirectory, int compressionLevel)
@@ -667,6 +778,7 @@ namespace FWEledit
                 }
             }
 
+            AddRoot(WorkspaceRootPath);
             AddRoot(GameRootPath);
             AddRoot(Application.StartupPath);
             AddRoot(Path.GetDirectoryName(Application.StartupPath));
@@ -921,6 +1033,12 @@ namespace FWEledit
 
                 foreach (string package in new List<string>(dirtyPackages))
                 {
+                    if (string.Equals(package, "surfaces", StringComparison.OrdinalIgnoreCase))
+                    {
+                        summary = "Refusing to rebuild surfaces.pck from an extracted folder. Use incremental PCK update for surface assets.";
+                        return false;
+                    }
+
                     string extracted = Path.Combine(workspaceResources, package + ".pck.files");
                     string workspacePck = Path.Combine(workspaceResources, package + ".pck");
                     string gamePck = Path.Combine(gameResources, package + ".pck");
@@ -952,6 +1070,11 @@ namespace FWEledit
                         {
                             string backupDir = Path.Combine(GameRootPath, "backup_script");
                             CreateTimestampedZipBackup(gamePck, backupDir, "script");
+                        }
+                        else if (string.Equals(package, "surfaces", StringComparison.OrdinalIgnoreCase))
+                        {
+                            string backupDir = Path.Combine(GameRootPath, "backup_surfaces");
+                            CreateTimestampedZipBackup(gamePck, backupDir, "surfaces");
                         }
                         File.Copy(gamePck, gamePck + ".bak", true);
                     }
@@ -1027,6 +1150,12 @@ namespace FWEledit
                 string workspacePck = Path.Combine(workspaceResources, package + ".pck");
                 string gamePck = Path.Combine(gameResources, package + ".pck");
 
+                if (string.Equals(package, "surfaces", StringComparison.OrdinalIgnoreCase))
+                {
+                    summary = "Refusing to rebuild surfaces.pck from an extracted folder. Use incremental PCK update for surface assets.";
+                    return false;
+                }
+
                 if (!Directory.Exists(extracted))
                 {
                     summary = "Extracted package not found: " + package + ".pck.files";
@@ -1055,6 +1184,11 @@ namespace FWEledit
                     {
                         string backupDir = Path.Combine(GameRootPath, "backup_script");
                         CreateTimestampedZipBackup(gamePck, backupDir, "script");
+                    }
+                    else if (string.Equals(package, "surfaces", StringComparison.OrdinalIgnoreCase))
+                    {
+                        string backupDir = Path.Combine(GameRootPath, "backup_surfaces");
+                        CreateTimestampedZipBackup(gamePck, backupDir, "surfaces");
                     }
                     File.Copy(gamePck, gamePck + ".bak", true);
                 }
@@ -2676,6 +2810,20 @@ namespace FWEledit
 
         private string FindWinPckUpdaterExecutable()
         {
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(WorkspaceRootPath))
+                {
+                    string workspaceHelper = Path.Combine(WorkspaceRootPath, "tools", "FWPck", "FWPckUpdater.exe");
+                    if (File.Exists(workspaceHelper))
+                    {
+                        return workspaceHelper;
+                    }
+                }
+            }
+            catch
+            { }
+
             List<string> roots = new List<string>();
             HashSet<string> seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 

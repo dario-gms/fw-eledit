@@ -10,6 +10,7 @@ namespace FWPckUpdater
     internal static class Program
     {
         private const int WinPckOk = 0;
+        private const int DefaultPckVersionId = 0;
 
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
         private static extern bool SetDllDirectory(string lpPathName);
@@ -36,6 +37,12 @@ namespace FWPckUpdater
         private static extern IntPtr pck_getFileEntryByPath(string pathInPck);
 
         [DllImport("pckdll_x64.dll", CallingConvention = CallingConvention.Cdecl)]
+        private static extern int pck_DeleteEntry(IntPtr entry);
+
+        [DllImport("pckdll_x64.dll", CallingConvention = CallingConvention.Cdecl)]
+        private static extern int pck_DeleteEntrySubmit();
+
+        [DllImport("pckdll_x64.dll", CallingConvention = CallingConvention.Cdecl)]
         private static extern int pck_setCompressLevel(int level);
 
         [DllImport("pckdll_x64.dll", CharSet = CharSet.Unicode, CallingConvention = CallingConvention.Cdecl)]
@@ -54,7 +61,7 @@ namespace FWPckUpdater
 
                 if (args == null || args.Length < 3)
                 {
-                    Console.Error.WriteLine("Usage: FWPckUpdater.exe <update|rebuild> <staging-folder> <target-pck> [compression-level]");
+                    Console.Error.WriteLine("Usage: FWPckUpdater.exe <update|rebuild> <staging-folder> <target-pck> [compression-level] [pck-version-id]");
                     return 2;
                 }
 
@@ -62,6 +69,7 @@ namespace FWPckUpdater
                 string stagingFolder = Normalize(args[1]);
                 string targetPck = Normalize(args[2]);
                 int compressionLevel = ParseCompressionLevel(args.Length >= 4 ? args[3] : null);
+                int pckVersionId = ParsePckVersionId(args.Length >= 5 ? args[4] : null);
 
                 if (!Directory.Exists(stagingFolder))
                 {
@@ -102,7 +110,7 @@ namespace FWPckUpdater
                     }
 
                     Console.WriteLine("Rebuilding package from folder...");
-                    int rebuildResult = RebuildPackageFromRoots(topLevelEntries, tempRebuildPck, compressionLevel);
+                    int rebuildResult = RebuildPackageFromRoots(topLevelEntries, tempRebuildPck, compressionLevel, pckVersionId);
                     if (rebuildResult != WinPckOk)
                     {
                         Console.Error.WriteLine("WinPCK rebuild failed with code " + rebuildResult.ToString() + "." + BuildLastErrorSuffix());
@@ -134,7 +142,7 @@ namespace FWPckUpdater
                 if (!File.Exists(targetPck))
                 {
                     Console.WriteLine("Creating new package from staging folder...");
-                    int createResult = do_CreatePckFile(stagingFolder, targetPck, 0, compressionLevel);
+                    int createResult = do_CreatePckFile(stagingFolder, targetPck, pckVersionId, compressionLevel);
                     if (createResult != WinPckOk)
                     {
                         Console.Error.WriteLine("WinPCK create failed with code " + createResult.ToString() + ".");
@@ -196,6 +204,20 @@ namespace FWPckUpdater
                     }
                     directoryInPck = directoryInPck.Replace(Path.DirectorySeparatorChar, '\\').Replace(Path.AltDirectorySeparatorChar, '\\');
                     Console.WriteLine("Adding file " + (i + 1).ToString() + "/" + files.Length.ToString() + ": " + pathInPck);
+
+                    if (PackageEntryExists(targetPck, pathInPck))
+                    {
+                        int existingUpdateResult = UpdateExistingPackageFile(file, pathInPck, targetPck, compressionLevel);
+                        if (existingUpdateResult != WinPckOk)
+                        {
+                            Console.Error.WriteLine("WinPCK update failed with code " + existingUpdateResult.ToString() + " while replacing existing file " + pathInPck + "." + BuildLastErrorSuffix());
+                            return 11;
+                        }
+
+                        Console.WriteLine("Package update completed with existing-entry submit.");
+                        return 0;
+                    }
+
                     int addResult = do_AddFileToPckFile(file, targetPck, directoryInPck, compressionLevel);
                     if (addResult != WinPckOk)
                     {
@@ -311,14 +333,24 @@ namespace FWPckUpdater
             return parsed;
         }
 
-        private static int RebuildPackageFromRoots(string[] topLevelEntries, string targetPck, int compressionLevel)
+        private static int ParsePckVersionId(string value)
+        {
+            if (!int.TryParse(value, out int parsed))
+            {
+                return DefaultPckVersionId;
+            }
+
+            return parsed < 0 ? DefaultPckVersionId : parsed;
+        }
+
+        private static int RebuildPackageFromRoots(string[] topLevelEntries, string targetPck, int compressionLevel, int pckVersionId)
         {
             if (topLevelEntries == null || topLevelEntries.Length == 0 || string.IsNullOrWhiteSpace(targetPck))
             {
                 return 1;
             }
 
-            int createResult = do_CreatePckFile(topLevelEntries[0], targetPck, 0, compressionLevel);
+            int createResult = do_CreatePckFile(topLevelEntries[0], targetPck, pckVersionId, compressionLevel);
             if (createResult != WinPckOk)
             {
                 return createResult;
@@ -382,6 +414,49 @@ namespace FWPckUpdater
             }
 
             return WinPckOk;
+        }
+
+        private static int UpdateExistingPackageFile(string sourceFile, string pathInPck, string targetPck, int compressionLevel)
+        {
+            if (string.IsNullOrWhiteSpace(sourceFile) || string.IsNullOrWhiteSpace(pathInPck) || string.IsNullOrWhiteSpace(targetPck))
+            {
+                return 1;
+            }
+
+            int openResult = pck_open(targetPck);
+            if (openResult != WinPckOk)
+            {
+                return openResult;
+            }
+
+            try
+            {
+                IntPtr existingEntry = pck_getFileEntryByPath(pathInPck);
+                if (existingEntry == IntPtr.Zero)
+                {
+                    return 2;
+                }
+
+                int deleteResult = pck_DeleteEntry(existingEntry);
+                if (deleteResult != WinPckOk)
+                {
+                    return deleteResult;
+                }
+
+                int submitDeleteResult = pck_DeleteEntrySubmit();
+                if (submitDeleteResult != WinPckOk)
+                {
+                    return submitDeleteResult;
+                }
+            }
+            finally
+            {
+                pck_close();
+            }
+
+            string directoryInPck = Path.GetDirectoryName(pathInPck) ?? string.Empty;
+            directoryInPck = directoryInPck.Replace(Path.DirectorySeparatorChar, '\\').Replace(Path.AltDirectorySeparatorChar, '\\');
+            return do_AddFileToPckFile(sourceFile, targetPck, directoryInPck, compressionLevel);
         }
 
         private static int UpdatePackageFromRoots(string[] topLevelEntries, string targetPck, int compressionLevel)
