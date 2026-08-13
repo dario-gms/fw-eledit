@@ -53,6 +53,7 @@ namespace FWEledit
                 {
                     DataGridViewRow row = (DataGridViewRow)elementGrid.RowTemplate.Clone();
                     row.CreateCells(elementGrid, rows[i]);
+                    row.Tag = i;
                     if (listIndex != conversationListIndex && applyQualityColor != null)
                     {
                         applyQualityColor(listIndex, i, row);

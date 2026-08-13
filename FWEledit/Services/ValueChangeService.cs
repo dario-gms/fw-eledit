@@ -379,7 +379,7 @@ namespace FWEledit
             else if (string.Equals(request.FieldName, "file_icon", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(request.FieldName, "file_icon1", StringComparison.OrdinalIgnoreCase))
             {
-                result.DisplayValue = iconResolutionService.FormatIconPathIdDisplay(request.Database, valueToSet);
+                result.DisplayValue = iconResolutionService.FormatIconPathIdDisplay(request.Database, request.ListCollection, request.ListIndex, valueToSet);
             }
             else if (itemReferenceService != null && itemReferenceService.IsReferenceField(request.ListCollection, request.ListIndex, request.FieldName))
             {
@@ -481,7 +481,7 @@ namespace FWEledit
                         else
                         {
                             string path = iconResolutionService.ResolveIconKeyForList(request.Database, request.ListCollection, request.ListIndex, rawIcon);
-                            if (request.Database != null && request.Database.sourceBitmap != null && request.Database.ContainsKey(path))
+                            if (request.Database != null && request.Database.ContainsKey(path))
                             {
                                 icon = request.Database.images(path);
                             }

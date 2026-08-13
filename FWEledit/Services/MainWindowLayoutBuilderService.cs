@@ -554,7 +554,7 @@ namespace FWEledit
             Label descriptionStatusLabel = new Label();
             descriptionStatusLabel.Dock = DockStyle.Fill;
             descriptionStatusLabel.TextAlign = ContentAlignment.MiddleLeft;
-            descriptionStatusLabel.Text = "Loaded from configs.pck.files";
+            descriptionStatusLabel.Text = "Description source pending";
             descriptionStatusLabel.Padding = new Padding(8, 0, 0, 0);
 
             descriptionHeader.Controls.Add(descriptionStatusLabel);

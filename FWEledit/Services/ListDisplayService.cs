@@ -8,6 +8,7 @@ namespace FWEledit
     {
         private readonly Dictionary<int, string> list0DisplayNameCache = new Dictionary<int, string>();
         private readonly Dictionary<int, List<object[]>> listDisplayRowsCache = new Dictionary<int, List<object[]>>();
+        private eListCollection listDisplayRowsCacheCollection;
         private readonly Dictionary<string, string> listFriendlyNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
             { "Equipment", "Equipment Essence" },
@@ -29,6 +30,7 @@ namespace FWEledit
         public void ClearListDisplayCache()
         {
             listDisplayRowsCache.Clear();
+            listDisplayRowsCacheCollection = null;
         }
 
         public void InvalidateListDisplayCache(int listIndex)
@@ -41,8 +43,31 @@ namespace FWEledit
 
         public bool TryGetListDisplayRows(int listIndex, out List<object[]> rows)
         {
+            return TryGetListDisplayRows(null, listIndex, out rows);
+        }
+
+        public bool TryGetListDisplayRows(eListCollection listCollection, int listIndex, out List<object[]> rows)
+        {
+            if (listCollection != null && listDisplayRowsCacheCollection != null && !object.ReferenceEquals(listDisplayRowsCacheCollection, listCollection))
+            {
+                ClearListDisplayCache();
+            }
+
             if (!listDisplayRowsCache.TryGetValue(listIndex, out rows))
             {
+                return false;
+            }
+
+            if (listCollection != null
+                && (listIndex < 0
+                    || listCollection.Lists == null
+                    || listIndex >= listCollection.Lists.Length
+                    || listCollection.Lists[listIndex] == null
+                    || listCollection.Lists[listIndex].elementValues == null
+                    || rows.Count != listCollection.Lists[listIndex].elementValues.Length))
+            {
+                listDisplayRowsCache.Remove(listIndex);
+                rows = null;
                 return false;
             }
 
@@ -59,6 +84,17 @@ namespace FWEledit
         public void SetListDisplayRows(int listIndex, List<object[]> rows)
         {
             listDisplayRowsCache[listIndex] = rows ?? new List<object[]>();
+        }
+
+        public void SetListDisplayRows(eListCollection listCollection, int listIndex, List<object[]> rows)
+        {
+            if (listCollection != null && listDisplayRowsCacheCollection != null && !object.ReferenceEquals(listDisplayRowsCacheCollection, listCollection))
+            {
+                ClearListDisplayCache();
+            }
+
+            listDisplayRowsCacheCollection = listCollection;
+            SetListDisplayRows(listIndex, rows);
         }
 
         public string GetFriendlyListName(string rawListName)

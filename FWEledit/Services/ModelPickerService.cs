@@ -127,7 +127,6 @@ namespace FWEledit
                     if (context.SampleIconKeyByPathId.TryGetValue(pathId, out iconKey)
                         && !string.IsNullOrWhiteSpace(iconKey)
                         && database != null
-                        && database.sourceBitmap != null
                         && database.ContainsKey(iconKey))
                     {
                         icon = null;

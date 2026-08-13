@@ -478,7 +478,7 @@ namespace FWEledit
             Bitmap icon = Properties.Resources.NoIcon;
             if (database != null && !string.IsNullOrWhiteSpace(option.IconKey))
             {
-                if (database.sourceBitmap != null && database.ContainsKey(option.IconKey))
+                if (database.ContainsKey(option.IconKey))
                 {
                     icon = database.images(option.IconKey);
                 }

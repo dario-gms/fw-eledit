@@ -13,15 +13,12 @@ namespace FWEledit
 
             try
             {
-                assetManager.EnsurePackageExtracted("surfaces");
                 string iconImg;
                 string iconTxt;
                 if (!assetManager.TryGetIconsetPair(out iconImg, out iconTxt))
                 {
                     MessageBox.Show(
-                        "Icon list not found. Ensure surfaces.pck is present and extracted.\n" +
-                        "Expected in workspace or game resources:\n" +
-                        "surfaces.pck.files\\iconset\\iconlist_*.{dds,png}",
+                        "Icon list not found. Ensure surfaces.pck is present in the client resources.",
                         "Icons",
                         MessageBoxButtons.OK,
                         MessageBoxIcon.Warning);

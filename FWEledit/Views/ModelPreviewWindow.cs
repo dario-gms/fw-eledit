@@ -58,6 +58,7 @@ namespace FWEledit
         private readonly Label helpLabel;
         private readonly Label summaryLabel;
         private readonly Label sourceLabel;
+        private readonly Panel footerPanel;
         private readonly Timer animationTimer;
         private readonly Timer cameraPersistenceTimer;
         private DateTime lastAnimationTickUtc;
@@ -153,17 +154,17 @@ namespace FWEledit
             viewportHost.Controls.Add(previewStatusLabel);
             previewStatusLabel.BringToFront();
 
-            Panel footer = new Panel();
-            footer.Dock = DockStyle.Bottom;
-            footer.Height = 40;
-            footer.Padding = new Padding(10, 4, 10, 4);
-            footer.BackColor = Color.FromArgb(24, 24, 24);
+            footerPanel = new Panel();
+            footerPanel.Dock = DockStyle.Bottom;
+            footerPanel.Height = 40;
+            footerPanel.Padding = new Padding(10, 4, 10, 4);
+            footerPanel.BackColor = Color.FromArgb(24, 24, 24);
 
             helpLabel = new Label();
             helpLabel.Dock = DockStyle.Fill;
             helpLabel.TextAlign = ContentAlignment.MiddleLeft;
             helpLabel.ForeColor = Color.FromArgb(190, 190, 190);
-            footer.Controls.Add(helpLabel);
+            footerPanel.Controls.Add(helpLabel);
 
             animationCheck = new CheckBox();
             animationCheck.Dock = DockStyle.Right;
@@ -171,7 +172,7 @@ namespace FWEledit
             animationCheck.Checked = false;
             animationCheck.Text = "Auto Orbit";
             animationCheck.ForeColor = Color.Gainsboro;
-            animationCheck.BackColor = footer.BackColor;
+            animationCheck.BackColor = footerPanel.BackColor;
             animationCheck.CheckedChanged += (s, e) =>
             {
                 ApplyAnimationMode();
@@ -179,7 +180,7 @@ namespace FWEledit
                 UpdateHelpLabel();
                 InvalidateActiveViewport();
             };
-            footer.Controls.Add(animationCheck);
+            footerPanel.Controls.Add(animationCheck);
 
             trueScaleCheck = new CheckBox();
             trueScaleCheck.Dock = DockStyle.Right;
@@ -187,7 +188,7 @@ namespace FWEledit
             trueScaleCheck.Checked = false;
             trueScaleCheck.Text = "True Scale";
             trueScaleCheck.ForeColor = Color.Gainsboro;
-            trueScaleCheck.BackColor = footer.BackColor;
+            trueScaleCheck.BackColor = footerPanel.BackColor;
             trueScaleCheck.CheckedChanged += (s, e) =>
             {
                 ApplyTrueScaleMode();
@@ -195,7 +196,7 @@ namespace FWEledit
                 ResetActiveViewport();
                 InvalidateActiveViewport();
             };
-            footer.Controls.Add(trueScaleCheck);
+            footerPanel.Controls.Add(trueScaleCheck);
 
             wireframeCheck = new CheckBox();
             wireframeCheck.Dock = DockStyle.Right;
@@ -203,13 +204,13 @@ namespace FWEledit
             wireframeCheck.Checked = false;
             wireframeCheck.Text = "Wireframe";
             wireframeCheck.ForeColor = Color.Gainsboro;
-            wireframeCheck.BackColor = footer.BackColor;
+            wireframeCheck.BackColor = footerPanel.BackColor;
             wireframeCheck.CheckedChanged += (s, e) =>
             {
                 ApplyWireframeMode();
                 InvalidateActiveViewport();
             };
-            footer.Controls.Add(wireframeCheck);
+            footerPanel.Controls.Add(wireframeCheck);
 
             backendCombo = new ComboBox();
             backendCombo.Dock = DockStyle.Right;
@@ -220,7 +221,7 @@ namespace FWEledit
             backendCombo.Items.Add("OpenGL");
             backendCombo.SelectedIndex = 0;
             backendCombo.SelectedIndexChanged += (s, e) => ApplyRendererSettings(true);
-            footer.Controls.Add(backendCombo);
+            footerPanel.Controls.Add(backendCombo);
 
             backendLabel = new Label();
             backendLabel.Dock = DockStyle.Right;
@@ -228,7 +229,7 @@ namespace FWEledit
             backendLabel.TextAlign = ContentAlignment.MiddleRight;
             backendLabel.ForeColor = Color.FromArgb(190, 190, 190);
             backendLabel.Text = "Backend:";
-            footer.Controls.Add(backendLabel);
+            footerPanel.Controls.Add(backendLabel);
 
             hardwareCheck = new CheckBox();
             hardwareCheck.Dock = DockStyle.Right;
@@ -236,16 +237,16 @@ namespace FWEledit
             hardwareCheck.Checked = true;
             hardwareCheck.Text = "Hardware";
             hardwareCheck.ForeColor = Color.Gainsboro;
-            hardwareCheck.BackColor = footer.BackColor;
+            hardwareCheck.BackColor = footerPanel.BackColor;
             hardwareCheck.CheckedChanged += (s, e) => ApplyRendererSettings(true);
-            footer.Controls.Add(hardwareCheck);
+            footerPanel.Controls.Add(hardwareCheck);
 
             Button resetButton = new Button();
             resetButton.Dock = DockStyle.Right;
             resetButton.Width = 120;
             resetButton.Text = "Reset View";
             resetButton.Click += (s, e) => ResetActiveViewport();
-            footer.Controls.Add(resetButton);
+            footerPanel.Controls.Add(resetButton);
 
             animationTimer = new Timer();
             animationTimer.Interval = 33;
@@ -258,7 +259,7 @@ namespace FWEledit
             cameraPersistenceTimer.Start();
 
             Controls.Add(viewportHost);
-            Controls.Add(footer);
+            Controls.Add(footerPanel);
             Controls.Add(sourceLabel);
             Controls.Add(summaryLabel);
 
@@ -312,6 +313,31 @@ namespace FWEledit
         public bool IsNonActivatingWindow
         {
             get { return showWithoutActivation; }
+        }
+
+        public void SetEmbeddedViewportOnlyMode(bool enabled)
+        {
+            if (summaryLabel != null)
+            {
+                summaryLabel.Visible = !enabled;
+            }
+            if (sourceLabel != null)
+            {
+                sourceLabel.Visible = !enabled;
+            }
+            if (footerPanel != null)
+            {
+                footerPanel.Visible = !enabled;
+            }
+            if (enabled)
+            {
+                MinimumSize = Size.Empty;
+                Padding = Padding.Empty;
+            }
+
+            PerformLayout();
+            ResetActiveViewport();
+            InvalidateActiveViewport();
         }
 
         protected override bool ShowWithoutActivation

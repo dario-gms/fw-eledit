@@ -191,7 +191,7 @@ namespace FWEledit
                     && (string.Equals(fieldName, "file_icon", System.StringComparison.OrdinalIgnoreCase)
                         || string.Equals(fieldName, "file_icon1", System.StringComparison.OrdinalIgnoreCase)))
                 {
-                    fieldValue = iconResolutionService.FormatIconPathIdDisplay(database, fieldValue);
+                    fieldValue = iconResolutionService.FormatIconPathIdDisplay(database, listCollection, listIndex, fieldValue);
                 }
                 else if (string.Equals(fieldName, "item_quality", System.StringComparison.OrdinalIgnoreCase)
                     || string.Equals(fieldName, "id_quality", System.StringComparison.OrdinalIgnoreCase))

@@ -576,7 +576,7 @@ namespace FWEledit
                     Directory.CreateDirectory(tempDirectory);
                     string sourcePath = Path.Combine(tempDirectory, "title_def_u.lua");
                     File.WriteAllBytes(sourcePath, payload);
-                    return DecompileLuaFile(sourcePath);
+                    return DecodeOrDecompileLuaFile(sourcePath, payload);
                 }
             }
             catch
@@ -594,7 +594,7 @@ namespace FWEledit
                     Directory.CreateDirectory(tempDirectory);
                     string sourcePath = Path.Combine(tempDirectory, "title_def_u_winpck.lua");
                     File.WriteAllBytes(sourcePath, payload);
-                    return DecompileLuaFile(sourcePath);
+                    return DecodeOrDecompileLuaFile(sourcePath, payload);
                 }
             }
             catch
@@ -1775,6 +1775,60 @@ namespace FWEledit
             }
 
             return normalized;
+        }
+
+        private static string DecodeOrDecompileLuaFile(string sourcePath, byte[] payload)
+        {
+            string plainText;
+            if (TryDecodePlainLuaText(payload, out plainText))
+            {
+                return plainText;
+            }
+
+            return DecompileLuaFile(sourcePath);
+        }
+
+        private static bool TryDecodePlainLuaText(byte[] payload, out string luaText)
+        {
+            luaText = string.Empty;
+            if (payload == null || payload.Length == 0)
+            {
+                return false;
+            }
+
+            if (payload.Length >= 4
+                && payload[0] == 0x1B
+                && payload[1] == (byte)'L'
+                && payload[2] == (byte)'u'
+                && payload[3] == (byte)'a')
+            {
+                return false;
+            }
+
+            Encoding[] encodings = new Encoding[]
+            {
+                new UTF8Encoding(false, false),
+                Encoding.GetEncoding("GBK"),
+                Encoding.Default
+            };
+
+            for (int i = 0; i < encodings.Length; i++)
+            {
+                try
+                {
+                    string decoded = encodings[i].GetString(payload);
+                    if (decoded.IndexOf("title_definition", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        luaText = decoded.TrimStart('\uFEFF');
+                        return true;
+                    }
+                }
+                catch
+                {
+                }
+            }
+
+            return false;
         }
 
         private static string DecompileLuaFile(string sourcePath)

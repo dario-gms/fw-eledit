@@ -230,6 +230,7 @@ namespace FWEledit
             InitializeEmbeddedReferencesTab();
             InitializeElementContextActions();
             InitializeToolMenuActions();
+            PruneLegacyMainMenuItems();
             InitializeRecentFolderMenu();
             InitializeDescriptionFormattingActions();
             InitializeAddonPackageDescEditor();
@@ -237,6 +238,60 @@ namespace FWEledit
             InitializeNpcSellServicePageUi();
             UpdateThemeToggleButton();
             fwLayoutInitialized = true;
+        }
+
+        private void PruneLegacyMainMenuItems()
+        {
+            if (menuStrip_mainMenu != null && toolStripMenuItem2 != null)
+            {
+                menuStrip_mainMenu.Items.Remove(toolStripMenuItem2);
+            }
+
+            if (toolStripMenuItem3 == null)
+            {
+                return;
+            }
+
+            ToolStripItem[] legacyToolItems =
+            {
+                configEditorToolStripMenuItem,
+                elementStructureDiffToolStripMenuItem,
+                fieldCompareToolStripMenuItem,
+                nPCListExportToolStripMenuItem,
+                nPCAILinkListToolStripMenuItem,
+                joinToolStripMenuItem,
+                classMaskGeneratorToolStripMenuItem
+            };
+
+            for (int i = 0; i < legacyToolItems.Length; i++)
+            {
+                ToolStripItem item = legacyToolItems[i];
+                if (item != null)
+                {
+                    toolStripMenuItem3.DropDownItems.Remove(item);
+                }
+            }
+
+            RemoveRedundantToolSeparators(toolStripMenuItem3);
+        }
+
+        private static void RemoveRedundantToolSeparators(ToolStripMenuItem menu)
+        {
+            if (menu == null)
+            {
+                return;
+            }
+
+            for (int i = menu.DropDownItems.Count - 1; i >= 0; i--)
+            {
+                bool isSeparator = menu.DropDownItems[i] is ToolStripSeparator;
+                bool previousIsSeparator = i == 0 || menu.DropDownItems[i - 1] is ToolStripSeparator;
+                bool nextIsSeparator = i == menu.DropDownItems.Count - 1 || menu.DropDownItems[i + 1] is ToolStripSeparator;
+                if (isSeparator && (previousIsSeparator || nextIsSeparator))
+                {
+                    menu.DropDownItems.RemoveAt(i);
+                }
+            }
         }
 
         private void InitializeRawValueEditor()
@@ -396,6 +451,19 @@ namespace FWEledit
                 toolStripMenuItem3.DropDownItems.Insert(insertIndex, titleEditorItem);
             }
 
+            if (!toolStripMenuItem3.DropDownItems.ContainsKey("pckExplorerToolStripMenuItem"))
+            {
+                ToolStripMenuItem pckExplorerItem = new ToolStripMenuItem();
+                pckExplorerItem.Name = "pckExplorerToolStripMenuItem";
+                pckExplorerItem.Text = "PCK Explorer / Importer...";
+                pckExplorerItem.Click += click_pckExplorer;
+
+                int insertIndex = toolStripMenuItem3.DropDownItems.ContainsKey("advancedTitleEditorToolStripMenuItem")
+                    ? toolStripMenuItem3.DropDownItems.IndexOfKey("advancedTitleEditorToolStripMenuItem") + 1
+                    : toolStripMenuItem3.DropDownItems.Count;
+                toolStripMenuItem3.DropDownItems.Insert(insertIndex, pckExplorerItem);
+            }
+
             if (!toolStripMenuItem3.DropDownItems.ContainsKey("openEmptyInstanceToolStripMenuItem"))
             {
                 ToolStripMenuItem emptyInstanceItem = new ToolStripMenuItem();
@@ -403,8 +471,8 @@ namespace FWEledit
                 emptyInstanceItem.Text = "Open Empty Instance";
                 emptyInstanceItem.Click += click_openEmptyInstance;
 
-                int insertIndex = toolStripMenuItem3.DropDownItems.ContainsKey("advancedTitleEditorToolStripMenuItem")
-                    ? toolStripMenuItem3.DropDownItems.IndexOfKey("advancedTitleEditorToolStripMenuItem") + 1
+                int insertIndex = toolStripMenuItem3.DropDownItems.ContainsKey("pckExplorerToolStripMenuItem")
+                    ? toolStripMenuItem3.DropDownItems.IndexOfKey("pckExplorerToolStripMenuItem") + 1
                     : toolStripMenuItem3.DropDownItems.Count;
                 toolStripMenuItem3.DropDownItems.Insert(insertIndex, emptyInstanceItem);
             }
@@ -893,7 +961,8 @@ namespace FWEledit
                 gameFolderDialogService,
                 navigationStateService,
                 LoadGameFolder,
-                message => MessageBox.Show(message));
+                message => MessageBox.Show(message),
+                this);
 		}
 
         private void click_load_last_folder(object sender, EventArgs e)
@@ -935,6 +1004,10 @@ namespace FWEledit
                     dirtyStateTracker.Clear();
                     ResetReferenceCaches();
                     listDisplayService.ClearListDisplayCache();
+                    iconResolutionService.ClearCache();
+                    modelPickerCacheService.ClearCache();
+                    fieldIndexLookupService.ClearCache();
+                    searchSuggestionService.ClearCache();
                     selectionHistory.Clear();
                     selectionHistoryIndex = -1;
                     UpdateSelectionHistoryButtons();

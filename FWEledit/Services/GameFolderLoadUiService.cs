@@ -1,4 +1,5 @@
 using System;
+using System.Windows.Forms;
 
 namespace FWEledit
 {
@@ -10,6 +11,16 @@ namespace FWEledit
             Action<string> loadFolder,
             Action<string> showMessage)
         {
+            LoadFromDialog(dialogService, navigationStateService, loadFolder, showMessage, null);
+        }
+
+        public void LoadFromDialog(
+            GameFolderDialogService dialogService,
+            NavigationStateService navigationStateService,
+            Action<string> loadFolder,
+            Action<string> showMessage,
+            IWin32Window owner)
+        {
             if (dialogService == null || loadFolder == null)
             {
                 return;
@@ -18,7 +29,8 @@ namespace FWEledit
             string savedFolder = navigationStateService != null ? navigationStateService.GetLastGameFolder() : string.Empty;
             string selectedFolder = dialogService.PromptForGameFolder(
                 "Select the Forsaken World game folder",
-                savedFolder);
+                savedFolder,
+                owner);
             if (!string.IsNullOrWhiteSpace(selectedFolder))
             {
                 loadFolder(selectedFolder);

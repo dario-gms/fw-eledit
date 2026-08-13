@@ -111,6 +111,7 @@
       <Private>true</Private>
     </Reference>
     <Reference Include="System" />
+    <Reference Include="System.Configuration" />
     <Reference Include="System.Core" />
     <Reference Include="System.IO.Compression" />
     <Reference Include="System.IO.Compression.FileSystem" />
@@ -1093,6 +1094,9 @@
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="Views\TitleGraphicIconPickerWindow.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Views\PckExplorerWindow.cs">
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="Views\CombinedServicesPickerWindow.cs">

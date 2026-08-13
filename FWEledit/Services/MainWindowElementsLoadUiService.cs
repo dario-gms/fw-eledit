@@ -10,7 +10,8 @@ namespace FWEledit
             GameFolderDialogService dialogService,
             NavigationStateService navigationStateService,
             Action<string> loadGameFolder,
-            Action<string> showMessage)
+            Action<string> showMessage,
+            Form owner)
         {
             if (loadUiService == null)
             {
@@ -21,7 +22,8 @@ namespace FWEledit
                 dialogService,
                 navigationStateService,
                 loadGameFolder,
-                showMessage);
+                showMessage,
+                owner as IWin32Window);
         }
 
         public void LoadLastFolder(

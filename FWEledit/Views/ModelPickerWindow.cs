@@ -54,6 +54,7 @@ namespace FWEledit
         private readonly AssetManager previewAssetManager;
         private readonly ModelPreviewService modelPreviewService;
         private static readonly List<ModelPickerEntry> EmptyEntries = new List<ModelPickerEntry>();
+        private const string AllPackagesFilter = "All packages";
         private bool previewWindowOpened;
         private int previewLoadInProgress;
         private int previewPendingAuto;
@@ -411,6 +412,7 @@ namespace FWEledit
         private void BuildPackageFilter()
         {
             packageFilter.Items.Clear();
+            packageFilter.Items.Add(AllPackagesFilter);
             for (int i = 0; i < ModelPickerCatalog.PackageOrder.Length; i++)
             {
                 packageFilter.Items.Add(ModelPickerCatalog.PackageOrder[i]);
@@ -429,6 +431,12 @@ namespace FWEledit
 
             if (string.IsNullOrWhiteSpace(package))
             {
+                return;
+            }
+            if (IsAllPackagesFilter(package))
+            {
+                folderFilter.Items.Add(string.Empty);
+                folderFilter.SelectedIndex = 0;
                 return;
             }
 
@@ -819,6 +827,14 @@ namespace FWEledit
             {
                 return;
             }
+            if (IsAllPackagesFilter(package))
+            {
+                for (int i = 0; i < ModelPickerCatalog.PackageOrder.Length; i++)
+                {
+                    EnsurePackageLoaded(ModelPickerCatalog.PackageOrder[i]);
+                }
+                return;
+            }
             if (loadedPackages.Contains(package))
             {
                 return;
@@ -836,8 +852,19 @@ namespace FWEledit
         private void EnsurePackageLoadedAsync(string package)
         {
             if (string.IsNullOrWhiteSpace(package)
-                || loadedPackages.Contains(package)
                 || packageEntriesLoader == null)
+            {
+                return;
+            }
+            if (IsAllPackagesFilter(package))
+            {
+                for (int i = 0; i < ModelPickerCatalog.PackageOrder.Length; i++)
+                {
+                    EnsurePackageLoadedAsync(ModelPickerCatalog.PackageOrder[i]);
+                }
+                return;
+            }
+            if (loadedPackages.Contains(package))
             {
                 return;
             }
@@ -1110,7 +1137,9 @@ namespace FWEledit
             bool hasFolder = !string.IsNullOrWhiteSpace(folder);
             bool hasTerm = !string.IsNullOrWhiteSpace(term);
             List<ModelPickerEntry> result = new List<ModelPickerEntry>();
-            List<ModelPickerEntry> packageEntries = hasFolder
+            List<ModelPickerEntry> packageEntries = IsAllPackagesFilter(package)
+                ? GetAllLoadedEntries()
+                : hasFolder
                 ? GetEntriesForPackageFolder(package, folder)
                 : GetEntriesForPackage(package);
 
@@ -1157,6 +1186,24 @@ namespace FWEledit
             }
 
             return result;
+        }
+
+        private List<ModelPickerEntry> GetAllLoadedEntries()
+        {
+            List<ModelPickerEntry> entries = new List<ModelPickerEntry>();
+            foreach (KeyValuePair<string, List<ModelPickerEntry>> kv in entriesByPackage)
+            {
+                if (kv.Value != null)
+                {
+                    entries.AddRange(kv.Value);
+                }
+            }
+            return entries;
+        }
+
+        private static bool IsAllPackagesFilter(string package)
+        {
+            return string.Equals(package, AllPackagesFilter, StringComparison.OrdinalIgnoreCase);
         }
 
         private static string BuildEntrySearchKey(ModelPickerEntry entry)

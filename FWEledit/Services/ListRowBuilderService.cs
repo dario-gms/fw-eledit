@@ -676,7 +676,7 @@ namespace FWEledit
             }
 
             string path = iconResolutionService.ResolveIconKeyForList(database, listCollection, listIndex, rawIcon);
-            if (database != null && database.sourceBitmap != null && database.ContainsKey(path))
+            if (database != null && database.ContainsKey(path))
             {
                 img = database.images(path);
             }

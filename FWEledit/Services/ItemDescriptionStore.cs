@@ -13,6 +13,8 @@ namespace FWEledit
         private readonly List<int> order = new List<int>();
         private readonly List<int> originalOrder = new List<int>();
         private readonly HashSet<int> pendingItemIds = new HashSet<int>();
+        private byte[] loadedPayload;
+        private string loadedPayloadPath = string.Empty;
 
         public string FilePath { get; private set; } = string.Empty;
         public bool HasPendingChanges
@@ -27,11 +29,13 @@ namespace FWEledit
             order.Clear();
             originalOrder.Clear();
             pendingItemIds.Clear();
+            loadedPayload = null;
+            loadedPayloadPath = string.Empty;
             FilePath = filePath ?? string.Empty;
 
             if (string.IsNullOrWhiteSpace(FilePath) || !File.Exists(FilePath))
             {
-                return "item_ext_desc.txt not found in configs.pck.files";
+                return "item_ext_desc.txt not found in client resources";
             }
 
             try
@@ -77,6 +81,87 @@ namespace FWEledit
             {
                 return "Failed to parse item_ext_desc.txt";
             }
+        }
+
+        public string LoadFromBytes(byte[] payload, string filePath)
+        {
+            string safeFilePath = filePath ?? string.Empty;
+            if (ReferenceEquals(loadedPayload, payload)
+                && string.Equals(loadedPayloadPath, safeFilePath, StringComparison.Ordinal)
+                && map.Count > 0
+                && !HasPendingChanges)
+            {
+                FilePath = safeFilePath;
+                return "Loaded: " + (string.IsNullOrWhiteSpace(FilePath) ? "item_ext_desc.txt" : Path.GetFileName(FilePath));
+            }
+
+            map.Clear();
+            originalMap.Clear();
+            order.Clear();
+            originalOrder.Clear();
+            pendingItemIds.Clear();
+            loadedPayload = null;
+            loadedPayloadPath = string.Empty;
+            FilePath = safeFilePath;
+
+            if (payload == null || payload.Length == 0)
+            {
+                return "item_ext_desc.txt not found in client resources";
+            }
+
+            try
+            {
+                using (MemoryStream ms = new MemoryStream(payload, false))
+                {
+                    string status = LoadFromStream(ms, string.IsNullOrWhiteSpace(FilePath) ? "item_ext_desc.txt" : Path.GetFileName(FilePath));
+                    loadedPayload = payload;
+                    loadedPayloadPath = safeFilePath;
+                    return status;
+                }
+            }
+            catch
+            {
+                return "Failed to parse item_ext_desc.txt";
+            }
+        }
+
+        private string LoadFromStream(Stream stream, string sourceName)
+        {
+            Regex rx = new Regex("^\\s*(\\d+)\\s+\"(.*)\"\\s*$", RegexOptions.Compiled);
+            using (StreamReader sr = new StreamReader(stream, Encoding.Unicode, true))
+            {
+                while (!sr.EndOfStream)
+                {
+                    string line = sr.ReadLine();
+                    if (string.IsNullOrWhiteSpace(line) || line.StartsWith("#") || line.StartsWith("//"))
+                    {
+                        continue;
+                    }
+
+                    Match m = rx.Match(line);
+                    if (!m.Success)
+                    {
+                        continue;
+                    }
+
+                    int id;
+                    if (!int.TryParse(m.Groups[1].Value, out id))
+                    {
+                        continue;
+                    }
+
+                    string desc = m.Groups[2].Value;
+                    if (!map.ContainsKey(id))
+                    {
+                        order.Add(id);
+                    }
+                    map[id] = desc;
+                    originalMap[id] = desc;
+                }
+            }
+
+            originalOrder.AddRange(order);
+            return "Loaded: " + (string.IsNullOrWhiteSpace(sourceName) ? "item_ext_desc.txt" : sourceName);
         }
 
         public bool TryGetRaw(int id, out string raw)
@@ -143,6 +228,42 @@ namespace FWEledit
             return valueChanged;
         }
 
+        public bool Remove(int id)
+        {
+            if (id <= 0)
+            {
+                return false;
+            }
+
+            bool hadCurrent = map.Remove(id);
+            bool hadOriginal = originalMap.ContainsKey(id);
+            order.Remove(id);
+            if (hadOriginal)
+            {
+                pendingItemIds.Add(id);
+                return true;
+            }
+
+            pendingItemIds.Remove(id);
+            return hadCurrent;
+        }
+
+        public bool Copy(int sourceId, int targetId)
+        {
+            if (sourceId <= 0 || targetId <= 0 || sourceId == targetId)
+            {
+                return false;
+            }
+
+            string raw;
+            if (!map.TryGetValue(sourceId, out raw))
+            {
+                return false;
+            }
+
+            return Stage(targetId, raw);
+        }
+
         public bool RemapId(int oldId, int newId)
         {
             if (oldId <= 0 || newId <= 0 || oldId == newId)
@@ -206,7 +327,7 @@ namespace FWEledit
             }
             if (string.IsNullOrWhiteSpace(FilePath))
             {
-                errorMessage = "item_ext_desc.txt was not found in configs.pck.files.";
+                errorMessage = "item_ext_desc.txt was not found in client resources.";
                 return false;
             }
 

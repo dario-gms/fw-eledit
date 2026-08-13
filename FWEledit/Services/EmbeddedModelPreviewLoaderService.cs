@@ -720,24 +720,6 @@ namespace FWEledit
             }
 
             string safePackage = (package ?? string.Empty).Trim();
-            if (!string.IsNullOrWhiteSpace(safePackage))
-            {
-                try
-                {
-                    string root = assetManager.GetExtractedPackageRoot(safePackage);
-                    if (!string.IsNullOrWhiteSpace(root))
-                    {
-                        string candidate = Path.Combine(root, safeRelative);
-                        if (File.Exists(candidate))
-                        {
-                            return candidate;
-                        }
-                    }
-                }
-                catch
-                { }
-            }
-
             string mapped = BuildMappedPath(safePackage, safeRelative);
             if (!string.IsNullOrWhiteSpace(mapped))
             {
@@ -786,6 +768,12 @@ namespace FWEledit
             {
                 package = "models";
                 relative = normalized.Substring("models\\".Length);
+                return;
+            }
+            if (normalized.StartsWith("models2\\", StringComparison.OrdinalIgnoreCase))
+            {
+                package = "models2";
+                relative = normalized.Substring("models2\\".Length);
                 return;
             }
             if (normalized.StartsWith("litmodels\\", StringComparison.OrdinalIgnoreCase))
@@ -860,8 +848,25 @@ namespace FWEledit
                 return false;
             }
 
-            List<KeyValuePair<string, string>> readTargets = BuildPckReadTargets(package, normalizedRelative);
             string firstError = string.Empty;
+            string absolutePath = ResolveAbsolutePath(assetManager, package, normalizedRelative);
+            if (!string.IsNullOrWhiteSpace(absolutePath) && File.Exists(absolutePath))
+            {
+                try
+                {
+                    bytes = File.ReadAllBytes(absolutePath);
+                    resolvedPackage = (package ?? string.Empty).Trim();
+                    resolvedRelativePath = normalizedRelative;
+                    CaptureDependencyPath(resolvedPackage, resolvedRelativePath);
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    firstError = ex.Message;
+                }
+            }
+
+            List<KeyValuePair<string, string>> readTargets = BuildPckReadTargets(package, normalizedRelative);
             for (int i = 0; i < readTargets.Count; i++)
             {
                 string probePackage = readTargets[i].Key ?? string.Empty;
@@ -1281,6 +1286,7 @@ namespace FWEledit
             AddUniquePackage(packageCandidates, seenPackages, preferredPackage);
             AddUniquePackage(packageCandidates, seenPackages, splitPackage);
             AddUniquePackage(packageCandidates, seenPackages, "models");
+            AddUniquePackage(packageCandidates, seenPackages, "models2");
             AddUniquePackage(packageCandidates, seenPackages, "gfx");
             AddUniquePackage(packageCandidates, seenPackages, "configs");
             AddUniquePackage(packageCandidates, seenPackages, "grasses");
@@ -1322,6 +1328,10 @@ namespace FWEledit
                 if (!rel.StartsWith("models\\", StringComparison.OrdinalIgnoreCase))
                 {
                     AddUniquePathCandidate(relativeCandidates, seenRelatives, "models\\" + rel);
+                }
+                if (!rel.StartsWith("models2\\", StringComparison.OrdinalIgnoreCase))
+                {
+                    AddUniquePathCandidate(relativeCandidates, seenRelatives, "models2\\" + rel);
                 }
                 if (!rel.StartsWith("gfx\\", StringComparison.OrdinalIgnoreCase))
                 {
@@ -2798,22 +2808,6 @@ namespace FWEledit
             string package,
             string relativePath)
         {
-            string normalizedRelative = NormalizeRelativePath(relativePath);
-            if (string.IsNullOrWhiteSpace(normalizedRelative))
-            {
-                return;
-            }
-
-            string tailFallback = BuildConfigsTailFallbackPath(normalizedRelative);
-            if (!string.IsNullOrWhiteSpace(tailFallback))
-            {
-                AddTargetCandidate(candidates, seen, "configs", tailFallback);
-                AddTargetCandidate(candidates, seen, "configs", "configs\\" + tailFallback);
-                if (string.Equals(package, "gfx", StringComparison.OrdinalIgnoreCase))
-                {
-                    AddTargetCandidate(candidates, seen, string.Empty, tailFallback);
-                }
-            }
         }
 
         private static void AddSpecialRelativeAliases(
@@ -2821,42 +2815,6 @@ namespace FWEledit
             HashSet<string> seen,
             string relativePath)
         {
-            string normalizedRelative = NormalizeRelativePath(relativePath);
-            if (string.IsNullOrWhiteSpace(normalizedRelative))
-            {
-                return;
-            }
-
-            string tailFallback = BuildConfigsTailFallbackPath(normalizedRelative);
-            if (!string.IsNullOrWhiteSpace(tailFallback))
-            {
-                AddUniquePathCandidate(candidates, seen, tailFallback);
-                AddUniquePathCandidate(candidates, seen, "configs\\" + tailFallback);
-            }
-        }
-
-        private static string BuildConfigsTailFallbackPath(string relativePath)
-        {
-            string normalizedRelative = NormalizeRelativePath(relativePath);
-            if (string.IsNullOrWhiteSpace(normalizedRelative))
-            {
-                return string.Empty;
-            }
-
-            bool looksLikeKnownDetachedReference = normalizedRelative.StartsWith("models2\\", StringComparison.OrdinalIgnoreCase)
-                || normalizedRelative.StartsWith("hide\\", StringComparison.OrdinalIgnoreCase);
-            if (!looksLikeKnownDetachedReference)
-            {
-                return string.Empty;
-            }
-
-            string fileName = Path.GetFileName(normalizedRelative) ?? string.Empty;
-            if (string.IsNullOrWhiteSpace(fileName))
-            {
-                return string.Empty;
-            }
-
-            return NormalizeRelativePath("test_tails\\" + fileName);
         }
 
         private static string DecorateMissingDetachedReferenceError(string relativePath, string error)
@@ -2867,8 +2825,7 @@ namespace FWEledit
                 return error ?? string.Empty;
             }
 
-            bool looksLikeDetachedReference = normalizedRelative.StartsWith("hide\\", StringComparison.OrdinalIgnoreCase)
-                || normalizedRelative.StartsWith("models2\\", StringComparison.OrdinalIgnoreCase);
+            bool looksLikeDetachedReference = normalizedRelative.StartsWith("hide\\", StringComparison.OrdinalIgnoreCase);
             bool looksLikeNotFound = error.IndexOf("Entry not found", StringComparison.OrdinalIgnoreCase) >= 0
                 || error.IndexOf("not found", StringComparison.OrdinalIgnoreCase) >= 0;
             if (!looksLikeDetachedReference || !looksLikeNotFound)
@@ -2876,10 +2833,7 @@ namespace FWEledit
                 return error;
             }
 
-            string kind = normalizedRelative.StartsWith("hide\\", StringComparison.OrdinalIgnoreCase)
-                ? "hide"
-                : "detached";
-            return "Missing " + kind + " reference: " + normalizedRelative + " (not found in any loaded resource package).";
+            return "Missing hide reference: " + normalizedRelative + " (not found in any loaded resource package).";
         }
 
         private static string BuildPreviewMergeKey(ModelPreviewMeshData previewData)
@@ -3114,7 +3068,7 @@ namespace FWEledit
                 }
             }
 
-            string[] extensions = new string[] { ".ecm", ".smd", ".ski", ".gfx", ".att", ".sgc" };
+            string[] extensions = new string[] { ".ecm", ".smd", ".ski", ".gfx", ".att", ".sgc", ".stck", ".sdr" };
             for (int i = 0; i < extensions.Length; i++)
             {
                 string ext = extensions[i];
@@ -4620,6 +4574,7 @@ namespace FWEledit
             HashSet<string> seenPackages = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             AddUniquePackage(packageCandidates, seenPackages, preferredPackage);
             AddUniquePackage(packageCandidates, seenPackages, "models");
+            AddUniquePackage(packageCandidates, seenPackages, "models2");
             AddUniquePackage(packageCandidates, seenPackages, "litmodels");
             AddUniquePackage(packageCandidates, seenPackages, "moxing");
             AddUniquePackage(packageCandidates, seenPackages, "surfaces");
@@ -4631,17 +4586,6 @@ namespace FWEledit
                 && pckEntryReaderService.TryReadFileFast(normalizedPreferredPackage, textureRelativePath, out bytes, out string preferredResolvedRelative, out string _))
             {
                 resolvedPath = BuildMappedPath(normalizedPreferredPackage, preferredResolvedRelative);
-                return true;
-            }
-
-            string[] nearbyTextureFileNames = BuildTextureFileCandidates(textureRelativePath);
-            if (!string.IsNullOrWhiteSpace(normalizedPreferredPackage)
-                && !string.IsNullOrWhiteSpace(anchorRelativePath)
-                && nearbyTextureFileNames.Length > 0
-                && pckEntryReaderService.TryResolveNearestEntryByFileNames(normalizedPreferredPackage, anchorRelativePath, nearbyTextureFileNames, out string nearbyRelative, out string _)
-                && pckEntryReaderService.TryReadFileFast(normalizedPreferredPackage, nearbyRelative, out bytes, out string resolvedNearbyRelative, out string _))
-            {
-                resolvedPath = BuildMappedPath(normalizedPreferredPackage, resolvedNearbyRelative);
                 return true;
             }
 
@@ -4658,6 +4602,17 @@ namespace FWEledit
                     resolvedPath = BuildMappedPath(pkg, textureRelativePath);
                     return true;
                 }
+            }
+
+            string[] nearbyTextureFileNames = BuildTextureFileCandidates(textureRelativePath);
+            if (!string.IsNullOrWhiteSpace(normalizedPreferredPackage)
+                && !string.IsNullOrWhiteSpace(anchorRelativePath)
+                && nearbyTextureFileNames.Length > 0
+                && pckEntryReaderService.TryResolveNearestEntryByFileNames(normalizedPreferredPackage, anchorRelativePath, nearbyTextureFileNames, out string nearbyRelative, out string _)
+                && pckEntryReaderService.TryReadFileFast(normalizedPreferredPackage, nearbyRelative, out bytes, out string resolvedNearbyRelative, out string _))
+            {
+                resolvedPath = BuildMappedPath(normalizedPreferredPackage, resolvedNearbyRelative);
+                return true;
             }
 
             return false;
@@ -4722,9 +4677,6 @@ namespace FWEledit
                 {
                     continue;
                 }
-
-                AddUniquePathCandidate(candidates, seen, candidate);
-
                 string fileName = string.Empty;
                 try
                 {
@@ -4746,13 +4698,6 @@ namespace FWEledit
                         {
                             AddUniquePathCandidate(candidates, seen, NormalizeRelativePath(contextDir + "\\tex_" + skiNameNoExt + "\\" + fileName));
                         }
-                    }
-
-                    AddUniquePathCandidate(candidates, seen, "textures\\" + fileName);
-                    AddUniquePathCandidate(candidates, seen, "texture\\" + fileName);
-                    if (!string.IsNullOrWhiteSpace(skiNameNoExt))
-                    {
-                        AddUniquePathCandidate(candidates, seen, "tex_" + skiNameNoExt + "\\" + fileName);
                     }
                 }
 
@@ -4777,6 +4722,17 @@ namespace FWEledit
                     if (!string.IsNullOrWhiteSpace(skiNameNoExt))
                     {
                         AddUniquePathCandidate(candidates, seen, NormalizeRelativePath(skiParentDir + "\\tex_" + skiNameNoExt + "\\" + fileName));
+                    }
+                }
+
+                AddUniquePathCandidate(candidates, seen, candidate);
+                if (!string.IsNullOrWhiteSpace(fileName))
+                {
+                    AddUniquePathCandidate(candidates, seen, "textures\\" + fileName);
+                    AddUniquePathCandidate(candidates, seen, "texture\\" + fileName);
+                    if (!string.IsNullOrWhiteSpace(skiNameNoExt))
+                    {
+                        AddUniquePathCandidate(candidates, seen, "tex_" + skiNameNoExt + "\\" + fileName);
                     }
                 }
             }

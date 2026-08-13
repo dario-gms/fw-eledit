@@ -66,15 +66,24 @@ namespace FWEledit
         public int TargetListIndex { get; set; }
         public int NewItemIndex { get; set; }
         public int NewId { get; set; }
+        public int ImportedItemCount { get; set; }
         public int ImportedAssetCount { get; set; }
         public int ExistingAssetCount { get; set; }
         public int UpdatedPackageCount { get; set; }
         public int FallbackPackageCount { get; set; }
         public int RemappedPathIdCount { get; set; }
         public int MissingAssetCount { get; set; }
+        public List<ItemTransferImportedItem> ImportedItems { get; set; }
         public List<ItemTransferImportedPath> ImportedModelPaths { get; set; }
         public List<ItemTransferPackageAssetSummary> AssetSummaries { get; set; }
         public List<string> DependencyAssetPaths { get; set; }
+    }
+
+    public sealed class ItemTransferImportedItem
+    {
+        public int ListIndex { get; set; }
+        public int ItemIndex { get; set; }
+        public int Id { get; set; }
     }
 
     public enum ItemTransferImportMode

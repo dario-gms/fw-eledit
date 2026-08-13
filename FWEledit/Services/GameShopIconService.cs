@@ -51,11 +51,7 @@ namespace FWEledit
             }
 
             string normalized = NormalizePath(mappedPath);
-            Image image = TryLoadFromFile(elementsPath, normalized);
-            if (image == null && database != null)
-            {
-                image = TryLoadFromDatabase(database, normalized);
-            }
+            Image image = database != null ? TryLoadFromDatabase(database, normalized) : null;
 
             if (image != null)
             {
@@ -291,15 +287,6 @@ namespace FWEledit
             }
 
             List<string> candidates = new List<string>();
-            AddCandidate(candidates, gameRoot, "resources", relative);
-            AddCandidate(candidates, gameRoot, "resources", withoutSurfaces);
-            AddCandidate(candidates, gameRoot, "resources", "surfaces.pck.files", relative);
-            AddCandidate(candidates, gameRoot, "resources", "surfaces.pck.files", withoutSurfaces);
-            AddCandidate(candidates, dataDirectory, "..", "resources", relative);
-            AddCandidate(candidates, dataDirectory, "..", "resources", withoutSurfaces);
-            AddCandidate(candidates, dataDirectory, "..", "resources", "surfaces.pck.files", relative);
-            AddCandidate(candidates, dataDirectory, "..", "resources", "surfaces.pck.files", withoutSurfaces);
-
             for (int i = 0; i < candidates.Count; i++)
             {
                 string candidate = candidates[i];

@@ -274,6 +274,14 @@ namespace FWEledit
             titleEditorWindow.BringToFront();
         }
 
+        private void click_pckExplorer(object sender, EventArgs e)
+        {
+            using (PckExplorerWindow window = new PckExplorerWindow(sessionService.AssetManager))
+            {
+                window.ShowDialog(this);
+            }
+        }
+
         private void click_openEmptyInstance(object sender, EventArgs e)
         {
             try

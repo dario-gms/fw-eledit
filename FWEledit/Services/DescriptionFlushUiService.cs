@@ -25,7 +25,7 @@ namespace FWEledit
                 if (showMessage != null)
                 {
                     showMessage(string.IsNullOrWhiteSpace(result.ErrorMessage)
-                        ? "item_ext_desc.txt was not found in configs.pck.files."
+                        ? "item_ext_desc.txt was not found in client resources."
                         : result.ErrorMessage);
                 }
                 return false;

@@ -48,6 +48,12 @@ namespace FWEledit
             return store.BuildRuntimeArray();
         }
 
+        public string[] LoadFromBytes(byte[] payload, string filePath)
+        {
+            StatusText = store.LoadFromBytes(payload, filePath);
+            return store.BuildRuntimeArray();
+        }
+
         public string GetEditorTextForItem(int itemId, Func<int, string> fallback)
         {
             CurrentItemId = itemId;
@@ -121,6 +127,65 @@ namespace FWEledit
             }
 
             return false;
+        }
+
+        public bool RemoveItems(IEnumerable<int> itemIds, out string statusText)
+        {
+            statusText = StatusText;
+            if (itemIds == null)
+            {
+                return false;
+            }
+
+            int removedCount = 0;
+            foreach (int itemId in itemIds)
+            {
+                if (store.Remove(itemId))
+                {
+                    removedCount++;
+                }
+            }
+
+            if (removedCount <= 0)
+            {
+                return false;
+            }
+
+            StatusText = removedCount == 1
+                ? "Description removed for deleted item (save with File > Save)"
+                : "Descriptions removed for " + removedCount + " deleted items (save with File > Save)";
+            statusText = StatusText;
+            return true;
+        }
+
+        public bool CopyItems(IList<int> sourceItemIds, IList<int> targetItemIds, out string statusText)
+        {
+            statusText = StatusText;
+            if (sourceItemIds == null || targetItemIds == null)
+            {
+                return false;
+            }
+
+            int pairCount = Math.Min(sourceItemIds.Count, targetItemIds.Count);
+            int copiedCount = 0;
+            for (int i = 0; i < pairCount; i++)
+            {
+                if (store.Copy(sourceItemIds[i], targetItemIds[i]))
+                {
+                    copiedCount++;
+                }
+            }
+
+            if (copiedCount <= 0)
+            {
+                return false;
+            }
+
+            StatusText = copiedCount == 1
+                ? "Description cloned for new item (save with File > Save)"
+                : "Descriptions cloned for " + copiedCount + " new items (save with File > Save)";
+            statusText = StatusText;
+            return true;
         }
 
         public bool FlushToDisk(AssetManager asm, out string statusText, out string errorMessage)
