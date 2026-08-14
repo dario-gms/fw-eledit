@@ -811,6 +811,7 @@
     <Compile Include="Services\ItemTooltipUiService.cs" />
     <Compile Include="Services\EmbeddedModelPreviewLoaderService.cs" />
     <Compile Include="Services\ModelPackageNotificationService.cs" />
+    <Compile Include="Services\PckRawCopyImportService.cs" />
     <Compile Include="Services\PckEntryReaderService.cs" />
     <Compile Include="Services\ModelPreviewService.cs" />
     <Compile Include="Services\NpcExportService.cs" />

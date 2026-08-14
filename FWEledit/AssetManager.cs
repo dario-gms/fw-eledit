@@ -726,28 +726,63 @@ namespace FWEledit
                     File.Copy(gamePkx, gamePkxBackup, true);
                 }
 
-                int timeoutMs = GetPckOperationTimeoutMs(gamePck, false);
-                string helperError;
-                if (!RunWinPckHelper("update", stagingDirectory, gamePck, 1, timeoutMs, out helperError))
+                string tempPackageRoot = Path.Combine(Path.GetTempPath(), "FWEledit", "pck-safe-update", package + "-" + Guid.NewGuid().ToString("N"));
+                Directory.CreateDirectory(tempPackageRoot);
+                string tempPck = Path.Combine(tempPackageRoot, package + ".pck");
+                string tempPkx = Path.Combine(tempPackageRoot, package + ".pkx");
+                try
                 {
-                    RestorePackageFiles(gamePck, gamePkx, gamePckBackup, gamePkxBackup, true, hadGamePkx);
-                    error = "Failed to update " + package + ".pck";
-                    if (!string.IsNullOrWhiteSpace(helperError))
+                    File.Copy(gamePck, tempPck, true);
+                    if (hadGamePkx)
                     {
-                        error += Environment.NewLine + helperError;
+                        File.Copy(gamePkx, tempPkx, true);
                     }
-                    return false;
-                }
 
-                long updatedPckLength = File.Exists(gamePck) ? new FileInfo(gamePck).Length : 0L;
-                long updatedPkxLength = File.Exists(gamePkx) ? new FileInfo(gamePkx).Length : 0L;
-                long originalTotal = originalPckLength + originalPkxLength;
-                long updatedTotal = updatedPckLength + updatedPkxLength;
-                if (updatedTotal < Math.Max(4096L, originalTotal / 2L))
+                    int timeoutMs = GetPckOperationTimeoutMs(gamePck, false);
+                    string helperError;
+                    if (!RunWinPckHelper("update", stagingDirectory, tempPck, 1, timeoutMs, out helperError))
+                    {
+                        error = "Failed to update " + package + ".pck";
+                        if (!string.IsNullOrWhiteSpace(helperError))
+                        {
+                            error += Environment.NewLine + helperError;
+                        }
+                        return false;
+                    }
+
+                    long updatedPckLength = File.Exists(tempPck) ? new FileInfo(tempPck).Length : 0L;
+                    long updatedPkxLength = File.Exists(tempPkx) ? new FileInfo(tempPkx).Length : 0L;
+                    long originalTotal = originalPckLength + originalPkxLength;
+                    long updatedTotal = updatedPckLength + updatedPkxLength;
+                    if (updatedTotal < Math.Max(4096L, originalTotal / 2L))
+                    {
+                        error = "Updated " + package + ".pck became unexpectedly small; the original package was not changed.";
+                        return false;
+                    }
+
+                    List<string> tempEntries;
+                    string tempValidationError;
+                    if (!pckEntryReaderService.TryEnumeratePackageFileEntries(package, tempPck, File.Exists(tempPkx) ? tempPkx : string.Empty, out tempEntries, out tempValidationError)
+                        || tempEntries == null
+                        || tempEntries.Count == 0)
+                    {
+                        error = "Updated " + package + ".pck could not be read back; the original package was not changed. " + tempValidationError;
+                        return false;
+                    }
+
+                    File.Copy(tempPck, gamePck, true);
+                    if (File.Exists(tempPkx))
+                    {
+                        File.Copy(tempPkx, Path.Combine(gameResources, package + ".pkx"), true);
+                    }
+                    else if (!hadGamePkx && File.Exists(Path.Combine(gameResources, package + ".pkx")))
+                    {
+                        File.Delete(Path.Combine(gameResources, package + ".pkx"));
+                    }
+                }
+                finally
                 {
-                    RestorePackageFiles(gamePck, gamePkx, gamePckBackup, gamePkxBackup, true, hadGamePkx);
-                    error = "Updated " + package + ".pck became unexpectedly small, so the previous backup was restored.";
-                    return false;
+                    TryDeleteDirectory(tempPackageRoot);
                 }
 
                 PckEntryReaderService.InvalidatePackageGlobally(package);
@@ -770,6 +805,179 @@ namespace FWEledit
                 error = ex.Message;
                 return false;
             }
+        }
+
+        public bool ImportPackageAssetsByRawCopy(
+            string packageName,
+            string sourcePckPath,
+            string sourcePkxPath,
+            IEnumerable<PckRawCopyImportItem> items,
+            out int copied,
+            out string error)
+        {
+            copied = 0;
+            error = string.Empty;
+            try
+            {
+                if (string.IsNullOrWhiteSpace(packageName))
+                {
+                    error = "Package name not set.";
+                    return false;
+                }
+
+                if (string.IsNullOrWhiteSpace(GameRootPath) || !Directory.Exists(GameRootPath))
+                {
+                    error = "Game folder not set.";
+                    return false;
+                }
+
+                if (string.IsNullOrWhiteSpace(sourcePckPath) || !File.Exists(sourcePckPath))
+                {
+                    error = "Source PCK not found.";
+                    return false;
+                }
+
+                string package = packageName.Trim();
+                string gameResources = Path.Combine(GameRootPath, "resources");
+                string gamePck = Path.Combine(gameResources, package + ".pck");
+                string gamePkx = Path.Combine(gameResources, package + ".pkx");
+                if (!File.Exists(gamePck))
+                {
+                    error = "Target package does not exist: " + package + ".pck";
+                    return false;
+                }
+
+                if (string.IsNullOrWhiteSpace(sourcePkxPath) || !File.Exists(sourcePkxPath))
+                {
+                    sourcePkxPath = string.Empty;
+                }
+
+                bool hadGamePkx = File.Exists(gamePkx);
+                if (!hadGamePkx)
+                {
+                    gamePkx = string.Empty;
+                }
+
+                string gamePckBackup = Path.Combine(gameResources, package + ".pck.bak");
+                string gamePkxBackup = string.IsNullOrWhiteSpace(gamePkx) ? string.Empty : Path.Combine(gameResources, package + ".pkx.bak");
+                File.Copy(Path.Combine(gameResources, package + ".pck"), gamePckBackup, true);
+                if (hadGamePkx)
+                {
+                    File.Copy(gamePkx, gamePkxBackup, true);
+                }
+
+                PckRawCopyImportService rawCopy = new PckRawCopyImportService();
+                if (!rawCopy.TryCopyEntries(sourcePckPath, sourcePkxPath, Path.Combine(gameResources, package + ".pck"), gamePkx, items, out copied, out error))
+                {
+                    RestorePackageFiles(Path.Combine(gameResources, package + ".pck"), gamePkx, gamePckBackup, gamePkxBackup, true, hadGamePkx);
+                    return false;
+                }
+
+                string nativeVerifyError;
+                if (!VerifyRawImportedEntriesWithWinPck(package, Path.Combine(gameResources, package + ".pck"), items, out nativeVerifyError))
+                {
+                    RestorePackageFiles(Path.Combine(gameResources, package + ".pck"), gamePkx, gamePckBackup, gamePkxBackup, true, hadGamePkx);
+                    error = nativeVerifyError;
+                    return false;
+                }
+
+                PckEntryReaderService.InvalidatePackageGlobally(package);
+                ClearDirectImageFallbackCache();
+                string validationError;
+                if (!pckEntryReaderService.TryWarmPackageIndex(package, out validationError))
+                {
+                    RestorePackageFiles(Path.Combine(gameResources, package + ".pck"), gamePkx, gamePckBackup, gamePkxBackup, true, hadGamePkx);
+                    PckEntryReaderService.InvalidatePackageGlobally(package);
+                    ClearDirectImageFallbackCache();
+                    error = "Updated " + package + ".pck could not be read back, so the previous backup was restored. " + validationError;
+                    return false;
+                }
+
+                PrewarmPackageIndexInBackground(package);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = ex.Message;
+                return false;
+            }
+        }
+
+        private bool VerifyRawImportedEntriesWithWinPck(string packageName, string targetPck, IEnumerable<PckRawCopyImportItem> items, out string error)
+        {
+            error = string.Empty;
+            string helper = FindWinPckUpdaterExecutable();
+            if (string.IsNullOrWhiteSpace(helper) || !File.Exists(helper))
+            {
+                return true;
+            }
+
+            HashSet<string> paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (PckRawCopyImportItem item in items ?? new PckRawCopyImportItem[0])
+            {
+                string path = NormalizePathInPackage(packageName, item == null ? null : item.TargetRelativePath);
+                if (!string.IsNullOrWhiteSpace(path))
+                {
+                    paths.Add(path);
+                }
+
+                if (paths.Count >= 12)
+                {
+                    break;
+                }
+            }
+
+            foreach (string path in paths)
+            {
+                int exitCode = -1;
+                string stdout = string.Empty;
+                string stderr = string.Empty;
+                ProcessStartInfo psi = new ProcessStartInfo();
+                psi.FileName = helper;
+                psi.Arguments = "verify " + QuoteProcessArgument(targetPck) + " " + QuoteProcessArgument(path);
+                psi.WorkingDirectory = Path.GetDirectoryName(helper);
+                psi.UseShellExecute = false;
+                psi.RedirectStandardOutput = true;
+                psi.RedirectStandardError = true;
+                psi.CreateNoWindow = true;
+                psi.WindowStyle = ProcessWindowStyle.Hidden;
+
+                bool completed;
+                using (Process process = Process.Start(psi))
+                {
+                    completed = process != null && WaitForProcessWithOutput(process, 30000, out exitCode, out stdout, out stderr);
+                }
+                if (!completed || exitCode != 0)
+                {
+                    TryWriteWinPckLog(targetPck, helper, exitCode, stdout, stderr);
+                    error = "Updated " + packageName + ".pck was restored because WinPCK could not see imported entry: " + path;
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private static string NormalizePathInPackage(string packageName, string path)
+        {
+            string value = (path ?? string.Empty).Replace('/', '\\').Trim().TrimStart('\\');
+            while (value.Contains("\\\\"))
+            {
+                value = value.Replace("\\\\", "\\");
+            }
+
+            string prefix = (packageName ?? string.Empty).Trim().Trim('\\') + "\\";
+            if (!string.IsNullOrWhiteSpace(prefix) && value.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            {
+                value = value.Substring(prefix.Length);
+            }
+
+            return value;
+        }
+
+        private static string QuoteProcessArgument(string value)
+        {
+            return "\"" + (value ?? string.Empty).Replace("\"", "\\\"") + "\"";
         }
 
         private bool EnsureStagedPackageVersionFile(string packageName, string stagingDirectory, bool packageAlreadyExists, bool packageHasVersion, out string error)
@@ -947,6 +1155,20 @@ namespace FWEledit
                 else if (!hadPkx && File.Exists(pkxPath))
                 {
                     File.Delete(pkxPath);
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        private static void TryDeleteDirectory(string path)
+        {
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(path) && Directory.Exists(path))
+                {
+                    Directory.Delete(path, true);
                 }
             }
             catch

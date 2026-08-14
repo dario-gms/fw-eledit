@@ -62,10 +62,26 @@ namespace FWPckUpdater
                 if (args == null || args.Length < 3)
                 {
                     Console.Error.WriteLine("Usage: FWPckUpdater.exe <update|rebuild> <staging-folder> <target-pck> [compression-level] [pck-version-id]");
+                    Console.Error.WriteLine("       FWPckUpdater.exe verify <target-pck> <path-in-pck>");
                     return 2;
                 }
 
                 string mode = Normalize(args[0]);
+                if (string.Equals(mode, "verify", StringComparison.OrdinalIgnoreCase))
+                {
+                    string verifyPck = Normalize(args[1]);
+                    string verifyPath = Normalize(args[2]).Replace(Path.DirectorySeparatorChar, '\\').Replace(Path.AltDirectorySeparatorChar, '\\').Trim('\\');
+                    if (!File.Exists(verifyPck))
+                    {
+                        Console.Error.WriteLine("Target package not found: " + verifyPck);
+                        return 5;
+                    }
+
+                    bool exists = PackageEntryExists(verifyPck, verifyPath);
+                    Console.WriteLine(exists ? "FOUND " + verifyPath : "MISSING " + verifyPath);
+                    return exists ? 0 : 20;
+                }
+
                 string stagingFolder = Normalize(args[1]);
                 string targetPck = Normalize(args[2]);
                 int compressionLevel = ParseCompressionLevel(args.Length >= 4 ? args[3] : null);
@@ -171,8 +187,7 @@ namespace FWPckUpdater
                     string directory = stagedDirectories[i];
                     string directoryInPck = GetRelativePckPath(stagingFolder, directory);
                     if (string.IsNullOrWhiteSpace(directoryInPck)
-                        || IsUnderAddedDirectory(directoryInPck, directoriesAddedAsFolders)
-                        || PackageEntryExists(targetPck, directoryInPck))
+                        || IsUnderAddedDirectory(directoryInPck, directoriesAddedAsFolders))
                     {
                         continue;
                     }
@@ -180,12 +195,26 @@ namespace FWPckUpdater
                     string parentInPck = Path.GetDirectoryName(directoryInPck) ?? string.Empty;
                     parentInPck = parentInPck.Replace(Path.DirectorySeparatorChar, '\\').Replace(Path.AltDirectorySeparatorChar, '\\');
 
+                    if (PackageEntryExists(targetPck, directoryInPck))
+                    {
+                        Console.WriteLine("Merging existing folder: " + directoryInPck);
+                        int mergeFolderResult = do_AddFileToPckFile(directory, targetPck, parentInPck, compressionLevel);
+                        if (mergeFolderResult == WinPckOk)
+                        {
+                            directoriesAddedAsFolders.Add(directoryInPck);
+                            continue;
+                        }
+
+                        Console.WriteLine("Existing folder merge failed with code " + mergeFolderResult.ToString() + " for " + directoryInPck + "; trying child entries." + BuildLastErrorSuffix());
+                        continue;
+                    }
+
                     Console.WriteLine("Adding new folder: " + directoryInPck);
                     int addFolderResult = do_AddFileToPckFile(directory, targetPck, parentInPck, compressionLevel);
                     if (addFolderResult != WinPckOk)
                     {
-                        Console.Error.WriteLine("WinPCK folder add failed with code " + addFolderResult.ToString() + " for folder " + directoryInPck + "." + BuildLastErrorSuffix());
-                        return 15;
+                        Console.WriteLine("Folder add failed with code " + addFolderResult.ToString() + " for " + directoryInPck + "; falling back to individual files." + BuildLastErrorSuffix());
+                        continue;
                     }
 
                     directoriesAddedAsFolders.Add(directoryInPck);
@@ -229,8 +258,16 @@ namespace FWPckUpdater
                     int addResult = do_AddFileToPckFile(file, targetPck, directoryInPck, compressionLevel);
                     if (addResult != WinPckOk)
                     {
-                        Console.Error.WriteLine("WinPCK direct add failed with code " + addResult.ToString() + " for file " + pathInPck + "." + BuildLastErrorSuffix());
-                        return 11;
+                        Console.WriteLine("Direct add failed with code " + addResult.ToString() + " for " + pathInPck + "; trying root submit fallback." + BuildLastErrorSuffix());
+                        int fallbackResult = UpdatePackageFromRoots(topLevelEntries, targetPck, compressionLevel);
+                        if (fallbackResult != WinPckOk)
+                        {
+                            Console.Error.WriteLine("WinPCK direct add failed with code " + addResult.ToString() + " for file " + pathInPck + ". Root submit fallback failed with code " + fallbackResult.ToString() + "." + BuildLastErrorSuffix());
+                            return 11;
+                        }
+
+                        usedRootSubmitFallback = true;
+                        break;
                     }
                 }
 

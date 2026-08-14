@@ -254,6 +254,7 @@ namespace FWEledit
             targetPackageComboBox.Dock = DockStyle.Fill;
             targetPackageComboBox.Items.AddRange(new object[] { "surfaces", "gfx", "models", "shaders", "sfx", "script", "interfaces", "textures" });
             targetPackageComboBox.Text = "surfaces";
+            PopulateTargetPackageComboBox();
             importLayout.Controls.Add(targetPackageComboBox, 1, 0);
 
             preservePathCheckBox = new CheckBox();
@@ -1052,6 +1053,17 @@ namespace FWEledit
                 return;
             }
 
+            Dictionary<string, string> targetPackageRemap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            if (!EnsureImportTargetPackageExists(targetPackage, out targetPackage))
+            {
+                return;
+            }
+            targetPackageComboBox.Text = targetPackage;
+            if (!string.Equals(sourcePackageName, targetPackage, StringComparison.OrdinalIgnoreCase))
+            {
+                targetPackageRemap[NormalizePackageName(sourcePackageName)] = targetPackage;
+            }
+
             List<PckExplorerEntry> selectedEntries = entryListView.SelectedItems
                 .Cast<ListViewItem>()
                 .Select(item => item.Tag as PckExplorerEntry)
@@ -1122,6 +1134,7 @@ namespace FWEledit
                         continue;
                     }
 
+                    QueueModelDirectoryAssets(current, sourceEntryCache, queued, pending, ref dependencyCount);
                     QueueAssociatedAnimationTracks(current, sourceEntryCache, queued, pending, ref dependencyCount);
 
                     foreach (string candidate in CollectReferenceCandidates(current.SourcePackage, current.SourceRelativePath, payload))
@@ -1132,7 +1145,7 @@ namespace FWEledit
                             continue;
                         }
 
-                        dependency.TargetPackage = dependency.SourcePackage;
+                        dependency.TargetPackage = ResolveTargetPackageForImport(dependency.SourcePackage, targetPackageRemap);
                         dependency.TargetRelativePath = dependency.SourceRelativePath;
                         dependency.IsRoot = false;
 
@@ -1143,19 +1156,90 @@ namespace FWEledit
                     }
                 }
 
-                if (staged == 0)
+                List<string> updatedPackages = new List<string>();
+                HashSet<string> rawImportedPackages = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                int rawCopied = 0;
+                if (preservePathCheckBox.Checked)
+                {
+                    IEnumerable<IGrouping<string, ImportAssetRequest>> rawGroups = queued.Values
+                        .Where(CanUseRawPackageImport)
+                        .GroupBy(request => NormalizePackageName(request.TargetPackage), StringComparer.OrdinalIgnoreCase);
+
+                    foreach (IGrouping<string, ImportAssetRequest> rawGroup in rawGroups)
+                    {
+                        string packageName = rawGroup.Key;
+                        if (!EnsureImportTargetPackageExists(packageName, out packageName))
+                        {
+                            return;
+                        }
+
+                        string rawSourcePck;
+                        string rawSourcePkx;
+                        if (!TryGetSourcePackagePaths(rawGroup.First().SourcePackage, out rawSourcePck, out rawSourcePkx))
+                        {
+                            MessageBox.Show(this, "Source package was not found: " + rawGroup.First().SourcePackage + ".pck", "PCK Explorer", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                            return;
+                        }
+
+                        string importError = null;
+                        int copied = 0;
+                        bool imported;
+                        lock (gameRootSwitchSync)
+                        {
+                            string previousGameRoot = AssetManager.GameRootPath;
+                            try
+                            {
+                                AssetManager.GameRootPath = targetClientRootPath;
+                                imported = assetManager != null && assetManager.ImportPackageAssetsByRawCopy(packageName, rawSourcePck, rawSourcePkx, BuildRawCopyItems(rawGroup), out copied, out importError);
+                            }
+                            finally
+                            {
+                                AssetManager.GameRootPath = previousGameRoot;
+                            }
+                        }
+
+                        if (!imported)
+                        {
+                            MessageBox.Show(this, importError ?? "No active client is loaded.", "PCK Explorer", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                            return;
+                        }
+
+                        rawCopied += copied;
+                        rawImportedPackages.Add(packageName);
+                        updatedPackages.Add(packageName);
+                    }
+                }
+
+                if (staged == 0 && rawCopied == 0)
                 {
                     MessageBox.Show(this, "No files were imported. Selected entries already exist in the target package.", "PCK Explorer", MessageBoxButtons.OK, MessageBoxIcon.Information);
                     return;
                 }
 
-                List<string> updatedPackages = new List<string>();
+                int stagedImported = 0;
                 foreach (KeyValuePair<string, List<ImportAssetRequest>> packageStage in stagedByPackage)
                 {
+                    if (rawImportedPackages.Contains(NormalizePackageName(packageStage.Key)))
+                    {
+                        continue;
+                    }
+
                     string packageStageRoot = Path.Combine(tempRoot, packageStage.Key);
                     if (!Directory.Exists(packageStageRoot))
                     {
                         continue;
+                    }
+
+                    string packageName = packageStage.Key;
+                    if (!EnsureImportTargetPackageExists(packageName, out packageName))
+                    {
+                        return;
+                    }
+                    if (!string.Equals(packageName, packageStage.Key, StringComparison.OrdinalIgnoreCase))
+                    {
+                        string remappedRoot = Path.Combine(tempRoot, packageName);
+                        MoveStagedPackageFiles(packageStageRoot, remappedRoot);
+                        packageStageRoot = remappedRoot;
                     }
 
                     string importError = null;
@@ -1166,7 +1250,7 @@ namespace FWEledit
                         try
                         {
                             AssetManager.GameRootPath = targetClientRootPath;
-                            imported = assetManager != null && assetManager.ImportStagedPackageAssetsIncrementalOnly(packageStage.Key, packageStageRoot, out importError);
+                            imported = assetManager != null && assetManager.ImportStagedPackageAssetsIncrementalOnly(packageName, packageStageRoot, out importError);
                         }
                         finally
                         {
@@ -1180,19 +1264,21 @@ namespace FWEledit
                         return;
                     }
 
-                    updatedPackages.Add(packageStage.Key);
+                    updatedPackages.Add(packageName);
+                    stagedImported += packageStage.Value.Count;
                 }
 
-                string message = "Imported " + staged.ToString("N0") + " file(s).";
+                int totalImported = rawCopied + stagedImported;
+                string message = "Imported " + totalImported.ToString("N0") + " file(s).";
                 if (dependencyCount > 0)
                 {
                     message += Environment.NewLine + "Associated assets resolved: " + dependencyCount.ToString("N0");
                 }
                 if (updatedPackages.Count > 0)
                 {
-                    message += Environment.NewLine + "PCK packages updated: " + string.Join(", ", updatedPackages.Select(p => p + ".pck"));
+                    message += Environment.NewLine + "PCK packages updated: " + string.Join(", ", updatedPackages.Distinct(StringComparer.OrdinalIgnoreCase).Select(p => p + ".pck"));
                 }
-                if (skipped > 0)
+                if (skipped > 0 && rawCopied == 0)
                 {
                     message += Environment.NewLine + "Skipped existing files: " + skipped.ToString("N0");
                 }
@@ -1206,6 +1292,213 @@ namespace FWEledit
                 importButton.Enabled = true;
                 Cursor.Current = previousCursor;
                 TryDeleteDirectory(tempRoot);
+            }
+        }
+
+        private void PopulateTargetPackageComboBox()
+        {
+            if (targetPackageComboBox == null)
+            {
+                return;
+            }
+
+            HashSet<string> existing = new HashSet<string>(
+                targetPackageComboBox.Items.Cast<object>().Select(item => NormalizePackageName(Convert.ToString(item))),
+                StringComparer.OrdinalIgnoreCase);
+
+            foreach (string package in GetExistingTargetPackageNames())
+            {
+                if (existing.Add(package))
+                {
+                    targetPackageComboBox.Items.Add(package);
+                }
+            }
+        }
+
+        private List<string> GetExistingTargetPackageNames()
+        {
+            List<string> packages = new List<string>();
+            try
+            {
+                if (string.IsNullOrWhiteSpace(targetClientRootPath))
+                {
+                    return packages;
+                }
+
+                string resourcesRoot = Path.Combine(targetClientRootPath, "resources");
+                if (!Directory.Exists(resourcesRoot))
+                {
+                    return packages;
+                }
+
+                packages.AddRange(Directory.GetFiles(resourcesRoot, "*.pck", SearchOption.TopDirectoryOnly)
+                    .Select(path => NormalizePackageName(Path.GetFileNameWithoutExtension(path)))
+                    .Where(name => !string.IsNullOrWhiteSpace(name))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(name => name, StringComparer.OrdinalIgnoreCase));
+            }
+            catch
+            {
+            }
+
+            return packages;
+        }
+
+        private bool TargetPackageExists(string packageName)
+        {
+            string normalized = NormalizePackageName(packageName);
+            if (string.IsNullOrWhiteSpace(normalized) || string.IsNullOrWhiteSpace(targetClientRootPath))
+            {
+                return false;
+            }
+
+            string pckPath = Path.Combine(targetClientRootPath, "resources", normalized + ".pck");
+            return File.Exists(pckPath);
+        }
+
+        private string ResolveTargetPackageForImport(string sourcePackage, Dictionary<string, string> remap)
+        {
+            string normalized = NormalizePackageName(sourcePackage);
+            if (string.IsNullOrWhiteSpace(normalized))
+            {
+                return normalized;
+            }
+
+            string mapped;
+            if (remap != null && remap.TryGetValue(normalized, out mapped))
+            {
+                return NormalizePackageName(mapped);
+            }
+
+            if (TargetPackageExists(normalized))
+            {
+                return normalized;
+            }
+
+            string resolved;
+            if (!EnsureImportTargetPackageExists(normalized, out resolved))
+            {
+                return normalized;
+            }
+
+            if (remap != null)
+            {
+                remap[normalized] = resolved;
+            }
+
+            return resolved;
+        }
+
+        private bool EnsureImportTargetPackageExists(string requestedPackage, out string resolvedPackage)
+        {
+            resolvedPackage = NormalizePackageName(requestedPackage);
+            if (TargetPackageExists(resolvedPackage))
+            {
+                return true;
+            }
+
+            List<string> availablePackages = GetExistingTargetPackageNames();
+            if (availablePackages.Count == 0)
+            {
+                MessageBox.Show(this, "No target PCK packages were found in the current client's resources folder.", "PCK Explorer", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return false;
+            }
+
+            string selected = ShowTargetPackagePicker(resolvedPackage, availablePackages);
+            if (string.IsNullOrWhiteSpace(selected))
+            {
+                return false;
+            }
+
+            resolvedPackage = NormalizePackageName(selected);
+            return TargetPackageExists(resolvedPackage);
+        }
+
+        private string ShowTargetPackagePicker(string missingPackage, List<string> availablePackages)
+        {
+            using (Form dialog = new Form())
+            using (Label messageLabel = new Label())
+            using (ComboBox packageCombo = new ComboBox())
+            using (Button okButton = new Button())
+            using (Button cancelButton = new Button())
+            {
+                dialog.Text = "Choose target PCK";
+                dialog.StartPosition = FormStartPosition.CenterParent;
+                dialog.FormBorderStyle = FormBorderStyle.FixedDialog;
+                dialog.MinimizeBox = false;
+                dialog.MaximizeBox = false;
+                dialog.ShowInTaskbar = false;
+                dialog.ClientSize = new Size(420, 128);
+                dialog.BackColor = Color.FromArgb(15, 19, 24);
+                dialog.ForeColor = Color.White;
+                dialog.Font = Font;
+
+                messageLabel.Text = "Target package does not exist: " + missingPackage + ".pck\r\nChoose an existing PCK to receive these files:";
+                messageLabel.SetBounds(12, 10, 396, 38);
+                messageLabel.ForeColor = Color.White;
+                dialog.Controls.Add(messageLabel);
+
+                packageCombo.DropDownStyle = ComboBoxStyle.DropDownList;
+                packageCombo.SetBounds(12, 54, 396, 26);
+                packageCombo.BackColor = Color.FromArgb(18, 23, 29);
+                packageCombo.ForeColor = Color.White;
+                packageCombo.Items.AddRange(availablePackages.Cast<object>().ToArray());
+                if (packageCombo.Items.Count > 0)
+                {
+                    packageCombo.SelectedIndex = 0;
+                }
+                dialog.Controls.Add(packageCombo);
+
+                okButton.Text = "OK";
+                okButton.SetBounds(252, 92, 75, 26);
+                okButton.DialogResult = DialogResult.OK;
+                dialog.Controls.Add(okButton);
+
+                cancelButton.Text = "Cancel";
+                cancelButton.SetBounds(333, 92, 75, 26);
+                cancelButton.DialogResult = DialogResult.Cancel;
+                dialog.Controls.Add(cancelButton);
+
+                dialog.AcceptButton = okButton;
+                dialog.CancelButton = cancelButton;
+
+                return dialog.ShowDialog(this) == DialogResult.OK
+                    ? Convert.ToString(packageCombo.SelectedItem)
+                    : string.Empty;
+            }
+        }
+
+        private static void MoveStagedPackageFiles(string sourceRoot, string targetRoot)
+        {
+            if (string.IsNullOrWhiteSpace(sourceRoot)
+                || string.IsNullOrWhiteSpace(targetRoot)
+                || string.Equals(sourceRoot, targetRoot, StringComparison.OrdinalIgnoreCase)
+                || !Directory.Exists(sourceRoot))
+            {
+                return;
+            }
+
+            string fullSourceRoot = Path.GetFullPath(sourceRoot).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+            foreach (string sourceFile in Directory.GetFiles(sourceRoot, "*", SearchOption.AllDirectories))
+            {
+                string fullSourceFile = Path.GetFullPath(sourceFile);
+                if (!fullSourceFile.StartsWith(fullSourceRoot, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                string relative = NormalizePackageRelativePath(Path.GetFileName(targetRoot), fullSourceFile.Substring(fullSourceRoot.Length));
+                string targetFile = Path.Combine(targetRoot, relative);
+                string targetDirectory = Path.GetDirectoryName(targetFile);
+                if (!string.IsNullOrWhiteSpace(targetDirectory))
+                {
+                    Directory.CreateDirectory(targetDirectory);
+                }
+
+                if (!File.Exists(targetFile))
+                {
+                    File.Move(sourceFile, targetFile);
+                }
             }
         }
 
@@ -1253,8 +1546,8 @@ namespace FWEledit
                 return;
             }
 
-            HashSet<string> existing = GetTargetEntries(request.TargetPackage, targetEntryCache);
-            string targetRelativePath = NormalizePath(request.TargetRelativePath);
+            HashSet<string> existing = GetTargetEntries(request.TargetPackage, targetEntryCache, false);
+            string targetRelativePath = NormalizePackageRelativePath(request.TargetPackage, request.TargetRelativePath);
             if (existing != null && existing.Contains(targetRelativePath))
             {
                 skipped++;
@@ -1270,6 +1563,7 @@ namespace FWEledit
             }
 
             File.WriteAllBytes(targetFile, payload);
+            request.TargetRelativePath = targetRelativePath;
             if (existing != null)
             {
                 existing.Add(targetRelativePath);
@@ -1285,11 +1579,59 @@ namespace FWEledit
             staged++;
         }
 
+        private static bool CanUseRawPackageImport(ImportAssetRequest request)
+        {
+            if (request == null)
+            {
+                return false;
+            }
+
+            string sourcePackage = NormalizePackageName(request.SourcePackage);
+            string targetPackage = NormalizePackageName(request.TargetPackage);
+            return !string.IsNullOrWhiteSpace(sourcePackage)
+                && !string.IsNullOrWhiteSpace(targetPackage)
+                && string.Equals(targetPackage, "models", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(sourcePackage, targetPackage, StringComparison.OrdinalIgnoreCase)
+                && !string.IsNullOrWhiteSpace(request.SourceRelativePath)
+                && !string.IsNullOrWhiteSpace(request.TargetRelativePath);
+        }
+
+        private static List<PckRawCopyImportItem> BuildRawCopyItems(IEnumerable<ImportAssetRequest> requests)
+        {
+            List<PckRawCopyImportItem> items = new List<PckRawCopyImportItem>();
+            if (requests == null)
+            {
+                return items;
+            }
+
+            foreach (ImportAssetRequest request in requests)
+            {
+                if (!CanUseRawPackageImport(request))
+                {
+                    continue;
+                }
+
+                items.Add(new PckRawCopyImportItem
+                {
+                    SourceRelativePath = NormalizePackageRelativePath(request.SourcePackage, request.SourceRelativePath),
+                    TargetRelativePath = NormalizePackageRelativePath(request.TargetPackage, request.TargetRelativePath)
+                });
+            }
+
+            return items;
+        }
+
         private HashSet<string> GetTargetEntries(string packageName, Dictionary<string, HashSet<string>> cache)
         {
+            return GetTargetEntries(packageName, cache, true);
+        }
+
+        private HashSet<string> GetTargetEntries(string packageName, Dictionary<string, HashSet<string>> cache, bool includeAliases)
+        {
             packageName = NormalizePackageName(packageName);
+            string cacheKey = includeAliases ? packageName + "|aliases" : packageName + "|exact";
             HashSet<string> entries;
-            if (cache.TryGetValue(packageName, out entries))
+            if (cache.TryGetValue(cacheKey, out entries))
             {
                 return entries;
             }
@@ -1317,12 +1659,23 @@ namespace FWEledit
                 {
                     foreach (string entry in exact)
                     {
-                        AddEntryKey(entries, packageName, entry);
+                        if (includeAliases)
+                        {
+                            AddEntryKey(entries, packageName, entry);
+                        }
+                        else
+                        {
+                            string normalized = NormalizePath(entry);
+                            if (!string.IsNullOrWhiteSpace(normalized))
+                            {
+                                entries.Add(normalized);
+                            }
+                        }
                     }
                 }
             }
 
-            cache[packageName] = entries;
+            cache[cacheKey] = entries;
             return entries;
         }
 
@@ -1511,6 +1864,55 @@ namespace FWEledit
                     SourcePackage = current.SourcePackage,
                     SourceRelativePath = normalized,
                     TargetPackage = current.SourcePackage,
+                    TargetRelativePath = normalized,
+                    IsRoot = false
+                };
+
+                if (AddQueuedImport(queued, pending, dependency))
+                {
+                    dependencyCount++;
+                }
+            }
+        }
+
+        private void QueueModelDirectoryAssets(
+            ImportAssetRequest current,
+            Dictionary<string, HashSet<string>> sourceEntryCache,
+            Dictionary<string, ImportAssetRequest> queued,
+            Queue<ImportAssetRequest> pending,
+            ref int dependencyCount)
+        {
+            if (current == null || !IsModelDescriptorOrGeometry(current.SourceRelativePath))
+            {
+                return;
+            }
+
+            string currentDirectory = NormalizePath(Path.GetDirectoryName(current.SourceRelativePath) ?? string.Empty);
+            if (string.IsNullOrWhiteSpace(currentDirectory))
+            {
+                return;
+            }
+
+            HashSet<string> entries = GetSourceEntries(current.SourcePackage, sourceEntryCache);
+            if (entries == null || entries.Count == 0)
+            {
+                return;
+            }
+
+            string directoryPrefix = currentDirectory.TrimEnd('\\') + "\\";
+            foreach (string entry in entries)
+            {
+                string normalized = NormalizePath(entry);
+                if (!normalized.StartsWith(directoryPrefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                ImportAssetRequest dependency = new ImportAssetRequest
+                {
+                    SourcePackage = current.SourcePackage,
+                    SourceRelativePath = normalized,
+                    TargetPackage = current.TargetPackage,
                     TargetRelativePath = normalized,
                     IsRoot = false
                 };
@@ -1953,6 +2355,21 @@ namespace FWEledit
             return string.IsNullOrWhiteSpace(prefix)
                 ? normalized
                 : prefix + "\\" + normalized;
+        }
+
+        private static string NormalizePackageRelativePath(string packageName, string relativePath)
+        {
+            string normalized = NormalizePath(relativePath);
+            string package = NormalizePackageName(packageName);
+            if (string.IsNullOrWhiteSpace(normalized) || string.IsNullOrWhiteSpace(package))
+            {
+                return normalized;
+            }
+
+            string prefix = package + "\\";
+            return normalized.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+                ? NormalizePath(normalized.Substring(prefix.Length))
+                : normalized;
         }
 
         private static string NormalizePackageName(string value)
