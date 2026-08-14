@@ -28,6 +28,8 @@ _tmp_*
 .tmp-pck-probe*/
 .tmp-pck-raw-probe*/
 .tmp-pck-raw-probe-*/
+.tmp-pck-raw-probe-moxing-*/
+.tmp-pck-raw-probe-moxing-group-*/
 .tmp-last-probe-root.txt
 list0_fw_dump_*.csv
 tools/equipment-package/

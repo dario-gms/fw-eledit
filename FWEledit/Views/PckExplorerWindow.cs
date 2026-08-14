@@ -1110,7 +1110,7 @@ namespace FWEledit
 
                     AddQueuedImport(queued, pending, root);
                     StageImportAsset(root, payload, tempRoot, stagedByPackage, targetEntryCache, ref staged, ref skipped);
-                    QueuePreviewResolvedDependencies(root, sourceEntryCache, queued, pending, ref dependencyCount);
+                    QueuePreviewResolvedDependencies(root, targetPackageRemap, sourceEntryCache, queued, pending, ref dependencyCount);
                 }
 
                 int processed = 0;
@@ -1135,7 +1135,7 @@ namespace FWEledit
                     }
 
                     QueueModelDirectoryAssets(current, sourceEntryCache, queued, pending, ref dependencyCount);
-                    QueueAssociatedAnimationTracks(current, sourceEntryCache, queued, pending, ref dependencyCount);
+                    QueueAssociatedAnimationTracks(current, targetPackageRemap, sourceEntryCache, queued, pending, ref dependencyCount);
 
                     foreach (string candidate in CollectReferenceCandidates(current.SourcePackage, current.SourceRelativePath, payload))
                     {
@@ -1163,11 +1163,12 @@ namespace FWEledit
                 {
                     IEnumerable<IGrouping<string, ImportAssetRequest>> rawGroups = queued.Values
                         .Where(CanUseRawPackageImport)
-                        .GroupBy(request => NormalizePackageName(request.TargetPackage), StringComparer.OrdinalIgnoreCase);
+                        .GroupBy(request => NormalizePackageName(request.SourcePackage) + "\n" + NormalizePackageName(request.TargetPackage), StringComparer.OrdinalIgnoreCase);
 
                     foreach (IGrouping<string, ImportAssetRequest> rawGroup in rawGroups)
                     {
-                        string packageName = rawGroup.Key;
+                        ImportAssetRequest firstRawRequest = rawGroup.First();
+                        string packageName = NormalizePackageName(firstRawRequest.TargetPackage);
                         if (!EnsureImportTargetPackageExists(packageName, out packageName))
                         {
                             return;
@@ -1175,9 +1176,9 @@ namespace FWEledit
 
                         string rawSourcePck;
                         string rawSourcePkx;
-                        if (!TryGetSourcePackagePaths(rawGroup.First().SourcePackage, out rawSourcePck, out rawSourcePkx))
+                        if (!TryGetSourcePackagePaths(firstRawRequest.SourcePackage, out rawSourcePck, out rawSourcePkx))
                         {
-                            MessageBox.Show(this, "Source package was not found: " + rawGroup.First().SourcePackage + ".pck", "PCK Explorer", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                            MessageBox.Show(this, "Source package was not found: " + firstRawRequest.SourcePackage + ".pck", "PCK Explorer", MessageBoxButtons.OK, MessageBoxIcon.Error);
                             return;
                         }
 
@@ -1591,7 +1592,6 @@ namespace FWEledit
             return !string.IsNullOrWhiteSpace(sourcePackage)
                 && !string.IsNullOrWhiteSpace(targetPackage)
                 && string.Equals(targetPackage, "models", StringComparison.OrdinalIgnoreCase)
-                && string.Equals(sourcePackage, targetPackage, StringComparison.OrdinalIgnoreCase)
                 && !string.IsNullOrWhiteSpace(request.SourceRelativePath)
                 && !string.IsNullOrWhiteSpace(request.TargetRelativePath);
         }
@@ -1757,6 +1757,7 @@ namespace FWEledit
 
         private void QueuePreviewResolvedDependencies(
             ImportAssetRequest root,
+            Dictionary<string, string> targetPackageRemap,
             Dictionary<string, HashSet<string>> sourceEntryCache,
             Dictionary<string, ImportAssetRequest> queued,
             Queue<ImportAssetRequest> pending,
@@ -1808,7 +1809,7 @@ namespace FWEledit
                     continue;
                 }
 
-                dependency.TargetPackage = dependency.SourcePackage;
+                dependency.TargetPackage = ResolveTargetPackageForImport(dependency.SourcePackage, targetPackageRemap);
                 dependency.TargetRelativePath = dependency.SourceRelativePath;
                 dependency.IsRoot = false;
 
@@ -1821,6 +1822,7 @@ namespace FWEledit
 
         private void QueueAssociatedAnimationTracks(
             ImportAssetRequest current,
+            Dictionary<string, string> targetPackageRemap,
             Dictionary<string, HashSet<string>> sourceEntryCache,
             Dictionary<string, ImportAssetRequest> queued,
             Queue<ImportAssetRequest> pending,
@@ -1863,7 +1865,7 @@ namespace FWEledit
                 {
                     SourcePackage = current.SourcePackage,
                     SourceRelativePath = normalized,
-                    TargetPackage = current.SourcePackage,
+                    TargetPackage = ResolveTargetPackageForImport(current.SourcePackage, targetPackageRemap),
                     TargetRelativePath = normalized,
                     IsRoot = false
                 };

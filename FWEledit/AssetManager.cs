@@ -972,7 +972,7 @@ namespace FWEledit
                 value = value.Substring(prefix.Length);
             }
 
-            return value;
+            return value.ToLowerInvariant();
         }
 
         private static string QuoteProcessArgument(string value)

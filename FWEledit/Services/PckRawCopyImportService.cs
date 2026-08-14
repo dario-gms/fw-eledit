@@ -82,7 +82,10 @@ namespace FWEledit
                         continue;
                     }
 
-                    Entry clone = sourceEntry.CloneForTarget(targetKey, gbk);
+                    string targetPath = string.Equals(sourceKey, targetKey, StringComparison.OrdinalIgnoreCase)
+                        ? sourceEntry.Path
+                        : targetKey;
+                    Entry clone = sourceEntry.CloneForTarget(targetPath, gbk);
                     selected.Add(clone);
                 }
 
