@@ -63,8 +63,10 @@ namespace FWEledit
                 Encoding gbk = Encoding.GetEncoding("GBK");
                 foreach (PckRawCopyImportItem item in items ?? new PckRawCopyImportItem[0])
                 {
-                    string sourceKey = Normalize(item == null ? null : item.SourceRelativePath);
-                    string targetKey = Normalize(item == null ? null : item.TargetRelativePath);
+                    string sourcePath = CleanPath(item == null ? null : item.SourceRelativePath);
+                    string targetPath = CleanPath(item == null ? null : item.TargetRelativePath);
+                    string sourceKey = Normalize(sourcePath);
+                    string targetKey = Normalize(targetPath);
                     if (string.IsNullOrWhiteSpace(sourceKey) || string.IsNullOrWhiteSpace(targetKey))
                     {
                         continue;
@@ -82,10 +84,15 @@ namespace FWEledit
                         continue;
                     }
 
-                    string targetPath = string.Equals(sourceKey, targetKey, StringComparison.OrdinalIgnoreCase)
+                    string entryPath = string.Equals(sourcePath, targetPath, StringComparison.Ordinal)
                         ? sourceEntry.Path
                         : targetKey;
-                    Entry clone = sourceEntry.CloneForTarget(targetPath, gbk);
+                    if (!string.Equals(sourcePath, targetPath, StringComparison.Ordinal))
+                    {
+                        entryPath = targetPath;
+                    }
+
+                    Entry clone = sourceEntry.CloneForTarget(entryPath, gbk);
                     selected.Add(clone);
                 }
 
@@ -354,12 +361,15 @@ namespace FWEledit
             File.Copy(temp, outputPath, true);
             File.Delete(temp);
 
-            if (writeToPkx && target.HasSafeHeader)
+            if (target.HasSafeHeader)
             {
                 using (FileStream pckHeader = new FileStream(pck, FileMode.Open, FileAccess.Write, FileShare.ReadWrite))
                 {
                     pckHeader.Position = 4;
-                    uint logicalLength = checked((uint)(new FileInfo(pck).Length + new FileInfo(pkx).Length));
+                    long pkxLength = !string.IsNullOrWhiteSpace(pkx) && File.Exists(pkx)
+                        ? new FileInfo(pkx).Length
+                        : 0;
+                    uint logicalLength = checked((uint)(new FileInfo(pck).Length + pkxLength));
                     pckHeader.Write(BitConverter.GetBytes(logicalLength), 0, 4);
                 }
             }
@@ -469,13 +479,18 @@ namespace FWEledit
 
         private static string Normalize(string path)
         {
+            return CleanPath(path).ToLowerInvariant();
+        }
+
+        private static string CleanPath(string path)
+        {
             string value = (path ?? string.Empty).Replace('/', '\\').Trim().TrimStart('\\');
             while (value.Contains("\\\\"))
             {
                 value = value.Replace("\\\\", "\\");
             }
 
-            return value.ToLowerInvariant();
+            return value;
         }
 
         private static byte[] Inflate(byte[] data)

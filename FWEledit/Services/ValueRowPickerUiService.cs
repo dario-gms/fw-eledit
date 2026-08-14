@@ -564,8 +564,7 @@ namespace FWEledit
 
             string package;
             string relative;
-            if (!ModelPickerService.TrySplitModelPackagePath(selectionPath, out package, out relative)
-                || !string.Equals(package, "models", StringComparison.OrdinalIgnoreCase))
+            if (!ModelPickerService.TrySplitModelPackagePath(selectionPath, out package, out relative))
             {
                 return false;
             }

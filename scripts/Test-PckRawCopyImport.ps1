@@ -266,15 +266,18 @@ public static class PckRawCopyProbe
         File.Copy(temp, outputPath, true);
         File.Delete(temp);
 
-        if (writeToPkx && target.HasSafeHeader)
-        {
-            using (FileStream pckHeader = new FileStream(pck, FileMode.Open, FileAccess.Write, FileShare.ReadWrite))
+            if (target.HasSafeHeader)
             {
-                pckHeader.Position = 4;
-                uint logicalLength = checked((uint)(new FileInfo(pck).Length + new FileInfo(pkx).Length));
-                pckHeader.Write(BitConverter.GetBytes(logicalLength), 0, 4);
+                using (FileStream pckHeader = new FileStream(pck, FileMode.Open, FileAccess.Write, FileShare.ReadWrite))
+                {
+                    pckHeader.Position = 4;
+                    long pkxLength = !string.IsNullOrWhiteSpace(pkx) && File.Exists(pkx)
+                        ? new FileInfo(pkx).Length
+                        : 0;
+                    uint logicalLength = checked((uint)(new FileInfo(pck).Length + pkxLength));
+                    pckHeader.Write(BitConverter.GetBytes(logicalLength), 0, 4);
+                }
             }
-        }
     }
 
     private static byte[] BuildRawEntry(Entry entry)

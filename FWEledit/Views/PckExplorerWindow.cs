@@ -27,6 +27,16 @@ namespace FWEledit
             public string TargetPackage { get; set; }
             public string TargetRelativePath { get; set; }
             public bool IsRoot { get; set; }
+            public bool IsReferenceAlias { get; set; }
+            public bool RequiresStagedImport { get; set; }
+            public string ImportNote { get; set; }
+        }
+
+        private sealed class SmdActionRecord
+        {
+            public string Name { get; set; }
+            public int StartOffset { get; set; }
+            public int EndOffset { get; set; }
         }
 
         private readonly AssetManager assetManager;
@@ -1086,13 +1096,20 @@ namespace FWEledit
             Dictionary<string, List<ImportAssetRequest>> stagedByPackage = new Dictionary<string, List<ImportAssetRequest>>(StringComparer.OrdinalIgnoreCase);
             Dictionary<string, ImportAssetRequest> queued = new Dictionary<string, ImportAssetRequest>(StringComparer.OrdinalIgnoreCase);
             Queue<ImportAssetRequest> pending = new Queue<ImportAssetRequest>();
+            ItemTransferProgressWindow progressWindow = new ItemTransferProgressWindow("PCK Explorer - Importing");
             Cursor previousCursor = Cursor.Current;
             Cursor.Current = Cursors.WaitCursor;
             importButton.Enabled = false;
             try
             {
-                foreach (PckExplorerEntry entry in selectedEntries)
+                progressWindow.StartPosition = FormStartPosition.CenterParent;
+                progressWindow.Show(this);
+                ReportImportProgress(progressWindow, "Reading selected entries", "Preparing selected roots...", 0, selectedEntries.Count, selectedEntries.Count <= 0);
+
+                for (int selectedIndex = 0; selectedIndex < selectedEntries.Count; selectedIndex++)
                 {
+                    PckExplorerEntry entry = selectedEntries[selectedIndex];
+                    ReportImportProgress(progressWindow, "Reading selected entries", entry.RelativePath, selectedIndex + 1, selectedEntries.Count, false);
                     if (!reader.TryReadPackageFileEntry(sourcePackageName, sourcePckPath, sourcePkxPath, entry.RelativePath, out byte[] payload, out string resolvedPath, out string error))
                     {
                         MessageBox.Show(this, error, "PCK Explorer", MessageBoxButtons.OK, MessageBoxIcon.Warning);
@@ -1118,6 +1135,16 @@ namespace FWEledit
                 {
                     processed++;
                     ImportAssetRequest current = pending.Dequeue();
+                    if (processed == 1 || processed % 25 == 0 || pending.Count == 0)
+                    {
+                        ReportImportProgress(
+                            progressWindow,
+                            "Resolving associated assets",
+                            NormalizePackageName(current.SourcePackage) + ".pck\\" + NormalizePath(current.SourceRelativePath),
+                            processed,
+                            Math.Max(processed + pending.Count, processed),
+                            false);
+                    }
                     if (!TryReadSourceAsset(current.SourcePackage, current.SourceRelativePath, out byte[] payload, out string resolvedPath, out string readError))
                     {
                         continue;
@@ -1134,8 +1161,9 @@ namespace FWEledit
                         continue;
                     }
 
+                    QueueModelReferenceAliases(current, targetPackageRemap, sourceEntryCache, payload, queued, pending, ref dependencyCount);
                     QueueModelDirectoryAssets(current, sourceEntryCache, queued, pending, ref dependencyCount);
-                    QueueAssociatedAnimationTracks(current, targetPackageRemap, sourceEntryCache, queued, pending, ref dependencyCount);
+                    QueueAssociatedAnimationTracks(current, targetPackageRemap, sourceEntryCache, payload, queued, pending, ref dependencyCount);
 
                     foreach (string candidate in CollectReferenceCandidates(current.SourcePackage, current.SourceRelativePath, payload))
                     {
@@ -1161,18 +1189,29 @@ namespace FWEledit
                 int rawCopied = 0;
                 if (preservePathCheckBox.Checked)
                 {
+                    ReportImportProgress(progressWindow, "Preparing package updates", "Grouping raw copy imports...", 0, 0, true);
                     IEnumerable<IGrouping<string, ImportAssetRequest>> rawGroups = queued.Values
                         .Where(CanUseRawPackageImport)
                         .GroupBy(request => NormalizePackageName(request.SourcePackage) + "\n" + NormalizePackageName(request.TargetPackage), StringComparer.OrdinalIgnoreCase);
 
-                    foreach (IGrouping<string, ImportAssetRequest> rawGroup in rawGroups)
+                    List<IGrouping<string, ImportAssetRequest>> rawGroupList = rawGroups.ToList();
+                    for (int rawGroupIndex = 0; rawGroupIndex < rawGroupList.Count; rawGroupIndex++)
                     {
+                        IGrouping<string, ImportAssetRequest> rawGroup = rawGroupList[rawGroupIndex];
                         ImportAssetRequest firstRawRequest = rawGroup.First();
                         string packageName = NormalizePackageName(firstRawRequest.TargetPackage);
                         if (!EnsureImportTargetPackageExists(packageName, out packageName))
                         {
                             return;
                         }
+
+                        ReportImportProgress(
+                            progressWindow,
+                            "Updating " + packageName + ".pck",
+                            rawGroup.Count().ToString("N0") + " queued file(s)",
+                            rawGroupIndex + 1,
+                            rawGroupList.Count,
+                            false);
 
                         string rawSourcePck;
                         string rawSourcePkx;
@@ -1218,9 +1257,12 @@ namespace FWEledit
                 }
 
                 int stagedImported = 0;
-                foreach (KeyValuePair<string, List<ImportAssetRequest>> packageStage in stagedByPackage)
+                List<KeyValuePair<string, List<ImportAssetRequest>>> stagedPackageList = stagedByPackage.ToList();
+                for (int stageIndex = 0; stageIndex < stagedPackageList.Count; stageIndex++)
                 {
-                    if (rawImportedPackages.Contains(NormalizePackageName(packageStage.Key)))
+                    KeyValuePair<string, List<ImportAssetRequest>> packageStage = stagedPackageList[stageIndex];
+                    if (rawImportedPackages.Contains(NormalizePackageName(packageStage.Key))
+                        && !packageStage.Value.Any(request => request != null && request.RequiresStagedImport))
                     {
                         continue;
                     }
@@ -1236,6 +1278,13 @@ namespace FWEledit
                     {
                         return;
                     }
+                    ReportImportProgress(
+                        progressWindow,
+                        "Updating " + packageName + ".pck",
+                        packageStage.Value.Count.ToString("N0") + " staged file(s)",
+                        stageIndex + 1,
+                        stagedPackageList.Count,
+                        false);
                     if (!string.Equals(packageName, packageStage.Key, StringComparison.OrdinalIgnoreCase))
                     {
                         string remappedRoot = Path.Combine(tempRoot, packageName);
@@ -1283,16 +1332,63 @@ namespace FWEledit
                 {
                     message += Environment.NewLine + "Skipped existing files: " + skipped.ToString("N0");
                 }
+                string auditSummary;
+                string auditLogPath = WriteImportAuditLog(queued.Values, updatedPackages, rawCopied, stagedImported, skipped, dependencyCount, out auditSummary);
+                if (!string.IsNullOrWhiteSpace(auditSummary))
+                {
+                    message += Environment.NewLine + auditSummary;
+                }
+                if (!string.IsNullOrWhiteSpace(auditLogPath))
+                {
+                    message += Environment.NewLine + "Import audit: " + auditLogPath;
+                }
                 targetEntryColorCache.Clear();
+                ReportImportProgress(progressWindow, "Refreshing list", "Restoring selection...", 0, 0, true);
                 RefreshEntries(selectedPathsToRestore, topPathToRestore);
                 statusLabel.Text = message.Replace(Environment.NewLine, " ");
+                progressWindow.AllowCloseAndClose();
                 MessageBox.Show(this, message, "PCK Explorer", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (OperationCanceledException)
+            {
+                statusLabel.Text = "Import cancelled.";
+                progressWindow.AllowCloseAndClose();
+                MessageBox.Show(this, "Import cancelled.", "PCK Explorer", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             finally
             {
+                progressWindow.AllowCloseAndClose();
                 importButton.Enabled = true;
                 Cursor.Current = previousCursor;
                 TryDeleteDirectory(tempRoot);
+            }
+        }
+
+        private static void ReportImportProgress(ItemTransferProgressWindow progressWindow, string stage, string detail, int current, int total, bool isIndeterminate)
+        {
+            if (progressWindow == null || progressWindow.IsDisposed)
+            {
+                return;
+            }
+
+            if (progressWindow.Cancellation.IsCancellationRequested)
+            {
+                throw new OperationCanceledException();
+            }
+
+            progressWindow.UpdateProgress(new ItemTransferProgressInfo
+            {
+                Stage = stage ?? string.Empty,
+                Detail = detail ?? string.Empty,
+                Current = current,
+                Total = total,
+                IsIndeterminate = isIndeterminate
+            });
+            Application.DoEvents();
+
+            if (progressWindow.Cancellation.IsCancellationRequested)
+            {
+                throw new OperationCanceledException();
             }
         }
 
@@ -1547,12 +1643,28 @@ namespace FWEledit
                 return;
             }
 
-            HashSet<string> existing = GetTargetEntries(request.TargetPackage, targetEntryCache, false);
             string targetRelativePath = NormalizePackageRelativePath(request.TargetPackage, request.TargetRelativePath);
+            byte[] stagedPayload = payload;
+            if (TryPatchSmdActionAliases(targetRelativePath, payload, out byte[] patchedPayload))
+            {
+                stagedPayload = patchedPayload;
+                request.RequiresStagedImport = true;
+                request.ImportNote = "smd action aliases";
+            }
+
+            if (preservePathCheckBox.Checked && CanUseRawPackageImport(request))
+            {
+                return;
+            }
+
+            HashSet<string> existing = GetTargetEntries(request.TargetPackage, targetEntryCache, false);
             if (existing != null && existing.Contains(targetRelativePath))
             {
-                skipped++;
-                return;
+                if (!request.RequiresStagedImport)
+                {
+                    skipped++;
+                    return;
+                }
             }
 
             string packageRoot = Path.Combine(tempRoot, request.TargetPackage);
@@ -1563,7 +1675,7 @@ namespace FWEledit
                 Directory.CreateDirectory(targetDirectory);
             }
 
-            File.WriteAllBytes(targetFile, payload);
+            File.WriteAllBytes(targetFile, stagedPayload);
             request.TargetRelativePath = targetRelativePath;
             if (existing != null)
             {
@@ -1591,9 +1703,19 @@ namespace FWEledit
             string targetPackage = NormalizePackageName(request.TargetPackage);
             return !string.IsNullOrWhiteSpace(sourcePackage)
                 && !string.IsNullOrWhiteSpace(targetPackage)
-                && string.Equals(targetPackage, "models", StringComparison.OrdinalIgnoreCase)
+                && CanUseRawModelPackageImport(targetPackage)
+                && !request.RequiresStagedImport
                 && !string.IsNullOrWhiteSpace(request.SourceRelativePath)
                 && !string.IsNullOrWhiteSpace(request.TargetRelativePath);
+        }
+
+        private static bool CanUseRawModelPackageImport(string packageName)
+        {
+            string package = NormalizePackageName(packageName);
+            return string.Equals(package, "models", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(package, "models2", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(package, "litmodels", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(package, "moxing", StringComparison.OrdinalIgnoreCase);
         }
 
         private static List<PckRawCopyImportItem> BuildRawCopyItems(IEnumerable<ImportAssetRequest> requests)
@@ -1604,7 +1726,8 @@ namespace FWEledit
                 return items;
             }
 
-            foreach (ImportAssetRequest request in requests)
+            foreach (ImportAssetRequest request in requests
+                .OrderByDescending(request => request != null && request.IsReferenceAlias))
             {
                 if (!CanUseRawPackageImport(request))
                 {
@@ -1619,6 +1742,458 @@ namespace FWEledit
             }
 
             return items;
+        }
+
+        private static bool TryPatchSmdActionAliases(string relativePath, byte[] payload, out byte[] patchedPayload)
+        {
+            patchedPayload = payload;
+            if (payload == null
+                || payload.Length < 88
+                || !string.Equals(Path.GetExtension(relativePath), ".smd", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            int actionCountOffset;
+            int actionEndOffset;
+            int actionCount;
+            uint version;
+            List<SmdActionRecord> actions;
+            if (!TryParseSmdActions(payload, out actionCountOffset, out actionEndOffset, out actionCount, out version, out actions)
+                || version < 7
+                || actions == null
+                || actions.Count == 0)
+            {
+                return false;
+            }
+
+            Dictionary<string, SmdActionRecord> byName = new Dictionary<string, SmdActionRecord>(StringComparer.OrdinalIgnoreCase);
+            foreach (SmdActionRecord action in actions)
+            {
+                if (action != null && !string.IsNullOrWhiteSpace(action.Name) && !byName.ContainsKey(action.Name))
+                {
+                    byName[action.Name] = action;
+                }
+            }
+
+            List<KeyValuePair<string, SmdActionRecord>> aliases = new List<KeyValuePair<string, SmdActionRecord>>();
+            AddSmdActionAlias(byName, aliases, "\u5954\u8DD1", "\u6218\u6597\u5954\u8DD1");
+            AddSmdActionAlias(byName, aliases, "\u6218\u6597\u5954\u8DD1", "\u5954\u8DD1");
+            AddSmdActionAlias(byName, aliases, "\u7AD9\u7ACB", "\u6218\u6597\u7AD9\u7ACB");
+            AddSmdActionAlias(byName, aliases, "\u6218\u6597\u7AD9\u7ACB", "\u7AD9\u7ACB");
+            if (aliases.Count == 0)
+            {
+                return false;
+            }
+
+            using (MemoryStream output = new MemoryStream(payload.Length + aliases.Count * 64))
+            {
+                output.Write(payload, 0, actionEndOffset);
+                foreach (KeyValuePair<string, SmdActionRecord> alias in aliases)
+                {
+                    byte[] cloned = CloneSmdActionWithName(payload, alias.Value, alias.Key);
+                    if (cloned == null || cloned.Length == 0)
+                    {
+                        continue;
+                    }
+
+                    output.Write(cloned, 0, cloned.Length);
+                    actionCount++;
+                }
+                output.Write(payload, actionEndOffset, payload.Length - actionEndOffset);
+
+                patchedPayload = output.ToArray();
+            }
+
+            if (actionCount == actions.Count)
+            {
+                patchedPayload = payload;
+                return false;
+            }
+
+            byte[] countBytes = BitConverter.GetBytes(actionCount);
+            Buffer.BlockCopy(countBytes, 0, patchedPayload, actionCountOffset, countBytes.Length);
+            return true;
+        }
+
+        private static void AddSmdActionAlias(
+            Dictionary<string, SmdActionRecord> byName,
+            List<KeyValuePair<string, SmdActionRecord>> aliases,
+            string missingName,
+            string sourceName)
+        {
+            if (byName == null || aliases == null || string.IsNullOrWhiteSpace(missingName) || string.IsNullOrWhiteSpace(sourceName))
+            {
+                return;
+            }
+
+            if (byName.ContainsKey(missingName))
+            {
+                return;
+            }
+
+            SmdActionRecord source;
+            if (!byName.TryGetValue(sourceName, out source) || source == null)
+            {
+                return;
+            }
+
+            aliases.Add(new KeyValuePair<string, SmdActionRecord>(missingName, source));
+            byName[missingName] = source;
+        }
+
+        private static byte[] CloneSmdActionWithName(byte[] payload, SmdActionRecord source, string newName)
+        {
+            if (payload == null
+                || source == null
+                || source.StartOffset < 0
+                || source.EndOffset <= source.StartOffset
+                || source.EndOffset > payload.Length)
+            {
+                return null;
+            }
+
+            Encoding gbk = Encoding.GetEncoding("GBK");
+            byte[] nameBytes = gbk.GetBytes(newName ?? string.Empty);
+            int nameStart = source.StartOffset;
+            int oldNameLength = BitConverter.ToInt32(payload, nameStart);
+            int oldNameEnd = nameStart + 4 + oldNameLength;
+            if (oldNameLength < 0 || oldNameEnd > source.EndOffset)
+            {
+                return null;
+            }
+
+            using (MemoryStream output = new MemoryStream(source.EndOffset - source.StartOffset + nameBytes.Length + 4))
+            {
+                output.Write(BitConverter.GetBytes(nameBytes.Length), 0, 4);
+                output.Write(nameBytes, 0, nameBytes.Length);
+                output.Write(payload, oldNameEnd, source.EndOffset - oldNameEnd);
+                return output.ToArray();
+            }
+        }
+
+        private static bool TryParseSmdActions(
+            byte[] payload,
+            out int actionCountOffset,
+            out int actionEndOffset,
+            out int actionCount,
+            out uint version,
+            out List<SmdActionRecord> actions)
+        {
+            actionCountOffset = 12;
+            actionEndOffset = 0;
+            actionCount = 0;
+            version = 0;
+            actions = new List<SmdActionRecord>();
+
+            if (payload == null || payload.Length < 84)
+            {
+                return false;
+            }
+
+            bool isClassicSmd = BitConverter.ToUInt32(payload, 0) == 0x41534D44u;
+            bool isMoxSmd = payload.Length >= 88
+                && payload[0] == (byte)'M'
+                && payload[1] == (byte)'O'
+                && payload[2] == (byte)'X'
+                && payload[3] == (byte)'B'
+                && payload[4] == (byte)'D'
+                && payload[5] == (byte)'M'
+                && payload[6] == (byte)'S'
+                && payload[7] == (byte)'A';
+            if (!isClassicSmd && !isMoxSmd)
+            {
+                return false;
+            }
+
+            int headerSize = isMoxSmd ? 88 : 84;
+            int versionOffset = isMoxSmd ? 8 : 4;
+            int skinCountOffset = isMoxSmd ? 12 : 8;
+            actionCountOffset = isMoxSmd ? 16 : 12;
+            version = BitConverter.ToUInt32(payload, versionOffset);
+            int skinCount = BitConverter.ToInt32(payload, skinCountOffset);
+            actionCount = BitConverter.ToInt32(payload, actionCountOffset);
+            if (version > 8 || skinCount < 0 || skinCount > 10000 || actionCount < 0 || actionCount > 100000)
+            {
+                return false;
+            }
+
+            int offset = headerSize;
+            if (!TrySkipSmdModelStrings(payload, ref offset, skinCount, version, isMoxSmd))
+            {
+                return false;
+            }
+
+            Encoding gbk = Encoding.GetEncoding("GBK");
+            for (int i = 0; i < actionCount; i++)
+            {
+                int recordStart = offset;
+                string name;
+                if (!TryReadLengthPrefixedString(payload, ref offset, gbk, out name))
+                {
+                    return false;
+                }
+
+                if (version < 6)
+                {
+                    if (offset + 12 > payload.Length)
+                    {
+                        return false;
+                    }
+
+                    int jointCount = BitConverter.ToInt32(payload, offset + 4);
+                    offset += 12;
+                    if (jointCount < 0 || offset + jointCount * 20 > payload.Length)
+                    {
+                        return false;
+                    }
+                    offset += jointCount * 20;
+                }
+                else
+                {
+                    if (offset + 8 > payload.Length)
+                    {
+                        return false;
+                    }
+                    offset += 8;
+                    if (version >= 7 && !TrySkipLengthPrefixedString(payload, ref offset))
+                    {
+                        return false;
+                    }
+                }
+
+                actions.Add(new SmdActionRecord
+                {
+                    Name = name,
+                    StartOffset = recordStart,
+                    EndOffset = offset
+                });
+            }
+
+            actionEndOffset = offset;
+            return offset <= payload.Length;
+        }
+
+        private static string TryReadSmdTrackDirectory(string relativePath, byte[] payload)
+        {
+            if (payload == null
+                || payload.Length < 84
+                || !string.Equals(Path.GetExtension(relativePath), ".smd", StringComparison.OrdinalIgnoreCase)
+                || (!IsClassicSmd(payload) && !IsMoxSmd(payload)))
+            {
+                return string.Empty;
+            }
+
+            bool isMoxSmd = IsMoxSmd(payload);
+            uint version = BitConverter.ToUInt32(payload, isMoxSmd ? 8 : 4);
+            int skinCount = BitConverter.ToInt32(payload, isMoxSmd ? 12 : 8);
+            if (version < 8 || version > 8 || skinCount < 0 || skinCount > 10000)
+            {
+                return string.Empty;
+            }
+
+            int offset = isMoxSmd ? 88 : 84;
+            if (!TrySkipSmdBaseModelStrings(payload, ref offset, skinCount, isMoxSmd))
+            {
+                return string.Empty;
+            }
+
+            string trackDirectory;
+            return TryReadLengthPrefixedString(payload, ref offset, Encoding.GetEncoding("GBK"), out trackDirectory)
+                ? NormalizePath(trackDirectory)
+                : string.Empty;
+        }
+
+        private static bool IsClassicSmd(byte[] payload)
+        {
+            return payload != null
+                && payload.Length >= 84
+                && BitConverter.ToUInt32(payload, 0) == 0x41534D44u;
+        }
+
+        private static bool IsMoxSmd(byte[] payload)
+        {
+            return payload != null
+                && payload.Length >= 88
+                && payload[0] == (byte)'M'
+                && payload[1] == (byte)'O'
+                && payload[2] == (byte)'X'
+                && payload[3] == (byte)'B'
+                && payload[4] == (byte)'D'
+                && payload[5] == (byte)'M'
+                && payload[6] == (byte)'S'
+                && payload[7] == (byte)'A';
+        }
+
+        private static bool TrySkipSmdModelStrings(byte[] payload, ref int offset, int skinCount, uint version, bool isMoxSmd)
+        {
+            if (!TrySkipSmdBaseModelStrings(payload, ref offset, skinCount, isMoxSmd))
+            {
+                return false;
+            }
+
+            return version < 8 || TrySkipLengthPrefixedString(payload, ref offset);
+        }
+
+        private static bool TrySkipSmdBaseModelStrings(byte[] payload, ref int offset, int skinCount, bool isMoxSmd)
+        {
+            if (!TrySkipLengthPrefixedString(payload, ref offset))
+            {
+                return false;
+            }
+
+            for (int i = 0; i < skinCount; i++)
+            {
+                if (!TrySkipLengthPrefixedString(payload, ref offset))
+                {
+                    return false;
+                }
+            }
+
+            return TrySkipLengthPrefixedString(payload, ref offset);
+        }
+
+        private static bool TrySkipLengthPrefixedString(byte[] payload, ref int offset)
+        {
+            string ignored;
+            return TryReadLengthPrefixedString(payload, ref offset, null, out ignored);
+        }
+
+        private static bool TryReadLengthPrefixedString(byte[] payload, ref int offset, Encoding encoding, out string value)
+        {
+            value = string.Empty;
+            if (payload == null || offset < 0 || offset + 4 > payload.Length)
+            {
+                return false;
+            }
+
+            int length = BitConverter.ToInt32(payload, offset);
+            offset += 4;
+            if (length < 0 || length > payload.Length - offset)
+            {
+                return false;
+            }
+
+            if (encoding != null && length > 0)
+            {
+                value = encoding.GetString(payload, offset, length).TrimEnd('\0');
+            }
+            offset += length;
+            return true;
+        }
+
+        private static string WriteImportAuditLog(
+            IEnumerable<ImportAssetRequest> requests,
+            IEnumerable<string> updatedPackages,
+            int rawCopied,
+            int stagedImported,
+            int skipped,
+            int dependencyCount,
+            out string summary)
+        {
+            summary = string.Empty;
+            try
+            {
+                List<ImportAssetRequest> importedRequests = (requests ?? Enumerable.Empty<ImportAssetRequest>())
+                    .Where(request => request != null
+                        && !string.IsNullOrWhiteSpace(request.TargetPackage)
+                        && !string.IsNullOrWhiteSpace(request.TargetRelativePath))
+                    .OrderBy(request => NormalizePackageName(request.TargetPackage), StringComparer.OrdinalIgnoreCase)
+                    .ThenBy(request => NormalizePath(request.TargetRelativePath), StringComparer.Ordinal)
+                    .ToList();
+                if (importedRequests.Count == 0)
+                {
+                    return string.Empty;
+                }
+
+                string logRoot = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "FWEledit",
+                    "workspace",
+                    "pck_import_logs");
+                Directory.CreateDirectory(logRoot);
+
+                string logPath = Path.Combine(logRoot, "pck_import_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".log");
+                using (StreamWriter writer = new StreamWriter(logPath, false, Encoding.UTF8))
+                {
+                    writer.WriteLine("FWEdit PCK Explorer import audit");
+                    writer.WriteLine("Timestamp: " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
+                    writer.WriteLine("Imported count: " + (rawCopied + stagedImported).ToString("N0"));
+                    writer.WriteLine("Associated assets resolved: " + dependencyCount.ToString("N0"));
+                    writer.WriteLine("Skipped existing files: " + skipped.ToString("N0"));
+                    writer.WriteLine("PCK packages updated: " + string.Join(", ", (updatedPackages ?? Enumerable.Empty<string>()).Distinct(StringComparer.OrdinalIgnoreCase).Select(package => NormalizePackageName(package) + ".pck")));
+                    writer.WriteLine();
+                    writer.WriteLine("Destination summary:");
+                    foreach (IGrouping<string, ImportAssetRequest> packageGroup in importedRequests.GroupBy(request => NormalizePackageName(request.TargetPackage), StringComparer.OrdinalIgnoreCase))
+                    {
+                        writer.WriteLine("  " + packageGroup.Key + ".pck: " + packageGroup.Count().ToString("N0") + " file(s) " + FormatExtensionSummary(packageGroup));
+                    }
+
+                    writer.WriteLine();
+                    writer.WriteLine("Files:");
+                    foreach (ImportAssetRequest request in importedRequests)
+                    {
+                        string tags = string.Empty;
+                        if (request.IsRoot)
+                        {
+                            tags += " root";
+                        }
+                        if (request.IsReferenceAlias)
+                        {
+                            tags += " alias";
+                        }
+                        if (!string.IsNullOrWhiteSpace(request.ImportNote))
+                        {
+                            tags += " " + request.ImportNote;
+                        }
+
+                        writer.WriteLine(
+                            NormalizePackageName(request.TargetPackage) + ".pck\t" +
+                            NormalizePackageRelativePath(request.TargetPackage, request.TargetRelativePath) + "\t<=\t" +
+                            NormalizePackageName(request.SourcePackage) + ".pck\t" +
+                            NormalizePackageRelativePath(request.SourcePackage, request.SourceRelativePath) +
+                            (string.IsNullOrWhiteSpace(tags) ? string.Empty : "\t[" + tags.Trim() + "]"));
+                    }
+                }
+
+                summary = BuildImportDestinationSummary(importedRequests);
+                return logPath;
+            }
+            catch
+            {
+                summary = string.Empty;
+                return string.Empty;
+            }
+        }
+
+        private static string BuildImportDestinationSummary(List<ImportAssetRequest> requests)
+        {
+            if (requests == null || requests.Count == 0)
+            {
+                return string.Empty;
+            }
+
+            List<string> lines = new List<string>();
+            lines.Add("Destinations:");
+            foreach (IGrouping<string, ImportAssetRequest> packageGroup in requests.GroupBy(request => NormalizePackageName(request.TargetPackage), StringComparer.OrdinalIgnoreCase))
+            {
+                lines.Add("  " + packageGroup.Key + ".pck: " + packageGroup.Count().ToString("N0") + " file(s) " + FormatExtensionSummary(packageGroup));
+            }
+
+            return string.Join(Environment.NewLine, lines);
+        }
+
+        private static string FormatExtensionSummary(IEnumerable<ImportAssetRequest> requests)
+        {
+            List<string> parts = (requests ?? Enumerable.Empty<ImportAssetRequest>())
+                .GroupBy(request => (Path.GetExtension(request.TargetRelativePath) ?? string.Empty).TrimStart('.').ToLowerInvariant())
+                .OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase)
+                .Select(group => (string.IsNullOrWhiteSpace(group.Key) ? "(no ext)" : "." + group.Key) + " " + group.Count().ToString("N0"))
+                .ToList();
+
+            return parts.Count == 0
+                ? string.Empty
+                : "(" + string.Join(", ", parts) + ")";
         }
 
         private HashSet<string> GetTargetEntries(string packageName, Dictionary<string, HashSet<string>> cache)
@@ -1636,7 +2211,7 @@ namespace FWEledit
                 return entries;
             }
 
-            entries = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            entries = new HashSet<string>(includeAliases ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
             string resourcesRoot = string.IsNullOrWhiteSpace(targetClientRootPath)
                 ? string.Empty
                 : Path.Combine(targetClientRootPath, "resources");
@@ -1820,10 +2395,128 @@ namespace FWEledit
             }
         }
 
+        private void QueueModelReferenceAliases(
+            ImportAssetRequest current,
+            Dictionary<string, string> targetPackageRemap,
+            Dictionary<string, HashSet<string>> sourceEntryCache,
+            byte[] payload,
+            Dictionary<string, ImportAssetRequest> queued,
+            Queue<ImportAssetRequest> pending,
+            ref int dependencyCount)
+        {
+            if (current == null || payload == null || payload.Length == 0 || !IsModelDescriptorOrGeometry(current.SourceRelativePath))
+            {
+                return;
+            }
+
+            HashSet<string> sourceEntries = GetSourceEntries(current.SourcePackage, sourceEntryCache);
+            if (sourceEntries == null || sourceEntries.Count == 0)
+            {
+                return;
+            }
+
+            HashSet<string> handled = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (string rawReference in ExtractReferencePaths(payload))
+            {
+                string reference = NormalizePath(rawReference);
+                string extension = Path.GetExtension(reference);
+                if (string.IsNullOrWhiteSpace(reference) || !IsModelLikeExtension(extension))
+                {
+                    continue;
+                }
+
+                string referencePackage;
+                string referenceRelative;
+                bool hasPackage = TrySplitPackagePath(reference, out referencePackage, out referenceRelative)
+                    && !string.IsNullOrWhiteSpace(referenceRelative);
+                string targetPackage = hasPackage
+                    ? ResolveTargetPackageForImport(referencePackage, targetPackageRemap)
+                    : current.TargetPackage;
+                string targetRelative = hasPackage
+                    ? referenceRelative
+                    : CombinePackageRelativePath(Path.GetDirectoryName(current.TargetRelativePath), reference);
+                targetRelative = NormalizePackageRelativePath(targetPackage, targetRelative);
+                if (string.IsNullOrWhiteSpace(targetPackage) || string.IsNullOrWhiteSpace(targetRelative))
+                {
+                    continue;
+                }
+
+                string aliasKey = NormalizePackageName(targetPackage) + "\\" + targetRelative;
+                if (!handled.Add(aliasKey))
+                {
+                    continue;
+                }
+
+                if (GetTargetEntries(targetPackage, new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase), false).Contains(targetRelative))
+                {
+                    continue;
+                }
+
+                string sourceRelative;
+                if (!TryFindSiblingSourceEntryForReference(current.SourceRelativePath, targetRelative, sourceEntries, out sourceRelative))
+                {
+                    continue;
+                }
+
+                ImportAssetRequest alias = new ImportAssetRequest
+                {
+                    SourcePackage = current.SourcePackage,
+                    SourceRelativePath = sourceRelative,
+                    TargetPackage = targetPackage,
+                    TargetRelativePath = targetRelative,
+                    IsRoot = false,
+                    IsReferenceAlias = true
+                };
+
+                if (AddQueuedImport(queued, pending, alias))
+                {
+                    dependencyCount++;
+                }
+            }
+        }
+
+        private static bool TryFindSiblingSourceEntryForReference(
+            string currentRelativePath,
+            string referenceRelativePath,
+            HashSet<string> sourceEntries,
+            out string sourceRelativePath)
+        {
+            sourceRelativePath = string.Empty;
+            if (sourceEntries == null || sourceEntries.Count == 0)
+            {
+                return false;
+            }
+
+            string currentDirectory = NormalizePath(Path.GetDirectoryName(currentRelativePath) ?? string.Empty).TrimEnd('\\');
+            string referenceFileName = Path.GetFileName(NormalizePath(referenceRelativePath));
+            if (string.IsNullOrWhiteSpace(currentDirectory) || string.IsNullOrWhiteSpace(referenceFileName))
+            {
+                return false;
+            }
+
+            foreach (string entry in sourceEntries)
+            {
+                string normalized = NormalizePath(entry);
+                if (!normalized.StartsWith(currentDirectory + "\\", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (string.Equals(Path.GetFileName(normalized), referenceFileName, StringComparison.OrdinalIgnoreCase))
+                {
+                    sourceRelativePath = normalized;
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         private void QueueAssociatedAnimationTracks(
             ImportAssetRequest current,
             Dictionary<string, string> targetPackageRemap,
             Dictionary<string, HashSet<string>> sourceEntryCache,
+            byte[] payload,
             Dictionary<string, ImportAssetRequest> queued,
             Queue<ImportAssetRequest> pending,
             ref int dependencyCount)
@@ -1846,6 +2539,18 @@ namespace FWEledit
             }
 
             string directoryPrefix = currentDirectory.TrimEnd('\\') + "\\";
+            string targetDirectory = NormalizePath(Path.GetDirectoryName(current.TargetRelativePath) ?? string.Empty).TrimEnd('\\');
+            Dictionary<string, string> acceptedPrefixes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            acceptedPrefixes[directoryPrefix] = targetDirectory;
+
+            string smdTrackDirectory = TryReadSmdTrackDirectory(current.SourceRelativePath, payload);
+            if (!string.IsNullOrWhiteSpace(smdTrackDirectory))
+            {
+                string trackPrefix = CombinePackageRelativePath(currentDirectory, smdTrackDirectory).TrimEnd('\\') + "\\";
+                string targetTrackDirectory = CombinePackageRelativePath(targetDirectory, smdTrackDirectory).TrimEnd('\\');
+                acceptedPrefixes[trackPrefix] = targetTrackDirectory;
+            }
+
             foreach (string entry in entries)
             {
                 string normalized = NormalizePath(entry);
@@ -1856,17 +2561,24 @@ namespace FWEledit
                     continue;
                 }
 
-                if (!normalized.StartsWith(directoryPrefix, StringComparison.OrdinalIgnoreCase))
+                string matchedPrefix = acceptedPrefixes.Keys.FirstOrDefault(prefix => normalized.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+                if (string.IsNullOrWhiteSpace(matchedPrefix))
                 {
                     continue;
                 }
+
+                string targetBaseDirectory = acceptedPrefixes[matchedPrefix];
+                string relativeSuffix = normalized.Substring(matchedPrefix.Length);
+                string targetRelativePath = string.IsNullOrWhiteSpace(targetBaseDirectory)
+                    ? normalized
+                    : CombinePackageRelativePath(targetBaseDirectory, relativeSuffix);
 
                 ImportAssetRequest dependency = new ImportAssetRequest
                 {
                     SourcePackage = current.SourcePackage,
                     SourceRelativePath = normalized,
                     TargetPackage = ResolveTargetPackageForImport(current.SourcePackage, targetPackageRemap),
-                    TargetRelativePath = normalized,
+                    TargetRelativePath = targetRelativePath,
                     IsRoot = false
                 };
 
@@ -2100,7 +2812,7 @@ namespace FWEledit
             string text = DecodeGbkPayload(payload);
             MatchCollection matches = Regex.Matches(
                 text,
-                @"[^\0\r\n\t""'<>|:*?]{1,220}\.(?:dds|tga|bmp|png|jpg|jpeg|ski|smd|ecm|gfx|att|sgc|bon|stck|sdr)",
+                @"[^\0\r\n\t""'<>|:*?]{1,220}\.(?:dds|tga|bmp|png|jpg|jpeg|ski|smd|ecm|gfx|att|sgc|bon)",
                 RegexOptions.IgnoreCase);
             for (int i = 0; i < matches.Count; i++)
             {
@@ -2111,7 +2823,7 @@ namespace FWEledit
                 }
             }
 
-            string[] extensions = { ".ecm", ".smd", ".ski", ".gfx", ".att", ".sgc", ".stck", ".sdr" };
+            string[] extensions = { ".ecm", ".smd", ".ski", ".gfx", ".att", ".sgc" };
             for (int i = 0; i < extensions.Length; i++)
             {
                 foreach (string value in ExtractPathsByRawByteScan(payload, extensions[i]))
@@ -2158,6 +2870,14 @@ namespace FWEledit
                     yield return "gfx\\" + normalizedReference;
                 }
 
+                if (IsModelLikeExtension(extension))
+                {
+                    foreach (string modelPackage in GetModelReferenceFallbackPackages(current))
+                    {
+                        yield return modelPackage + "\\" + normalizedReference;
+                    }
+                }
+
                 yield return current + "\\" + normalizedReference;
                 if (!string.IsNullOrWhiteSpace(currentDirectory))
                 {
@@ -2176,6 +2896,25 @@ namespace FWEledit
             yield return current + "\\textures\\" + normalizedReference;
             yield return current + "\\texture\\" + normalizedReference;
             yield return current + "\\" + normalizedReference;
+        }
+
+        private IEnumerable<string> GetModelReferenceFallbackPackages(string currentPackage)
+        {
+            HashSet<string> yielded = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            string current = NormalizePackageName(currentPackage);
+            if (!string.IsNullOrWhiteSpace(current) && SourcePackageExists(current) && yielded.Add(current))
+            {
+                yield return current;
+            }
+
+            string[] packages = { "models", "models2", "litmodels", "moxing" };
+            for (int i = 0; i < packages.Length; i++)
+            {
+                if (SourcePackageExists(packages[i]) && yielded.Add(packages[i]))
+                {
+                    yield return packages[i];
+                }
+            }
         }
 
         private bool SourcePackageExists(string packageName)
@@ -2374,6 +3113,22 @@ namespace FWEledit
                 : normalized;
         }
 
+        private static string CombinePackageRelativePath(string directory, string relativePath)
+        {
+            string normalizedDirectory = NormalizePath(directory).TrimEnd('\\');
+            string normalizedRelative = NormalizePath(relativePath);
+            if (string.IsNullOrWhiteSpace(normalizedDirectory))
+            {
+                return normalizedRelative;
+            }
+            if (string.IsNullOrWhiteSpace(normalizedRelative))
+            {
+                return normalizedDirectory;
+            }
+
+            return normalizedDirectory + "\\" + normalizedRelative;
+        }
+
         private static string NormalizePackageName(string value)
         {
             value = (value ?? string.Empty).Trim();
@@ -2381,7 +3136,7 @@ namespace FWEledit
             {
                 value = Path.GetFileNameWithoutExtension(value);
             }
-            return value.Replace('/', '\\').Trim('\\');
+            return value.Replace('/', '\\').Trim('\\').ToLowerInvariant();
         }
 
         private static string NormalizePath(string value)
