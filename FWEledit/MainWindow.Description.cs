@@ -1690,7 +1690,9 @@ namespace FWEledit
 
         private bool FlushPendingDescriptionsToDisk()
         {
-            return mainWindowDescriptionCoordinatorService.FlushPendingDescriptionsToDisk(
+            StageCurrentDescriptionChange(false);
+
+            bool flushed = mainWindowDescriptionCoordinatorService.FlushPendingDescriptionsToDisk(
                 mainWindowDescriptionUiService,
                 descriptionFlushUiService,
                 descriptionWorkflowService,
@@ -1707,6 +1709,14 @@ namespace FWEledit
                     }
                 },
                 ApplyItemDescriptionRuntime);
+
+            if (flushed)
+            {
+                LoadItemDescriptionsFromConfigs();
+                ApplyDescriptionTabSelection();
+            }
+
+            return flushed;
         }
         private void RemapDescriptionIdIfNeeded(int oldId, int newId)
         {
@@ -1842,6 +1852,16 @@ namespace FWEledit
                 viewModel,
                 () => StageCurrentDescriptionChange(true),
                 message => MessageBox.Show(message));
+
+            if (viewModel != null
+                && viewModel.DescriptionViewModel != null
+                && viewModel.DescriptionViewModel.CurrentItemId > 0)
+            {
+                FlushPendingDescriptionsToDisk();
+                viewModel.HasUnsavedChanges = dirtyStateTracker.HasAnyDirtyEntries()
+                    || viewModel.DescriptionViewModel.HasPendingChanges;
+                RefreshDescriptionDirtyRows();
+            }
         }
     }
 }

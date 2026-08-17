@@ -240,15 +240,21 @@ namespace FWPckUpdater
 
                     if (PackageEntryExists(targetPck, pathInPck))
                     {
+                        int existingUpdateResult = UpdateExistingPackageFile(file, pathInPck, targetPck, compressionLevel);
+                        if (existingUpdateResult == WinPckOk)
+                        {
+                            continue;
+                        }
+
+                        Console.WriteLine("Existing file replace failed with code " + existingUpdateResult.ToString() + " for " + pathInPck + "; trying root submit fallback." + BuildLastErrorSuffix());
                         if (!usedRootSubmitFallback)
                         {
-                            int existingUpdateResult = UpdatePackageFromRoots(topLevelEntries, targetPck, compressionLevel);
-                            if (existingUpdateResult != WinPckOk)
+                            int fallbackResult = UpdatePackageFromRoots(topLevelEntries, targetPck, compressionLevel);
+                            if (fallbackResult != WinPckOk)
                             {
-                                Console.Error.WriteLine("WinPCK update failed with code " + existingUpdateResult.ToString() + " while replacing existing staged entries." + BuildLastErrorSuffix());
+                                Console.Error.WriteLine("WinPCK update failed with code " + existingUpdateResult.ToString() + " while replacing existing staged entry " + pathInPck + ". Root submit fallback failed with code " + fallbackResult.ToString() + "." + BuildLastErrorSuffix());
                                 return 11;
                             }
-
                             usedRootSubmitFallback = true;
                         }
 

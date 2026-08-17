@@ -2496,7 +2496,7 @@ namespace FWEledit
 
                 string packageStagingRoot = Path.Combine(stagingRoot, pair.Key);
                 string updateError = string.Empty;
-                if (pair.Value > 0 && assetManager.ImportStagedPackageAssets(pair.Key, packageStagingRoot, out updateError))
+                if (pair.Value > 0 && assetManager.ImportStagedPackageAssetsIncrementalOnly(pair.Key, packageStagingRoot, out updateError))
                 {
                     result.ImportedAssetCount += pair.Value;
                     result.UpdatedPackageCount++;

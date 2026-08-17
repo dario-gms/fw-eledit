@@ -574,6 +574,16 @@ namespace FWEledit
             { }
         }
 
+        public void InvalidateItemDescriptionCache()
+        {
+            lock (itemDescriptionCacheSync)
+            {
+                cachedItemDescriptionSignature = string.Empty;
+                cachedItemDescriptionPath = string.Empty;
+                cachedItemDescriptionPayload = null;
+            }
+        }
+
         public bool ImportStagedPackageAssets(string packageName, string stagingDirectory, out string error)
         {
             error = string.Empty;
@@ -787,12 +797,20 @@ namespace FWEledit
 
                 PckEntryReaderService.InvalidatePackageGlobally(package);
                 ClearDirectImageFallbackCache();
+                if (string.Equals(package, "configs", StringComparison.OrdinalIgnoreCase))
+                {
+                    InvalidateItemDescriptionCache();
+                }
                 string validationError;
                 if (!pckEntryReaderService.TryWarmPackageIndex(package, out validationError))
                 {
                     RestorePackageFiles(gamePck, gamePkx, gamePckBackup, gamePkxBackup, true, hadGamePkx);
                     PckEntryReaderService.InvalidatePackageGlobally(package);
                     ClearDirectImageFallbackCache();
+                    if (string.Equals(package, "configs", StringComparison.OrdinalIgnoreCase))
+                    {
+                        InvalidateItemDescriptionCache();
+                    }
                     error = "Updated " + package + ".pck could not be read back, so the previous backup was restored. " + validationError;
                     return false;
                 }
@@ -1636,6 +1654,10 @@ namespace FWEledit
                             summary = updateError;
                             return false;
                         }
+                        if (string.Equals(package, "configs", StringComparison.OrdinalIgnoreCase))
+                        {
+                            InvalidateItemDescriptionCache();
+                        }
                         actions.Add(package + ".pck");
                         dirtyPackages.Remove(package);
                         continue;
@@ -1766,6 +1788,10 @@ namespace FWEledit
                     }
 
                     dirtyPackages.Remove(package);
+                    if (string.Equals(package, "configs", StringComparison.OrdinalIgnoreCase))
+                    {
+                        InvalidateItemDescriptionCache();
+                    }
                     summary = "Updated: " + package + ".pck";
                     return true;
                 }
@@ -1811,6 +1837,10 @@ namespace FWEledit
                 dirtyPackages.Remove(package);
                 PckEntryReaderService.InvalidatePackageGlobally(package);
                 ClearDirectImageFallbackCache();
+                if (string.Equals(package, "configs", StringComparison.OrdinalIgnoreCase))
+                {
+                    InvalidateItemDescriptionCache();
+                }
                 PrewarmPackageIndexInBackground(package);
                 summary = "Updated " + package + ".pck";
                 return true;
@@ -3601,23 +3631,27 @@ namespace FWEledit
             string targetRoot = Path.Combine(workspaceResources, ".materialized", "configs");
             string[] candidates = new string[]
             {
-                Path.Combine("configs", "item_ext_desc.txt"),
+                "item_ext_desc.txt",
                 Path.Combine("data", "item_ext_desc.txt"),
-                "item_ext_desc.txt"
+                Path.Combine("configs", "item_ext_desc.txt")
             };
 
             for (int i = 0; i < candidates.Length; i++)
             {
                 string candidate = candidates[i];
-                if (TryReadItemDescriptionCandidate(candidate, out byte[] candidatePayload, out string sourceName)
+                if (TryReadItemDescriptionCandidate(candidate, out byte[] candidatePayload, out string sourceName, out string resolvedRelativePath)
                     && candidatePayload != null
                     && candidatePayload.Length > 0)
                 {
-                    string written = WriteMaterializedResource(targetRoot, candidate, candidatePayload);
+                    string materializedRelativePath = string.IsNullOrWhiteSpace(resolvedRelativePath)
+                        ? candidate
+                        : resolvedRelativePath;
+                    string written = WriteMaterializedResource(targetRoot, materializedRelativePath, candidatePayload);
                     if (string.IsNullOrWhiteSpace(written))
                     {
-                        written = Path.Combine(targetRoot, candidate);
+                        written = Path.Combine(targetRoot, materializedRelativePath);
                     }
+                    DeleteStaleMaterializedItemDescriptionAliases(targetRoot, materializedRelativePath);
 
                     lock (itemDescriptionCacheSync)
                     {
@@ -3636,17 +3670,18 @@ namespace FWEledit
             return false;
         }
 
-        private bool TryReadItemDescriptionCandidate(string relativePath, out byte[] payload, out string sourceName)
+        private bool TryReadItemDescriptionCandidate(string relativePath, out byte[] payload, out string sourceName, out string resolvedRelativePath)
         {
             payload = null;
             sourceName = string.Empty;
+            resolvedRelativePath = string.Empty;
 
             string readError;
-            if (TryReadPackageEntry("configs", relativePath, out payload, out readError)
+            if (pckEntryReaderService.TryReadFileFast("configs", relativePath, out payload, out resolvedRelativePath, out readError)
                 && payload != null
                 && payload.Length > 0)
             {
-                sourceName = "resources\\configs.pck:" + relativePath;
+                sourceName = "resources\\configs.pck:" + resolvedRelativePath;
                 return true;
             }
 
@@ -3658,6 +3693,7 @@ namespace FWEledit
                 if (File.Exists(extractedPath))
                 {
                     payload = File.ReadAllBytes(extractedPath);
+                    resolvedRelativePath = relativePath;
                     sourceName = "resources\\configs.pck:" + relativePath;
                     return true;
                 }
@@ -3665,6 +3701,38 @@ namespace FWEledit
 
             payload = null;
             return false;
+        }
+
+        private static void DeleteStaleMaterializedItemDescriptionAliases(string targetRoot, string currentRelativePath)
+        {
+            if (string.IsNullOrWhiteSpace(targetRoot))
+            {
+                return;
+            }
+
+            string currentFullPath = Path.GetFullPath(Path.Combine(targetRoot, currentRelativePath ?? string.Empty));
+            string[] aliases = new string[]
+            {
+                "item_ext_desc.txt",
+                Path.Combine("data", "item_ext_desc.txt"),
+                Path.Combine("configs", "item_ext_desc.txt")
+            };
+
+            for (int i = 0; i < aliases.Length; i++)
+            {
+                try
+                {
+                    string aliasFullPath = Path.GetFullPath(Path.Combine(targetRoot, aliases[i]));
+                    if (!string.Equals(aliasFullPath, currentFullPath, StringComparison.OrdinalIgnoreCase)
+                        && File.Exists(aliasFullPath))
+                    {
+                        File.Delete(aliasFullPath);
+                    }
+                }
+                catch
+                {
+                }
+            }
         }
 
         private static bool ExtractedConfigsHasItemDescription(string extractedDir)

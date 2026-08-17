@@ -244,7 +244,15 @@ namespace FWEledit
         {
             if (menuStrip_mainMenu != null && toolStripMenuItem2 != null)
             {
+                toolStripMenuItem2.DropDownItems.Clear();
+                if (clearCacheToolStripMenuItem != null)
+                {
+                    toolStripMenuItem2.DropDownItems.Add(clearCacheToolStripMenuItem);
+                }
+
                 menuStrip_mainMenu.Items.Remove(toolStripMenuItem2);
+                int editIndex = Math.Min(1, menuStrip_mainMenu.Items.Count);
+                menuStrip_mainMenu.Items.Insert(editIndex, toolStripMenuItem2);
             }
 
             if (toolStripMenuItem3 == null)

@@ -355,9 +355,25 @@ namespace FWEledit
                 if (asm != null)
                 {
                     asm.MarkWorkspaceFileChanged(FilePath);
+                    string syncSummary;
+                    if (!asm.ApplyWorkspacePackageToGame("configs", out syncSummary))
+                    {
+                        errorMessage = string.IsNullOrWhiteSpace(syncSummary)
+                            ? "Failed to update configs.pck."
+                            : syncSummary;
+                        return false;
+                    }
+
+                    asm.InvalidateItemDescriptionCache();
+                    statusText = string.IsNullOrWhiteSpace(syncSummary)
+                        ? "Updated: configs.pck"
+                        : syncSummary;
+                }
+                else
+                {
+                    statusText = "Description file saved with main Save";
                 }
                 SyncBaselineToCurrent();
-                statusText = "Description file saved with main Save";
                 return true;
             }
             catch (Exception ex)
