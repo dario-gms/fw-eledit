@@ -16,7 +16,9 @@ namespace FWEledit
         private const int PathBytes = 260;
         private const int MinEntrySize = PathBytes + 12;
         private const int MaxEntrySize = 1024 * 1024;
-        private const int DiskCacheVersion = 1;
+        private const int GameFileEntrySize = 276;
+        private const uint PackFlagEncrypt = 0x80000000;
+        private const int DiskCacheVersion = 5;
 
         private static readonly object globalInvalidationSync = new object();
         private static readonly Dictionary<string, int> globalPackageVersions = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
@@ -344,6 +346,111 @@ namespace FWEledit
             return entries.Count > 0;
         }
 
+        public bool TryEnumeratePackageFileEntries(
+            string packageName,
+            string pckPath,
+            string pkxPath,
+            out List<string> entries,
+            out string error)
+        {
+            entries = new List<string>();
+            error = string.Empty;
+
+            string normalizedPackage = NormalizeExternalPackageName(packageName, pckPath);
+            if (string.IsNullOrWhiteSpace(normalizedPackage))
+            {
+                error = "Invalid package name.";
+                return false;
+            }
+            if (string.IsNullOrWhiteSpace(pckPath) || !File.Exists(pckPath))
+            {
+                error = "PCK file was not found.";
+                return false;
+            }
+
+            string safePkxPath = !string.IsNullOrWhiteSpace(pkxPath) && File.Exists(pkxPath)
+                ? pkxPath
+                : string.Empty;
+
+            PckPackageIndex index;
+            if (!TryGetPackageIndex(normalizedPackage, pckPath, safePkxPath, out index, out error) || index == null)
+            {
+                return false;
+            }
+
+            HashSet<string> unique = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            IEnumerable<string> sourceEntries = index.OrderedEntries != null && index.OrderedEntries.Count > 0
+                ? (IEnumerable<string>)index.OrderedEntries
+                : index.Entries.Keys;
+            foreach (string key in sourceEntries)
+            {
+                if (string.IsNullOrWhiteSpace(key))
+                {
+                    continue;
+                }
+
+                string normalizedKey = NormalizeRelativeForPackage(normalizedPackage, key);
+                if (string.IsNullOrWhiteSpace(normalizedKey) || !unique.Add(normalizedKey))
+                {
+                    continue;
+                }
+
+                entries.Add(normalizedKey);
+            }
+
+            return true;
+        }
+
+        public bool TryReadPackageFileEntry(
+            string packageName,
+            string pckPath,
+            string pkxPath,
+            string relativePath,
+            out byte[] payload,
+            out string resolvedRelativePath,
+            out string error)
+        {
+            payload = null;
+            resolvedRelativePath = string.Empty;
+            error = string.Empty;
+
+            string normalizedPackage = NormalizeExternalPackageName(packageName, pckPath);
+            if (string.IsNullOrWhiteSpace(normalizedPackage))
+            {
+                error = "Invalid package name.";
+                return false;
+            }
+            if (string.IsNullOrWhiteSpace(pckPath) || !File.Exists(pckPath))
+            {
+                error = "PCK file was not found.";
+                return false;
+            }
+            if (string.IsNullOrWhiteSpace(relativePath))
+            {
+                error = "Invalid package entry path.";
+                return false;
+            }
+
+            string safePkxPath = !string.IsNullOrWhiteSpace(pkxPath) && File.Exists(pkxPath)
+                ? pkxPath
+                : string.Empty;
+
+            PckPackageIndex index;
+            if (!TryGetPackageIndex(normalizedPackage, pckPath, safePkxPath, out index, out error) || index == null)
+            {
+                return false;
+            }
+
+            string normalizedEntry = NormalizeRelativeForPackage(normalizedPackage, relativePath);
+            if (!TryResolveIndexedEntry(index, normalizedPackage, normalizedEntry, out PckFileEntry entry, out resolvedRelativePath))
+            {
+                error = "Entry not found in " + normalizedPackage + ".pck: " + relativePath;
+                return false;
+            }
+
+            return TryReadIndexedEntry(normalizedPackage, pckPath, safePkxPath, resolvedRelativePath, entry, out payload, out error);
+        }
+
         private static bool TryResolveIndexedEntry(
             PckPackageIndex index,
             string packageName,
@@ -534,6 +641,22 @@ namespace FWEledit
             return normalized;
         }
 
+        private static string NormalizeExternalPackageName(string packageName, string pckPath)
+        {
+            string normalizedPackage = NormalizeLookupKey(packageName);
+            if (!string.IsNullOrWhiteSpace(normalizedPackage))
+            {
+                return normalizedPackage;
+            }
+
+            if (string.IsNullOrWhiteSpace(pckPath))
+            {
+                return string.Empty;
+            }
+
+            return NormalizeLookupKey(Path.GetFileNameWithoutExtension(pckPath) ?? string.Empty);
+        }
+
         private static bool TryReadIndexedEntry(
             string packageName,
             string pckPath,
@@ -564,6 +687,11 @@ namespace FWEledit
                     {
                         error = "Failed to read package entry data: " + relativePath;
                         return false;
+                    }
+
+                    if (entry.Encrypted)
+                    {
+                        DecryptGamePayload(compressed, compressed.Length);
                     }
 
                     byte[] inflated = TryInflateEntry(compressed);
@@ -729,6 +857,8 @@ namespace FWEledit
                         string normalized = reader.ReadString();
                         long offset = reader.ReadInt64();
                         int compressedSize = reader.ReadInt32();
+                        int originalSize = reader.ReadInt32();
+                        bool encrypted = reader.ReadBoolean();
                         string canonical = reader.ReadString();
                         if (string.IsNullOrWhiteSpace(normalized) || compressedSize <= 0)
                         {
@@ -739,6 +869,8 @@ namespace FWEledit
                         {
                             Offset = offset,
                             CompressedSize = compressedSize,
+                            OriginalSize = originalSize,
+                            Encrypted = encrypted,
                             CanonicalPath = string.IsNullOrWhiteSpace(canonical) ? normalized : canonical
                         };
                         entries[normalized] = entry;
@@ -806,6 +938,8 @@ namespace FWEledit
                             writer.Write(string.Empty);
                             writer.Write(0L);
                             writer.Write(0);
+                            writer.Write(0);
+                            writer.Write(false);
                             writer.Write(string.Empty);
                             continue;
                         }
@@ -813,6 +947,8 @@ namespace FWEledit
                         writer.Write(normalized);
                         writer.Write(entry.Offset);
                         writer.Write(entry.CompressedSize);
+                        writer.Write(entry.OriginalSize);
+                        writer.Write(entry.Encrypted);
                         writer.Write(entry.CanonicalPath ?? normalized);
                     }
                 }
@@ -1022,12 +1158,34 @@ namespace FWEledit
                         return false;
                     }
 
+                    if (PackageHasGameHeader(stream, br, length))
+                    {
+                        return TryDecodeGameIndexEntries(
+                            packageName,
+                            pckPath,
+                            pkxPath,
+                            entries,
+                            orderedEntries,
+                            entryPositions,
+                            entriesByExtension,
+                            entriesByFileName,
+                            out error);
+                    }
+
                     uint entryCount;
                     long tableOffset;
                     if (!TryReadFooter(stream, br, length, out tableOffset, out entryCount))
                     {
-                        error = "Failed to decode package footer.";
-                        return false;
+                        return TryDecodeGameIndexEntries(
+                            packageName,
+                            pckPath,
+                            pkxPath,
+                            entries,
+                            orderedEntries,
+                            entryPositions,
+                            entriesByExtension,
+                            entriesByFileName,
+                            out error);
                     }
 
                     Encoding enc = Encoding.GetEncoding("GBK");
@@ -1077,6 +1235,7 @@ namespace FWEledit
                         {
                             Offset = offset,
                             CompressedSize = (int)rawCompressedSize,
+                            OriginalSize = (int)rawCompressedSize,
                             CanonicalPath = normalized
                         };
                         entries[normalized] = value;
@@ -1130,8 +1289,16 @@ namespace FWEledit
 
                 if (entries.Count == 0)
                 {
-                    error = "No package index entries decoded.";
-                    return false;
+                    return TryDecodeGameIndexEntries(
+                        packageName,
+                        pckPath,
+                        pkxPath,
+                        entries,
+                        orderedEntries,
+                        entryPositions,
+                        entriesByExtension,
+                        entriesByFileName,
+                        out error);
                 }
                 return true;
             }
@@ -1191,6 +1358,286 @@ namespace FWEledit
                 return false;
             }
 
+            return true;
+        }
+
+        private static bool PackageHasGameHeader(Stream stream, BinaryReader br, long length)
+        {
+            if (stream == null || br == null || length < FooterSize + 8)
+            {
+                return false;
+            }
+
+            long originalPosition = stream.Position;
+            try
+            {
+                stream.Seek(length - (FooterSize + 8), SeekOrigin.Begin);
+                byte[] header = br.ReadBytes(FooterSize);
+                PckGameAlgorithm algorithm;
+                return TryResolveGameAlgorithm(header, out algorithm);
+            }
+            catch
+            {
+                return false;
+            }
+            finally
+            {
+                try
+                {
+                    stream.Seek(originalPosition, SeekOrigin.Begin);
+                }
+                catch
+                {
+                }
+            }
+        }
+
+        private static bool TryDecodeGameIndexEntries(
+            string packageName,
+            string pckPath,
+            string pkxPath,
+            Dictionary<string, PckFileEntry> entries,
+            List<string> orderedEntries,
+            Dictionary<string, int> entryPositions,
+            Dictionary<string, List<string>> entriesByExtension,
+            Dictionary<string, List<string>> entriesByFileName,
+            out string error)
+        {
+            error = string.Empty;
+            if (entries == null || orderedEntries == null || entryPositions == null)
+            {
+                error = "Invalid package index target.";
+                return false;
+            }
+
+            try
+            {
+                using (PckConcatStream stream = new PckConcatStream(pckPath, pkxPath))
+                using (BinaryReader br = new BinaryReader(stream))
+                {
+                    long length = stream.Length;
+                    if (length < FooterSize + 8)
+                    {
+                        error = "Package is too short.";
+                        return false;
+                    }
+
+                    stream.Seek(length - 4, SeekOrigin.Begin);
+                    uint version = br.ReadUInt32();
+                    if (version != 0x00020001 && version != 0x00020002)
+                    {
+                        error = "Unsupported package index footer.";
+                        return false;
+                    }
+
+                    stream.Seek(length - 8, SeekOrigin.Begin);
+                    int entryCount = br.ReadInt32();
+                    if (entryCount <= 0 || entryCount > 1000000)
+                    {
+                        error = "Invalid package entry count.";
+                        return false;
+                    }
+
+                    stream.Seek(length - (FooterSize + 8), SeekOrigin.Begin);
+                    byte[] header = br.ReadBytes(FooterSize);
+                    if (header == null || header.Length != FooterSize)
+                    {
+                        error = "Failed to read package header.";
+                        return false;
+                    }
+
+                    PckGameAlgorithm algorithm;
+                    if (!TryResolveGameAlgorithm(header, out algorithm))
+                    {
+                        error = "Failed to resolve package algorithm.";
+                        return false;
+                    }
+
+                    uint rawEntryOffset = BitConverter.ToUInt32(header, 8);
+                    uint flags = BitConverter.ToUInt32(header, 12);
+                    long tableOffset = rawEntryOffset ^ algorithm.MaskDword;
+                    bool encrypted = (flags & PackFlagEncrypt) != 0;
+                    if (tableOffset < 0 || tableOffset >= length)
+                    {
+                        error = "Invalid package entry offset.";
+                        return false;
+                    }
+
+                    Encoding enc = Encoding.GetEncoding("GBK");
+                    stream.Seek(tableOffset, SeekOrigin.Begin);
+                    for (int i = 0; i < entryCount; i++)
+                    {
+                        int compressedEntrySize;
+                        if (!TryReadGameEntrySize(br, algorithm, length, out compressedEntrySize))
+                        {
+                            break;
+                        }
+
+                        byte[] entryData = br.ReadBytes(compressedEntrySize);
+                        if (entryData == null || entryData.Length != compressedEntrySize)
+                        {
+                            break;
+                        }
+
+                        byte[] raw = compressedEntrySize == GameFileEntrySize || compressedEntrySize == MinEntrySize
+                            ? entryData
+                            : TryInflateEntry(entryData);
+                        if (raw == null || raw.Length < MinEntrySize)
+                        {
+                            continue;
+                        }
+
+                        string decodedPath = DecodeEntryPath(enc, raw);
+                        string normalized = NormalizeLookupKey(decodedPath);
+                        if (string.IsNullOrWhiteSpace(normalized))
+                        {
+                            continue;
+                        }
+
+                        uint rawOffset = BitConverter.ToUInt32(raw, PathBytes + 0);
+                        uint rawLength = BitConverter.ToUInt32(raw, PathBytes + 4);
+                        uint rawCompressedSize = BitConverter.ToUInt32(raw, PathBytes + 8);
+                        if (rawLength == 0 || rawCompressedSize == 0)
+                        {
+                            continue;
+                        }
+
+                        long offset = rawOffset;
+                        long end = offset + rawCompressedSize;
+                        if (offset < 0 || end > length)
+                        {
+                            continue;
+                        }
+
+                        PckFileEntry value = new PckFileEntry
+                        {
+                            Offset = offset,
+                            CompressedSize = (int)rawCompressedSize,
+                            OriginalSize = (int)rawLength,
+                            Encrypted = encrypted,
+                            CanonicalPath = normalized
+                        };
+
+                        AddDecodedEntry(packageName, normalized, value, entries, orderedEntries, entryPositions, entriesByExtension, entriesByFileName);
+                    }
+                }
+
+                if (entries.Count == 0)
+                {
+                    error = "No package index entries decoded.";
+                    return false;
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = ex.Message;
+                return false;
+            }
+        }
+
+        private static void AddDecodedEntry(
+            string packageName,
+            string normalized,
+            PckFileEntry value,
+            Dictionary<string, PckFileEntry> entries,
+            List<string> orderedEntries,
+            Dictionary<string, int> entryPositions,
+            Dictionary<string, List<string>> entriesByExtension,
+            Dictionary<string, List<string>> entriesByFileName)
+        {
+            entries[normalized] = value;
+            if (!entryPositions.ContainsKey(normalized))
+            {
+                entryPositions[normalized] = orderedEntries.Count;
+                orderedEntries.Add(normalized);
+            }
+            AddEntryToLookupTables(normalized, entriesByExtension, entriesByFileName);
+
+            string packagePrefix = packageName.Trim().ToLowerInvariant() + "\\";
+            if (normalized.StartsWith(packagePrefix, StringComparison.OrdinalIgnoreCase))
+            {
+                string trimmed = normalized.Substring(packagePrefix.Length);
+                if (!entries.ContainsKey(trimmed))
+                {
+                    entries[trimmed] = value;
+                }
+                if (!entryPositions.ContainsKey(trimmed))
+                {
+                    entryPositions[trimmed] = orderedEntries.Count;
+                    orderedEntries.Add(trimmed);
+                }
+                AddEntryToLookupTables(trimmed, entriesByExtension, entriesByFileName);
+            }
+        }
+
+        private static bool TryResolveGameAlgorithm(byte[] header, out PckGameAlgorithm algorithm)
+        {
+            algorithm = default(PckGameAlgorithm);
+            if (header == null || header.Length < FooterSize)
+            {
+                return false;
+            }
+
+            uint guard0 = BitConverter.ToUInt32(header, 0);
+            uint guard1 = BitConverter.ToUInt32(header, 268);
+            int[] algorithmIds = new int[] { 0, 1, 131 };
+            for (int i = 0; i < algorithmIds.Length; i++)
+            {
+                PckGameAlgorithm candidate = BuildGameAlgorithm(algorithmIds[i]);
+                if (guard0 == candidate.GuardByte0 && guard1 == candidate.GuardByte1)
+                {
+                    algorithm = candidate;
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static PckGameAlgorithm BuildGameAlgorithm(int id)
+        {
+            if (id == 1)
+            {
+                return new PckGameAlgorithm(0xab12908f, 0xb3231902, 0x2a63810e, 0x18734563);
+            }
+
+            if (id == 0)
+            {
+                return new PckGameAlgorithm(0xfdfdfeee, 0xf00dbeef, 0xa8937462, 0x59374231);
+            }
+
+            return new PckGameAlgorithm(
+                unchecked(0xfdfdfeeeu + (uint)id * 0x072341f2u),
+                unchecked(0xf00dbeefu + (uint)id * 0x01237a73u),
+                unchecked(0xa8937462u + (uint)id * 0x0ab2321fu),
+                unchecked(0x59374231u + (uint)id * 0x0987a223u));
+        }
+
+        private static bool TryReadGameEntrySize(BinaryReader br, PckGameAlgorithm algorithm, long length, out int entrySize)
+        {
+            entrySize = 0;
+            if (br == null || br.BaseStream == null || br.BaseStream.Position + 8 > length)
+            {
+                return false;
+            }
+
+            uint sizeX1;
+            uint sizeX2;
+            if (!TryReadUInt32(br, out sizeX1) || !TryReadUInt32(br, out sizeX2))
+            {
+                return false;
+            }
+
+            uint sizeA = sizeX1 ^ algorithm.MaskDword;
+            uint sizeB = sizeX2 ^ algorithm.CheckMask ^ algorithm.MaskDword;
+            if (sizeA != sizeB || sizeA == 0 || sizeA > MaxEntrySize)
+            {
+                return false;
+            }
+
+            entrySize = (int)sizeA;
             return true;
         }
 
@@ -1347,6 +1794,29 @@ namespace FWEledit
             }
         }
 
+        private static void DecryptGamePayload(byte[] buffer, int length)
+        {
+            if (buffer == null || length <= 0)
+            {
+                return;
+            }
+
+            uint mask = unchecked((uint)(length + 0x739802ab));
+            for (int i = 0; i + 3 < length; i += 4)
+            {
+                uint data = ((uint)buffer[i] << 24)
+                    | ((uint)buffer[i + 1] << 16)
+                    | ((uint)buffer[i + 2] << 8)
+                    | buffer[i + 3];
+                data = (data << 16) | (data >> 16);
+                data ^= mask;
+                buffer[i] = (byte)((data >> 24) & 0xff);
+                buffer[i + 1] = (byte)((data >> 16) & 0xff);
+                buffer[i + 2] = (byte)((data >> 8) & 0xff);
+                buffer[i + 3] = (byte)(data & 0xff);
+            }
+        }
+
         private static bool TryReadUInt32(BinaryReader br, out uint value)
         {
             value = 0;
@@ -1379,7 +1849,25 @@ namespace FWEledit
         {
             public long Offset { get; set; }
             public int CompressedSize { get; set; }
+            public int OriginalSize { get; set; }
+            public bool Encrypted { get; set; }
             public string CanonicalPath { get; set; } = string.Empty;
+        }
+
+        private struct PckGameAlgorithm
+        {
+            public readonly uint GuardByte0;
+            public readonly uint GuardByte1;
+            public readonly uint MaskDword;
+            public readonly uint CheckMask;
+
+            public PckGameAlgorithm(uint guardByte0, uint guardByte1, uint maskDword, uint checkMask)
+            {
+                GuardByte0 = guardByte0;
+                GuardByte1 = guardByte1;
+                MaskDword = maskDword;
+                CheckMask = checkMask;
+            }
         }
 
         private sealed class PckConcatStream : Stream

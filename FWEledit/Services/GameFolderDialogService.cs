@@ -7,16 +7,40 @@ namespace FWEledit
     {
         public string PromptForGameFolder(string description, string initialPath)
         {
-            using (FolderBrowserDialog dialog = new FolderBrowserDialog())
+            return PromptForGameFolder(description, initialPath, null);
+        }
+
+        public string PromptForGameFolder(string description, string initialPath, IWin32Window owner)
+        {
+            using (OpenFileDialog dialog = new OpenFileDialog())
             {
-                dialog.Description = description ?? string.Empty;
+                dialog.Title = description ?? "Select folder";
+                dialog.CheckFileExists = false;
+                dialog.CheckPathExists = true;
+                dialog.ValidateNames = false;
+                dialog.FileName = "Select this folder";
+                dialog.Filter = "Folders|*.folder";
+                dialog.AutoUpgradeEnabled = true;
+
                 if (!string.IsNullOrWhiteSpace(initialPath) && Directory.Exists(initialPath))
                 {
-                    dialog.SelectedPath = initialPath;
+                    dialog.InitialDirectory = initialPath;
                 }
 
-                return dialog.ShowDialog() == DialogResult.OK && Directory.Exists(dialog.SelectedPath)
-                    ? dialog.SelectedPath
+                DialogResult result = owner != null ? dialog.ShowDialog(owner) : dialog.ShowDialog();
+                if (result != DialogResult.OK)
+                {
+                    return string.Empty;
+                }
+
+                if (Directory.Exists(dialog.FileName))
+                {
+                    return dialog.FileName;
+                }
+
+                string selectedFolder = Path.GetDirectoryName(dialog.FileName);
+                return !string.IsNullOrWhiteSpace(selectedFolder) && Directory.Exists(selectedFolder)
+                    ? selectedFolder
                     : string.Empty;
             }
         }

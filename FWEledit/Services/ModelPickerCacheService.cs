@@ -162,5 +162,17 @@ namespace FWEledit
                 modelPickerEntriesCache.Remove(listIndex);
             }
         }
+
+        public void ClearCache()
+        {
+            lock (syncRoot)
+            {
+                modelPackageByPathIdCache.Clear();
+                modelPackageCacheSignature = string.Empty;
+                modelPickerPackageCache.Clear();
+                modelPickerMissingExtractNotified.Clear();
+                modelPickerEntriesCache.Clear();
+            }
+        }
     }
 }

@@ -18,7 +18,37 @@ namespace FWEledit
                 return;
             }
 
-            string filePath = fileService.ResolveItemExtDescFilePath(gameRootPath, workspaceRootPath);
+            LoadFromConfigs(
+                viewModel,
+                fileService,
+                runtimeService,
+                gameRootPath,
+                workspaceRootPath,
+                string.Empty,
+                updateStatus,
+                applyRuntime);
+        }
+
+        public void LoadFromConfigs(
+            DescriptionViewModel viewModel,
+            ItemDescriptionFileService fileService,
+            DescriptionRuntimeService runtimeService,
+            string gameRootPath,
+            string workspaceRootPath,
+            string resolvedFilePath,
+            Action<string> updateStatus,
+            Action<string[]> applyRuntime)
+        {
+            if (viewModel == null || fileService == null || runtimeService == null)
+            {
+                return;
+            }
+
+            string filePath = resolvedFilePath ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(filePath))
+            {
+                filePath = fileService.ResolveItemExtDescFilePath(gameRootPath, workspaceRootPath);
+            }
             viewModel.LoadFromFile(filePath);
 
             if (updateStatus != null && !string.IsNullOrWhiteSpace(viewModel.StatusText))

@@ -46,6 +46,32 @@ namespace FWEledit
                 return string.Empty;
             }
 
+            if (LooksLikePath(value) && database.ContainsKey(value))
+            {
+                rawIconKeyCache[value] = value;
+                return value;
+            }
+
+            if (LooksLikePath(value))
+            {
+                string normalizedPath = value.Replace('/', '\\').Trim().TrimStart('\\');
+                if (database.ContainsKey(normalizedPath))
+                {
+                    rawIconKeyCache[value] = normalizedPath;
+                    return normalizedPath;
+                }
+
+                string withoutSurfaces = normalizedPath.StartsWith("surfaces\\", StringComparison.OrdinalIgnoreCase)
+                    ? normalizedPath.Substring("surfaces\\".Length)
+                    : normalizedPath;
+                if (!string.Equals(withoutSurfaces, normalizedPath, StringComparison.OrdinalIgnoreCase)
+                    && database.ContainsKey(withoutSurfaces))
+                {
+                    rawIconKeyCache[value] = withoutSurfaces;
+                    return withoutSurfaces;
+                }
+            }
+
             string key = Path.GetFileName(value);
             if (string.IsNullOrWhiteSpace(key))
             {
@@ -93,37 +119,40 @@ namespace FWEledit
                 return cached ?? string.Empty;
             }
 
-            int[] candidates = new int[] { pathId, pathId + 1, pathId - 1 };
-            for (int i = 0; i < candidates.Length; i++)
+            if (pathId <= 0 || !database.pathById.ContainsKey(pathId))
             {
-                int candidate = candidates[i];
-                if (candidate < 0 || !database.pathById.ContainsKey(candidate))
-                {
-                    continue;
-                }
+                pathIdIconKeyCache[pathId] = string.Empty;
+                return string.Empty;
+            }
 
-                string mapped = database.pathById[candidate];
-                if (string.IsNullOrWhiteSpace(mapped))
-                {
-                    continue;
-                }
+            string mapped = database.pathById[pathId];
+            if (string.IsNullOrWhiteSpace(mapped))
+            {
+                pathIdIconKeyCache[pathId] = string.Empty;
+                return string.Empty;
+            }
 
-                string key = ResolveIconKey(database, mapped);
-                if (!string.IsNullOrWhiteSpace(key) && database.ContainsKey(key))
-                {
-                    pathIdIconKeyCache[pathId] = key;
-                    return key;
-                }
+            string key = ResolveIconKey(database, mapped);
+            if (!string.IsNullOrWhiteSpace(key) && database.ContainsKey(key))
+            {
+                pathIdIconKeyCache[pathId] = key;
+                return key;
+            }
 
-                string baseName = Path.GetFileName(mapped);
-                if (!string.IsNullOrWhiteSpace(baseName) && !Path.HasExtension(baseName))
+            if (LooksLikePath(mapped) && database.ContainsKey(mapped))
+            {
+                pathIdIconKeyCache[pathId] = mapped;
+                return mapped;
+            }
+
+            string baseName = Path.GetFileName(mapped);
+            if (!string.IsNullOrWhiteSpace(baseName) && !Path.HasExtension(baseName))
+            {
+                string dds = baseName + ".dds";
+                if (database.ContainsKey(dds))
                 {
-                    string dds = baseName + ".dds";
-                    if (database.ContainsKey(dds))
-                    {
-                        pathIdIconKeyCache[pathId] = dds;
-                        return dds;
-                    }
+                    pathIdIconKeyCache[pathId] = dds;
+                    return dds;
                 }
             }
 
@@ -192,6 +221,11 @@ namespace FWEledit
         }
 
         public string FormatIconPathIdDisplay(CacheSave database, string rawValue)
+        {
+            return FormatIconPathIdDisplay(database, null, -1, rawValue);
+        }
+
+        public string FormatIconPathIdDisplay(CacheSave database, eListCollection listCollection, int listIndex, string rawValue)
         {
             string value = (rawValue ?? string.Empty).Trim();
             if (string.IsNullOrWhiteSpace(value))
@@ -279,14 +313,10 @@ namespace FWEledit
                 return string.Empty;
             }
 
-            int[] candidates = new int[] { pathId, pathId + 1, pathId - 1 };
-            for (int i = 0; i < candidates.Length; i++)
+            string mappedPath;
+            if (database.pathById.TryGetValue(pathId, out mappedPath) && !string.IsNullOrWhiteSpace(mappedPath))
             {
-                string mappedPath;
-                if (database.pathById.TryGetValue(candidates[i], out mappedPath) && !string.IsNullOrWhiteSpace(mappedPath))
-                {
-                    return mappedPath;
-                }
+                return mappedPath;
             }
 
             return string.Empty;

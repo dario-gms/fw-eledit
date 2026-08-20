@@ -7,13 +7,13 @@ namespace FWEledit
 
         public string GetLastGameFolder()
         {
-            return Properties.Settings.Default.LastGameFolder ?? string.Empty;
+            return ReadSetting(() => Properties.Settings.Default.LastGameFolder ?? string.Empty, string.Empty);
         }
 
         public System.Collections.Generic.List<string> GetRecentGameFolders()
         {
             System.Collections.Generic.List<string> folders = new System.Collections.Generic.List<string>();
-            string raw = Properties.Settings.Default.RecentGameFolders ?? string.Empty;
+            string raw = ReadSetting(() => Properties.Settings.Default.RecentGameFolders ?? string.Empty, string.Empty);
             string[] entries = raw.Split(RecentFolderSeparators, System.StringSplitOptions.RemoveEmptyEntries);
             for (int i = 0; i < entries.Length && folders.Count < MaxRecentGameFolders; i++)
             {
@@ -34,7 +34,7 @@ namespace FWEledit
 
         public string GetLastRunVersion()
         {
-            return Properties.Settings.Default.LastRunVersion ?? string.Empty;
+            return ReadSetting(() => Properties.Settings.Default.LastRunVersion ?? string.Empty, string.Empty);
         }
 
         public bool ResetIfVersionChanged(string displayVersion)
@@ -42,8 +42,11 @@ namespace FWEledit
             string lastRun = GetLastRunVersion();
             if (!string.Equals(lastRun, displayVersion, System.StringComparison.OrdinalIgnoreCase))
             {
-                Properties.Settings.Default.LastGameFolder = string.Empty;
-                Properties.Settings.Default.RecentGameFolders = string.Empty;
+                WriteSetting(() =>
+                {
+                    Properties.Settings.Default.LastGameFolder = string.Empty;
+                    Properties.Settings.Default.RecentGameFolders = string.Empty;
+                });
                 ResetOnStartup(displayVersion);
                 return true;
             }
@@ -58,33 +61,36 @@ namespace FWEledit
             }
             if (listIndex > -1)
             {
-                Properties.Settings.Default.LastListIndex = listIndex;
+                WriteSetting(() => Properties.Settings.Default.LastListIndex = listIndex);
             }
             if (currentItemId.HasValue && currentItemId.Value > -1)
             {
-                Properties.Settings.Default.LastItemId = currentItemId.Value;
+                WriteSetting(() => Properties.Settings.Default.LastItemId = currentItemId.Value);
             }
         }
 
         public void ResetOnStartup(string displayVersion)
         {
-            Properties.Settings.Default.LastListIndex = 0;
-            Properties.Settings.Default.LastItemId = -1;
-            Properties.Settings.Default.LastRunVersion = displayVersion;
-            Properties.Settings.Default.Save();
+            WriteSetting(() =>
+            {
+                Properties.Settings.Default.LastListIndex = 0;
+                Properties.Settings.Default.LastItemId = -1;
+                Properties.Settings.Default.LastRunVersion = displayVersion;
+                Properties.Settings.Default.Save();
+            });
         }
 
         public void Flush()
         {
-            Properties.Settings.Default.Save();
+            WriteSetting(() => Properties.Settings.Default.Save());
         }
 
         public NavigationSettingsSnapshot LoadSnapshot()
         {
             return new NavigationSettingsSnapshot
             {
-                LastListIndex = Properties.Settings.Default.LastListIndex,
-                LastItemId = Properties.Settings.Default.LastItemId
+                LastListIndex = ReadSetting(() => Properties.Settings.Default.LastListIndex, 0),
+                LastItemId = ReadSetting(() => Properties.Settings.Default.LastItemId, -1)
             };
         }
 
@@ -95,16 +101,22 @@ namespace FWEledit
                 return;
             }
 
-            Properties.Settings.Default.LastGameFolder = gameFolderPath;
-            SaveRecentGameFolder(gameFolderPath);
-            Properties.Settings.Default.Save();
+            WriteSetting(() =>
+            {
+                Properties.Settings.Default.LastGameFolder = gameFolderPath;
+                SaveRecentGameFolder(gameFolderPath);
+                Properties.Settings.Default.Save();
+            });
         }
 
         public void ClearRecentGameFolders()
         {
-            Properties.Settings.Default.LastGameFolder = string.Empty;
-            Properties.Settings.Default.RecentGameFolders = string.Empty;
-            Properties.Settings.Default.Save();
+            WriteSetting(() =>
+            {
+                Properties.Settings.Default.LastGameFolder = string.Empty;
+                Properties.Settings.Default.RecentGameFolders = string.Empty;
+                Properties.Settings.Default.Save();
+            });
         }
 
         private void SaveRecentGameFolder(string gameFolderPath)
@@ -125,6 +137,90 @@ namespace FWEledit
             }
 
             Properties.Settings.Default.RecentGameFolders = string.Join("\n", folders.ToArray());
+        }
+
+        private static T ReadSetting<T>(System.Func<T> read, T fallback)
+        {
+            try
+            {
+                return read != null ? read() : fallback;
+            }
+            catch (System.Configuration.ConfigurationErrorsException ex)
+            {
+                RecoverCorruptUserConfig(ex);
+                try
+                {
+                    return read != null ? read() : fallback;
+                }
+                catch
+                {
+                    return fallback;
+                }
+            }
+            catch
+            {
+                return fallback;
+            }
+        }
+
+        private static void WriteSetting(System.Action write)
+        {
+            if (write == null)
+            {
+                return;
+            }
+
+            try
+            {
+                write();
+            }
+            catch (System.Configuration.ConfigurationErrorsException ex)
+            {
+                RecoverCorruptUserConfig(ex);
+                try
+                {
+                    write();
+                }
+                catch
+                {
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        private static void RecoverCorruptUserConfig(System.Configuration.ConfigurationErrorsException ex)
+        {
+            string filename = ex != null ? ex.Filename : string.Empty;
+            if (string.IsNullOrWhiteSpace(filename))
+            {
+                System.Configuration.ConfigurationErrorsException configEx = ex != null
+                    ? ex.InnerException as System.Configuration.ConfigurationErrorsException
+                    : null;
+                filename = configEx != null ? configEx.Filename : string.Empty;
+            }
+
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(filename) && System.IO.File.Exists(filename))
+                {
+                    string backup = filename + ".corrupt-" + System.DateTime.Now.ToString("yyyyMMddHHmmss");
+                    System.IO.File.Move(filename, backup);
+                }
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                System.Configuration.ConfigurationManager.RefreshSection("userSettings");
+                Properties.Settings.Default.Reload();
+            }
+            catch
+            {
+            }
         }
     }
 }

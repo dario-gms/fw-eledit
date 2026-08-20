@@ -15,6 +15,7 @@ namespace FWEledit
         private void click_deleteItem(object sender, EventArgs ea)
 		{
             int listIndex = comboBox_lists.SelectedIndex;
+            int[] deletedDescriptionIds = GetSelectedDescriptionItemIds();
             mainWindowActionsCoordinatorService.HandleDeleteSelected(
                 mainWindowElementActionsUiService,
                 elementDeleteCommandService,
@@ -27,12 +28,14 @@ namespace FWEledit
                 comboBox_lists,
                 viewModel,
                 () => change_item(null, null));
+            RemoveDescriptionsForDeletedItems(deletedDescriptionIds);
 		}
 
 
         private void click_cloneItem(object sender, EventArgs ea)
 		{
             int listIndex = comboBox_lists.SelectedIndex;
+            int[] sourceDescriptionIds = GetSelectedDescriptionItemIds();
             mainWindowActionsCoordinatorService.HandleCloneSelected(
                 mainWindowElementActionsUiService,
                 elementCloneCommandService,
@@ -53,6 +56,7 @@ namespace FWEledit
                 () => change_list(null, null),
                 () => change_item(null, null),
                 index => listDisplayService.GetFriendlyListName(sessionService.ListCollection.Lists[index].listName));
+            CopyDescriptionsForClonedItems(sourceDescriptionIds, GetSelectedDescriptionItemIds());
 
             InvalidateItemReferenceOptionCaches();
             if (!referenceIndexReady)
@@ -226,83 +230,261 @@ namespace FWEledit
                 return;
             }
 
-            int rowIndex = dataGridView_elems.CurrentCell != null ? dataGridView_elems.CurrentCell.RowIndex : -1;
-            if (rowIndex < 0)
+            int[] selectedRows = gridSelectionService.GetSelectedIndices(dataGridView_elems);
+            if ((selectedRows == null || selectedRows.Length == 0) && dataGridView_elems.CurrentCell != null)
             {
-                int[] selected = gridSelectionService.GetSelectedIndices(dataGridView_elems);
-                rowIndex = selected.Length > 0 ? selected[0] : -1;
+                selectedRows = new[] { dataGridView_elems.CurrentCell.RowIndex };
             }
 
-            int elementIndex = elementIndexResolverService.ResolveElementIndexFromGridRow(
-                sessionService.ListCollection,
-                listIndex,
-                rowIndex,
-                dataGridView_elems);
-            if (elementIndex < 0)
+            int[] elementIndices = (selectedRows ?? new int[0])
+                .Select(rowIndex => elementIndexResolverService.ResolveElementIndexFromGridRow(
+                    sessionService.ListCollection,
+                    listIndex,
+                    rowIndex,
+                    dataGridView_elems))
+                .Where(elementIndex => elementIndex >= 0)
+                .Distinct()
+                .ToArray();
+            if (elementIndices.Length == 0)
             {
-                MessageBox.Show("Select one item to export.");
+                MessageBox.Show("Select one or more items to export.");
                 return;
             }
 
-            string id = sessionService.ListCollection.GetValue(listIndex, elementIndex, 0);
-            string name = ResolveItemNameForTransferPackage(listIndex, elementIndex);
-            string safeName = BuildSafeItemTransferFileName(id + " - " + name);
-
-            using (SaveFileDialog dialog = new SaveFileDialog())
+            if (elementIndices.Length == 1)
             {
-                dialog.Filter = "FWEledit item package (*.fweitem)|*.fweitem|All files (*.*)|*.*";
-                dialog.FileName = safeName + ".fweitem";
-                if (dialog.ShowDialog(this) != DialogResult.OK)
-                {
-                    return;
-                }
+                int elementIndex = elementIndices[0];
+                string id = sessionService.ListCollection.GetValue(listIndex, elementIndex, 0);
+                string name = ResolveItemNameForTransferPackage(listIndex, elementIndex);
+                string safeName = BuildSafeItemTransferFileName(id + " - " + name);
 
-                using (ItemTransferProgressWindow progressWindow = new ItemTransferProgressWindow("Export Equipment Package"))
+                using (SaveFileDialog dialog = new SaveFileDialog())
                 {
-                    progressWindow.StartPosition = FormStartPosition.CenterParent;
-                    progressWindow.Show(this);
-
-                    ItemTransferExportResult result;
-                    try
+                    dialog.Filter = "FWEledit item package (*.fweitem)|*.fweitem|All files (*.*)|*.*";
+                    dialog.FileName = safeName + ".fweitem";
+                    string lastExportFolder = GetLastItemPackageExportFolder();
+                    if (!string.IsNullOrWhiteSpace(lastExportFolder))
                     {
-                        result = await Task.Run(() => ExportEquipmentPackageWithCli(
-                            listIndex,
-                            elementIndex,
-                            dialog.FileName,
-                            progressWindow.UpdateProgress,
-                            progressWindow.Cancellation.Token));
-                    }
-                    finally
-                    {
-                        progressWindow.AllowCloseAndClose();
+                        dialog.InitialDirectory = lastExportFolder;
                     }
 
-                    if (!result.Success)
+                    if (dialog.ShowDialog(this) != DialogResult.OK)
                     {
-                        MessageBox.Show(result.ErrorMessage ?? "Failed to export item package.");
                         return;
                     }
 
-                    string message = "Item package exported.\nAssets: " + result.AssetCount.ToString();
-                    if (result.MissingAssetCount > 0)
+                    SaveLastItemPackageExportFolder(Path.GetDirectoryName(dialog.FileName));
+
+                    using (ItemTransferProgressWindow progressWindow = ShowItemTransferProgressWindow(
+                        "Export Equipment Package",
+                        "Preparing export",
+                        safeName))
                     {
-                        message += "\nMissing assets: " + result.MissingAssetCount.ToString();
-                        if (result.MissingAssets != null && result.MissingAssets.Count > 0)
+
+                        ItemTransferExportResult result;
+                        try
                         {
-                            int maxToShow = Math.Min(5, result.MissingAssets.Count);
-                            for (int i = 0; i < maxToShow; i++)
-                            {
-                                message += "\n- " + result.MissingAssets[i];
-                            }
-                            if (result.MissingAssets.Count > maxToShow)
-                            {
-                                message += "\n- ...";
-                            }
+                            result = await Task.Run(() => ExportEquipmentPackageWithCli(
+                                listIndex,
+                                elementIndex,
+                                dialog.FileName,
+                                progressWindow.UpdateProgress,
+                                progressWindow.Cancellation.Token));
                         }
+                        finally
+                        {
+                            progressWindow.AllowCloseAndClose();
+                        }
+
+                        if (!result.Success)
+                        {
+                            MessageBox.Show(result.ErrorMessage ?? "Failed to export item package.");
+                            return;
+                        }
+
+                        MessageBox.Show(BuildItemTransferExportMessage(result, "Item package exported."));
                     }
-                    MessageBox.Show(message);
+                }
+                return;
+            }
+
+            string selectedOutputDirectory = gameFolderDialogService.PromptForGameFolder(
+                "Choose a folder for the exported equipment packages.",
+                GetLastItemPackageExportFolder(),
+                this);
+            if (string.IsNullOrWhiteSpace(selectedOutputDirectory))
+            {
+                return;
+            }
+
+            SaveLastItemPackageExportFolder(selectedOutputDirectory);
+
+            using (ItemTransferProgressWindow progressWindow = ShowItemTransferProgressWindow(
+                "Export Equipment Packages",
+                "Preparing batch export",
+                elementIndices.Length.ToString() + " equipment packages"))
+            {
+
+                ItemTransferExportResult result;
+                try
+                {
+                    result = await Task.Run(() => ExportEquipmentPackagesWithCli(
+                        listIndex,
+                        elementIndices,
+                        selectedOutputDirectory,
+                        progressWindow.UpdateProgress,
+                        progressWindow.Cancellation.Token));
+                }
+                finally
+                {
+                    progressWindow.AllowCloseAndClose();
+                }
+
+                if (!result.Success)
+                {
+                    MessageBox.Show(result.ErrorMessage ?? "Failed to export item packages.");
+                    return;
+                }
+
+                MessageBox.Show(BuildItemTransferExportMessage(result, "Item packages exported: " + elementIndices.Length.ToString()));
+            }
+        }
+
+        private ItemTransferProgressWindow ShowItemTransferProgressWindow(string title, string stage, string detail)
+        {
+            ItemTransferProgressWindow progressWindow = new ItemTransferProgressWindow(title);
+            progressWindow.StartPosition = FormStartPosition.CenterParent;
+            progressWindow.UpdateProgress(new ItemTransferProgressInfo
+            {
+                Stage = stage ?? string.Empty,
+                Detail = detail ?? string.Empty,
+                Current = 0,
+                Total = 0,
+                IsIndeterminate = true
+            });
+            progressWindow.Show(this);
+            progressWindow.Activate();
+            progressWindow.Refresh();
+            Application.DoEvents();
+            return progressWindow;
+        }
+
+        private string GetLastItemPackageExportFolder()
+        {
+            string path = Properties.Settings.Default.LastItemPackageExportFolder ?? string.Empty;
+            return !string.IsNullOrWhiteSpace(path) && Directory.Exists(path) ? path : string.Empty;
+        }
+
+        private void SaveLastItemPackageExportFolder(string folderPath)
+        {
+            if (string.IsNullOrWhiteSpace(folderPath) || !Directory.Exists(folderPath))
+            {
+                return;
+            }
+
+            Properties.Settings.Default.LastItemPackageExportFolder = folderPath;
+            Properties.Settings.Default.Save();
+        }
+
+        private ItemTransferExportResult ExportEquipmentPackagesWithCli(
+            int listIndex,
+            int[] elementIndices,
+            string outputDirectory,
+            Action<ItemTransferProgressInfo> progress,
+            CancellationToken cancellationToken)
+        {
+            ItemTransferExportResult combined = new ItemTransferExportResult
+            {
+                Success = true,
+                MissingAssets = new System.Collections.Generic.List<string>()
+            };
+
+            if (elementIndices == null || elementIndices.Length == 0)
+            {
+                combined.Success = false;
+                combined.ErrorMessage = "No items selected.";
+                return combined;
+            }
+
+            Directory.CreateDirectory(outputDirectory);
+            for (int i = 0; i < elementIndices.Length; i++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                int elementIndex = elementIndices[i];
+                string id = sessionService.ListCollection.GetValue(listIndex, elementIndex, 0);
+                string name = ResolveItemNameForTransferPackage(listIndex, elementIndex);
+                string safeName = BuildSafeItemTransferFileName(id + " - " + name);
+                string outputFile = GetUniqueItemPackagePath(outputDirectory, safeName + ".fweitem");
+
+                progress?.Invoke(new ItemTransferProgressInfo
+                {
+                    Stage = "Exporting package " + (i + 1).ToString() + "/" + elementIndices.Length.ToString(),
+                    Detail = safeName,
+                    Current = i + 1,
+                    Total = elementIndices.Length,
+                    IsIndeterminate = false
+                });
+
+                ItemTransferExportResult result = ExportEquipmentPackageWithCli(
+                    listIndex,
+                    elementIndex,
+                    outputFile,
+                    progress,
+                    cancellationToken);
+                if (!result.Success)
+                {
+                    combined.Success = false;
+                    combined.ErrorMessage = result.ErrorMessage;
+                    return combined;
+                }
+
+                combined.AssetCount += result.AssetCount;
+                combined.MissingAssetCount += result.MissingAssetCount;
+                if (result.MissingAssets != null)
+                {
+                    combined.MissingAssets.AddRange(result.MissingAssets);
                 }
             }
+
+            return combined;
+        }
+
+        private static string GetUniqueItemPackagePath(string directory, string fileName)
+        {
+            string baseName = Path.GetFileNameWithoutExtension(fileName);
+            string extension = Path.GetExtension(fileName);
+            string candidate = Path.Combine(directory, fileName);
+            int suffix = 2;
+            while (File.Exists(candidate))
+            {
+                candidate = Path.Combine(directory, baseName + " (" + suffix.ToString() + ")" + extension);
+                suffix++;
+            }
+
+            return candidate;
+        }
+
+        private static string BuildItemTransferExportMessage(ItemTransferExportResult result, string header)
+        {
+            string message = header + "\nAssets: " + result.AssetCount.ToString();
+            if (result.MissingAssetCount > 0)
+            {
+                message += "\nMissing assets: " + result.MissingAssetCount.ToString();
+                if (result.MissingAssets != null && result.MissingAssets.Count > 0)
+                {
+                    int maxToShow = Math.Min(5, result.MissingAssets.Count);
+                    for (int i = 0; i < maxToShow; i++)
+                    {
+                        message += "\n- " + result.MissingAssets[i];
+                    }
+                    if (result.MissingAssets.Count > maxToShow)
+                    {
+                        message += "\n- ...";
+                    }
+                }
+            }
+
+            return message;
         }
 
         private ItemTransferExportResult ExportEquipmentPackageWithCli(
@@ -566,6 +748,7 @@ namespace FWEledit
             using (OpenFileDialog dialog = new OpenFileDialog())
             {
                 dialog.Filter = "FWEledit item package (*.fweitem)|*.fweitem|All files (*.*)|*.*";
+                dialog.Multiselect = true;
                 if (dialog.ShowDialog(this) != DialogResult.OK || !File.Exists(dialog.FileName))
                 {
                     return;
@@ -586,12 +769,12 @@ namespace FWEledit
                     ItemTransferImportResult result;
                     try
                     {
-                        result = await Task.Run(() => itemTransferPackageService.ImportItemPackage(
+                        result = await Task.Run(() => itemTransferPackageService.ImportItemPackages(
                             sessionService.ListCollection,
                             sessionService.Database,
                             sessionService.AssetManager,
                             idGenerationService,
-                            dialog.FileName,
+                            dialog.FileNames,
                             importMode,
                             progressWindow.UpdateProgress,
                             progressWindow.Cancellation.Token));
@@ -616,12 +799,27 @@ namespace FWEledit
                         return;
                     }
 
-                    mainWindowDirtyTrackingService.MarkRowDirty(
-                        dirtyStateTracker,
-                        listDisplayService,
-                        ref viewModel.HasUnsavedChanges,
-                        result.TargetListIndex,
-                        result.NewItemIndex);
+                    if (result.ImportedItems != null && result.ImportedItems.Count > 0)
+                    {
+                        foreach (ItemTransferImportedItem importedItem in result.ImportedItems)
+                        {
+                            mainWindowDirtyTrackingService.MarkRowDirty(
+                                dirtyStateTracker,
+                                listDisplayService,
+                                ref viewModel.HasUnsavedChanges,
+                                importedItem.ListIndex,
+                                importedItem.ItemIndex);
+                        }
+                    }
+                    else
+                    {
+                        mainWindowDirtyTrackingService.MarkRowDirty(
+                            dirtyStateTracker,
+                            listDisplayService,
+                            ref viewModel.HasUnsavedChanges,
+                            result.TargetListIndex,
+                            result.NewItemIndex);
+                    }
                     viewModel.HasUnsavedChanges = true;
 
                     if (result.TargetListIndex >= 0 && result.TargetListIndex < comboBox_lists.Items.Count)
@@ -646,7 +844,9 @@ namespace FWEledit
                     InvalidateItemReferenceOptionCaches();
                     ScheduleVisibleReferenceCountRefresh();
 
-                    string message = "Item package imported.\nNew ID: " + result.NewId.ToString();
+                    string message = result.ImportedItemCount > 1
+                        ? "Item packages imported: " + result.ImportedItemCount.ToString()
+                        : "Item package imported.\nNew ID: " + result.NewId.ToString();
                     message += "\nAssets imported: " + result.ImportedAssetCount.ToString();
                     message += "\nAssets already present: " + result.ExistingAssetCount.ToString();
                     if (result.UpdatedPackageCount > 0)

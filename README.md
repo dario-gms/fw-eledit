@@ -12,15 +12,14 @@ FWEledit is based on [sELedit++ by Wrechid](https://github.com/Wrechid/sELedit-)
 
 ---
 
-## What's New in v0.9.5.21
+## What's New in v0.9.5.22
 
-- Added the advanced Title Editor under Tools for `title_def_u.lua`, with searchable title rows, category editing, color rendering, bonus fields, live preview, and graphic-title controls.
-- Added PCK-only title editing: the editor reads `title_def_u.lua` from `script.pck`, saves it back through the package update flow, creates backups, and validates/reloads the result without relying on extracted resource folders.
-- Added graphic-title import from PNG/GIF/SVG into game-ready TGA assets stored through `surfaces.pck`, including automatic backup handling and preview refresh.
-- Added a graphic icon selector for existing title graphics, plus an explicit `Enable graphic title` toggle so normal and graphic titles can be switched intentionally.
-- Added graphic texture-size presets and custom width/height options for imported title graphics, making it easier to tune how titles scale in game while preserving aspect ratio.
-- Improved the advanced title UI with more editing space, graphic thumbnails in the title list, better category handling, rendered title colors/descriptions, and higher-quality graphic previews.
-- Project/app version metadata updated to `v0.9.5.21`.
+- Added a built-in PCK Explorer / Importer with live 3D preview, package type filters, persistent filter selection, existing-client model highlighting, destination package selection, progress feedback, safer package updates, and detailed import audit summaries.
+- Improved model, effect, mount, handhold, weapon, icon, and item-package workflows with automatic cross-PCK dependency resolution, package-aware model picking, gender-aware equipment/fashion previews, and more reliable imports for assets stored outside their original package.
+- Reworked description handling so item descriptions are loaded from and saved back to `configs.pck` without requiring manually extracted files, while keeping cached browsing fast and supporting clone/delete description cleanup.
+- Expanded the Advanced Title Editor with graphic title controls, chat-display toggles, improved title formatting preservation, and safer script/surface package updates.
+- Added `Edit > Clear Cache`, refreshed the About window, cleaned up visible Tools menu entries, and improved equipment-field editing for percentages, using-type masks, and faster `Refine` / `Other` tab loading.
+- Project/app version metadata updated to `v0.9.5.22`.
 
 Previous release notes were moved to [docs/WHATS_NEW.md](docs/WHATS_NEW.md).
 
@@ -66,8 +65,9 @@ Previous release notes were moved to [docs/WHATS_NEW.md](docs/WHATS_NEW.md).
 
 **Resource integration**
 - Game-folder workflow — point to your game root and the editor locates `elements.data` and all resources automatically
-- PCK package support — reads model and asset lists directly from `.pck` index tables without requiring full extraction
-- Automatic workspace extraction for `configs.pck` and `surfaces.pck` via `spck`
+- PCK package support — reads model, icon, description, script, and asset data from `.pck` packages without requiring manually extracted resource folders
+- Built-in PCK Explorer / Importer with live 3D preview, dependency discovery, cross-package imports, progress feedback, and audit logs
+- Automatic per-client workspace/cache hydration for package-backed resources such as `configs.pck` and `surfaces.pck`
 - `path.data` integration for deterministic icon and model path resolution
 
 **Icon picker**
@@ -111,9 +111,9 @@ Previous release notes were moved to [docs/WHATS_NEW.md](docs/WHATS_NEW.md).
 
 - **Windows** (the application is a Windows Forms desktop app)
 - **.NET Framework 4.5.2** or later (included with Windows 8.1+; downloadable for Windows 7)
-- **Bundled tools** — releases include `spck`, `packdll`, `p2sp_4th_lib`, `Pfim`, and `7za` under `tools/` and copy them to the output folder on build.
+- **Bundled tools** — releases include the PCK, DDS, archive, and helper tools required by the editor under `tools/`, and copy them to the output folder on build.
 
-The editor functions without `spck` for basic data editing, but icon thumbnails and description editing require a successful PCK extraction.
+The editor no longer depends on users manually extracting client resources. Package-backed features use the bundled/internal tooling shipped with the application.
 
 ---
 
@@ -199,7 +199,7 @@ FWEledit ships with config files for the following Forsaken World server binary 
 | `FW_X.X.X_v834.cfg` | v834 | Untested — community contributions needed |
 | `FW_X.X.X_v849.cfg` | v849 | Untested — community contributions needed |
 
-The correct config is matched automatically when you load `elements.data`. If no config matches, the editor shows a message and allows you to select or create one manually via **Tools > Config Editor**.
+The correct config is matched automatically when you load `elements.data`. If no config matches, the editor shows a message and allows you to select or create a matching config file manually.
 
 > **Using a version other than v608?** The bundled config files for other versions are provided as a starting point based on known field layouts. You will likely need to verify and adjust the field names, types, and order in the `.cfg` file to match your server's actual binary layout. In some cases, parser-level changes in the editor code may also be needed. See [Configuration Files](#configuration-files) for the config format and [Contributing](#contributing) for how to submit fixes.
 
@@ -207,16 +207,18 @@ The correct config is matched automatically when you load `elements.data`. If no
 
 ## Working with PCK Files
 
-FWEledit uses `spck` to extract `configs.pck` and `surfaces.pck` into a per-client temporary workspace under `%LOCALAPPDATA%\FWEledit\workspace\<hash>`. This extraction happens automatically the first time you load a game folder, and only re-runs when the source `.pck` timestamp changes.
+FWEledit hydrates package-backed data into a per-client workspace/cache under `%LOCALAPPDATA%\FWEledit\workspace\<hash>`. This happens automatically when a game folder is loaded and refreshes when the source package changes.
 
-Model and asset lists for the **Choice Model** window are read directly from the PCK index tables — no extraction of `models.pck`, `gfx.pck`, or `grasses.pck` is required for browsing.
+Model, icon, description, script, and asset lists are read from PCK package data instead of depending on manually extracted folders.
+
+The **PCK Explorer / Importer** can open an external package, preview supported 3D assets, filter by file type, and import selected entries into the current client. Imports resolve associated dependencies across packages where possible and finish with an audit summary showing which packages and file types were updated.
 
 **On Save**, the editor:
 1. Writes `elements.data` atomically (temp → backup → replace).
-2. Repacks any modified packages (`configs.pck` if descriptions changed) from workspace back into the game's `resources` folder using `spck -fw -c`.
+2. Updates any modified packages (`configs.pck` if descriptions changed, plus resource packages touched by import tools) back into the game's `resources` folder.
 3. Creates a `.bak` backup of the previous `.pck` before replacing it.
 
-If `spck.exe` is not found, the save still writes `elements.data` correctly; only the PCK repack step is skipped.
+PCK helper tools are bundled with release builds; missing helper binaries only affect package-backed operations, not basic `elements.data` editing.
 
 ---
 
@@ -252,9 +254,9 @@ Percentage-based params (`param1`, `param2`, `param3`) for types such as crit ch
 1. Select any item.
 2. Click the **Description** tab in the right panel.
 3. Edit the raw text in the upper box. FW color tags (`^RRGGBB...^r`) are supported; the lower preview renders them styled.
-4. Click **Stage Description** to stage the change. Description changes are held in memory and flushed to `item_ext_desc.txt` during the next **Save**.
+4. Click **Stage Description** to stage the change. Description changes are held in memory and flushed back to `configs.pck` during the next **Save**.
 
-> If you change an item's `id` field, the description entry is automatically remapped from the old ID to the new one.
+> If you change an item's `id` field, the description entry is automatically remapped from the old ID to the new one. Cloning an item copies its description, and deleting an item removes its stale description entry on save.
 
 ### Icons
 
@@ -311,22 +313,15 @@ A failure at any step does not corrupt the original file.
 
 | Menu item | Description |
 |---|---|
-| **Edit > Logic-Replace** | Replace field values using conditional logic rules across a list. |
-| **Edit > Field-Replace** | Find and replace a specific value in a specific field across all items in a list. |
-| **Edit > Skill Validation Check** | Validates skill references in the data (v1.3.6 servers). |
-| **Edit > Skill-Replace** | Batch-replace skill IDs across relevant fields (v1.3.6 servers). |
-| **Edit > Tome Validation / Tome-Replace** | Same as above for tome data (v1.3.6 servers). |
-| **Edit > Property Validation / Property-Replace** | Validates and replaces property references (v1.3.6 servers). |
-| **Edit > Probability Verification** | Checks that drop/probability table entries sum correctly (v1.3.6 servers). |
-| **Edit > Task Overflow Check** | Detects task list overflows (v1.4.2+ servers). |
+| **Edit > Clear Cache** | Clears the current editor/client cache after confirmation, then restarts the application. |
 | **Tools > EL Version** | Displays the detected `elements.data` version and structure summary. |
-| **Tools > Config Editor** | Opens the config editor to view or modify list structure definitions. |
-| **Tools > EL Structure Diff (Rules)** | Compares two `elements.data` files and shows structural differences. |
-| **Tools > Field Compare** | Compares field values between two `elements.data` files side by side. |
-| **Tools > NPC List Export** | Exports the NPC list to a readable text file. |
-| **Tools > Monster → AI Link List** | Exports a mapping of monsters to their AI script entries. |
-| **Tools > Join new Elements** | Merges entries from a second `elements.data` into the current one with configurable rules (add new, replace changed, remove missing). |
-| **Tools > Class Mask Generator** | Opens a helper to build bitmask values for class restriction fields. |
+| **Tools > GShop Editor** | Opens the integrated `gshop.data` editor. |
+| **Tools > Import Item Package** | Imports `.fweitem` packages into the current client, including related resource dependencies where available. |
+| **Tools > NPCGen Editor** | Opens the integrated `npcgen.data` editor. |
+| **Tools > Advanced Title Editor** | Edits `title_def_u.lua` from `script.pck`, including graphic title and chat display controls. |
+| **Tools > PCK Explorer / Importer** | Browses external PCK files, previews supported models/effects, and imports selected entries plus resolved dependencies into the current client. |
+| **Tools > Open Empty Instance** | Opens a second editor instance without loading the current folder. |
+| **Tools > Create List with Counts** | Generates a list summary with entry counts. |
 | **Search xrefs to Item** | (right-click on item) Finds all entries across all lists that reference the selected item's ID. |
 
 ---
@@ -356,7 +351,7 @@ To add support for a new server version:
 3. Name the file `FW_X.X.X_v<version>.cfg` and place it in the `configs/` folder.
 4. The editor will pick it up automatically on next load.
 
-Use **Tools > Config Editor** to inspect and modify config files interactively. The config editor can also scan a loaded `elements.data` to estimate list offsets and entry sizes for unknown versions.
+Config files can be edited manually in the `configs/` folder. The legacy config editor code is still kept in the project for developers, but it is no longer exposed in the main Tools menu.
 
 ---
 
@@ -369,7 +364,7 @@ FWEledit reads the following optional text files to improve label and tooltip di
 | `language_en.txt` | English strings for skill names, stat labels, and item property tooltips |
 | `buff_str.txt` | Buff/debuff name strings |
 | `skillstr.txt` | Skill name strings used in Added Attribute display |
-| `item_ext_desc.txt` | Item extended descriptions (read from extracted `configs.pck`) |
+| `item_ext_desc.txt` | Item extended descriptions (read from and saved back to `configs.pck`) |
 | `addon_table_en.txt` | English labels for Added Attribute type IDs |
 | `addon_table_pt.txt` | Portuguese labels for Added Attribute type IDs (fallback) |
 | `addon_table.txt` | Default labels for Added Attribute type IDs (last resort) |
@@ -474,7 +469,7 @@ Contributions are welcome. A few ground rules:
 **Helping with other server versions** is one of the primary goals of this open-source release. If you run a v547, v610, v773, v834, or v849 server and want to get FWEledit working for your version, here is where to start:
 
 1. Load your `elements.data` — the editor will attempt to match a config automatically.
-2. If lists load with wrong field counts or garbled values, open **Tools > Config Editor** and use the scanner to estimate the correct entry sizes.
+2. If lists load with wrong field counts or garbled values, compare the matching `.cfg` with the client structure and adjust the field names, types, and entry sizes.
 3. Compare the field layout in the `.cfg` against your server's source or a known-good reference.
 4. Correct field names, types, and order as needed.
 5. If the editor crashes or produces wrong output even with a corrected `.cfg`, open an issue with your findings — it may indicate a parser-level fix is needed in the code.

@@ -16,11 +16,19 @@ namespace FWEledit
         private const string PackageFormat = "FWEledit.ItemTransfer";
         private const int PackageFormatVersion = 1;
         private const string ImportFallbackPackage = "models";
+        private const string PlayerAssetFallbackPackage = "shaders";
         private static readonly string[] KnownPackages = new string[]
         {
             "building", "configs", "gfx", "grasses", "interfaces", "litmodels", "loddata", "models", "models2",
             "moxing", "script", "sfx", "shaders", "surfaces", "textures", "music"
         };
+        private static readonly HashSet<string> CoreRuntimePackages = new HashSet<string>(
+            new string[]
+            {
+                "building", "configs", "gfx", "grasses", "interfaces", "litmodels", "loddata", "models", "models2",
+                "script", "sfx", "shaders", "surfaces", "textures", "music"
+            },
+            StringComparer.OrdinalIgnoreCase);
 
         private static readonly Regex AssetExtensionPattern = new Regex(
             "\\.(dds|tga|bmp|png|jpg|jpeg|ski|smd|ecm|gfx|att|sgc|bon|stck|txt|ini|cfg|sdr)$",
@@ -193,15 +201,7 @@ namespace FWEledit
             Action<ItemTransferProgressInfo> progress,
             CancellationToken cancellationToken)
         {
-            ItemTransferImportResult result = new ItemTransferImportResult
-            {
-                Mode = mode,
-                TargetListIndex = -1,
-                NewItemIndex = -1,
-                ImportedModelPaths = new List<ItemTransferImportedPath>(),
-                AssetSummaries = new List<ItemTransferPackageAssetSummary>(),
-                DependencyAssetPaths = new List<string>()
-            };
+            ItemTransferImportResult result = CreateImportResult(mode);
             try
             {
                 ReportProgress(progress, "Preparing import", "Validating item package...", 0, 0, true);
@@ -220,22 +220,8 @@ namespace FWEledit
 
                 using (ZipArchive archive = ZipFile.OpenRead(packageFile))
                 {
-                    ZipArchiveEntry manifestEntry = archive.GetEntry("manifest.json");
-                    if (manifestEntry == null)
-                    {
-                        result.ErrorMessage = "Invalid item package: manifest.json was not found.";
-                        return result;
-                    }
-
-                    ItemTransferPackageManifest manifest;
-                    using (StreamReader reader = new StreamReader(manifestEntry.Open()))
-                    {
-                        manifest = JsonConvert.DeserializeObject<ItemTransferPackageManifest>(reader.ReadToEnd());
-                    }
-
-                    if (manifest == null
-                        || !string.Equals(manifest.Format, PackageFormat, StringComparison.Ordinal)
-                        || manifest.FormatVersion < 1)
+                    ItemTransferPackageManifest manifest = ReadImportManifest(archive);
+                    if (manifest == null)
                     {
                         result.ErrorMessage = "Invalid or unsupported item package.";
                         return result;
@@ -274,6 +260,13 @@ namespace FWEledit
                     result.TargetListIndex = targetListIndex;
                     result.NewItemIndex = newIndex;
                     result.NewId = newId;
+                    result.ImportedItemCount = 1;
+                    result.ImportedItems.Add(new ItemTransferImportedItem
+                    {
+                        ListIndex = targetListIndex,
+                        ItemIndex = newIndex,
+                        Id = newId
+                    });
                     result.RemappedPathIdCount = pathIdRemap.Count(pair => pair.Key != pair.Value);
                     ReportProgress(progress, "Import complete", "Item package imported.", 1, 1, false);
                     return result;
@@ -288,6 +281,222 @@ namespace FWEledit
             {
                 result.ErrorMessage = ex.Message;
                 return result;
+            }
+        }
+
+        private static ItemTransferImportResult CreateImportResult(ItemTransferImportMode mode)
+        {
+            return new ItemTransferImportResult
+            {
+                Mode = mode,
+                TargetListIndex = -1,
+                NewItemIndex = -1,
+                ImportedItems = new List<ItemTransferImportedItem>(),
+                ImportedModelPaths = new List<ItemTransferImportedPath>(),
+                AssetSummaries = new List<ItemTransferPackageAssetSummary>(),
+                DependencyAssetPaths = new List<string>()
+            };
+        }
+
+        private sealed class PendingImportedPackage
+        {
+            public ItemTransferPackageManifest Manifest { get; set; }
+            public int TargetListIndex { get; set; }
+            public Dictionary<int, int> PathIdRemap { get; set; }
+            public Dictionary<string, string> PackageRemap { get; set; }
+        }
+
+        private sealed class PackageFileSnapshot
+        {
+            public string PackageName { get; set; }
+            public string PckPath { get; set; }
+            public string PkxPath { get; set; }
+            public string PckBackupPath { get; set; }
+            public string PkxBackupPath { get; set; }
+            public bool HadPck { get; set; }
+            public bool HadPkx { get; set; }
+        }
+
+        public ItemTransferImportResult ImportItemPackages(
+            eListCollection listCollection,
+            CacheSave database,
+            AssetManager assetManager,
+            IdGenerationService idGenerationService,
+            IEnumerable<string> packageFiles,
+            ItemTransferImportMode mode,
+            Action<ItemTransferProgressInfo> progress,
+            CancellationToken cancellationToken)
+        {
+            List<string> files = packageFiles == null
+                ? new List<string>()
+                : packageFiles.Where(path => !string.IsNullOrWhiteSpace(path)).ToList();
+            if (files.Count <= 1)
+            {
+                return ImportItemPackage(
+                    listCollection,
+                    database,
+                    assetManager,
+                    idGenerationService,
+                    files.Count == 1 ? files[0] : string.Empty,
+                    mode,
+                    progress,
+                    cancellationToken);
+            }
+
+            ItemTransferImportResult result = CreateImportResult(mode);
+            string stagingRoot = Path.Combine(Path.GetTempPath(), "FWEledit", "item-package-import", Guid.NewGuid().ToString("N"));
+            Dictionary<string, int> stagedCountsByPackage = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            HashSet<string> stagedAssetKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            Dictionary<string, ItemTransferPackageAssetSummary> summaryByPackage = BuildAssetSummaryLookup(result);
+            List<PendingImportedPackage> pendingPackages = new List<PendingImportedPackage>();
+            AssetManager.PathDataImportState pathDataState = null;
+            Dictionary<int, object[][]> listValueSnapshots = null;
+            List<PackageFileSnapshot> packageFileSnapshots = null;
+            bool packageUpdatesStarted = false;
+
+            try
+            {
+                ReportProgress(progress, "Preparing batch import", files.Count.ToString(CultureInfo.InvariantCulture) + " item packages", 0, files.Count, false);
+                cancellationToken.ThrowIfCancellationRequested();
+
+                if (listCollection == null || database == null || assetManager == null || idGenerationService == null)
+                {
+                    result.ErrorMessage = "No loaded elements data.";
+                    return result;
+                }
+
+                pathDataState = assetManager.CapturePathDataImportState();
+                listValueSnapshots = new Dictionary<int, object[][]>();
+
+                for (int fileIndex = 0; fileIndex < files.Count; fileIndex++)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    string packageFile = files[fileIndex];
+                    if (!File.Exists(packageFile))
+                    {
+                        throw new FileNotFoundException("Item package was not found: " + packageFile, packageFile);
+                    }
+
+                    ReportProgress(
+                        progress,
+                        "Reading package",
+                        Path.GetFileName(packageFile),
+                        fileIndex + 1,
+                        files.Count,
+                        false);
+
+                    using (ZipArchive archive = ZipFile.OpenRead(packageFile))
+                    {
+                        ItemTransferPackageManifest manifest = ReadImportManifest(archive);
+                        if (manifest == null)
+                        {
+                            throw new InvalidOperationException("Invalid or unsupported item package: " + Path.GetFileName(packageFile));
+                        }
+
+                        int targetListIndex = ResolveTargetListIndex(listCollection, manifest);
+                        if (targetListIndex < 0 && mode == ItemTransferImportMode.FullStructure)
+                        {
+                            throw new InvalidOperationException("Target list was not found: " + (manifest.SourceListName ?? string.Empty));
+                        }
+                        if (targetListIndex >= 0 && !listValueSnapshots.ContainsKey(targetListIndex))
+                        {
+                            listValueSnapshots[targetListIndex] = CloneElementValues(listCollection.Lists[targetListIndex]);
+                        }
+
+                        Dictionary<string, string> packageRemap = BuildImportPackageRemap(manifest, assetManager, result);
+
+                        ReportProgress(progress, "Importing path data", Path.GetFileName(packageFile), fileIndex + 1, files.Count, false);
+                        Dictionary<int, int> pathIdRemap = ImportPathDataEntries(manifest, database, assetManager, result, packageRemap);
+
+                        StagePackageAssets(
+                            archive,
+                            manifest,
+                            assetManager,
+                            result,
+                            progress,
+                            cancellationToken,
+                            packageRemap,
+                            stagingRoot,
+                            stagedCountsByPackage,
+                            stagedAssetKeys,
+                            summaryByPackage,
+                            fileIndex + 1,
+                            files.Count);
+
+                        pendingPackages.Add(new PendingImportedPackage
+                        {
+                            Manifest = manifest,
+                            TargetListIndex = targetListIndex,
+                            PathIdRemap = pathIdRemap,
+                            PackageRemap = packageRemap
+                        });
+                        result.ImportedModelPaths.AddRange(BuildImportedModelPathSummary(manifest, database, pathIdRemap));
+                    }
+                }
+
+                packageFileSnapshots = CreatePackageFileSnapshots(stagedCountsByPackage.Keys);
+                packageUpdatesStarted = true;
+                UpdateStagedPackages(stagingRoot, stagedCountsByPackage, assetManager, result, progress, cancellationToken);
+
+                if (mode == ItemTransferImportMode.ModelsOnly)
+                {
+                    result.Success = true;
+                    result.RemappedPathIdCount = pendingPackages.Sum(p => p.PathIdRemap.Count(pair => pair.Key != pair.Value));
+                    ReportProgress(progress, "Import complete", "Model assets imported.", 1, 1, false);
+                    return result;
+                }
+
+                for (int i = 0; i < pendingPackages.Count; i++)
+                {
+                    PendingImportedPackage pending = pendingPackages[i];
+                    ReportProgress(
+                        progress,
+                        "Creating items",
+                        pending.Manifest.OriginalName ?? pending.Manifest.SourceListName ?? string.Empty,
+                        i + 1,
+                        pendingPackages.Count,
+                        false);
+                    int newIndex = AddManifestItem(
+                        listCollection,
+                        pending.TargetListIndex,
+                        pending.Manifest,
+                        pending.PathIdRemap,
+                        pending.PackageRemap,
+                        idGenerationService,
+                        out int newId);
+                    result.TargetListIndex = pending.TargetListIndex;
+                    result.NewItemIndex = newIndex;
+                    result.NewId = newId;
+                    result.ImportedItemCount++;
+                    result.ImportedItems.Add(new ItemTransferImportedItem
+                    {
+                        ListIndex = pending.TargetListIndex,
+                        ItemIndex = newIndex,
+                        Id = newId
+                    });
+                    result.RemappedPathIdCount += pending.PathIdRemap.Count(pair => pair.Key != pair.Value);
+                }
+
+                result.Success = true;
+                ReportProgress(progress, "Import complete", "Item packages imported.", 1, 1, false);
+                return result;
+            }
+            catch (OperationCanceledException)
+            {
+                RollbackBatchImport(listCollection, assetManager, listValueSnapshots, pathDataState, packageFileSnapshots, packageUpdatesStarted);
+                result.ErrorMessage = "Import cancelled.";
+                return result;
+            }
+            catch (Exception ex)
+            {
+                RollbackBatchImport(listCollection, assetManager, listValueSnapshots, pathDataState, packageFileSnapshots, packageUpdatesStarted);
+                result.ErrorMessage = ex.Message;
+                return result;
+            }
+            finally
+            {
+                TryDeleteDirectory(stagingRoot);
+                DeletePackageFileSnapshots(packageFileSnapshots);
             }
         }
 
@@ -1282,6 +1491,241 @@ namespace FWEledit
             }
         }
 
+        private static object[][] CloneElementValues(eList list)
+        {
+            if (list == null || list.elementValues == null)
+            {
+                return null;
+            }
+
+            object[][] clone = new object[list.elementValues.Length][];
+            for (int i = 0; i < list.elementValues.Length; i++)
+            {
+                object[] row = list.elementValues[i];
+                if (row == null)
+                {
+                    continue;
+                }
+
+                object[] rowClone = new object[row.Length];
+                for (int fieldIndex = 0; fieldIndex < row.Length; fieldIndex++)
+                {
+                    byte[] bytes = row[fieldIndex] as byte[];
+                    rowClone[fieldIndex] = bytes != null ? (object)((byte[])bytes.Clone()) : row[fieldIndex];
+                }
+
+                clone[i] = rowClone;
+            }
+
+            return clone;
+        }
+
+        private static void RollbackBatchImport(
+            eListCollection listCollection,
+            AssetManager assetManager,
+            Dictionary<int, object[][]> listValueSnapshots,
+            AssetManager.PathDataImportState pathDataState,
+            List<PackageFileSnapshot> packageFileSnapshots,
+            bool packageUpdatesStarted)
+        {
+            if (listCollection != null && listValueSnapshots != null)
+            {
+                foreach (KeyValuePair<int, object[][]> snapshot in listValueSnapshots)
+                {
+                    if (snapshot.Key >= 0
+                        && snapshot.Key < listCollection.Lists.Length
+                        && listCollection.Lists[snapshot.Key] != null)
+                    {
+                        listCollection.Lists[snapshot.Key].elementValues = CloneElementValues(snapshot.Value);
+                    }
+                }
+            }
+
+            if (assetManager != null)
+            {
+                assetManager.RestorePathDataImportState(pathDataState);
+            }
+
+            if (packageUpdatesStarted)
+            {
+                RestorePackageFileSnapshots(packageFileSnapshots);
+            }
+        }
+
+        private static object[][] CloneElementValues(object[][] values)
+        {
+            if (values == null)
+            {
+                return null;
+            }
+
+            object[][] clone = new object[values.Length][];
+            for (int i = 0; i < values.Length; i++)
+            {
+                object[] row = values[i];
+                if (row == null)
+                {
+                    continue;
+                }
+
+                object[] rowClone = new object[row.Length];
+                for (int fieldIndex = 0; fieldIndex < row.Length; fieldIndex++)
+                {
+                    byte[] bytes = row[fieldIndex] as byte[];
+                    rowClone[fieldIndex] = bytes != null ? (object)((byte[])bytes.Clone()) : row[fieldIndex];
+                }
+
+                clone[i] = rowClone;
+            }
+
+            return clone;
+        }
+
+        private static List<PackageFileSnapshot> CreatePackageFileSnapshots(IEnumerable<string> packageNames)
+        {
+            List<PackageFileSnapshot> snapshots = new List<PackageFileSnapshot>();
+            if (packageNames == null)
+            {
+                return snapshots;
+            }
+
+            if (string.IsNullOrWhiteSpace(AssetManager.GameRootPath) || !Directory.Exists(AssetManager.GameRootPath))
+            {
+                throw new InvalidOperationException("Game root was not found for transactional package import.");
+            }
+
+            string resourcesRoot = Path.Combine(AssetManager.GameRootPath, "resources");
+            string backupRoot = Path.Combine(Path.GetTempPath(), "FWEledit", "item-package-import-backup", Guid.NewGuid().ToString("N"));
+            HashSet<string> seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (string packageName in packageNames)
+            {
+                string normalizedPackage = NormalizePackageName(packageName);
+                if (string.IsNullOrWhiteSpace(normalizedPackage) || !seen.Add(normalizedPackage))
+                {
+                    continue;
+                }
+
+                string pckPath = Path.Combine(resourcesRoot, normalizedPackage + ".pck");
+                string pkxPath = Path.Combine(resourcesRoot, normalizedPackage + ".pkx");
+                string pckBackupPath = Path.Combine(backupRoot, normalizedPackage + ".pck");
+                string pkxBackupPath = Path.Combine(backupRoot, normalizedPackage + ".pkx");
+                PackageFileSnapshot snapshot = new PackageFileSnapshot
+                {
+                    PackageName = normalizedPackage,
+                    PckPath = pckPath,
+                    PkxPath = pkxPath,
+                    PckBackupPath = pckBackupPath,
+                    PkxBackupPath = pkxBackupPath,
+                    HadPck = File.Exists(pckPath),
+                    HadPkx = File.Exists(pkxPath)
+                };
+
+                try
+                {
+                    Directory.CreateDirectory(backupRoot);
+                    if (snapshot.HadPck)
+                    {
+                        File.Copy(pckPath, pckBackupPath, true);
+                    }
+                    if (snapshot.HadPkx)
+                    {
+                        File.Copy(pkxPath, pkxBackupPath, true);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    DeletePackageFileSnapshots(snapshots);
+                    TryDeleteDirectory(backupRoot);
+                    throw new InvalidOperationException("Could not prepare transactional backup for " + normalizedPackage + ".pck: " + ex.Message, ex);
+                }
+
+                snapshots.Add(snapshot);
+            }
+
+            return snapshots;
+        }
+
+        private static void RestorePackageFileSnapshots(List<PackageFileSnapshot> snapshots)
+        {
+            if (snapshots == null)
+            {
+                return;
+            }
+
+            foreach (PackageFileSnapshot snapshot in snapshots)
+            {
+                if (snapshot == null)
+                {
+                    continue;
+                }
+
+                RestorePackageFile(snapshot.PckPath, snapshot.PckBackupPath, snapshot.HadPck);
+                RestorePackageFile(snapshot.PkxPath, snapshot.PkxBackupPath, snapshot.HadPkx);
+                PckEntryReaderService.InvalidatePackageGlobally(snapshot.PackageName);
+            }
+        }
+
+        private static void RestorePackageFile(string targetPath, string backupPath, bool existedBefore)
+        {
+            if (string.IsNullOrWhiteSpace(targetPath))
+            {
+                return;
+            }
+
+            if (existedBefore)
+            {
+                if (!string.IsNullOrWhiteSpace(backupPath) && File.Exists(backupPath))
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(targetPath));
+                    File.Copy(backupPath, targetPath, true);
+                }
+            }
+            else if (File.Exists(targetPath))
+            {
+                File.Delete(targetPath);
+            }
+        }
+
+        private static void DeletePackageFileSnapshots(List<PackageFileSnapshot> snapshots)
+        {
+            if (snapshots == null)
+            {
+                return;
+            }
+
+            HashSet<string> backupRoots = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (PackageFileSnapshot snapshot in snapshots)
+            {
+                if (snapshot == null)
+                {
+                    continue;
+                }
+
+                AddBackupRoot(backupRoots, snapshot.PckBackupPath);
+                AddBackupRoot(backupRoots, snapshot.PkxBackupPath);
+            }
+
+            foreach (string backupRoot in backupRoots)
+            {
+                TryDeleteDirectory(backupRoot);
+            }
+        }
+
+        private static void AddBackupRoot(HashSet<string> backupRoots, string backupFilePath)
+        {
+            if (backupRoots == null || string.IsNullOrWhiteSpace(backupFilePath))
+            {
+                return;
+            }
+
+            string packageBackupDirectory = Path.GetDirectoryName(backupFilePath);
+            if (!string.IsNullOrWhiteSpace(packageBackupDirectory))
+            {
+                backupRoots.Add(packageBackupDirectory);
+            }
+        }
+
         private static string BuildAssetKey(string mappedPath)
         {
             string package;
@@ -1297,39 +1741,137 @@ namespace FWEledit
             ItemTransferImportResult result)
         {
             Dictionary<string, string> remap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            if (manifest == null || manifest.Assets == null || manifest.Assets.Count == 0)
+            if (manifest == null)
             {
                 return remap;
             }
 
-            if (!ResourcePackageExists(ImportFallbackPackage))
+            HashSet<string> sourcePackages = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (manifest.Assets != null)
             {
-                return remap;
+                foreach (ItemTransferAssetEntry asset in manifest.Assets)
+                {
+                    if (asset == null)
+                    {
+                        continue;
+                    }
+
+                    string package = NormalizePackageName(asset.Package);
+                    if (!string.IsNullOrWhiteSpace(package))
+                    {
+                        sourcePackages.Add(package);
+                    }
+                }
             }
 
-            foreach (ItemTransferAssetEntry asset in manifest.Assets)
+            if (manifest.PathDataEntries != null)
             {
-                if (asset == null || string.IsNullOrWhiteSpace(asset.Package))
+                foreach (ItemTransferPathDataEntry entry in manifest.PathDataEntries)
+                {
+                    if (entry == null)
+                    {
+                        continue;
+                    }
+
+                    string package;
+                    string relative;
+                    if (TrySplitMappedPackagePrefix(entry.MappedPath, out package, out relative))
+                    {
+                        sourcePackages.Add(package);
+                    }
+                }
+            }
+
+            foreach (string sourcePackage in sourcePackages)
+            {
+                if (string.Equals(sourcePackage, ImportFallbackPackage, StringComparison.OrdinalIgnoreCase))
                 {
                     continue;
                 }
 
-                string sourcePackage = NormalizePackageName(asset.Package);
-                if (string.IsNullOrWhiteSpace(sourcePackage)
-                    || string.Equals(sourcePackage, ImportFallbackPackage, StringComparison.OrdinalIgnoreCase)
-                    || remap.ContainsKey(sourcePackage))
+                if (!CoreRuntimePackages.Contains(sourcePackage) || !ResourcePackageExists(sourcePackage))
                 {
-                    continue;
-                }
-
-                if (!ResourcePackageExists(sourcePackage) || !ResourcePackageRootExists(assetManager, sourcePackage, asset.RelativePath))
-                {
-                    remap[sourcePackage] = ImportFallbackPackage;
+                    remap[sourcePackage] = ResolveFallbackPackageForSourcePackage(manifest, sourcePackage);
                 }
             }
 
-            result.FallbackPackageCount = remap.Count;
+            if (result != null)
+            {
+                result.FallbackPackageCount += remap.Count;
+            }
+
             return remap;
+        }
+
+        private static string ResolveFallbackPackageForSourcePackage(ItemTransferPackageManifest manifest, string sourcePackage)
+        {
+            if (SourcePackageContainsRelativePrefix(manifest, sourcePackage, "player\\")
+                || SourcePackageContainsRelativePrefix(manifest, sourcePackage, "players\\"))
+            {
+                return PlayerAssetFallbackPackage;
+            }
+
+            return ImportFallbackPackage;
+        }
+
+        private static bool SourcePackageContainsRelativePrefix(
+            ItemTransferPackageManifest manifest,
+            string sourcePackage,
+            string relativePrefix)
+        {
+            if (manifest == null || string.IsNullOrWhiteSpace(sourcePackage) || string.IsNullOrWhiteSpace(relativePrefix))
+            {
+                return false;
+            }
+
+            string normalizedPackage = NormalizePackageName(sourcePackage);
+            string normalizedPrefix = NormalizePath(relativePrefix).TrimStart('\\');
+
+            if (manifest.Assets != null)
+            {
+                foreach (ItemTransferAssetEntry asset in manifest.Assets)
+                {
+                    if (asset == null
+                        || !string.Equals(NormalizePackageName(asset.Package), normalizedPackage, StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    if (PathStartsWithPrefix(asset.RelativePath, normalizedPrefix))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            if (manifest.PathDataEntries != null)
+            {
+                foreach (ItemTransferPathDataEntry entry in manifest.PathDataEntries)
+                {
+                    if (entry == null)
+                    {
+                        continue;
+                    }
+
+                    string package;
+                    string relative;
+                    if (TrySplitMappedPackagePrefix(entry.MappedPath, out package, out relative)
+                        && string.Equals(package, normalizedPackage, StringComparison.OrdinalIgnoreCase)
+                        && PathStartsWithPrefix(relative, normalizedPrefix))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        private static bool PathStartsWithPrefix(string path, string prefix)
+        {
+            string normalizedPath = NormalizePath(path).TrimStart('\\');
+            string normalizedPrefix = NormalizePath(prefix).TrimStart('\\');
+            return normalizedPath.StartsWith(normalizedPrefix, StringComparison.OrdinalIgnoreCase);
         }
 
         private static string ResolveImportPackage(string packageName, Dictionary<string, string> packageRemap)
@@ -1356,6 +1898,14 @@ namespace FWEledit
             return packageRemap.TryGetValue(packageName, out targetPackage)
                 ? targetPackage + "\\" + relativePath
                 : mappedPath;
+        }
+
+        private static bool ShouldPreserveLogicalPackage(string packageName)
+        {
+            return string.Equals(
+                NormalizePackageName(packageName),
+                "moxing",
+                StringComparison.OrdinalIgnoreCase);
         }
 
         private static bool TrySplitMappedPackagePrefix(string mappedPath, out string package, out string relative)
@@ -1511,100 +2061,252 @@ namespace FWEledit
 
             string stagingRoot = Path.Combine(Path.GetTempPath(), "FWEledit", "item-package-import", Guid.NewGuid().ToString("N"));
             Dictionary<string, int> stagedCountsByPackage = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            HashSet<string> stagedAssetKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             Dictionary<string, ItemTransferPackageAssetSummary> summaryByPackage = BuildAssetSummaryLookup(result);
             try
             {
-                int checkedAssets = 0;
-                List<ItemTransferAssetEntry> assetsToProcess = manifest.Assets
-                    .OrderByDescending(asset => asset != null && IsImportPackageRemapped(asset.Package, packageRemap) ? 1 : 0)
-                    .ToList();
-                int totalAssets = assetsToProcess.Count;
-                bool remappedAssetsFlushed = false;
-                foreach (ItemTransferAssetEntry asset in assetsToProcess)
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    checkedAssets++;
-                    if (asset == null || string.IsNullOrWhiteSpace(asset.Package) || string.IsNullOrWhiteSpace(asset.RelativePath))
-                    {
-                        continue;
-                    }
-
-                    bool isRemappedAsset = IsImportPackageRemapped(asset.Package, packageRemap);
-                    if (!isRemappedAsset && !remappedAssetsFlushed && stagedCountsByPackage.Count > 0)
-                    {
-                        UpdateStagedPackages(stagingRoot, stagedCountsByPackage, assetManager, result, progress, cancellationToken);
-                        stagedCountsByPackage.Clear();
-                        remappedAssetsFlushed = true;
-                    }
-
-                    ReportProgress(
-                        progress,
-                        "Checking assets",
-                        asset.MappedPath ?? asset.RelativePath ?? string.Empty,
-                        checkedAssets,
-                        totalAssets,
-                        false);
-
-                    string targetPackage = ResolveImportPackage(asset.Package, packageRemap);
-                    byte[] existingPayload;
-                    string existingError;
-                    bool needsReferenceRewrite = NeedsPackageReferenceRewrite(asset, packageRemap);
-                    if (!isRemappedAsset
-                        && !needsReferenceRewrite
-                        && assetManager.TryReadPackageEntry(targetPackage, asset.RelativePath, out existingPayload, out existingError)
-                        && existingPayload != null)
-                    {
-                        result.ExistingAssetCount++;
-                        IncrementAssetSummary(result, summaryByPackage, targetPackage, false);
-                        AddDependencyAssetPath(result, targetPackage, asset.RelativePath);
-                        continue;
-                    }
-
-                    ZipArchiveEntry entry = archive.GetEntry(asset.ZipPath);
-                    if (entry == null)
-                    {
-                        result.MissingAssetCount++;
-                        continue;
-                    }
-
-                    string packageStagingRoot = Path.Combine(stagingRoot, targetPackage);
-                    string outputPath = Path.Combine(packageStagingRoot, NormalizePath(asset.RelativePath));
-                    string outputDirectory = Path.GetDirectoryName(outputPath);
-                    if (!string.IsNullOrWhiteSpace(outputDirectory))
-                    {
-                        Directory.CreateDirectory(outputDirectory);
-                    }
-
-                    byte[] payload;
-                    using (Stream input = entry.Open())
-                    using (MemoryStream memory = new MemoryStream())
-                    {
-                        input.CopyTo(memory);
-                        payload = memory.ToArray();
-                    }
-                    if (needsReferenceRewrite)
-                    {
-                        payload = RewritePackageReferences(payload, packageRemap);
-                    }
-
-                    using (FileStream output = new FileStream(outputPath, FileMode.Create, FileAccess.Write))
-                    {
-                        output.Write(payload, 0, payload.Length);
-                    }
-
-                    int stagedCount;
-                    stagedCountsByPackage.TryGetValue(targetPackage, out stagedCount);
-                    stagedCountsByPackage[targetPackage] = stagedCount + 1;
-                    IncrementAssetSummary(result, summaryByPackage, targetPackage, true);
-                    AddDependencyAssetPath(result, targetPackage, asset.RelativePath);
-                }
-
+                StagePackageAssets(
+                    archive,
+                    manifest,
+                    assetManager,
+                    result,
+                    progress,
+                    cancellationToken,
+                    packageRemap,
+                    stagingRoot,
+                    stagedCountsByPackage,
+                    stagedAssetKeys,
+                    summaryByPackage,
+                    1,
+                    1);
                 UpdateStagedPackages(stagingRoot, stagedCountsByPackage, assetManager, result, progress, cancellationToken);
             }
             finally
             {
                 TryDeleteDirectory(stagingRoot);
             }
+        }
+
+        private static ItemTransferPackageManifest ReadImportManifest(ZipArchive archive)
+        {
+            if (archive == null)
+            {
+                return null;
+            }
+
+            ZipArchiveEntry manifestEntry = archive.GetEntry("manifest.json");
+            if (manifestEntry == null)
+            {
+                return null;
+            }
+
+            using (StreamReader reader = new StreamReader(manifestEntry.Open()))
+            {
+                ItemTransferPackageManifest manifest = JsonConvert.DeserializeObject<ItemTransferPackageManifest>(reader.ReadToEnd());
+                return manifest != null
+                    && string.Equals(manifest.Format, PackageFormat, StringComparison.Ordinal)
+                    && manifest.FormatVersion >= 1
+                    ? manifest
+                    : null;
+            }
+        }
+
+        private static void StagePackageAssets(
+            ZipArchive archive,
+            ItemTransferPackageManifest manifest,
+            AssetManager assetManager,
+            ItemTransferImportResult result,
+            Action<ItemTransferProgressInfo> progress,
+            CancellationToken cancellationToken,
+            Dictionary<string, string> packageRemap,
+            string stagingRoot,
+            Dictionary<string, int> stagedCountsByPackage,
+            HashSet<string> stagedAssetKeys,
+            Dictionary<string, ItemTransferPackageAssetSummary> summaryByPackage,
+            int packageNumber,
+            int packageCount)
+        {
+            if (archive == null || manifest == null || manifest.Assets == null)
+            {
+                return;
+            }
+
+            int checkedAssets = 0;
+            Dictionary<string, HashSet<string>> exactTargetEntriesByPackage = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+            List<ItemTransferAssetEntry> assetsToProcess = manifest.Assets
+                .OrderByDescending(asset => asset != null && IsImportPackageRemapped(asset.Package, packageRemap) ? 1 : 0)
+                .ToList();
+            int totalAssets = assetsToProcess.Count;
+            foreach (ItemTransferAssetEntry asset in assetsToProcess)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                checkedAssets++;
+                if (asset == null || string.IsNullOrWhiteSpace(asset.Package) || string.IsNullOrWhiteSpace(asset.RelativePath))
+                {
+                    continue;
+                }
+
+                ReportProgress(
+                    progress,
+                    packageCount > 1 ? "Checking assets (" + packageNumber.ToString(CultureInfo.InvariantCulture) + "/" + packageCount.ToString(CultureInfo.InvariantCulture) + ")" : "Checking assets",
+                    asset.MappedPath ?? asset.RelativePath ?? string.Empty,
+                    checkedAssets,
+                    totalAssets,
+                    false);
+
+                string targetPackage = ResolveImportPackage(asset.Package, packageRemap);
+                string targetRelativePath = NormalizeImportAssetRelativePath(asset, targetPackage, packageRemap);
+                string stagedKey = targetPackage + "|" + targetRelativePath;
+                if (stagedAssetKeys != null && stagedAssetKeys.Contains(stagedKey))
+                {
+                    AddDependencyAssetPath(result, targetPackage, targetRelativePath);
+                    continue;
+                }
+
+                byte[] existingPayload;
+                string existingError;
+                bool needsReferenceRewrite = NeedsPackageReferenceRewrite(asset, packageRemap);
+                bool targetEntryExists = false;
+                HashSet<string> exactEntries;
+                if (!exactTargetEntriesByPackage.TryGetValue(targetPackage, out exactEntries))
+                {
+                    string exactError;
+                    if (assetManager.TryGetPackageEntryKeysExact(targetPackage, out exactEntries, out exactError))
+                    {
+                        exactTargetEntriesByPackage[targetPackage] = exactEntries;
+                    }
+                    else
+                    {
+                        exactEntries = null;
+                        existingError = exactError;
+                    }
+                }
+                if (exactEntries != null)
+                {
+                    existingError = string.Empty;
+                    targetEntryExists = exactEntries.Contains(NormalizePath(targetRelativePath));
+                    if (targetEntryExists)
+                    {
+                        targetEntryExists = assetManager.TryReadPackageEntry(targetPackage, targetRelativePath, out existingPayload, out existingError)
+                            && existingPayload != null;
+                    }
+                }
+                else
+                {
+                    targetEntryExists = assetManager.TryReadPackageEntry(targetPackage, targetRelativePath, out existingPayload, out existingError)
+                        && existingPayload != null;
+                }
+                if (targetEntryExists)
+                {
+                    result.ExistingAssetCount++;
+                    IncrementAssetSummary(result, summaryByPackage, targetPackage, false);
+                    AddDependencyAssetPath(result, targetPackage, targetRelativePath);
+                    continue;
+                }
+                if (IsFatalPackageReadError(existingError))
+                {
+                    throw new InvalidOperationException("Target " + targetPackage + ".pck could not be read before import. Restore a clean backup before importing more assets. " + existingError);
+                }
+
+                ZipArchiveEntry entry = archive.GetEntry(asset.ZipPath);
+                if (entry == null)
+                {
+                    result.MissingAssetCount++;
+                    continue;
+                }
+
+                string packageStagingRoot = Path.Combine(stagingRoot, targetPackage);
+                string outputPath = Path.Combine(packageStagingRoot, targetRelativePath);
+                string outputDirectory = Path.GetDirectoryName(outputPath);
+                if (!string.IsNullOrWhiteSpace(outputDirectory))
+                {
+                    Directory.CreateDirectory(outputDirectory);
+                }
+
+                byte[] payload;
+                using (Stream input = entry.Open())
+                using (MemoryStream memory = new MemoryStream())
+                {
+                    input.CopyTo(memory);
+                    payload = memory.ToArray();
+                }
+                if (needsReferenceRewrite)
+                {
+                    payload = RewritePackageReferences(payload, packageRemap);
+                }
+
+                using (FileStream output = new FileStream(outputPath, FileMode.Create, FileAccess.Write))
+                {
+                    output.Write(payload, 0, payload.Length);
+                }
+
+                if (stagedAssetKeys != null)
+                {
+                    stagedAssetKeys.Add(stagedKey);
+                }
+
+                int stagedCount;
+                stagedCountsByPackage.TryGetValue(targetPackage, out stagedCount);
+                stagedCountsByPackage[targetPackage] = stagedCount + 1;
+                IncrementAssetSummary(result, summaryByPackage, targetPackage, true);
+                AddDependencyAssetPath(result, targetPackage, targetRelativePath);
+            }
+        }
+
+        private static string NormalizeImportAssetRelativePath(ItemTransferAssetEntry asset, string targetPackage, Dictionary<string, string> packageRemap)
+        {
+            if (asset == null)
+            {
+                return string.Empty;
+            }
+
+            string mappedPackage;
+            string mappedRelative;
+            if (!string.IsNullOrWhiteSpace(asset.MappedPath)
+                && TrySplitMappedPackagePrefix(RemapMappedPackage(asset.MappedPath, packageRemap), out mappedPackage, out mappedRelative)
+                && string.Equals(NormalizePackageName(mappedPackage), NormalizePackageName(targetPackage), StringComparison.OrdinalIgnoreCase))
+            {
+                return CanonicalizePackageRelativePath(targetPackage, mappedRelative);
+            }
+
+            return NormalizeImportAssetRelativePath(asset.RelativePath, targetPackage);
+        }
+
+        private static string NormalizeImportAssetRelativePath(string relativePath, string targetPackage)
+        {
+            string normalized = NormalizePath(relativePath);
+            string packagePrefix = NormalizePath(targetPackage) + "\\";
+            string relative = normalized.StartsWith(packagePrefix, StringComparison.OrdinalIgnoreCase)
+                ? normalized.Substring(packagePrefix.Length)
+                : normalized;
+            return CanonicalizePackageRelativePath(targetPackage, relative);
+        }
+
+        private static string CanonicalizePackageRelativePath(string packageName, string relativePath)
+        {
+            string normalized = NormalizePath(relativePath);
+            if (string.IsNullOrWhiteSpace(normalized)
+                || !string.Equals(NormalizePackageName(packageName), "models", StringComparison.OrdinalIgnoreCase))
+            {
+                return normalized;
+            }
+
+            string[] parts = normalized.Split('\\');
+            if (parts.Length == 0)
+            {
+                return normalized;
+            }
+
+            if (string.Equals(parts[0], "Weapons", StringComparison.OrdinalIgnoreCase))
+            {
+                parts[0] = "weapons";
+            }
+            else if (string.Equals(parts[0], "NPCS", StringComparison.OrdinalIgnoreCase))
+            {
+                parts[0] = "npcs";
+            }
+
+            return string.Join("\\", parts);
         }
 
         private static Dictionary<string, ItemTransferPackageAssetSummary> BuildAssetSummaryLookup(ItemTransferImportResult result)
@@ -1621,6 +2323,18 @@ namespace FWEledit
             }
 
             return lookup;
+        }
+
+        private static bool IsFatalPackageReadError(string error)
+        {
+            if (string.IsNullOrWhiteSpace(error))
+            {
+                return false;
+            }
+
+            return error.IndexOf("decode package footer", StringComparison.OrdinalIgnoreCase) >= 0
+                || error.IndexOf("Package is too short", StringComparison.OrdinalIgnoreCase) >= 0
+                || error.IndexOf("could not be read", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private static void IncrementAssetSummary(
@@ -1727,7 +2441,8 @@ namespace FWEledit
             {
                 string source = NormalizePackageName(pair.Key);
                 string target = NormalizePackageName(pair.Value);
-                if (string.IsNullOrWhiteSpace(source) || string.IsNullOrWhiteSpace(target))
+                if (string.IsNullOrWhiteSpace(source)
+                    || string.IsNullOrWhiteSpace(target))
                 {
                     continue;
                 }
@@ -1780,8 +2495,8 @@ namespace FWEledit
                     true);
 
                 string packageStagingRoot = Path.Combine(stagingRoot, pair.Key);
-                string updateError;
-                if (pair.Value > 0 && assetManager.ImportStagedPackageAssets(pair.Key, packageStagingRoot, out updateError))
+                string updateError = string.Empty;
+                if (pair.Value > 0 && assetManager.ImportStagedPackageAssetsIncrementalOnly(pair.Key, packageStagingRoot, out updateError))
                 {
                     result.ImportedAssetCount += pair.Value;
                     result.UpdatedPackageCount++;
@@ -1789,6 +2504,10 @@ namespace FWEledit
                 else
                 {
                     result.MissingAssetCount += Math.Max(1, pair.Value);
+                    if (!string.IsNullOrWhiteSpace(updateError))
+                    {
+                        throw new InvalidOperationException(updateError);
+                    }
                 }
             }
         }

@@ -19,7 +19,19 @@ namespace FWEledit
 			SuppressStartupRestore = HasArgument(args, "--empty-instance") || HasArgument(args, "--no-restore");
 			Application.EnableVisualStyles();
 			Application.SetCompatibleTextRenderingDefault(false);
-			Application.Run(new MainWindow());
+			try
+			{
+				Application.Run(new MainWindow());
+			}
+			catch (System.Configuration.ConfigurationErrorsException ex)
+			{
+				if (!RecoverCorruptUserConfig(ex))
+				{
+					throw;
+				}
+
+				Application.Run(new MainWindow());
+			}
 		}
 
 		private static bool HasArgument(string[] args, string argument)
@@ -38,6 +50,34 @@ namespace FWEledit
 			}
 
 			return false;
+		}
+
+		private static bool RecoverCorruptUserConfig(System.Configuration.ConfigurationErrorsException ex)
+		{
+			string filename = ex != null ? ex.Filename : string.Empty;
+			if (string.IsNullOrWhiteSpace(filename) && ex != null)
+			{
+				System.Configuration.ConfigurationErrorsException inner = ex.InnerException as System.Configuration.ConfigurationErrorsException;
+				filename = inner != null ? inner.Filename : string.Empty;
+			}
+
+			if (string.IsNullOrWhiteSpace(filename) || !System.IO.File.Exists(filename))
+			{
+				return false;
+			}
+
+			try
+			{
+				string backup = filename + ".corrupt-" + DateTime.Now.ToString("yyyyMMddHHmmss");
+				System.IO.File.Move(filename, backup);
+				System.Configuration.ConfigurationManager.RefreshSection("userSettings");
+				Properties.Settings.Default.Reload();
+				return true;
+			}
+			catch
+			{
+				return false;
+			}
 		}
 	}
 }

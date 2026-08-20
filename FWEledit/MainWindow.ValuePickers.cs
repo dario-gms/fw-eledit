@@ -537,7 +537,10 @@ namespace FWEledit
 
             if (equipmentFieldService != null && equipmentFieldService.IsEquipmentEssenceList(sessionService.ListCollection, listIndex))
             {
-                if (TryResolveFirstEquipmentWearableModelPreviewField(listIndex, elementIndex, fields, false, out fieldIndex, out fieldName, out pathId)
+                int gender = ResolveEquipmentItemGender(listIndex, elementIndex, fields);
+                if (TryResolveFirstEquipmentWearableModelPreviewField(listIndex, elementIndex, fields, false, gender, out fieldIndex, out fieldName, out pathId)
+                    || TryResolveFirstEquipmentWearableModelPreviewField(listIndex, elementIndex, fields, true, gender, out fieldIndex, out fieldName, out pathId)
+                    || TryResolveFirstEquipmentWearableModelPreviewField(listIndex, elementIndex, fields, false, -1, out fieldIndex, out fieldName, out pathId)
                     || TryResolveFirstEquipmentWearableModelPreviewField(listIndex, elementIndex, fields, true, out fieldIndex, out fieldName, out pathId))
                 {
                     return true;
@@ -586,6 +589,7 @@ namespace FWEledit
             int elementIndex,
             string[] fields,
             bool includeLowDetailFields,
+            int preferredGender,
             out int fieldIndex,
             out string fieldName,
             out int pathId)
@@ -603,6 +607,10 @@ namespace FWEledit
             {
                 string candidateFieldName = fields[i] ?? string.Empty;
                 if (!IsEquipmentWearableModelFieldName(candidateFieldName, includeLowDetailFields))
+                {
+                    continue;
+                }
+                if (preferredGender >= 0 && !IsModelFieldPreferredForGender(candidateFieldName, preferredGender))
                 {
                     continue;
                 }
@@ -634,6 +642,92 @@ namespace FWEledit
             }
 
             return false;
+        }
+
+        private bool TryResolveFirstEquipmentWearableModelPreviewField(
+            int listIndex,
+            int elementIndex,
+            string[] fields,
+            bool includeLowDetailFields,
+            out int fieldIndex,
+            out string fieldName,
+            out int pathId)
+        {
+            return TryResolveFirstEquipmentWearableModelPreviewField(
+                listIndex,
+                elementIndex,
+                fields,
+                includeLowDetailFields,
+                -1,
+                out fieldIndex,
+                out fieldName,
+                out pathId);
+        }
+
+        private int ResolveEquipmentItemGender(int listIndex, int elementIndex, string[] fields)
+        {
+            if (fields == null || sessionService == null || sessionService.ListCollection == null)
+            {
+                return -1;
+            }
+
+            for (int i = 0; i < fields.Length; i++)
+            {
+                string fieldName = fields[i] ?? string.Empty;
+                if (!IsItemGenderFieldName(fieldName))
+                {
+                    continue;
+                }
+
+                string rawValue = sessionService.ListCollection.GetValue(listIndex, elementIndex, i);
+                string normalized = GenderTypeCatalog.NormalizeInput(rawValue);
+                int gender;
+                if (int.TryParse(normalized, out gender))
+                {
+                    return gender;
+                }
+            }
+
+            return -1;
+        }
+
+        private static bool IsItemGenderFieldName(string fieldName)
+        {
+            if (string.IsNullOrWhiteSpace(fieldName))
+            {
+                return false;
+            }
+
+            string normalized = fieldName.Trim();
+            return string.Equals(normalized, "gender", StringComparison.OrdinalIgnoreCase)
+                || GenderTypeCatalog.IsGenderTypeFieldName(normalized);
+        }
+
+        private static bool IsModelFieldPreferredForGender(string fieldName, int gender)
+        {
+            if (gender == 0)
+            {
+                return IsMaleModelFieldName(fieldName);
+            }
+            if (gender == 1)
+            {
+                return IsFemaleModelFieldName(fieldName);
+            }
+
+            return true;
+        }
+
+        private static bool IsFemaleModelFieldName(string fieldName)
+        {
+            return !string.IsNullOrWhiteSpace(fieldName)
+                && fieldName.IndexOf("female", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static bool IsMaleModelFieldName(string fieldName)
+        {
+            return !string.IsNullOrWhiteSpace(fieldName)
+                && fieldName.IndexOf("male", StringComparison.OrdinalIgnoreCase) >= 0
+                && fieldName.IndexOf("female", StringComparison.OrdinalIgnoreCase) < 0;
         }
 
         private static bool IsEquipmentWearableModelFieldName(string fieldName, bool includeLowDetailFields)
@@ -1662,22 +1756,30 @@ namespace FWEledit
                 && equipmentFieldService.IsEquipmentEssenceList(sessionService.ListCollection, listIndex);
             if (isEquipment)
             {
-                for (int i = 0; i < dataGridView_item.Rows.Count; i++)
+                int gender = ResolveEquipmentItemGenderFromGrid();
+
+                int preferred = FindFirstEquipmentModelFieldRow(false, gender);
+                if (preferred >= 0)
                 {
-                    string fieldName = ValueGridFieldNameService.GetFieldName(dataGridView_item, i);
-                    if (IsEquipmentWearableModelFieldName(fieldName, false))
-                    {
-                        return i;
-                    }
+                    return preferred;
                 }
 
-                for (int i = 0; i < dataGridView_item.Rows.Count; i++)
+                preferred = FindFirstEquipmentModelFieldRow(true, gender);
+                if (preferred >= 0)
                 {
-                    string fieldName = ValueGridFieldNameService.GetFieldName(dataGridView_item, i);
-                    if (IsEquipmentWearableModelFieldName(fieldName, true))
-                    {
-                        return i;
-                    }
+                    return preferred;
+                }
+
+                preferred = FindFirstEquipmentModelFieldRow(false, -1);
+                if (preferred >= 0)
+                {
+                    return preferred;
+                }
+
+                preferred = FindFirstEquipmentModelFieldRow(true, -1);
+                if (preferred >= 0)
+                {
+                    return preferred;
                 }
 
                 return -1;
@@ -1689,6 +1791,63 @@ namespace FWEledit
                 if (itemFieldClassifierService.IsModelUsageFieldName(fieldName))
                 {
                     return i;
+                }
+            }
+
+            return -1;
+        }
+
+        private int FindFirstEquipmentModelFieldRow(bool includeLowDetailFields, int preferredGender)
+        {
+            if (dataGridView_item == null)
+            {
+                return -1;
+            }
+
+            for (int i = 0; i < dataGridView_item.Rows.Count; i++)
+            {
+                string fieldName = ValueGridFieldNameService.GetFieldName(dataGridView_item, i);
+                if (!IsEquipmentWearableModelFieldName(fieldName, includeLowDetailFields))
+                {
+                    continue;
+                }
+
+                if (preferredGender >= 0 && !IsModelFieldPreferredForGender(fieldName, preferredGender))
+                {
+                    continue;
+                }
+
+                return i;
+            }
+
+            return -1;
+        }
+
+        private int ResolveEquipmentItemGenderFromGrid()
+        {
+            if (dataGridView_item == null)
+            {
+                return -1;
+            }
+
+            for (int i = 0; i < dataGridView_item.Rows.Count; i++)
+            {
+                string fieldName = ValueGridFieldNameService.GetFieldName(dataGridView_item, i);
+                if (!IsItemGenderFieldName(fieldName))
+                {
+                    continue;
+                }
+
+                object raw = dataGridView_item.Rows[i].Cells[2].Tag;
+                ValueCellState state = raw as ValueCellState;
+                string rawValue = state != null
+                    ? state.RawValue
+                    : Convert.ToString(raw ?? dataGridView_item.Rows[i].Cells[2].Value);
+                string normalized = GenderTypeCatalog.NormalizeInput(rawValue);
+                int gender;
+                if (int.TryParse(normalized, out gender))
+                {
+                    return gender;
                 }
             }
 
@@ -1790,6 +1949,10 @@ namespace FWEledit
             else if (itemFieldClassifierService.IsRaceMaskFieldName(fieldName))
             {
                 OpenRaceMaskPickerForValueRow(targetRow);
+            }
+            else if (itemFieldClassifierService.IsEquipmentUsingTypeFieldName(fieldName))
+            {
+                OpenEquipmentMaskPickerForValueRow(targetRow);
             }
             else if (itemFieldClassifierService.IsEquipmentMaskFieldName(fieldName))
             {
@@ -1996,6 +2159,7 @@ namespace FWEledit
                     fieldName);
             bool isProfessionMaskField = itemFieldClassifierService != null && itemFieldClassifierService.IsProfessionMaskFieldName(fieldName);
             bool isRaceMaskField = itemFieldClassifierService != null && itemFieldClassifierService.IsRaceMaskFieldName(fieldName);
+            bool isEquipmentUsingTypeField = itemFieldClassifierService != null && itemFieldClassifierService.IsEquipmentUsingTypeFieldName(fieldName);
             bool isEquipmentMaskField = itemFieldClassifierService != null && itemFieldClassifierService.IsEquipmentMaskFieldName(fieldName);
             bool isEquipmentLocationField = itemFieldClassifierService != null && itemFieldClassifierService.IsEquipmentLocationFieldName(fieldName);
             bool isEquipmentTypeField = itemFieldClassifierService != null && itemFieldClassifierService.IsEquipmentTypeFieldName(fieldName);
@@ -2180,13 +2344,16 @@ namespace FWEledit
                 menu.Items.Add("Choose Allowed Races...", null, (menuSender, args) => OpenRaceMaskPickerForValueRow(rowIndex));
             }
 
-            if (isEquipmentMaskField)
+            if (isEquipmentUsingTypeField || isEquipmentMaskField)
             {
                 if (menu.Items.Count > 0)
                 {
                     menu.Items.Add(new ToolStripSeparator());
                 }
-                menu.Items.Add("Choose Equipment Slots...", null, (menuSender, args) => OpenEquipmentMaskPickerForValueRow(rowIndex));
+                menu.Items.Add(
+                    isEquipmentUsingTypeField ? "Choose Equipment Using Types..." : "Choose Equipment Slots...",
+                    null,
+                    (menuSender, args) => OpenEquipmentMaskPickerForValueRow(rowIndex));
             }
 
             if (isEquipmentLocationField)

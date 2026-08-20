@@ -11,6 +11,11 @@ namespace FWEledit
 {
     public partial class MainWindow : Form
     {
+        private int lastDescriptionUiListIndex = -1;
+        private int lastDescriptionUiRowIndex = -1;
+        private int lastDescriptionUiItemId = -1;
+        private string lastDescriptionPreviewText = null;
+
         private void ApplyItemDescriptionRuntime(string[] data)
         {
             mainWindowDescriptionCoordinatorService.ApplyItemDescriptionRuntime(
@@ -23,9 +28,22 @@ namespace FWEledit
         private void LoadItemDescriptionsFromConfigs()
         {
             AssetManager manager = sessionService != null ? sessionService.AssetManager : null;
-            if (manager != null)
+            if (manager != null
+                && manager.TryEnsureItemExtDescriptionPayload(out byte[] descriptionPayload, out string materializedPath, out string _)
+                && descriptionPayload != null
+                && descriptionPayload.Length > 0)
             {
-                manager.EnsurePackageExtracted("configs");
+                viewModel.DescriptionViewModel.LoadFromBytes(descriptionPayload, materializedPath);
+                if (fwDescriptionStatusLabel != null && !string.IsNullOrWhiteSpace(viewModel.DescriptionViewModel.StatusText))
+                {
+                    fwDescriptionStatusLabel.Text = viewModel.DescriptionViewModel.StatusText;
+                }
+
+                descriptionLoadService.SyncRuntime(
+                    viewModel.DescriptionViewModel,
+                    descriptionRuntimeService,
+                    ApplyItemDescriptionRuntime);
+                return;
             }
 
             string resolvedDescriptionPath = ResolveItemDescriptionFilePath();
@@ -70,6 +88,12 @@ namespace FWEledit
                 return;
             }
 
+            RestoreDescriptionTabIfNeeded();
+            if (TryApplyAddonPackageDescModeForSelection())
+            {
+                return;
+            }
+
             if (CurrentListShouldHideDescriptionTab())
             {
                 RemoveDescriptionTabForCurrentList();
@@ -77,13 +101,18 @@ namespace FWEledit
                 return;
             }
 
-            RestoreDescriptionTabIfNeeded();
             ConfigureAddonPackageDescMode(false);
 
             bool supportsDescriptions = CurrentListSupportsItemDescriptions();
             if (fwDescriptionEditor != null)
             {
                 fwDescriptionEditor.ReadOnly = !supportsDescriptions;
+            }
+
+            if (!IsDescriptionTabActive())
+            {
+                ResetDescriptionSelectionCache();
+                return;
             }
 
             if (!supportsDescriptions)
@@ -115,7 +144,13 @@ namespace FWEledit
             }
 
             EnsureItemDescriptionsAvailable();
+            if (IsCurrentDescriptionSelectionAlreadyRendered())
+            {
+                return;
+            }
+
             ApplyDescriptionTabSelection();
+            CaptureCurrentDescriptionSelection();
 
             if (string.IsNullOrWhiteSpace(fwDescriptionEditor != null ? fwDescriptionEditor.Text : string.Empty)
                 && TryGetCurrentDescriptionItemId(out int selectedItemId)
@@ -123,7 +158,66 @@ namespace FWEledit
                 && !HasLoadedItemDescriptions())
             {
                 LoadItemDescriptionsFromConfigs();
+                ResetDescriptionSelectionCache();
                 ApplyDescriptionTabSelection();
+                CaptureCurrentDescriptionSelection();
+            }
+        }
+
+        private bool IsDescriptionTabActive()
+        {
+            return fwRightTabs != null
+                && fwDescriptionTab != null
+                && fwRightTabs.SelectedTab == fwDescriptionTab;
+        }
+
+        private bool IsColorPreviewTabActive()
+        {
+            return fwRightTabs != null
+                && fwColorPreviewTab != null
+                && fwRightTabs.SelectedTab == fwColorPreviewTab;
+        }
+
+        private void ResetDescriptionSelectionCache()
+        {
+            lastDescriptionUiListIndex = -1;
+            lastDescriptionUiRowIndex = -1;
+            lastDescriptionUiItemId = -1;
+            lastDescriptionPreviewText = null;
+        }
+
+        private bool TryGetCurrentDescriptionSelectionKey(out int listIndex, out int rowIndex, out int itemId)
+        {
+            listIndex = comboBox_lists != null ? comboBox_lists.SelectedIndex : -1;
+            rowIndex = dataGridView_elems != null && dataGridView_elems.CurrentCell != null
+                ? dataGridView_elems.CurrentCell.RowIndex
+                : -1;
+            itemId = 0;
+            TryGetCurrentDescriptionItemId(out itemId);
+            return listIndex >= 0 && rowIndex >= 0 && itemId > 0;
+        }
+
+        private bool IsCurrentDescriptionSelectionAlreadyRendered()
+        {
+            int listIndex;
+            int rowIndex;
+            int itemId;
+            return TryGetCurrentDescriptionSelectionKey(out listIndex, out rowIndex, out itemId)
+                && listIndex == lastDescriptionUiListIndex
+                && rowIndex == lastDescriptionUiRowIndex
+                && itemId == lastDescriptionUiItemId;
+        }
+
+        private void CaptureCurrentDescriptionSelection()
+        {
+            int listIndex;
+            int rowIndex;
+            int itemId;
+            if (TryGetCurrentDescriptionSelectionKey(out listIndex, out rowIndex, out itemId))
+            {
+                lastDescriptionUiListIndex = listIndex;
+                lastDescriptionUiRowIndex = rowIndex;
+                lastDescriptionUiItemId = itemId;
             }
         }
 
@@ -200,6 +294,14 @@ namespace FWEledit
                 descriptionWorkflowService,
                 ResolveDescriptionTextFallback,
                 RenderDescriptionPreview);
+
+            if (!HasLoadedItemDescriptions()
+                && fwDescriptionStatusLabel != null
+                && fwDescriptionEditor != null
+                && !string.IsNullOrWhiteSpace(fwDescriptionEditor.Text))
+            {
+                fwDescriptionStatusLabel.Text = "Using description from elements.data";
+            }
         }
 
         private void EnsureItemDescriptionsAvailable()
@@ -245,7 +347,87 @@ namespace FWEledit
 
             return TryReadRawItemDescriptionFromFile(itemId, out string rawText)
                 ? rawText
-                : string.Empty;
+                : ResolveInlineDescriptionTextFallback();
+        }
+
+        private string ResolveInlineDescriptionTextFallback()
+        {
+            try
+            {
+                if (sessionService == null
+                    || sessionService.ListCollection == null
+                    || comboBox_lists == null
+                    || dataGridView_elems == null
+                    || dataGridView_elems.CurrentCell == null)
+                {
+                    return string.Empty;
+                }
+
+                int listIndex = comboBox_lists.SelectedIndex;
+                if (listIndex < 0 || listIndex >= sessionService.ListCollection.Lists.Length)
+                {
+                    return string.Empty;
+                }
+
+                eList list = sessionService.ListCollection.Lists[listIndex];
+                if (list == null || list.elementFields == null)
+                {
+                    return string.Empty;
+                }
+
+                int descriptionFieldIndex = -1;
+                for (int i = 0; i < list.elementFields.Length; i++)
+                {
+                    string field = list.elementFields[i] ?? string.Empty;
+                    if (IsInlineDescriptionField(field))
+                    {
+                        descriptionFieldIndex = i;
+                        break;
+                    }
+                }
+
+                if (descriptionFieldIndex < 0)
+                {
+                    return string.Empty;
+                }
+
+                int gridRowIndex = dataGridView_elems.CurrentCell.RowIndex;
+                int elementIndex = elementIndexResolverService != null
+                    ? elementIndexResolverService.ResolveElementIndexFromGridRow(
+                        sessionService.ListCollection,
+                        listIndex,
+                        gridRowIndex,
+                        dataGridView_elems)
+                    : gridRowIndex;
+
+                if (elementIndex < 0 || list.elementValues == null || elementIndex >= list.elementValues.Length)
+                {
+                    return string.Empty;
+                }
+
+                string inlineValue = list.GetValue(elementIndex, descriptionFieldIndex) ?? string.Empty;
+                return NormalizeAddonPackageDescForEditor(inlineValue);
+            }
+            catch
+            {
+                return string.Empty;
+            }
+        }
+
+        private static bool IsInlineDescriptionField(string fieldName)
+        {
+            if (string.IsNullOrWhiteSpace(fieldName))
+            {
+                return false;
+            }
+
+            string normalized = fieldName.Trim();
+            return string.Equals(normalized, "Description", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(normalized, "desc", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(normalized, "simple_desc", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(normalized, "descript_text", StringComparison.OrdinalIgnoreCase)
+                || normalized.EndsWith("_desc", StringComparison.OrdinalIgnoreCase)
+                || normalized.EndsWith("_description", StringComparison.OrdinalIgnoreCase);
         }
 
         private bool TryReadRawItemDescriptionFromFile(int itemId, out string rawText)
@@ -302,11 +484,7 @@ namespace FWEledit
             AssetManager manager = sessionService != null ? sessionService.AssetManager : null;
             if (manager != null)
             {
-                manager.EnsurePackageExtracted("configs");
-                string resolved = manager.ResolveResourceFilePublic(
-                    Path.Combine("data", "item_ext_desc.txt"),
-                    "item_ext_desc.txt",
-                    Path.Combine("configs.pck.files", "item_ext_desc.txt"));
+                string resolved = manager.EnsureItemExtDescriptionFile();
                 if (!string.IsNullOrWhiteSpace(resolved))
                 {
                     return resolved;
@@ -350,6 +528,11 @@ namespace FWEledit
 
             EnsureColorPreviewTabCreated();
             SwapDescriptionTabForColorPreview();
+
+            if (!IsColorPreviewTabActive())
+            {
+                return true;
+            }
 
             if (!TryGetCurrentColorPlanContext(
                 out int contextListIndex,
@@ -942,7 +1125,7 @@ namespace FWEledit
 
             if (fwDescriptionStatusLabel != null)
             {
-                fwDescriptionStatusLabel.Text = "Editing desc from elements.data";
+                fwDescriptionStatusLabel.Text = "Editing " + sessionService.ListCollection.Lists[listIndex].elementFields[descFieldIndex] + " from elements.data";
             }
 
             return true;
@@ -1082,6 +1265,22 @@ namespace FWEledit
                 && elementIndex < list.elementValues.Length;
         }
 
+        private static bool IsInlineDescriptionFieldName(string fieldName)
+        {
+            if (string.IsNullOrWhiteSpace(fieldName))
+            {
+                return false;
+            }
+
+            string normalized = fieldName.Trim();
+            return string.Equals(normalized, "desc", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(normalized, "description", StringComparison.OrdinalIgnoreCase)
+                || normalized.EndsWith("_desc", StringComparison.OrdinalIgnoreCase)
+                || normalized.EndsWith("_description", StringComparison.OrdinalIgnoreCase)
+                || normalized.IndexOf("_desc_", StringComparison.OrdinalIgnoreCase) >= 0
+                || normalized.IndexOf("_description_", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
         private static string NormalizeAddonPackageDescForEditor(string storedValue)
         {
             if (string.IsNullOrEmpty(storedValue))
@@ -1206,7 +1405,7 @@ namespace FWEledit
                 {
                     if (string.Equals(
                         ValueGridFieldNameService.GetFieldName(dataGridView_item, rowIndex),
-                        "desc",
+                        sessionService.ListCollection.Lists[listIndex].elementFields[descFieldIndex],
                         StringComparison.OrdinalIgnoreCase))
                     {
                         dataGridView_item.Rows[rowIndex].Cells[2].Value = editorText;
@@ -1361,6 +1560,64 @@ namespace FWEledit
             return gridRows ?? new int[0];
         }
 
+        private void RemoveDescriptionsForDeletedItems(int[] itemIds)
+        {
+            if (itemIds == null || itemIds.Length == 0 || !CurrentListSupportsItemDescriptions())
+            {
+                return;
+            }
+
+            EnsureItemDescriptionsAvailable();
+            string status;
+            if (viewModel != null
+                && viewModel.DescriptionViewModel != null
+                && viewModel.DescriptionViewModel.RemoveItems(itemIds, out status))
+            {
+                descriptionLoadService.SyncRuntime(
+                    viewModel.DescriptionViewModel,
+                    descriptionRuntimeService,
+                    ApplyItemDescriptionRuntime);
+                viewModel.HasUnsavedChanges = true;
+                ResetDescriptionSelectionCache();
+                RefreshDescriptionDirtyRows();
+                if (fwDescriptionStatusLabel != null && !string.IsNullOrWhiteSpace(status))
+                {
+                    fwDescriptionStatusLabel.Text = status;
+                }
+            }
+        }
+
+        private void CopyDescriptionsForClonedItems(int[] sourceItemIds, int[] targetItemIds)
+        {
+            if (sourceItemIds == null
+                || targetItemIds == null
+                || sourceItemIds.Length == 0
+                || targetItemIds.Length == 0
+                || !CurrentListSupportsItemDescriptions())
+            {
+                return;
+            }
+
+            EnsureItemDescriptionsAvailable();
+            string status;
+            if (viewModel != null
+                && viewModel.DescriptionViewModel != null
+                && viewModel.DescriptionViewModel.CopyItems(sourceItemIds, targetItemIds, out status))
+            {
+                descriptionLoadService.SyncRuntime(
+                    viewModel.DescriptionViewModel,
+                    descriptionRuntimeService,
+                    ApplyItemDescriptionRuntime);
+                viewModel.HasUnsavedChanges = true;
+                ResetDescriptionSelectionCache();
+                RefreshDescriptionDirtyRows();
+                if (fwDescriptionStatusLabel != null && !string.IsNullOrWhiteSpace(status))
+                {
+                    fwDescriptionStatusLabel.Text = status;
+                }
+            }
+        }
+
         private void RefreshDescriptionDirtyRows()
         {
             if (sessionService == null
@@ -1433,7 +1690,9 @@ namespace FWEledit
 
         private bool FlushPendingDescriptionsToDisk()
         {
-            return mainWindowDescriptionCoordinatorService.FlushPendingDescriptionsToDisk(
+            StageCurrentDescriptionChange(false);
+
+            bool flushed = mainWindowDescriptionCoordinatorService.FlushPendingDescriptionsToDisk(
                 mainWindowDescriptionUiService,
                 descriptionFlushUiService,
                 descriptionWorkflowService,
@@ -1450,6 +1709,14 @@ namespace FWEledit
                     }
                 },
                 ApplyItemDescriptionRuntime);
+
+            if (flushed)
+            {
+                LoadItemDescriptionsFromConfigs();
+                ApplyDescriptionTabSelection();
+            }
+
+            return flushed;
         }
         private void RemapDescriptionIdIfNeeded(int oldId, int newId)
         {
@@ -1466,12 +1733,19 @@ namespace FWEledit
 
         private void RenderDescriptionPreview(string rawText)
         {
+            string safeRawText = rawText ?? string.Empty;
+            if (string.Equals(lastDescriptionPreviewText, safeRawText, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            lastDescriptionPreviewText = safeRawText;
             mainWindowDescriptionCoordinatorService.RenderDescriptionPreview(
                 mainWindowDescriptionUiService,
                 descriptionPreviewUiService,
                 descriptionPreviewService,
                 fwDescriptionPreview,
-                rawText);
+                safeRawText);
         }
 
         private void InitializeDescriptionFormattingActions()
@@ -1578,6 +1852,16 @@ namespace FWEledit
                 viewModel,
                 () => StageCurrentDescriptionChange(true),
                 message => MessageBox.Show(message));
+
+            if (viewModel != null
+                && viewModel.DescriptionViewModel != null
+                && viewModel.DescriptionViewModel.CurrentItemId > 0)
+            {
+                FlushPendingDescriptionsToDisk();
+                viewModel.HasUnsavedChanges = dirtyStateTracker.HasAnyDirtyEntries()
+                    || viewModel.DescriptionViewModel.HasPendingChanges;
+                RefreshDescriptionDirtyRows();
+            }
         }
     }
 }

@@ -18,6 +18,7 @@ namespace FWEledit
         public string[] AddonDescriptions { get; set; }
         public string IconPath { get; set; }
         public bool IsGraphicTitle { get; set; }
+        public bool ShowGraphicInChat { get; set; }
         public string CategoryPathKey { get; set; }
         public string CategoryDisplay { get; set; }
     }
@@ -52,6 +53,9 @@ namespace FWEledit
             RegexOptions.Compiled | RegexOptions.Singleline);
         private static readonly Regex IconImageRegex = new Regex(
             "(?<![A-Za-z0-9_])image\\s*=\\s*" + LuaStringPattern,
+            RegexOptions.Compiled | RegexOptions.Singleline);
+        private static readonly Regex BeforeNameRegex = new Regex(
+            "title_definition\\[\\s*\"?(?<id>\\d+)\"?\\s*\\]\\.beforename\\s*=\\s*(?<value>\\d+)",
             RegexOptions.Compiled | RegexOptions.Singleline);
         private static readonly Regex LeadingColorRegex = new Regex(
             "\\^(?<hex>[0-9a-fA-F]{6})",
@@ -353,8 +357,9 @@ namespace FWEledit
 
             string compiledLuaText = DecompileLuaFile(targetPath);
             Dictionary<int, string> compiledIconPathsById = ParseGraphicIconPaths(compiledLuaText);
+            Dictionary<int, bool> compiledBeforeNameById = ParseGraphicBeforeNameFlags(compiledLuaText);
             List<object> compiledTitleDir = ParseTitleDir(compiledLuaText);
-            Dictionary<int, EditableTitleDefinition> compiledDefinitions = ParseEditableDefinitions(compiledLuaText, compiledIconPathsById);
+            Dictionary<int, EditableTitleDefinition> compiledDefinitions = ParseEditableDefinitions(compiledLuaText, compiledIconPathsById, compiledBeforeNameById);
             if (string.IsNullOrWhiteSpace(compiledLuaText) || compiledDefinitions.Count == 0)
             {
                 error = "The compiled title_def_u.lua could not be read back. Save was cancelled so script.pck stays unchanged.";
@@ -372,8 +377,9 @@ namespace FWEledit
             InvalidateCache();
             string savedLuaText = LoadTitleDefinitionLua(AssetManager.GameRootPath);
             Dictionary<int, string> savedIconPathsById = ParseGraphicIconPaths(savedLuaText);
+            Dictionary<int, bool> savedBeforeNameById = ParseGraphicBeforeNameFlags(savedLuaText);
             List<object> titleDir = ParseTitleDir(savedLuaText);
-            Dictionary<int, EditableTitleDefinition> updatedDefinitions = ParseEditableDefinitions(savedLuaText, savedIconPathsById);
+            Dictionary<int, EditableTitleDefinition> updatedDefinitions = ParseEditableDefinitions(savedLuaText, savedIconPathsById, savedBeforeNameById);
             if (string.IsNullOrWhiteSpace(savedLuaText) || updatedDefinitions.Count == 0)
             {
                 TryRestoreScriptBackup(assetManager);
@@ -521,8 +527,9 @@ namespace FWEledit
 
             string luaText = LoadTitleDefinitionLua(gameRoot);
             Dictionary<int, string> iconPathsById = ParseGraphicIconPaths(luaText);
+            Dictionary<int, bool> beforeNameById = ParseGraphicBeforeNameFlags(luaText);
             List<object> titleDir = ParseTitleDir(luaText);
-            Dictionary<int, EditableTitleDefinition> parsedDefinitions = ParseEditableDefinitions(luaText, iconPathsById);
+            Dictionary<int, EditableTitleDefinition> parsedDefinitions = ParseEditableDefinitions(luaText, iconPathsById, beforeNameById);
             List<TitleCategoryOption> parsedCategories = BuildTitleCategoryOptions(titleDir);
             ApplyCategoriesToDefinitions(parsedDefinitions, titleDir, parsedCategories);
             List<ItemReferenceOption> parsedOptions = BuildOptionsFromDefinitions(parsedDefinitions);
@@ -576,7 +583,7 @@ namespace FWEledit
                     Directory.CreateDirectory(tempDirectory);
                     string sourcePath = Path.Combine(tempDirectory, "title_def_u.lua");
                     File.WriteAllBytes(sourcePath, payload);
-                    return DecompileLuaFile(sourcePath);
+                    return DecodeOrDecompileLuaFile(sourcePath, payload);
                 }
             }
             catch
@@ -594,7 +601,7 @@ namespace FWEledit
                     Directory.CreateDirectory(tempDirectory);
                     string sourcePath = Path.Combine(tempDirectory, "title_def_u_winpck.lua");
                     File.WriteAllBytes(sourcePath, payload);
-                    return DecompileLuaFile(sourcePath);
+                    return DecodeOrDecompileLuaFile(sourcePath, payload);
                 }
             }
             catch
@@ -694,7 +701,10 @@ namespace FWEledit
             return string.Empty;
         }
 
-        private static Dictionary<int, EditableTitleDefinition> ParseEditableDefinitions(string luaText, Dictionary<int, string> iconPathsById)
+        private static Dictionary<int, EditableTitleDefinition> ParseEditableDefinitions(
+            string luaText,
+            Dictionary<int, string> iconPathsById,
+            Dictionary<int, bool> beforeNameById)
         {
             Dictionary<int, EditableTitleDefinition> definitions = new Dictionary<int, EditableTitleDefinition>();
             if (string.IsNullOrWhiteSpace(luaText))
@@ -719,6 +729,8 @@ namespace FWEledit
                 string description = DecodeScriptLiteralPreserveFormatting(ExtractFieldRaw(body, DescriptionRegex));
                 string iconPath;
                 iconPathsById.TryGetValue(id, out iconPath);
+                bool showGraphicInChat;
+                beforeNameById.TryGetValue(id, out showGraphicInChat);
                 string accentHex = ExtractLeadingColor(rawNote);
                 EditableTitleDefinition definition = new EditableTitleDefinition
                 {
@@ -728,7 +740,8 @@ namespace FWEledit
                     Description = description,
                     AddonDescriptions = new string[5],
                     IconPath = iconPath ?? string.Empty,
-                    IsGraphicTitle = !string.IsNullOrWhiteSpace(iconPath)
+                    IsGraphicTitle = !string.IsNullOrWhiteSpace(iconPath),
+                    ShowGraphicInChat = showGraphicInChat
                 };
 
                 for (int addonIndex = 1; addonIndex <= 5; addonIndex++)
@@ -850,6 +863,34 @@ namespace FWEledit
             }
 
             return iconPaths;
+        }
+
+        private static Dictionary<int, bool> ParseGraphicBeforeNameFlags(string luaText)
+        {
+            Dictionary<int, bool> flags = new Dictionary<int, bool>();
+            if (string.IsNullOrWhiteSpace(luaText))
+            {
+                return flags;
+            }
+
+            MatchCollection matches = BeforeNameRegex.Matches(luaText);
+            for (int i = 0; i < matches.Count; i++)
+            {
+                Match match = matches[i];
+                int id;
+                int value;
+                if (match == null
+                    || !int.TryParse(match.Groups["id"].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out id)
+                    || !int.TryParse(match.Groups["value"].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out value)
+                    || id <= 0)
+                {
+                    continue;
+                }
+
+                flags[id] = value != 0;
+            }
+
+            return flags;
         }
 
         private static List<object> ParseTitleDir(string luaText)
@@ -1585,7 +1626,7 @@ namespace FWEledit
 
         private static string BuildBeforeNameEntryPattern(int id)
         {
-            return "\\s*title_definition\\[\\s*\"?" + id.ToString(CultureInfo.InvariantCulture) + "\"?\\s*\\]\\.beforename\\s*=\\s*1\\s*";
+            return "\\s*title_definition\\[\\s*\"?" + id.ToString(CultureInfo.InvariantCulture) + "\"?\\s*\\]\\.beforename\\s*=\\s*\\d+\\s*";
         }
 
         private static int FindIconBlockStart(string luaText, int id)
@@ -1721,7 +1762,10 @@ namespace FWEledit
 
             string idText = definition.Id.ToString(CultureInfo.InvariantCulture);
             StringBuilder iconBlock = new StringBuilder();
-            iconBlock.Append("title_definition[\"").Append(idText).Append("\"].beforename = 1").Append(Environment.NewLine);
+            if (definition.ShowGraphicInChat)
+            {
+                iconBlock.Append("title_definition[\"").Append(idText).Append("\"].beforename = 1").Append(Environment.NewLine);
+            }
             iconBlock.Append("title_definition[\"").Append(idText).Append("\"].icon = {").Append(Environment.NewLine);
             iconBlock.Append("  {").Append(Environment.NewLine);
             iconBlock.Append("    imageplace = \"0\",").Append(Environment.NewLine);
@@ -1758,9 +1802,9 @@ namespace FWEledit
         {
             return (value ?? string.Empty)
                 .Replace("\\", "\\\\")
-                .Replace("\r\n", "\\n")
-                .Replace("\n", "\\n")
-                .Replace("\r", "\\n")
+                .Replace("\r\n", "\\r")
+                .Replace("\n", "\\r")
+                .Replace("\r", "\\r")
                 .Replace("\t", "\\t")
                 .Replace("\"", "\\\"")
                 .Replace("%", "%%");
@@ -1775,6 +1819,60 @@ namespace FWEledit
             }
 
             return normalized;
+        }
+
+        private static string DecodeOrDecompileLuaFile(string sourcePath, byte[] payload)
+        {
+            string plainText;
+            if (TryDecodePlainLuaText(payload, out plainText))
+            {
+                return plainText;
+            }
+
+            return DecompileLuaFile(sourcePath);
+        }
+
+        private static bool TryDecodePlainLuaText(byte[] payload, out string luaText)
+        {
+            luaText = string.Empty;
+            if (payload == null || payload.Length == 0)
+            {
+                return false;
+            }
+
+            if (payload.Length >= 4
+                && payload[0] == 0x1B
+                && payload[1] == (byte)'L'
+                && payload[2] == (byte)'u'
+                && payload[3] == (byte)'a')
+            {
+                return false;
+            }
+
+            Encoding[] encodings = new Encoding[]
+            {
+                new UTF8Encoding(false, false),
+                Encoding.GetEncoding("GBK"),
+                Encoding.Default
+            };
+
+            for (int i = 0; i < encodings.Length; i++)
+            {
+                try
+                {
+                    string decoded = encodings[i].GetString(payload);
+                    if (decoded.IndexOf("title_definition", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        luaText = decoded.TrimStart('\uFEFF');
+                        return true;
+                    }
+                }
+                catch
+                {
+                }
+            }
+
+            return false;
         }
 
         private static string DecompileLuaFile(string sourcePath)
@@ -2019,13 +2117,10 @@ namespace FWEledit
             {
             }
 
-            cleaned = cleaned
-                .Replace("\\r", Environment.NewLine)
-                .Replace("\\n", Environment.NewLine)
+            cleaned = NormalizeScriptLineEndings(cleaned)
                 .Replace("\\t", "\t")
                 .Replace("\\\"", "\"")
                 .Replace("%%", "%")
-                .Replace("\r", Environment.NewLine)
                 .Trim();
 
             while (cleaned.StartsWith("%s", StringComparison.Ordinal))
@@ -2039,15 +2134,22 @@ namespace FWEledit
         private static string DecodeScriptLiteralPreserveFormatting(string text)
         {
             string cleaned = DecodeLuaEscapedUtf8(text ?? string.Empty);
-            cleaned = cleaned
-                .Replace("\\r", Environment.NewLine)
-                .Replace("\\n", Environment.NewLine)
+            cleaned = NormalizeScriptLineEndings(cleaned)
                 .Replace("\\t", "\t")
                 .Replace("\\\"", "\"")
-                .Replace("%%", "%")
-                .Replace("\r", Environment.NewLine);
+                .Replace("%%", "%");
 
             return cleaned.Trim();
+        }
+
+        private static string NormalizeScriptLineEndings(string value)
+        {
+            return (value ?? string.Empty)
+                .Replace("\\r", "\n")
+                .Replace("\\n", "\n")
+                .Replace("\r\n", "\n")
+                .Replace("\r", "\n")
+                .Replace("\n", Environment.NewLine);
         }
 
         private static string DecodeLuaEscapedUtf8(string text)
@@ -2146,6 +2248,7 @@ namespace FWEledit
                 AddonDescriptions = addonDescriptions,
                 IconPath = definition.IconPath,
                 IsGraphicTitle = definition.IsGraphicTitle,
+                ShowGraphicInChat = definition.ShowGraphicInChat,
                 CategoryPathKey = definition.CategoryPathKey ?? string.Empty,
                 CategoryDisplay = definition.CategoryDisplay ?? string.Empty
             };

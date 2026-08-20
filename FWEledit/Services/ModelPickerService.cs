@@ -114,20 +114,31 @@ namespace FWEledit
                 Bitmap icon = Properties.Resources.NoIcon;
                 if (pathId > 0)
                 {
-                    context.UsesByPathId.TryGetValue(pathId, out uses);
-                    context.SampleItemIdByPathId.TryGetValue(pathId, out itemId);
-                    context.SampleItemNameByPathId.TryGetValue(pathId, out itemName);
-                    context.SampleScaleByPathId.TryGetValue(pathId, out previewScale);
                     string mappedFromPathId;
                     if (database.pathById.TryGetValue(pathId, out mappedFromPathId) && !string.IsNullOrWhiteSpace(mappedFromPathId))
                     {
-                        mappedPath = mappedFromPathId;
+                        if (IsSameModelPickerPath(mappedPath, mappedFromPathId, relativePath))
+                        {
+                            mappedPath = mappedFromPathId;
+                        }
+                        else
+                        {
+                            pathId = 0;
+                        }
                     }
 
-                    if (context.SampleIconKeyByPathId.TryGetValue(pathId, out iconKey)
+                    if (pathId > 0)
+                    {
+                        context.UsesByPathId.TryGetValue(pathId, out uses);
+                        context.SampleItemIdByPathId.TryGetValue(pathId, out itemId);
+                        context.SampleItemNameByPathId.TryGetValue(pathId, out itemName);
+                        context.SampleScaleByPathId.TryGetValue(pathId, out previewScale);
+                    }
+
+                    if (pathId > 0
+                        && context.SampleIconKeyByPathId.TryGetValue(pathId, out iconKey)
                         && !string.IsNullOrWhiteSpace(iconKey)
                         && database != null
-                        && database.sourceBitmap != null
                         && database.ContainsKey(iconKey))
                     {
                         icon = null;
@@ -153,6 +164,25 @@ namespace FWEledit
             }
 
             return entries;
+        }
+
+        private static bool IsSameModelPickerPath(string expectedMappedPath, string mappedFromPathId, string relativePath)
+        {
+            string expected = NormalizeModelPathLookupKey(expectedMappedPath);
+            string mapped = NormalizeModelPathLookupKey(mappedFromPathId);
+            if (string.IsNullOrWhiteSpace(expected) || string.IsNullOrWhiteSpace(mapped))
+            {
+                return false;
+            }
+
+            if (string.Equals(expected, mapped, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            string relative = NormalizeModelPathLookupKey(relativePath);
+            return !string.IsNullOrWhiteSpace(relative)
+                && string.Equals(relative, mapped, StringComparison.OrdinalIgnoreCase);
         }
 
         private ModelPickerListContext GetOrBuildListContext(

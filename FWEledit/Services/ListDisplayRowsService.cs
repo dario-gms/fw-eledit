@@ -44,11 +44,11 @@ namespace FWEledit
             {
                 try
                 {
-                    listDisplayService.SetListDisplayRows(l, buildRows(l));
+                    listDisplayService.SetListDisplayRows(listCollection, l, buildRows(l));
                 }
                 catch
                 {
-                    listDisplayService.SetListDisplayRows(l, new List<object[]>());
+                    listDisplayService.SetListDisplayRows(listCollection, l, new List<object[]>());
                 }
             }
         }

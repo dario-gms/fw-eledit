@@ -150,6 +150,57 @@ namespace FWEledit
             UpdateNpcSellServiceUiForSelection();
 		}
 
+        private void RefreshCurrentItemValuesForSelectedTab()
+        {
+            int currentListIndex = comboBox_lists != null ? comboBox_lists.SelectedIndex : -1;
+            RememberCurrentValueFieldSelection();
+
+            mainWindowSelectionCoordinatorService.HandleChangeItem(
+                mainWindowSelectionUiService,
+                viewModel.EnableSelectionItem,
+                comboBox_lists,
+                dataGridView_elems,
+                dataGridView_item,
+                gridActiveRowService,
+                gridSelectionService,
+                (listIndex, gridRowIndex) => elementIndexResolverService.ResolveElementIndexFromGridRow(
+                    sessionService.ListCollection,
+                    listIndex,
+                    gridRowIndex,
+                    dataGridView_elems),
+                itemSelectionContextService,
+                itemSelectionRequestBuilderService,
+                sessionService,
+                ShouldIncludeFieldInValuesTab,
+                (listIndex, entryIndex, nameFieldIndex) =>
+                    listDisplayService.GetDisplayEntryName(sessionService, sessionService.ListCollection, listIndex, entryIndex, nameFieldIndex),
+                () => addonTypeHintService.LoadHints(Application.StartupPath, AssetManager.GameRootPath),
+                itemFieldClassifierService.IsModelFieldName,
+                (listIndex, rowIndex, fieldIndex) => mainWindowDirtyTrackingService.IsFieldInvalid(
+                    dirtyStateTracker,
+                    listIndex,
+                    rowIndex,
+                    fieldIndex),
+                (listIndex, rowIndex, fieldIndex) => mainWindowDirtyTrackingService.IsFieldDirty(
+                    dirtyStateTracker,
+                    listIndex,
+                    rowIndex,
+                    fieldIndex),
+                itemSelectionCommandService,
+                itemSelectionWorkflowService,
+                itemSelectionUiService,
+                null,
+                null,
+                UpdatePickIconButtonState,
+                null,
+                value => viewModel.SuppressValuesUiRefresh = value);
+
+            RestoreRememberedValueFieldSelection(currentListIndex);
+            UpdateRawValueEditorFromCurrentCell();
+            UpdateAddonPackageDescEditorFromCurrentCell();
+            RefreshLiveModelPreviewFromCurrentRow(true);
+        }
+
 
         private void change_offset(object sender, EventArgs e)
 		{

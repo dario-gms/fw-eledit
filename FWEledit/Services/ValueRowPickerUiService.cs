@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Globalization;
+using System.IO;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -255,6 +257,13 @@ namespace FWEledit
                         openRaceMaskPicker(e.RowIndex);
                     }
                 }
+                else if (fieldClassifier.IsEquipmentUsingTypeFieldName(fieldName))
+                {
+                    if (openEquipmentMaskPicker != null)
+                    {
+                        openEquipmentMaskPicker(e.RowIndex);
+                    }
+                }
                 else if (fieldClassifier.IsEquipmentMaskFieldName(fieldName))
                 {
                     if (openEquipmentMaskPicker != null)
@@ -470,12 +479,34 @@ namespace FWEledit
                 }
 
                 int selectedPathId = picker.SelectedPathId;
+                string selectedMappedPath = picker.SelectedMappedPath;
+                string preferredSelectionError;
+                if (TryPreferSiblingEcmForEntityModelSelection(
+                    database,
+                    assetManager,
+                    fieldName,
+                    listName,
+                    selectedPathId,
+                    selectedMappedPath,
+                    out int preferredSelectionPathId,
+                    out string preferredSelectionMappedPath,
+                    out preferredSelectionError))
+                {
+                    selectedPathId = preferredSelectionPathId;
+                    selectedMappedPath = preferredSelectionMappedPath;
+                }
+                else if (!string.IsNullOrWhiteSpace(preferredSelectionError))
+                {
+                    MessageBox.Show(preferredSelectionError, "Choice Model", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
+
                 if (selectedPathId <= 0)
                 {
                     if (!TryCreatePathIdForSelectedModel(
                         database,
                         assetManager,
-                        picker.SelectedMappedPath,
+                        selectedMappedPath,
                         out selectedPathId,
                         out string createError))
                     {
@@ -499,6 +530,156 @@ namespace FWEledit
 
                 SetValueCellRawValue(itemGrid, rowIndex, selectedPathId.ToString());
             }
+        }
+
+        private static bool TryPreferSiblingEcmForEntityModelSelection(
+            CacheSave database,
+            AssetManager assetManager,
+            string fieldName,
+            string listName,
+            int selectedPathId,
+            string selectedMappedPath,
+            out int preferredPathId,
+            out string preferredMappedPath,
+            out string error)
+        {
+            preferredPathId = selectedPathId;
+            preferredMappedPath = selectedMappedPath ?? string.Empty;
+            error = string.Empty;
+
+            if (!ShouldPreferEcmForEntityModelField(fieldName, listName))
+            {
+                return false;
+            }
+
+            string selectionPath = (selectedMappedPath ?? string.Empty).Replace('/', '\\').Trim().TrimStart('\\');
+            if (string.IsNullOrWhiteSpace(selectionPath))
+            {
+                if (database != null
+                    && database.pathById != null
+                    && selectedPathId > 0
+                    && database.pathById.TryGetValue(selectedPathId, out string mappedFromPathId))
+                {
+                    selectionPath = (mappedFromPathId ?? string.Empty).Replace('/', '\\').Trim().TrimStart('\\');
+                }
+            }
+
+            if (!string.Equals(Path.GetExtension(selectionPath), ".ski", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            string package;
+            string relative;
+            if (!ModelPickerService.TrySplitModelPackagePath(selectionPath, out package, out relative))
+            {
+                return false;
+            }
+
+            string siblingRelative = Path.ChangeExtension(relative, ".ecm");
+            if (string.IsNullOrWhiteSpace(siblingRelative)
+                || string.Equals(siblingRelative, relative, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            string siblingMappedPath = package + "\\" + siblingRelative.Replace('/', '\\').Trim().TrimStart('\\');
+            if (!PackageEntryExists(assetManager, package, siblingRelative))
+            {
+                return false;
+            }
+
+            int siblingPathId;
+            if (TryFindPathIdInDatabase(database, siblingMappedPath, out siblingPathId)
+                || (assetManager != null && assetManager.TryFindPathIdByMappedPath(siblingMappedPath, out siblingPathId) && siblingPathId > 0))
+            {
+                preferredPathId = siblingPathId;
+                preferredMappedPath = siblingMappedPath;
+                if (database != null && database.pathById != null && !database.pathById.ContainsKey(siblingPathId))
+                {
+                    database.pathById[siblingPathId] = siblingMappedPath;
+                }
+                return true;
+            }
+
+            if (TryCreatePathIdForSelectedModel(database, assetManager, siblingMappedPath, out siblingPathId, out error))
+            {
+                preferredPathId = siblingPathId;
+                preferredMappedPath = siblingMappedPath;
+                return true;
+            }
+
+            return false;
+        }
+
+        private static bool ShouldPreferEcmForEntityModelField(string fieldName, string listName)
+        {
+            string normalizedField = (fieldName ?? string.Empty).Trim();
+            string normalizedList = (listName ?? string.Empty).Trim();
+
+            bool entityList = normalizedList.IndexOf("NPC", StringComparison.OrdinalIgnoreCase) >= 0
+                || normalizedList.IndexOf("MONSTER", StringComparison.OrdinalIgnoreCase) >= 0
+                || normalizedList.IndexOf("PET", StringComparison.OrdinalIgnoreCase) >= 0;
+            if (!entityList)
+            {
+                return false;
+            }
+
+            return string.Equals(normalizedField, "file_model", StringComparison.OrdinalIgnoreCase)
+                || normalizedField.StartsWith("model_name", StringComparison.OrdinalIgnoreCase)
+                || normalizedField.IndexOf("_file_model_", StringComparison.OrdinalIgnoreCase) >= 0
+                || normalizedField.StartsWith("file_to_shown_", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool TryFindPathIdInDatabase(CacheSave database, string mappedPath, out int pathId)
+        {
+            pathId = 0;
+            if (database == null || database.pathById == null || string.IsNullOrWhiteSpace(mappedPath))
+            {
+                return false;
+            }
+
+            string normalizedMappedPath = ModelPickerService.NormalizeModelPathLookupKey(mappedPath);
+            foreach (KeyValuePair<int, string> kv in database.pathById)
+            {
+                if (string.Equals(
+                        ModelPickerService.NormalizeModelPathLookupKey(kv.Value),
+                        normalizedMappedPath,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    pathId = kv.Key;
+                    return pathId > 0;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool PackageEntryExists(AssetManager assetManager, string package, string relativePath)
+        {
+            if (assetManager == null || string.IsNullOrWhiteSpace(package) || string.IsNullOrWhiteSpace(relativePath))
+            {
+                return false;
+            }
+
+            if (!assetManager.TryEnumeratePckIndexEntries(package, out List<string> entries) || entries == null)
+            {
+                return false;
+            }
+
+            string normalizedRelative = ModelPickerService.NormalizeModelPathLookupKey(relativePath);
+            for (int i = 0; i < entries.Count; i++)
+            {
+                if (string.Equals(
+                        ModelPickerService.NormalizeModelPathLookupKey(entries[i]),
+                        normalizedRelative,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private static bool TryCreatePathIdForSelectedModel(
@@ -1303,7 +1484,8 @@ namespace FWEledit
             }
 
             string fieldName = ValueGridFieldNameService.GetFieldName(itemGrid, rowIndex);
-            if (!fieldClassifier.IsEquipmentMaskFieldName(fieldName))
+            bool isUsingTypeMask = fieldClassifier.IsEquipmentUsingTypeFieldName(fieldName);
+            if (!fieldClassifier.IsEquipmentMaskFieldName(fieldName) && !isUsingTypeMask)
             {
                 return;
             }
@@ -1312,7 +1494,13 @@ namespace FWEledit
             uint currentValue;
             EquipmentMaskCatalog.TryParseValue(rawValue, out currentValue);
 
-            using (EquipmentMaskPickerWindow picker = new EquipmentMaskPickerWindow(currentValue))
+            using (EquipmentMaskPickerWindow picker = isUsingTypeMask
+                ? new EquipmentMaskPickerWindow(
+                    currentValue,
+                    EquipmentUsingTypeCatalog.Options,
+                    "Choose equipment using types...",
+                    "Select one or more equipment using types.")
+                : new EquipmentMaskPickerWindow(currentValue))
             {
                 if (picker.ShowDialog(owner) != DialogResult.OK)
                 {
@@ -1562,7 +1750,7 @@ namespace FWEledit
 
                 SetValueCellRawValue(itemGrid, rowIndex, selectedPathId.ToString());
                 IconResolutionService iconResolutionService = new IconResolutionService();
-                itemGrid.Rows[rowIndex].Cells[2].Value = iconResolutionService.FormatIconPathIdDisplay(database, selectedPathId.ToString());
+                itemGrid.Rows[rowIndex].Cells[2].Value = iconResolutionService.FormatIconPathIdDisplay(database, listCollection, listIndex, selectedPathId.ToString());
             }
         }
 
@@ -1606,7 +1794,11 @@ namespace FWEledit
                 return;
             }
 
-            int pathId = TryGetCurrentPathId(itemGrid, rowIndex, modelPickerService, pathIdResolutionService);
+            int previewRowIndex = ResolveGenderAwareModelPreviewRow(itemGrid, rowIndex, modelPickerService, pathIdResolutionService);
+            string previewFieldName = previewRowIndex == rowIndex
+                ? fieldName
+                : ValueGridFieldNameService.GetFieldName(itemGrid, previewRowIndex);
+            int pathId = TryGetCurrentPathId(itemGrid, previewRowIndex, modelPickerService, pathIdResolutionService);
             if (enableLivePreview
                 && modelPreviewService != null
                 && modelPreviewService.IsPreviewWindowOpen()
@@ -1646,7 +1838,7 @@ namespace FWEledit
                         assetManager,
                         database,
                         pathId,
-                        fieldName,
+                        previewFieldName,
                         listName,
                         modelPickerService,
                         out meshData,
@@ -1846,6 +2038,141 @@ namespace FWEledit
             }
 
             return pathIdResolutionService.TryGetCurrentPathId(itemGrid, rowIndex, extractor);
+        }
+
+        private static int ResolveGenderAwareModelPreviewRow(
+            DataGridView itemGrid,
+            int currentRowIndex,
+            ModelPickerService modelPickerService,
+            PathIdResolutionService pathIdResolutionService)
+        {
+            int gender = ResolveItemGenderValue(itemGrid);
+            if (gender != 0 && gender != 1)
+            {
+                return currentRowIndex;
+            }
+
+            string currentFieldName = ValueGridFieldNameService.GetFieldName(itemGrid, currentRowIndex);
+            if (string.IsNullOrWhiteSpace(currentFieldName))
+            {
+                return currentRowIndex;
+            }
+
+            bool currentIsFemale = IsFemaleModelFieldName(currentFieldName);
+            bool currentIsMale = IsMaleModelFieldName(currentFieldName);
+            bool wantsFemale = gender == 1;
+            if ((wantsFemale && currentIsFemale) || (!wantsFemale && currentIsMale))
+            {
+                return currentRowIndex;
+            }
+
+            string neutralKey = NormalizeGenderedModelFieldName(currentFieldName);
+            int bestRow = -1;
+            for (int i = 0; i < itemGrid.Rows.Count; i++)
+            {
+                if (i == currentRowIndex)
+                {
+                    continue;
+                }
+
+                string candidateFieldName = ValueGridFieldNameService.GetFieldName(itemGrid, i);
+                if (string.IsNullOrWhiteSpace(candidateFieldName))
+                {
+                    continue;
+                }
+
+                if (wantsFemale)
+                {
+                    if (!IsFemaleModelFieldName(candidateFieldName))
+                    {
+                        continue;
+                    }
+                }
+                else if (!IsMaleModelFieldName(candidateFieldName))
+                {
+                    continue;
+                }
+
+                if (!string.Equals(neutralKey, NormalizeGenderedModelFieldName(candidateFieldName), StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                int candidatePathId = TryGetCurrentPathId(itemGrid, i, modelPickerService, pathIdResolutionService);
+                if (candidatePathId <= 0)
+                {
+                    continue;
+                }
+
+                bestRow = i;
+                break;
+            }
+
+            return bestRow >= 0 ? bestRow : currentRowIndex;
+        }
+
+        private static int ResolveItemGenderValue(DataGridView itemGrid)
+        {
+            if (itemGrid == null || itemGrid.Rows == null)
+            {
+                return -1;
+            }
+
+            for (int i = 0; i < itemGrid.Rows.Count; i++)
+            {
+                string fieldName = ValueGridFieldNameService.GetFieldName(itemGrid, i);
+                if (!IsItemGenderFieldName(fieldName))
+                {
+                    continue;
+                }
+
+                string raw = GetValueCellRawValue(itemGrid, i);
+                string normalized = GenderTypeCatalog.NormalizeInput(raw);
+                if (int.TryParse(normalized, NumberStyles.Integer, CultureInfo.InvariantCulture, out int gender))
+                {
+                    return gender;
+                }
+            }
+
+            return -1;
+        }
+
+        private static bool IsItemGenderFieldName(string fieldName)
+        {
+            if (string.IsNullOrWhiteSpace(fieldName))
+            {
+                return false;
+            }
+
+            string normalized = fieldName.Trim();
+            return string.Equals(normalized, "gender", StringComparison.OrdinalIgnoreCase)
+                || GenderTypeCatalog.IsGenderTypeFieldName(normalized);
+        }
+
+        private static bool IsFemaleModelFieldName(string fieldName)
+        {
+            return !string.IsNullOrWhiteSpace(fieldName)
+                && fieldName.IndexOf("female", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static bool IsMaleModelFieldName(string fieldName)
+        {
+            return !string.IsNullOrWhiteSpace(fieldName)
+                && fieldName.IndexOf("male", StringComparison.OrdinalIgnoreCase) >= 0
+                && fieldName.IndexOf("female", StringComparison.OrdinalIgnoreCase) < 0;
+        }
+
+        private static string NormalizeGenderedModelFieldName(string fieldName)
+        {
+            if (string.IsNullOrWhiteSpace(fieldName))
+            {
+                return string.Empty;
+            }
+
+            string normalized = fieldName.Trim();
+            normalized = Regex.Replace(normalized, "female", "{gender}", RegexOptions.IgnoreCase);
+            normalized = Regex.Replace(normalized, "male", "{gender}", RegexOptions.IgnoreCase);
+            return normalized;
         }
 
         private static string GetValueCellRawValue(DataGridView itemGrid, int rowIndex)

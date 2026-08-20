@@ -20,6 +20,19 @@ namespace FWEledit
                 return gridRowIndex;
             }
 
+            object rowTag = grid.Rows[gridRowIndex].Tag;
+            if (rowTag is int)
+            {
+                int taggedIndex = (int)rowTag;
+                if (taggedIndex >= 0
+                    && listCollection.Lists[listIndex] != null
+                    && listCollection.Lists[listIndex].elementValues != null
+                    && taggedIndex < listCollection.Lists[listIndex].elementValues.Length)
+                {
+                    return taggedIndex;
+                }
+            }
+
             if (listCollection.Lists[listIndex].elementFields == null || listCollection.Lists[listIndex].elementFields.Length == 0)
             {
                 return gridRowIndex;

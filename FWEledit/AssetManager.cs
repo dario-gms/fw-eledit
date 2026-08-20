@@ -22,6 +22,7 @@ namespace FWEledit
 {
     public class AssetManager
     {
+        private const int FwPckVersionId = 4;
         private readonly ISessionService sessionService;
         public static string GameRootPath = string.Empty;
         public static string WorkspaceRootPath = string.Empty;
@@ -38,8 +39,6 @@ namespace FWEledit
         private SortedList<int, string> imagesById;
         private SortedList<string, Point> imageposition;
         private List<string> arrTheme;
-        private Dictionary<string, List<string>> resourceFileIndex = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
-        private string indexedGameRoot = string.Empty;
         private bool triedExtractConfigsPck = false;
         private bool triedExtractSurfacesPck = false;
         private bool triedExtractModelsPck = false;
@@ -50,6 +49,12 @@ namespace FWEledit
         private readonly SortedList<int, string> pendingPathDataEntries = new SortedList<int, string>();
         private readonly PckEntryReaderService pckEntryReaderService = new PckEntryReaderService();
         private readonly object loadSync = new object();
+        private readonly object itemDescriptionCacheSync = new object();
+        private string cachedItemDescriptionSignature = string.Empty;
+        private string cachedItemDescriptionPath = string.Empty;
+        private byte[] cachedItemDescriptionPayload = null;
+        private readonly object directImageFallbackSync = new object();
+        private readonly Dictionary<string, string> directImageFallbackPathCache = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
         public static object anydata;
 
@@ -61,6 +66,44 @@ namespace FWEledit
         public AssetManager(ISessionService sessionService)
         {
             this.sessionService = sessionService ?? new SessionService();
+        }
+
+        public sealed class PathDataImportState
+        {
+            internal SortedList<int, string> PathById { get; set; }
+            internal SortedList<int, string> PendingEntries { get; set; }
+            internal bool PathDataDirty { get; set; }
+        }
+
+        public PathDataImportState CapturePathDataImportState()
+        {
+            return new PathDataImportState
+            {
+                PathById = database.pathById != null
+                    ? new SortedList<int, string>(database.pathById)
+                    : null,
+                PendingEntries = new SortedList<int, string>(pendingPathDataEntries),
+                PathDataDirty = pathDataDirty
+            };
+        }
+
+        public void RestorePathDataImportState(PathDataImportState state)
+        {
+            if (state == null)
+            {
+                return;
+            }
+
+            database.pathById = state.PathById != null
+                ? new SortedList<int, string>(state.PathById)
+                : null;
+            pendingPathDataEntries.Clear();
+            foreach (KeyValuePair<int, string> pair in state.PendingEntries ?? new SortedList<int, string>())
+            {
+                pendingPathDataEntries[pair.Key] = pair.Value;
+            }
+            pathDataDirty = state.PathDataDirty;
+            TouchPathDataRevision();
         }
 
         public void SetGameRootFromElements(string elementsFilePath)
@@ -80,8 +123,6 @@ namespace FWEledit
                     sourceBitmap = null;
                     database = new CacheSave();
                     firstLoad = true;
-                    resourceFileIndex = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
-                    indexedGameRoot = string.Empty;
                     triedExtractConfigsPck = false;
                     triedExtractSurfacesPck = false;
                     triedExtractModelsPck = false;
@@ -90,6 +131,7 @@ namespace FWEledit
                     dirtyPackages.Clear();
                     pathDataDirty = false;
                     pendingPathDataEntries.Clear();
+                    ClearDirectImageFallbackCache();
                     lock (loadSync)
                     {
                         imagesx = null;
@@ -263,11 +305,10 @@ namespace FWEledit
                     mustExtract = pckTime > dirTime;
 
                     if (!mustExtract
-                        && string.Equals(packageName, "configs", StringComparison.OrdinalIgnoreCase))
+                        && string.Equals(packageName, "configs", StringComparison.OrdinalIgnoreCase)
+                        && !ExtractedConfigsHasItemDescription(extractedDir))
                     {
-                        string itemExtDescDirect = Path.Combine(extractedDir, "item_ext_desc.txt");
-                        string itemExtDescData = Path.Combine(extractedDir, "data", "item_ext_desc.txt");
-                        mustExtract = !File.Exists(itemExtDescDirect) && !File.Exists(itemExtDescData);
+                        mustExtract = true;
                     }
                 }
 
@@ -275,6 +316,8 @@ namespace FWEledit
                 {
                     string backupExtractedDir = extractedDir + ".backup_fweledit";
                     bool hadExistingExtractedDir = Directory.Exists(extractedDir);
+                    bool existingExtractedDirWasUsable = !string.Equals(packageName, "configs", StringComparison.OrdinalIgnoreCase)
+                        || ExtractedConfigsHasItemDescription(extractedDir);
                     try
                     {
                         if (Directory.Exists(backupExtractedDir))
@@ -299,7 +342,7 @@ namespace FWEledit
                     bool extracted = RunPckExtraction(workspacePck);
                     if (!extracted || !Directory.Exists(extractedDir))
                     {
-                        if (hadExistingExtractedDir && Directory.Exists(backupExtractedDir))
+                        if (hadExistingExtractedDir && existingExtractedDirWasUsable && Directory.Exists(backupExtractedDir))
                         {
                             try
                             {
@@ -309,7 +352,7 @@ namespace FWEledit
                             { }
                         }
 
-                        return Directory.Exists(extractedDir);
+                        return existingExtractedDirWasUsable && Directory.Exists(extractedDir);
                     }
 
                     if (Directory.Exists(backupExtractedDir))
@@ -473,10 +516,21 @@ namespace FWEledit
                 string workspaceResources = GetWorkspaceResourcesRoot();
                 if (!string.IsNullOrWhiteSpace(workspaceResources))
                 {
+                    string materializedRoot = Path.Combine(workspaceResources, ".materialized") + "\\";
                     string configsRoot = Path.Combine(workspaceResources, "configs.pck.files") + "\\";
                     string surfacesRoot = Path.Combine(workspaceResources, "surfaces.pck.files") + "\\";
                     string scriptRoot = Path.Combine(workspaceResources, "script.pck.files") + "\\";
 
+                    if (full.StartsWith(materializedRoot, StringComparison.OrdinalIgnoreCase))
+                    {
+                        string relative = full.Substring(materializedRoot.Length);
+                        int slash = relative.IndexOf('\\');
+                        if (slash > 0)
+                        {
+                            dirtyPackages.Add(relative.Substring(0, slash));
+                            return;
+                        }
+                    }
                     if (full.StartsWith(configsRoot, StringComparison.OrdinalIgnoreCase))
                     {
                         dirtyPackages.Add("configs");
@@ -520,6 +574,16 @@ namespace FWEledit
             { }
         }
 
+        public void InvalidateItemDescriptionCache()
+        {
+            lock (itemDescriptionCacheSync)
+            {
+                cachedItemDescriptionSignature = string.Empty;
+                cachedItemDescriptionPath = string.Empty;
+                cachedItemDescriptionPayload = null;
+            }
+        }
+
         public bool ImportStagedPackageAssets(string packageName, string stagingDirectory, out string error)
         {
             error = string.Empty;
@@ -546,8 +610,17 @@ namespace FWEledit
                 Directory.CreateDirectory(gameResources);
                 string gamePck = Path.Combine(gameResources, package + ".pck");
                 string gamePkx = Path.Combine(gameResources, package + ".pkx");
+                string gamePckBackup = gamePck + ".bak";
+                string gamePkxBackup = gamePkx + ".bak";
+                bool hadGamePck = File.Exists(gamePck);
+                bool hadGamePkx = File.Exists(gamePkx);
+                bool packageHasVersion = hadGamePck && PackageContainsVersionFile(package);
+                if (!EnsureStagedPackageVersionFile(package, stagingDirectory, hadGamePck, packageHasVersion, out error))
+                {
+                    return false;
+                }
 
-                if (File.Exists(gamePck))
+                if (hadGamePck)
                 {
                     if (string.Equals(package, "configs", StringComparison.OrdinalIgnoreCase))
                     {
@@ -564,25 +637,45 @@ namespace FWEledit
                         string backupDir = Path.Combine(GameRootPath, "backup_surfaces");
                         CreateTimestampedZipBackup(gamePck, backupDir, "surfaces");
                     }
-                    File.Copy(gamePck, gamePck + ".bak", true);
+                    File.Copy(gamePck, gamePckBackup, true);
                 }
-                if (File.Exists(gamePkx))
+                if (hadGamePkx)
                 {
-                    File.Copy(gamePkx, gamePkx + ".bak", true);
+                    File.Copy(gamePkx, gamePkxBackup, true);
                 }
 
                 int timeoutMs = GetPckOperationTimeoutMs(gamePck, true);
-                if (!RunWinPckHelper("update", stagingDirectory, gamePck, 1, timeoutMs))
+                string updateMode = hadGamePck && packageHasVersion ? "update" : "rebuild";
+                int? createVersionId = string.Equals(updateMode, "rebuild", StringComparison.OrdinalIgnoreCase) ? FwPckVersionId : (int?)null;
+                string helperError;
+                if (!RunWinPckHelper(updateMode, stagingDirectory, gamePck, 1, timeoutMs, out helperError, createVersionId))
                 {
+                    RestorePackageFiles(gamePck, gamePkx, gamePckBackup, gamePkxBackup, hadGamePck, hadGamePkx);
                     System.Threading.Thread.Sleep(750);
-                    if (!RunWinPckHelper("update", stagingDirectory, gamePck, 1, timeoutMs))
+                    if (!RunWinPckHelper(updateMode, stagingDirectory, gamePck, 1, timeoutMs, out helperError, createVersionId))
                     {
+                        RestorePackageFiles(gamePck, gamePkx, gamePckBackup, gamePkxBackup, hadGamePck, hadGamePkx);
                         error = "Failed to update " + package + ".pck";
+                        if (!string.IsNullOrWhiteSpace(helperError))
+                        {
+                            error += Environment.NewLine + helperError;
+                        }
                         return false;
                     }
                 }
 
                 PckEntryReaderService.InvalidatePackageGlobally(package);
+                ClearDirectImageFallbackCache();
+                string validationError;
+                if (!pckEntryReaderService.TryWarmPackageIndex(package, out validationError))
+                {
+                    RestorePackageFiles(gamePck, gamePkx, gamePckBackup, gamePkxBackup, hadGamePck, hadGamePkx);
+                    PckEntryReaderService.InvalidatePackageGlobally(package);
+                    ClearDirectImageFallbackCache();
+                    error = "Updated " + package + ".pck could not be read back, so the previous backup was restored. " + validationError;
+                    return false;
+                }
+
                 PrewarmPackageIndexInBackground(package);
                 return true;
             }
@@ -590,6 +683,514 @@ namespace FWEledit
             {
                 error = ex.Message;
                 return false;
+            }
+        }
+
+        public bool ImportStagedPackageAssetsIncrementalOnly(string packageName, string stagingDirectory, out string error)
+        {
+            error = string.Empty;
+            try
+            {
+                if (string.IsNullOrWhiteSpace(packageName))
+                {
+                    error = "Package name not set.";
+                    return false;
+                }
+                if (string.IsNullOrWhiteSpace(stagingDirectory) || !Directory.Exists(stagingDirectory))
+                {
+                    error = "Staging directory not found.";
+                    return false;
+                }
+                if (string.IsNullOrWhiteSpace(GameRootPath) || !Directory.Exists(GameRootPath))
+                {
+                    error = "Game folder not set.";
+                    return false;
+                }
+
+                string package = packageName.Trim();
+                string gameResources = Path.Combine(GameRootPath, "resources");
+                string gamePck = Path.Combine(gameResources, package + ".pck");
+                string gamePkx = Path.Combine(gameResources, package + ".pkx");
+                if (!File.Exists(gamePck))
+                {
+                    error = "Target package does not exist: " + package + ".pck";
+                    return false;
+                }
+
+                string[] stagedFiles = Directory.GetFiles(stagingDirectory, "*", SearchOption.AllDirectories);
+                if (stagedFiles.Length == 0)
+                {
+                    error = "Staging directory has no files.";
+                    return false;
+                }
+
+                long originalPckLength = new FileInfo(gamePck).Length;
+                long originalPkxLength = File.Exists(gamePkx) ? new FileInfo(gamePkx).Length : 0L;
+                string gamePckBackup = gamePck + ".bak";
+                string gamePkxBackup = gamePkx + ".bak";
+                bool hadGamePkx = File.Exists(gamePkx);
+
+                File.Copy(gamePck, gamePckBackup, true);
+                if (hadGamePkx)
+                {
+                    File.Copy(gamePkx, gamePkxBackup, true);
+                }
+
+                string tempPackageRoot = Path.Combine(Path.GetTempPath(), "FWEledit", "pck-safe-update", package + "-" + Guid.NewGuid().ToString("N"));
+                Directory.CreateDirectory(tempPackageRoot);
+                string tempPck = Path.Combine(tempPackageRoot, package + ".pck");
+                string tempPkx = Path.Combine(tempPackageRoot, package + ".pkx");
+                try
+                {
+                    File.Copy(gamePck, tempPck, true);
+                    if (hadGamePkx)
+                    {
+                        File.Copy(gamePkx, tempPkx, true);
+                    }
+
+                    int timeoutMs = GetPckOperationTimeoutMs(gamePck, false);
+                    string helperError;
+                    if (!RunWinPckHelper("update", stagingDirectory, tempPck, 1, timeoutMs, out helperError))
+                    {
+                        error = "Failed to update " + package + ".pck";
+                        if (!string.IsNullOrWhiteSpace(helperError))
+                        {
+                            error += Environment.NewLine + helperError;
+                        }
+                        return false;
+                    }
+
+                    long updatedPckLength = File.Exists(tempPck) ? new FileInfo(tempPck).Length : 0L;
+                    long updatedPkxLength = File.Exists(tempPkx) ? new FileInfo(tempPkx).Length : 0L;
+                    long originalTotal = originalPckLength + originalPkxLength;
+                    long updatedTotal = updatedPckLength + updatedPkxLength;
+                    if (updatedTotal < Math.Max(4096L, originalTotal / 2L))
+                    {
+                        error = "Updated " + package + ".pck became unexpectedly small; the original package was not changed.";
+                        return false;
+                    }
+
+                    List<string> tempEntries;
+                    string tempValidationError;
+                    if (!pckEntryReaderService.TryEnumeratePackageFileEntries(package, tempPck, File.Exists(tempPkx) ? tempPkx : string.Empty, out tempEntries, out tempValidationError)
+                        || tempEntries == null
+                        || tempEntries.Count == 0)
+                    {
+                        error = "Updated " + package + ".pck could not be read back; the original package was not changed. " + tempValidationError;
+                        return false;
+                    }
+
+                    File.Copy(tempPck, gamePck, true);
+                    if (File.Exists(tempPkx))
+                    {
+                        File.Copy(tempPkx, Path.Combine(gameResources, package + ".pkx"), true);
+                    }
+                    else if (!hadGamePkx && File.Exists(Path.Combine(gameResources, package + ".pkx")))
+                    {
+                        File.Delete(Path.Combine(gameResources, package + ".pkx"));
+                    }
+                }
+                finally
+                {
+                    TryDeleteDirectory(tempPackageRoot);
+                }
+
+                PckEntryReaderService.InvalidatePackageGlobally(package);
+                ClearDirectImageFallbackCache();
+                if (string.Equals(package, "configs", StringComparison.OrdinalIgnoreCase))
+                {
+                    InvalidateItemDescriptionCache();
+                }
+                string validationError;
+                if (!pckEntryReaderService.TryWarmPackageIndex(package, out validationError))
+                {
+                    RestorePackageFiles(gamePck, gamePkx, gamePckBackup, gamePkxBackup, true, hadGamePkx);
+                    PckEntryReaderService.InvalidatePackageGlobally(package);
+                    ClearDirectImageFallbackCache();
+                    if (string.Equals(package, "configs", StringComparison.OrdinalIgnoreCase))
+                    {
+                        InvalidateItemDescriptionCache();
+                    }
+                    error = "Updated " + package + ".pck could not be read back, so the previous backup was restored. " + validationError;
+                    return false;
+                }
+
+                PrewarmPackageIndexInBackground(package);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = ex.Message;
+                return false;
+            }
+        }
+
+        public bool ImportPackageAssetsByRawCopy(
+            string packageName,
+            string sourcePckPath,
+            string sourcePkxPath,
+            IEnumerable<PckRawCopyImportItem> items,
+            out int copied,
+            out string error)
+        {
+            copied = 0;
+            error = string.Empty;
+            try
+            {
+                if (string.IsNullOrWhiteSpace(packageName))
+                {
+                    error = "Package name not set.";
+                    return false;
+                }
+
+                if (string.IsNullOrWhiteSpace(GameRootPath) || !Directory.Exists(GameRootPath))
+                {
+                    error = "Game folder not set.";
+                    return false;
+                }
+
+                if (string.IsNullOrWhiteSpace(sourcePckPath) || !File.Exists(sourcePckPath))
+                {
+                    error = "Source PCK not found.";
+                    return false;
+                }
+
+                string package = packageName.Trim();
+                string gameResources = Path.Combine(GameRootPath, "resources");
+                string gamePck = Path.Combine(gameResources, package + ".pck");
+                string gamePkx = Path.Combine(gameResources, package + ".pkx");
+                if (!File.Exists(gamePck))
+                {
+                    error = "Target package does not exist: " + package + ".pck";
+                    return false;
+                }
+
+                if (string.IsNullOrWhiteSpace(sourcePkxPath) || !File.Exists(sourcePkxPath))
+                {
+                    sourcePkxPath = string.Empty;
+                }
+
+                bool hadGamePkx = File.Exists(gamePkx);
+                if (!hadGamePkx)
+                {
+                    gamePkx = string.Empty;
+                }
+
+                string gamePckBackup = Path.Combine(gameResources, package + ".pck.bak");
+                string gamePkxBackup = string.IsNullOrWhiteSpace(gamePkx) ? string.Empty : Path.Combine(gameResources, package + ".pkx.bak");
+                File.Copy(Path.Combine(gameResources, package + ".pck"), gamePckBackup, true);
+                if (hadGamePkx)
+                {
+                    File.Copy(gamePkx, gamePkxBackup, true);
+                }
+
+                PckRawCopyImportService rawCopy = new PckRawCopyImportService();
+                if (!rawCopy.TryCopyEntries(sourcePckPath, sourcePkxPath, Path.Combine(gameResources, package + ".pck"), gamePkx, items, out copied, out error))
+                {
+                    RestorePackageFiles(Path.Combine(gameResources, package + ".pck"), gamePkx, gamePckBackup, gamePkxBackup, true, hadGamePkx);
+                    return false;
+                }
+
+                string nativeVerifyError;
+                if (!VerifyRawImportedEntriesWithWinPck(package, Path.Combine(gameResources, package + ".pck"), items, out nativeVerifyError))
+                {
+                    RestorePackageFiles(Path.Combine(gameResources, package + ".pck"), gamePkx, gamePckBackup, gamePkxBackup, true, hadGamePkx);
+                    error = nativeVerifyError;
+                    return false;
+                }
+
+                PckEntryReaderService.InvalidatePackageGlobally(package);
+                ClearDirectImageFallbackCache();
+                string validationError;
+                if (!pckEntryReaderService.TryWarmPackageIndex(package, out validationError))
+                {
+                    RestorePackageFiles(Path.Combine(gameResources, package + ".pck"), gamePkx, gamePckBackup, gamePkxBackup, true, hadGamePkx);
+                    PckEntryReaderService.InvalidatePackageGlobally(package);
+                    ClearDirectImageFallbackCache();
+                    error = "Updated " + package + ".pck could not be read back, so the previous backup was restored. " + validationError;
+                    return false;
+                }
+
+                PrewarmPackageIndexInBackground(package);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = ex.Message;
+                return false;
+            }
+        }
+
+        private bool VerifyRawImportedEntriesWithWinPck(string packageName, string targetPck, IEnumerable<PckRawCopyImportItem> items, out string error)
+        {
+            error = string.Empty;
+            string helper = FindWinPckUpdaterExecutable();
+            if (string.IsNullOrWhiteSpace(helper) || !File.Exists(helper))
+            {
+                return true;
+            }
+
+            HashSet<string> paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (PckRawCopyImportItem item in items ?? new PckRawCopyImportItem[0])
+            {
+                string path = NormalizePathInPackage(packageName, item == null ? null : item.TargetRelativePath);
+                if (!string.IsNullOrWhiteSpace(path))
+                {
+                    paths.Add(path);
+                }
+
+                if (paths.Count >= 12)
+                {
+                    break;
+                }
+            }
+
+            foreach (string path in paths)
+            {
+                int exitCode = -1;
+                string stdout = string.Empty;
+                string stderr = string.Empty;
+                ProcessStartInfo psi = new ProcessStartInfo();
+                psi.FileName = helper;
+                psi.Arguments = "verify " + QuoteProcessArgument(targetPck) + " " + QuoteProcessArgument(path);
+                psi.WorkingDirectory = Path.GetDirectoryName(helper);
+                psi.UseShellExecute = false;
+                psi.RedirectStandardOutput = true;
+                psi.RedirectStandardError = true;
+                psi.CreateNoWindow = true;
+                psi.WindowStyle = ProcessWindowStyle.Hidden;
+
+                bool completed;
+                using (Process process = Process.Start(psi))
+                {
+                    completed = process != null && WaitForProcessWithOutput(process, 30000, out exitCode, out stdout, out stderr);
+                }
+                if (!completed || exitCode != 0)
+                {
+                    TryWriteWinPckLog(targetPck, helper, exitCode, stdout, stderr);
+                    error = "Updated " + packageName + ".pck was restored because WinPCK could not see imported entry: " + path;
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private static string NormalizePathInPackage(string packageName, string path)
+        {
+            string value = (path ?? string.Empty).Replace('/', '\\').Trim().TrimStart('\\');
+            while (value.Contains("\\\\"))
+            {
+                value = value.Replace("\\\\", "\\");
+            }
+
+            string prefix = (packageName ?? string.Empty).Trim().Trim('\\') + "\\";
+            if (!string.IsNullOrWhiteSpace(prefix) && value.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            {
+                value = value.Substring(prefix.Length);
+            }
+
+            return value;
+        }
+
+        private static string QuoteProcessArgument(string value)
+        {
+            return "\"" + (value ?? string.Empty).Replace("\"", "\\\"") + "\"";
+        }
+
+        private bool EnsureStagedPackageVersionFile(string packageName, string stagingDirectory, bool packageAlreadyExists, bool packageHasVersion, out string error)
+        {
+            error = string.Empty;
+            string stagedVersionPath = Path.Combine(stagingDirectory, "version.sw");
+            if (File.Exists(stagedVersionPath))
+            {
+                return true;
+            }
+
+            if (packageHasVersion)
+            {
+                return true;
+            }
+
+            byte[] versionPayload;
+            if (TryReadVersionFileFromClientPackages(packageName, out versionPayload))
+            {
+                Directory.CreateDirectory(stagingDirectory);
+                File.WriteAllBytes(stagedVersionPath, versionPayload);
+                return true;
+            }
+
+            if (packageAlreadyExists)
+            {
+                return true;
+            }
+
+            error = "Cannot create " + packageName + ".pck because version.sw was not found in the target client PCKs.";
+            return false;
+        }
+
+        private bool PackageContainsVersionFile(string packageName)
+        {
+            byte[] payload;
+            string readError;
+            return TryReadPackageEntry(packageName, "version.sw", out payload, out readError)
+                && payload != null;
+        }
+
+        private bool TryReadVersionFileFromClientPackages(string preferredPackage, out byte[] payload)
+        {
+            payload = null;
+            string[] candidates = new string[]
+            {
+                preferredPackage,
+                "configs",
+                "interfaces",
+                "script",
+                "surfaces",
+                "gfx",
+                "models",
+                "models2",
+                "shaders",
+                "sfx",
+                "textures",
+                "building",
+                "litmodels",
+                "loddata",
+                "grasses"
+            };
+
+            HashSet<string> visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (string candidate in candidates)
+            {
+                if (string.IsNullOrWhiteSpace(candidate) || !visited.Add(candidate.Trim()))
+                {
+                    continue;
+                }
+
+                string readError;
+                if (TryReadPackageEntry(candidate, "version.sw", out payload, out readError)
+                    && payload != null)
+                {
+                    return true;
+                }
+            }
+
+            payload = null;
+            return false;
+        }
+
+        public bool TryGetPackageEntryKeysExact(string packageName, out HashSet<string> entries, out string error)
+        {
+            entries = null;
+            error = string.Empty;
+            try
+            {
+                if (string.IsNullOrWhiteSpace(packageName) || string.IsNullOrWhiteSpace(GameRootPath))
+                {
+                    error = "Invalid package entry request.";
+                    return false;
+                }
+
+                string normalizedPackage = packageName.Trim();
+                string resourcesRoot = Path.Combine(GameRootPath, "resources");
+                string workspaceResources = GetWorkspaceResourcesRoot();
+                string pckPath = Path.Combine(resourcesRoot, normalizedPackage + ".pck");
+                if (!File.Exists(pckPath) && !string.IsNullOrWhiteSpace(workspaceResources))
+                {
+                    pckPath = Path.Combine(workspaceResources, normalizedPackage + ".pck");
+                }
+                if (!File.Exists(pckPath))
+                {
+                    entries = new HashSet<string>(StringComparer.Ordinal);
+                    return true;
+                }
+
+                string pkxPath = Path.Combine(resourcesRoot, normalizedPackage + ".pkx");
+                if (!File.Exists(pkxPath) && !string.IsNullOrWhiteSpace(workspaceResources))
+                {
+                    pkxPath = Path.Combine(workspaceResources, normalizedPackage + ".pkx");
+                }
+                if (!File.Exists(pkxPath))
+                {
+                    pkxPath = string.Empty;
+                }
+
+                List<string> rawEntries = new List<string>();
+                if (!PckIndexReader.TryEnumerateEntries(normalizedPackage, pckPath, pkxPath, rawEntries))
+                {
+                    error = "Failed to enumerate " + normalizedPackage + ".pck entries.";
+                    return false;
+                }
+
+                entries = new HashSet<string>(rawEntries.Select(NormalizePackageEntryKey), StringComparer.Ordinal);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                entries = null;
+                error = ex.Message;
+                return false;
+            }
+        }
+
+        private static string NormalizePackageEntryKey(string value)
+        {
+            return (value ?? string.Empty)
+                .Trim()
+                .TrimStart('\\', '/')
+                .Replace('/', '\\');
+        }
+
+        private static void RestorePackageFiles(
+            string pckPath,
+            string pkxPath,
+            string pckBackupPath,
+            string pkxBackupPath,
+            bool hadPck,
+            bool hadPkx)
+        {
+            try
+            {
+                if (hadPck && File.Exists(pckBackupPath))
+                {
+                    File.Copy(pckBackupPath, pckPath, true);
+                }
+                else if (!hadPck && File.Exists(pckPath))
+                {
+                    File.Delete(pckPath);
+                }
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                if (hadPkx && File.Exists(pkxBackupPath))
+                {
+                    File.Copy(pkxBackupPath, pkxPath, true);
+                }
+                else if (!hadPkx && File.Exists(pkxPath))
+                {
+                    File.Delete(pkxPath);
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        private static void TryDeleteDirectory(string path)
+        {
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(path) && Directory.Exists(path))
+                {
+                    Directory.Delete(path, true);
+                }
+            }
+            catch
+            {
             }
         }
 
@@ -780,6 +1381,7 @@ namespace FWEledit
 
             AddRoot(WorkspaceRootPath);
             AddRoot(GameRootPath);
+            AddRoot(Path.GetDirectoryName(typeof(AssetManager).Assembly.Location));
             AddRoot(Application.StartupPath);
             AddRoot(Path.GetDirectoryName(Application.StartupPath));
             AddRoot(Path.GetDirectoryName(Path.GetDirectoryName(Application.StartupPath)));
@@ -1040,8 +1642,26 @@ namespace FWEledit
                     }
 
                     string extracted = Path.Combine(workspaceResources, package + ".pck.files");
+                    string materialized = Path.Combine(workspaceResources, ".materialized", package);
                     string workspacePck = Path.Combine(workspaceResources, package + ".pck");
                     string gamePck = Path.Combine(gameResources, package + ".pck");
+
+                    if (Directory.Exists(materialized))
+                    {
+                        string updateError;
+                        if (!ImportStagedPackageAssetsIncrementalOnly(package, materialized, out updateError))
+                        {
+                            summary = updateError;
+                            return false;
+                        }
+                        if (string.Equals(package, "configs", StringComparison.OrdinalIgnoreCase))
+                        {
+                            InvalidateItemDescriptionCache();
+                        }
+                        actions.Add(package + ".pck");
+                        dirtyPackages.Remove(package);
+                        continue;
+                    }
 
                     if (!Directory.Exists(extracted))
                     {
@@ -1082,6 +1702,7 @@ namespace FWEledit
                     actions.Add(package + ".pck");
                     dirtyPackages.Remove(package);
                     PckEntryReaderService.InvalidatePackageGlobally(package);
+                    ClearDirectImageFallbackCache();
                     PrewarmPackageIndexInBackground(package);
                 }
 
@@ -1147,6 +1768,7 @@ namespace FWEledit
                 string workspaceResources = GetWorkspaceResourcesRoot();
                 string gameResources = Path.Combine(GameRootPath, "resources");
                 string extracted = Path.Combine(workspaceResources, package + ".pck.files");
+                string materialized = Path.Combine(workspaceResources, ".materialized", package);
                 string workspacePck = Path.Combine(workspaceResources, package + ".pck");
                 string gamePck = Path.Combine(gameResources, package + ".pck");
 
@@ -1156,9 +1778,27 @@ namespace FWEledit
                     return false;
                 }
 
+                if (Directory.Exists(materialized))
+                {
+                    string updateError;
+                    if (!ImportStagedPackageAssetsIncrementalOnly(package, materialized, out updateError))
+                    {
+                        summary = updateError;
+                        return false;
+                    }
+
+                    dirtyPackages.Remove(package);
+                    if (string.Equals(package, "configs", StringComparison.OrdinalIgnoreCase))
+                    {
+                        InvalidateItemDescriptionCache();
+                    }
+                    summary = "Updated: " + package + ".pck";
+                    return true;
+                }
+
                 if (!Directory.Exists(extracted))
                 {
-                    summary = "Extracted package not found: " + package + ".pck.files";
+                    summary = "No staged files found for " + package + ".pck";
                     return false;
                 }
 
@@ -1196,6 +1836,11 @@ namespace FWEledit
                 File.Copy(workspacePck, gamePck, true);
                 dirtyPackages.Remove(package);
                 PckEntryReaderService.InvalidatePackageGlobally(package);
+                ClearDirectImageFallbackCache();
+                if (string.Equals(package, "configs", StringComparison.OrdinalIgnoreCase))
+                {
+                    InvalidateItemDescriptionCache();
+                }
                 PrewarmPackageIndexInBackground(package);
                 summary = "Updated " + package + ".pck";
                 return true;
@@ -1221,12 +1866,12 @@ namespace FWEledit
             lock (loadSync)
             {
                 EnsureWorkspaceReady();
-                EnsureVisualAssetsLoadedInternal(includeHeavyAssets);
-
                 if (database.pathById == null || database.pathById.Count == 0)
                 {
                     database.pathById = LoadPathById();
                 }
+                ConfigureDirectImageResolution();
+                EnsureVisualAssetsLoadedInternal(includeHeavyAssets);
 
                 if (includeHeavyAssets)
                 {
@@ -1250,11 +1895,12 @@ namespace FWEledit
             lock (loadSync)
             {
                 EnsureWorkspaceReady();
-                EnsureVisualAssetsLoadedInternal(true);
                 if (database.pathById == null || database.pathById.Count == 0)
                 {
                     database.pathById = LoadPathById();
                 }
+                ConfigureDirectImageResolution();
+                EnsureVisualAssetsLoadedInternal(true);
                 sessionService.Database = database;
             }
 
@@ -1276,6 +1922,7 @@ namespace FWEledit
                 {
                     database.pathById = LoadPathById();
                 }
+                ConfigureDirectImageResolution();
 
                 EnsureTaskReferencesUpToDate();
                 EnsureDeferredMetadataLoadedInternal(true);
@@ -1313,6 +1960,287 @@ namespace FWEledit
             LoadSkillList();
             LoadAddonList();
             firstLoad = false;
+        }
+
+        private void ConfigureDirectImageResolution()
+        {
+            database.ContainsDirectImage = CanResolveDirectImageForCache;
+            database.ResolveDirectImageBytes = ResolveDirectImageBytesForCache;
+        }
+
+        private bool CanResolveDirectImageForCache(string relativePath)
+        {
+            if (!LooksLikeDirectImagePath(relativePath))
+            {
+                return false;
+            }
+
+            return ResolveDirectImageBytesForCache(relativePath) != null;
+        }
+
+        private byte[] ResolveDirectImageBytesForCache(string relativePath)
+        {
+            if (!LooksLikeDirectImagePath(relativePath))
+            {
+                return null;
+            }
+
+            string normalizedRelative = NormalizeMaterializedRelativePath(relativePath);
+            if (string.IsNullOrWhiteSpace(normalizedRelative))
+            {
+                return null;
+            }
+
+            List<string> packageCandidates = BuildResourcePackageCandidates(normalizedRelative);
+            for (int p = 0; p < packageCandidates.Count; p++)
+            {
+                string package = packageCandidates[p];
+                if (string.IsNullOrWhiteSpace(package))
+                {
+                    continue;
+                }
+
+                List<string> relativeCandidates = BuildMaterializationRelativeCandidates(package, normalizedRelative);
+                for (int r = 0; r < relativeCandidates.Count; r++)
+                {
+                    string candidateRelative = relativeCandidates[r];
+                    if (!string.IsNullOrWhiteSpace(candidateRelative)
+                        && pckEntryReaderService.TryReadFile(package, candidateRelative, out byte[] payload, out string _)
+                        && payload != null
+                        && payload.Length > 0)
+                    {
+                        return payload;
+                    }
+                }
+
+                if (TryResolveDirectImageFallbackPath(package, normalizedRelative, out string fallbackRelative)
+                    && !string.IsNullOrWhiteSpace(fallbackRelative)
+                    && pckEntryReaderService.TryReadFile(package, fallbackRelative, out byte[] fallbackPayload, out string _)
+                    && fallbackPayload != null
+                    && fallbackPayload.Length > 0)
+                {
+                    return fallbackPayload;
+                }
+            }
+
+            return null;
+        }
+
+        private bool TryResolveDirectImageFallbackPath(string package, string normalizedRelative, out string resolvedRelative)
+        {
+            resolvedRelative = string.Empty;
+            if (string.IsNullOrWhiteSpace(package) || string.IsNullOrWhiteSpace(normalizedRelative))
+            {
+                return false;
+            }
+
+            string cacheKey = package.Trim().ToLowerInvariant() + "|" + normalizedRelative.Trim().Replace('/', '\\').ToLowerInvariant();
+            lock (directImageFallbackSync)
+            {
+                if (directImageFallbackPathCache.TryGetValue(cacheKey, out resolvedRelative))
+                {
+                    return !string.IsNullOrWhiteSpace(resolvedRelative);
+                }
+            }
+
+            string bestEntry = string.Empty;
+            int bestScore = 0;
+            if (pckEntryReaderService.TryEnumerateEntries(package, out List<string> entries, out string _)
+                && entries != null
+                && entries.Count > 0)
+            {
+                string requestedExtension = Path.GetExtension(normalizedRelative);
+                for (int i = 0; i < entries.Count; i++)
+                {
+                    string entry = entries[i];
+                    if (string.IsNullOrWhiteSpace(entry) || !IsSupportedDirectImageExtension(entry))
+                    {
+                        continue;
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(requestedExtension)
+                        && !string.Equals(Path.GetExtension(entry), requestedExtension, StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    int score = ScoreDirectImageFallback(normalizedRelative, entry);
+                    if (score > bestScore
+                        || (score == bestScore
+                            && score > 0
+                            && IsPreferredDirectImageFallback(entry, bestEntry)))
+                    {
+                        bestScore = score;
+                        bestEntry = entry;
+                    }
+                }
+            }
+
+            if (bestScore < 45)
+            {
+                bestEntry = string.Empty;
+            }
+
+            lock (directImageFallbackSync)
+            {
+                directImageFallbackPathCache[cacheKey] = bestEntry ?? string.Empty;
+            }
+
+            resolvedRelative = bestEntry ?? string.Empty;
+            return !string.IsNullOrWhiteSpace(resolvedRelative);
+        }
+
+        private void ClearDirectImageFallbackCache()
+        {
+            lock (directImageFallbackSync)
+            {
+                directImageFallbackPathCache.Clear();
+            }
+        }
+
+        private static int ScoreDirectImageFallback(string requestedRelative, string candidateRelative)
+        {
+            string requestedName = Path.GetFileName(requestedRelative) ?? string.Empty;
+            string candidateName = Path.GetFileName(candidateRelative) ?? string.Empty;
+            string requestedBase = NormalizeDirectImageMatchText(Path.GetFileNameWithoutExtension(requestedName));
+            string candidateBase = NormalizeDirectImageMatchText(Path.GetFileNameWithoutExtension(candidateName));
+            if (string.IsNullOrWhiteSpace(requestedBase) || string.IsNullOrWhiteSpace(candidateBase))
+            {
+                return 0;
+            }
+
+            int score = 0;
+            if (string.Equals(requestedName, candidateName, StringComparison.OrdinalIgnoreCase))
+            {
+                score += 1000;
+            }
+            if (string.Equals(requestedBase, candidateBase, StringComparison.OrdinalIgnoreCase))
+            {
+                score += 800;
+            }
+            if (requestedBase.IndexOf(candidateBase, StringComparison.OrdinalIgnoreCase) >= 0
+                || candidateBase.IndexOf(requestedBase, StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                score += Math.Min(requestedBase.Length, candidateBase.Length) * 12;
+            }
+
+            int common = LongestCommonSubstringLength(requestedBase, candidateBase);
+            score += common * 10;
+
+            string candidatePath = candidateRelative.Replace('/', '\\');
+            if (candidatePath.IndexOf("\\icon\\", StringComparison.OrdinalIgnoreCase) >= 0
+                || candidatePath.IndexOf("\\图标\\", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                score += 20;
+            }
+            if (candidatePath.StartsWith("icon\\", StringComparison.OrdinalIgnoreCase)
+                || candidatePath.StartsWith("图标\\", StringComparison.OrdinalIgnoreCase))
+            {
+                score += 15;
+            }
+
+            return score;
+        }
+
+        private static bool IsPreferredDirectImageFallback(string candidate, string current)
+        {
+            if (string.IsNullOrWhiteSpace(current))
+            {
+                return true;
+            }
+
+            int candidateLength = (candidate ?? string.Empty).Length;
+            int currentLength = (current ?? string.Empty).Length;
+            if (candidateLength != currentLength)
+            {
+                return candidateLength < currentLength;
+            }
+
+            return string.Compare(candidate, current, StringComparison.OrdinalIgnoreCase) < 0;
+        }
+
+        private static string NormalizeDirectImageMatchText(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return string.Empty;
+            }
+
+            StringBuilder builder = new StringBuilder(value.Length);
+            for (int i = 0; i < value.Length; i++)
+            {
+                char c = value[i];
+                if (char.IsWhiteSpace(c) || c == '_' || c == '-' || c == '.' || c == '(' || c == ')' || c == '[' || c == ']')
+                {
+                    continue;
+                }
+
+                builder.Append(char.ToLowerInvariant(c));
+            }
+
+            return builder.ToString();
+        }
+
+        private static int LongestCommonSubstringLength(string left, string right)
+        {
+            if (string.IsNullOrEmpty(left) || string.IsNullOrEmpty(right))
+            {
+                return 0;
+            }
+
+            int[] previous = new int[right.Length + 1];
+            int[] current = new int[right.Length + 1];
+            int best = 0;
+            for (int i = 1; i <= left.Length; i++)
+            {
+                for (int j = 1; j <= right.Length; j++)
+                {
+                    if (left[i - 1] == right[j - 1])
+                    {
+                        current[j] = previous[j - 1] + 1;
+                        if (current[j] > best)
+                        {
+                            best = current[j];
+                        }
+                    }
+                    else
+                    {
+                        current[j] = 0;
+                    }
+                }
+
+                int[] swap = previous;
+                previous = current;
+                current = swap;
+                Array.Clear(current, 0, current.Length);
+            }
+
+            return best;
+        }
+
+        private static bool LooksLikeDirectImagePath(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return false;
+            }
+
+            string normalized = value.Trim().Replace('/', '\\').TrimStart('\\');
+            if (normalized.IndexOf('\\') < 0)
+            {
+                return false;
+            }
+
+            return IsSupportedDirectImageExtension(normalized);
+        }
+
+        private static bool IsSupportedDirectImageExtension(string value)
+        {
+            string extension = Path.GetExtension(value ?? string.Empty);
+            return string.Equals(extension, ".dds", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(extension, ".tga", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(extension, ".png", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(extension, ".bmp", StringComparison.OrdinalIgnoreCase);
         }
 
         private string ResolvePathDataFile()
@@ -2294,44 +3222,24 @@ namespace FWEledit
         private string ResolveResourceFile(string relativePath, bool ensureRequiredPackageExtracted)
         {
             string normalizedRelative = (relativePath ?? string.Empty).Replace('/', '\\').TrimStart('\\');
+            normalizedRelative = StripExtractedPackagePrefix(normalizedRelative);
 
-            List<string> roots = new List<string>();
             if (!string.IsNullOrWhiteSpace(WorkspaceRootPath) && Directory.Exists(WorkspaceRootPath))
-            {
-                roots.Add(Path.Combine(WorkspaceRootPath, "resources", "surfaces.pck.files"));
-                roots.Add(Path.Combine(WorkspaceRootPath, "resources", "configs.pck.files"));
-                roots.Add(Path.Combine(WorkspaceRootPath, "resources", "gfx.pck.files"));
-                roots.Add(Path.Combine(WorkspaceRootPath, "resources", "models.pck.files"));
-                roots.Add(Path.Combine(WorkspaceRootPath, "resources", "litmodels.pck.files"));
-                roots.Add(Path.Combine(WorkspaceRootPath, "resources", "moxing.pck.files"));
-            }
-            if (!string.IsNullOrWhiteSpace(GameRootPath) && Directory.Exists(GameRootPath))
-            {
-                roots.Add(Path.Combine(GameRootPath, "resources", "surfaces.pck.files"));
-                roots.Add(Path.Combine(GameRootPath, "resources", "configs.pck.files"));
-                roots.Add(Path.Combine(GameRootPath, "resources", "gfx.pck.files"));
-                roots.Add(Path.Combine(GameRootPath, "resources", "models.pck.files"));
-                roots.Add(Path.Combine(GameRootPath, "resources", "litmodels.pck.files"));
-                roots.Add(Path.Combine(GameRootPath, "resources", "moxing.pck.files"));
-            }
-
-            foreach (string root in roots)
             {
                 try
                 {
-                    string candidate = Path.Combine(root, relativePath);
-                    if (File.Exists(candidate))
+                    string materializedRoot = Path.Combine(WorkspaceRootPath, "resources", ".materialized");
+                    string cached = FindMaterializedResource(materializedRoot, normalizedRelative);
+                    if (!string.IsNullOrWhiteSpace(cached) && File.Exists(cached))
                     {
-                        return candidate;
+                        return cached;
                     }
                 }
-                catch
-                { }
+                catch { }
             }
 
             // No-extract callers (model preview hot path) should not trigger
-            // the expensive global index scan. They can fall back to direct
-            // PCK reads when an extracted file is not present.
+            // materialization. They can fall back to direct PCK reads.
             if (!ensureRequiredPackageExtracted)
             {
                 return string.Empty;
@@ -2341,27 +3249,6 @@ namespace FWEledit
             if (!string.IsNullOrEmpty(materializedCandidate) && File.Exists(materializedCandidate))
             {
                 return materializedCandidate;
-            }
-
-            TryEnsureRequiredPckExtracted(normalizedRelative);
-            foreach (string root in roots)
-            {
-                try
-                {
-                    string candidate = Path.Combine(root, relativePath);
-                    if (File.Exists(candidate))
-                    {
-                        return candidate;
-                    }
-                }
-                catch
-                { }
-            }
-
-            string indexedCandidate = ResolveFromIndexedResources(relativePath);
-            if (!string.IsNullOrEmpty(indexedCandidate))
-            {
-                return indexedCandidate;
             }
 
             return string.Empty;
@@ -2374,6 +3261,7 @@ namespace FWEledit
 
         private string TryMaterializeResourceToWorkspace(string normalizedRelative)
         {
+            normalizedRelative = StripExtractedPackagePrefix(normalizedRelative);
             if (string.IsNullOrWhiteSpace(normalizedRelative)
                 || string.IsNullOrWhiteSpace(GameRootPath)
                 || !Directory.Exists(GameRootPath))
@@ -2405,7 +3293,7 @@ namespace FWEledit
                     continue;
                 }
 
-                string targetRoot = Path.Combine(workspaceResources, package + ".pck.files");
+                string targetRoot = Path.Combine(workspaceResources, ".materialized", package);
                 string primaryTarget = Path.Combine(targetRoot, normalizedRelative);
                 if (File.Exists(primaryTarget))
                 {
@@ -2442,6 +3330,45 @@ namespace FWEledit
                     }
                     catch
                     {
+                    }
+                }
+            }
+
+            return string.Empty;
+        }
+
+        private string FindMaterializedResource(string materializedRoot, string normalizedRelative)
+        {
+            if (string.IsNullOrWhiteSpace(materializedRoot)
+                || string.IsNullOrWhiteSpace(normalizedRelative)
+                || !Directory.Exists(materializedRoot))
+            {
+                return string.Empty;
+            }
+
+            List<string> packageCandidates = BuildResourcePackageCandidates(normalizedRelative);
+            for (int i = 0; i < packageCandidates.Count; i++)
+            {
+                string package = packageCandidates[i];
+                if (string.IsNullOrWhiteSpace(package))
+                {
+                    continue;
+                }
+
+                string packageRoot = Path.Combine(materializedRoot, package);
+                string candidate = Path.Combine(packageRoot, normalizedRelative);
+                if (File.Exists(candidate))
+                {
+                    return candidate;
+                }
+
+                List<string> relativeCandidates = BuildMaterializationRelativeCandidates(package, normalizedRelative);
+                for (int r = 0; r < relativeCandidates.Count; r++)
+                {
+                    candidate = Path.Combine(packageRoot, relativeCandidates[r]);
+                    if (File.Exists(candidate))
+                    {
+                        return candidate;
                     }
                 }
             }
@@ -2530,6 +3457,7 @@ namespace FWEledit
 
         private static string ExtractKnownPackagePrefix(string normalizedRelative)
         {
+            normalizedRelative = StripExtractedPackagePrefix(normalizedRelative);
             if (string.IsNullOrWhiteSpace(normalizedRelative))
             {
                 return string.Empty;
@@ -2557,8 +3485,40 @@ namespace FWEledit
             return string.Empty;
         }
 
+        private static string StripExtractedPackagePrefix(string relativePath)
+        {
+            string normalized = (relativePath ?? string.Empty).Replace('/', '\\').Trim().TrimStart('\\');
+            if (string.IsNullOrWhiteSpace(normalized))
+            {
+                return string.Empty;
+            }
+
+            if (normalized.StartsWith("resources\\", StringComparison.OrdinalIgnoreCase))
+            {
+                normalized = normalized.Substring("resources\\".Length);
+            }
+
+            for (int i = 0; i < ModelPickerCatalog.PathPackages.Length; i++)
+            {
+                string prefix = ModelPickerCatalog.PathPackages[i] + ".pck.files\\";
+                if (normalized.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    return normalized.Substring(prefix.Length);
+                }
+            }
+
+            string configsPrefix = "configs.pck.files\\";
+            if (normalized.StartsWith(configsPrefix, StringComparison.OrdinalIgnoreCase))
+            {
+                return normalized.Substring(configsPrefix.Length);
+            }
+
+            return normalized;
+        }
+
         private List<string> BuildMaterializationRelativeCandidates(string package, string normalizedRelative)
         {
+            normalizedRelative = StripExtractedPackagePrefix(normalizedRelative);
             List<string> candidates = new List<string>(8);
             HashSet<string> seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             AddMaterializationRelativeCandidate(candidates, seen, normalizedRelative);
@@ -2579,6 +3539,11 @@ namespace FWEledit
                 if (!string.IsNullOrWhiteSpace(fileName) && normalizedRelative.IndexOf('\\') < 0)
                 {
                     AddMaterializationRelativeCandidate(candidates, seen, Path.Combine("data", fileName));
+                }
+                else if (!string.IsNullOrWhiteSpace(fileName)
+                    && normalizedRelative.StartsWith("data\\", StringComparison.OrdinalIgnoreCase))
+                {
+                    AddMaterializationRelativeCandidate(candidates, seen, fileName);
                 }
             }
 
@@ -2602,131 +3567,6 @@ namespace FWEledit
             candidates.Add(normalized);
         }
 
-        private void EnsureResourceIndex()
-        {
-            if (string.IsNullOrWhiteSpace(GameRootPath) || !Directory.Exists(GameRootPath))
-            {
-                return;
-            }
-            if (string.Equals(indexedGameRoot, GameRootPath, StringComparison.OrdinalIgnoreCase) && resourceFileIndex.Count > 0)
-            {
-                return;
-            }
-
-            resourceFileIndex = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
-            List<string> scanRoots = new List<string>
-            {
-                Path.Combine(WorkspaceRootPath ?? string.Empty, "resources", "surfaces.pck.files"),
-                Path.Combine(WorkspaceRootPath ?? string.Empty, "resources", "configs.pck.files"),
-                Path.Combine(WorkspaceRootPath ?? string.Empty, "resources", "gfx.pck.files"),
-                Path.Combine(WorkspaceRootPath ?? string.Empty, "resources", "models.pck.files"),
-                Path.Combine(WorkspaceRootPath ?? string.Empty, "resources", "litmodels.pck.files"),
-                Path.Combine(WorkspaceRootPath ?? string.Empty, "resources", "moxing.pck.files"),
-                Path.Combine(GameRootPath, "resources", "surfaces.pck.files"),
-                Path.Combine(GameRootPath, "resources", "configs.pck.files"),
-                Path.Combine(GameRootPath, "resources", "gfx.pck.files"),
-                Path.Combine(GameRootPath, "resources", "models.pck.files"),
-                Path.Combine(GameRootPath, "resources", "litmodels.pck.files"),
-                Path.Combine(GameRootPath, "resources", "moxing.pck.files")
-            };
-
-            foreach (string root in scanRoots)
-            {
-                if (!Directory.Exists(root))
-                {
-                    continue;
-                }
-                try
-                {
-                    string[] files = Directory.GetFiles(root, "*.*", SearchOption.AllDirectories);
-                    for (int i = 0; i < files.Length; i++)
-                    {
-                        string name = Path.GetFileName(files[i]);
-                        if (string.IsNullOrWhiteSpace(name))
-                        {
-                            continue;
-                        }
-                        List<string> list;
-                        if (!resourceFileIndex.TryGetValue(name, out list))
-                        {
-                            list = new List<string>();
-                            resourceFileIndex[name] = list;
-                        }
-                        list.Add(files[i]);
-                    }
-                }
-                catch
-                { }
-            }
-
-            indexedGameRoot = GameRootPath;
-        }
-
-        private string ResolveFromIndexedResources(string relativePath)
-        {
-            if (string.IsNullOrWhiteSpace(relativePath))
-            {
-                return string.Empty;
-            }
-
-            EnsureResourceIndex();
-            string fileName = Path.GetFileName(relativePath);
-            if (string.IsNullOrWhiteSpace(fileName) || resourceFileIndex.Count == 0)
-            {
-                return string.Empty;
-            }
-
-            List<string> candidates;
-            if (!resourceFileIndex.TryGetValue(fileName, out candidates) || candidates.Count == 0)
-            {
-                return string.Empty;
-            }
-
-            string normalizedRelative = relativePath.Replace('/', '\\').TrimStart('\\');
-            string best = string.Empty;
-            int bestScore = int.MinValue;
-            for (int i = 0; i < candidates.Count; i++)
-            {
-                string p = candidates[i];
-                int score = 0;
-                string normalizedPath = p.Replace('/', '\\');
-                if (normalizedPath.EndsWith(normalizedRelative, StringComparison.OrdinalIgnoreCase))
-                {
-                    score += 60;
-                }
-                if (normalizedPath.IndexOf("\\resources\\surfaces.pck.files\\", StringComparison.OrdinalIgnoreCase) >= 0)
-                {
-                    score += 40;
-                }
-                if (normalizedPath.IndexOf("\\resources\\configs.pck.files\\", StringComparison.OrdinalIgnoreCase) >= 0)
-                {
-                    score += 35;
-                }
-                if (normalizedPath.IndexOf("\\resources\\", StringComparison.OrdinalIgnoreCase) >= 0)
-                {
-                    score += 25;
-                }
-                if (normalizedRelative.StartsWith("data\\", StringComparison.OrdinalIgnoreCase) &&
-                    normalizedPath.IndexOf("\\data\\", StringComparison.OrdinalIgnoreCase) >= 0)
-                {
-                    score += 15;
-                }
-                if (normalizedRelative.StartsWith("surfaces\\", StringComparison.OrdinalIgnoreCase) &&
-                    normalizedPath.IndexOf("\\surfaces\\", StringComparison.OrdinalIgnoreCase) >= 0)
-                {
-                    score += 15;
-                }
-
-                if (score > bestScore)
-                {
-                    bestScore = score;
-                    best = p;
-                }
-            }
-
-            return best;
-        }
-
         private string ResolveResourceFileAny(params string[] relativePaths)
         {
             for (int i = 0; i < relativePaths.Length; i++)
@@ -2748,6 +3588,216 @@ namespace FWEledit
             }
 
             return ResolveResourceFileAny(relativePaths);
+        }
+
+        public string EnsureItemExtDescriptionFile()
+        {
+            byte[] payload;
+            string materializedPath;
+            string error;
+            return TryEnsureItemExtDescriptionPayload(out payload, out materializedPath, out error)
+                ? materializedPath
+                : string.Empty;
+        }
+
+        public bool TryEnsureItemExtDescriptionPayload(out byte[] payload, out string materializedPath, out string error)
+        {
+            payload = null;
+            materializedPath = string.Empty;
+            error = string.Empty;
+
+            string workspaceResources = GetWorkspaceResourcesRoot();
+            if (string.IsNullOrWhiteSpace(workspaceResources))
+            {
+                error = "Workspace resources path was not resolved.";
+                return false;
+            }
+
+            string signature = GetPackageFileSignature("configs");
+            lock (itemDescriptionCacheSync)
+            {
+                if (!string.IsNullOrWhiteSpace(cachedItemDescriptionSignature)
+                    && string.Equals(cachedItemDescriptionSignature, signature, StringComparison.Ordinal)
+                    && cachedItemDescriptionPayload != null
+                    && cachedItemDescriptionPayload.Length > 0
+                    && !string.IsNullOrWhiteSpace(cachedItemDescriptionPath))
+                {
+                    payload = cachedItemDescriptionPayload;
+                    materializedPath = cachedItemDescriptionPath;
+                    return true;
+                }
+            }
+
+            string targetRoot = Path.Combine(workspaceResources, ".materialized", "configs");
+            string[] candidates = new string[]
+            {
+                "item_ext_desc.txt",
+                Path.Combine("data", "item_ext_desc.txt"),
+                Path.Combine("configs", "item_ext_desc.txt")
+            };
+
+            for (int i = 0; i < candidates.Length; i++)
+            {
+                string candidate = candidates[i];
+                if (TryReadItemDescriptionCandidate(candidate, out byte[] candidatePayload, out string sourceName, out string resolvedRelativePath)
+                    && candidatePayload != null
+                    && candidatePayload.Length > 0)
+                {
+                    string materializedRelativePath = string.IsNullOrWhiteSpace(resolvedRelativePath)
+                        ? candidate
+                        : resolvedRelativePath;
+                    string written = WriteMaterializedResource(targetRoot, materializedRelativePath, candidatePayload);
+                    if (string.IsNullOrWhiteSpace(written))
+                    {
+                        written = Path.Combine(targetRoot, materializedRelativePath);
+                    }
+                    DeleteStaleMaterializedItemDescriptionAliases(targetRoot, materializedRelativePath);
+
+                    lock (itemDescriptionCacheSync)
+                    {
+                        cachedItemDescriptionSignature = signature;
+                        cachedItemDescriptionPath = written;
+                        cachedItemDescriptionPayload = candidatePayload;
+                    }
+
+                    payload = candidatePayload;
+                    materializedPath = written;
+                    return true;
+                }
+            }
+
+            error = "item_ext_desc.txt was not found in configs.pck.";
+            return false;
+        }
+
+        private bool TryReadItemDescriptionCandidate(string relativePath, out byte[] payload, out string sourceName, out string resolvedRelativePath)
+        {
+            payload = null;
+            sourceName = string.Empty;
+            resolvedRelativePath = string.Empty;
+
+            string readError;
+            if (pckEntryReaderService.TryReadFileFast("configs", relativePath, out payload, out resolvedRelativePath, out readError)
+                && payload != null
+                && payload.Length > 0)
+            {
+                sourceName = "resources\\configs.pck:" + resolvedRelativePath;
+                return true;
+            }
+
+            if (EnsureWorkspacePckPrepared("configs", true))
+            {
+                string workspaceResources = GetWorkspaceResourcesRoot();
+                string extractedRoot = Path.Combine(workspaceResources, "configs.pck.files");
+                string extractedPath = Path.Combine(extractedRoot, relativePath);
+                if (File.Exists(extractedPath))
+                {
+                    payload = File.ReadAllBytes(extractedPath);
+                    resolvedRelativePath = relativePath;
+                    sourceName = "resources\\configs.pck:" + relativePath;
+                    return true;
+                }
+            }
+
+            payload = null;
+            return false;
+        }
+
+        private static void DeleteStaleMaterializedItemDescriptionAliases(string targetRoot, string currentRelativePath)
+        {
+            if (string.IsNullOrWhiteSpace(targetRoot))
+            {
+                return;
+            }
+
+            string currentFullPath = Path.GetFullPath(Path.Combine(targetRoot, currentRelativePath ?? string.Empty));
+            string[] aliases = new string[]
+            {
+                "item_ext_desc.txt",
+                Path.Combine("data", "item_ext_desc.txt"),
+                Path.Combine("configs", "item_ext_desc.txt")
+            };
+
+            for (int i = 0; i < aliases.Length; i++)
+            {
+                try
+                {
+                    string aliasFullPath = Path.GetFullPath(Path.Combine(targetRoot, aliases[i]));
+                    if (!string.Equals(aliasFullPath, currentFullPath, StringComparison.OrdinalIgnoreCase)
+                        && File.Exists(aliasFullPath))
+                    {
+                        File.Delete(aliasFullPath);
+                    }
+                }
+                catch
+                {
+                }
+            }
+        }
+
+        private static bool ExtractedConfigsHasItemDescription(string extractedDir)
+        {
+            if (string.IsNullOrWhiteSpace(extractedDir) || !Directory.Exists(extractedDir))
+            {
+                return false;
+            }
+
+            string[] candidates = new string[]
+            {
+                Path.Combine(extractedDir, "configs", "item_ext_desc.txt"),
+                Path.Combine(extractedDir, "data", "item_ext_desc.txt"),
+                Path.Combine(extractedDir, "item_ext_desc.txt")
+            };
+
+            for (int i = 0; i < candidates.Length; i++)
+            {
+                if (File.Exists(candidates[i]))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private string GetPackageFileSignature(string packageName)
+        {
+            try
+            {
+                string normalizedPackage = (packageName ?? string.Empty).Trim();
+                string resourcesRoot = Path.Combine(GameRootPath ?? string.Empty, "resources");
+                string pckPath = Path.Combine(resourcesRoot, normalizedPackage + ".pck");
+                string pkxPath = Path.Combine(resourcesRoot, normalizedPackage + ".pkx");
+                StringBuilder sb = new StringBuilder();
+                AppendFileSignature(sb, pckPath);
+                sb.Append('|');
+                AppendFileSignature(sb, pkxPath);
+                return sb.ToString();
+            }
+            catch
+            {
+                return string.Empty;
+            }
+        }
+
+        private static void AppendFileSignature(StringBuilder sb, string path)
+        {
+            if (sb == null)
+            {
+                return;
+            }
+            if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+            {
+                sb.Append("missing");
+                return;
+            }
+
+            FileInfo info = new FileInfo(path);
+            sb.Append(info.FullName);
+            sb.Append(':');
+            sb.Append(info.Length);
+            sb.Append(':');
+            sb.Append(info.LastWriteTimeUtc.Ticks);
         }
 
         private bool IsConfigRelativePath(string normalizedRelative)
@@ -2792,7 +3842,8 @@ namespace FWEledit
                 return false;
             }
             return normalizedRelative.StartsWith("surfaces\\", StringComparison.OrdinalIgnoreCase)
-                || normalizedRelative.StartsWith("iconset\\", StringComparison.OrdinalIgnoreCase);
+                || normalizedRelative.StartsWith("iconset\\", StringComparison.OrdinalIgnoreCase)
+                || normalizedRelative.StartsWith("sm\\", StringComparison.OrdinalIgnoreCase);
         }
 
         private bool IsModelRelativePath(string normalizedRelative)
@@ -2924,17 +3975,8 @@ namespace FWEledit
                 catch
                 { }
 
-                if (string.Equals(packageName, "configs", StringComparison.OrdinalIgnoreCase)
-                    && !HasRequiredConfigExtractionFiles(outputDirectory)
-                    && RunSpckExtractionForRead(pckFilePath, outputDirectory))
-                {
-                    return true;
-                }
-
                 Directory.Move(tempDirectory, outputDirectory);
-                return Directory.Exists(outputDirectory)
-                    && (!string.Equals(packageName, "configs", StringComparison.OrdinalIgnoreCase)
-                        || HasRequiredConfigExtractionFiles(outputDirectory));
+                return Directory.Exists(outputDirectory);
             }
             catch (Exception ex)
             {
@@ -3003,9 +4045,7 @@ namespace FWEledit
                     }
                 }
 
-                return Directory.Exists(outputDirectory)
-                    && (!string.Equals(Path.GetFileNameWithoutExtension(pckFilePath), "configs", StringComparison.OrdinalIgnoreCase)
-                        || HasRequiredConfigExtractionFiles(outputDirectory));
+                return Directory.Exists(outputDirectory);
             }
             catch (Exception ex)
             {
@@ -3014,35 +4054,45 @@ namespace FWEledit
             }
         }
 
-        private static bool HasRequiredConfigExtractionFiles(string extractedDirectory)
+        private bool RunWinPckHelper(string mode, string sourceDirectory, string targetPckPath, int compressionLevel, int timeoutMs, int? pckVersionId = null)
         {
-            if (string.IsNullOrWhiteSpace(extractedDirectory))
-            {
-                return false;
-            }
-
-            string itemExtDescDirect = Path.Combine(extractedDirectory, "item_ext_desc.txt");
-            string itemExtDescData = Path.Combine(extractedDirectory, "data", "item_ext_desc.txt");
-            return File.Exists(itemExtDescDirect) || File.Exists(itemExtDescData);
+            string ignored;
+            return RunWinPckHelper(mode, sourceDirectory, targetPckPath, compressionLevel, timeoutMs, out ignored, pckVersionId);
         }
 
-        private bool RunWinPckHelper(string mode, string sourceDirectory, string targetPckPath, int compressionLevel, int timeoutMs)
+        private bool RunWinPckHelper(string mode, string sourceDirectory, string targetPckPath, int compressionLevel, int timeoutMs, out string failureDetails, int? pckVersionId = null)
         {
+            failureDetails = string.Empty;
+            string helper = string.Empty;
             try
             {
-                string helper = FindWinPckUpdaterExecutable();
-                if (string.IsNullOrWhiteSpace(helper)
-                    || !File.Exists(helper)
-                    || string.IsNullOrWhiteSpace(sourceDirectory)
-                    || !Directory.Exists(sourceDirectory)
-                    || string.IsNullOrWhiteSpace(targetPckPath))
+                helper = FindWinPckUpdaterExecutable();
+                if (string.IsNullOrWhiteSpace(helper) || !File.Exists(helper))
                 {
+                    failureDetails = "FWPckUpdater.exe was not found.";
                     return false;
                 }
+                if (string.IsNullOrWhiteSpace(sourceDirectory) || !Directory.Exists(sourceDirectory))
+                {
+                    failureDetails = "Staging directory not found: " + (sourceDirectory ?? string.Empty);
+                    return false;
+                }
+                if (string.IsNullOrWhiteSpace(targetPckPath))
+                {
+                    failureDetails = "Target PCK path is empty.";
+                    return false;
+                }
+
+                sourceDirectory = Path.GetFullPath(sourceDirectory);
+                targetPckPath = Path.GetFullPath(targetPckPath);
 
                 ProcessStartInfo psi = new ProcessStartInfo();
                 psi.FileName = helper;
                 psi.Arguments = (mode ?? "rebuild") + " \"" + sourceDirectory + "\" \"" + targetPckPath + "\" " + compressionLevel.ToString();
+                if (pckVersionId.HasValue)
+                {
+                    psi.Arguments += " " + pckVersionId.Value.ToString();
+                }
                 psi.WorkingDirectory = Path.GetDirectoryName(helper);
                 psi.UseShellExecute = false;
                 psi.RedirectStandardOutput = true;
@@ -3064,12 +4114,14 @@ namespace FWEledit
                     if (!exited)
                     {
                         TryWriteWinPckLog(targetPckPath, helper, -1, stdout, "Timed out." + Environment.NewLine + stderr);
+                        failureDetails = BuildWinPckFailureDetails(targetPckPath, -1, stdout, "Timed out." + Environment.NewLine + stderr);
                         return false;
                     }
 
                     if (exitCode != 0)
                     {
                         TryWriteWinPckLog(targetPckPath, helper, exitCode, stdout, stderr);
+                        failureDetails = BuildWinPckFailureDetails(targetPckPath, exitCode, stdout, stderr);
                         return false;
                     }
                     if (!string.IsNullOrWhiteSpace(stderr))
@@ -3080,10 +4132,54 @@ namespace FWEledit
                     return true;
                 }
             }
-            catch
+            catch (Exception ex)
             {
+                TryWriteWinPckLog(targetPckPath, helper, -2, string.Empty, ex.ToString());
+                failureDetails = BuildWinPckFailureDetails(targetPckPath, -2, string.Empty, ex.Message);
                 return false;
             }
+        }
+
+        private string BuildWinPckFailureDetails(string pckFilePath, int exitCode, string stdout, string stderr)
+        {
+            StringBuilder details = new StringBuilder();
+            details.Append("FWPckUpdater exit code: ").Append(exitCode.ToString());
+            string stderrLine = GetFirstNonEmptyLine(stderr);
+            if (!string.IsNullOrWhiteSpace(stderrLine))
+            {
+                details.Append(Environment.NewLine).Append(stderrLine);
+            }
+            else
+            {
+                string stdoutLine = GetFirstNonEmptyLine(stdout);
+                if (!string.IsNullOrWhiteSpace(stdoutLine))
+                {
+                    details.Append(Environment.NewLine).Append(stdoutLine);
+                }
+            }
+            details.Append(Environment.NewLine).Append("Log: ").Append(GetWinPckLogPath(pckFilePath));
+            return details.ToString();
+        }
+
+        private static string GetFirstNonEmptyLine(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return string.Empty;
+            }
+
+            using (StringReader reader = new StringReader(value))
+            {
+                string line;
+                while ((line = reader.ReadLine()) != null)
+                {
+                    if (!string.IsNullOrWhiteSpace(line))
+                    {
+                        return line.Trim();
+                    }
+                }
+            }
+            return string.Empty;
         }
 
         private static bool WaitForProcessWithOutput(Process process, int timeoutMs, out int exitCode, out string stdout, out string stderr)
@@ -3233,13 +4329,8 @@ namespace FWEledit
         {
             try
             {
-                string root = !string.IsNullOrWhiteSpace(WorkspaceRootPath)
-                    ? WorkspaceRootPath
-                    : Path.GetTempPath();
-                string logDir = Path.Combine(root, "winpck_logs");
-                Directory.CreateDirectory(logDir);
-                string name = Path.GetFileName(pckFilePath) ?? "pck";
-                string logPath = Path.Combine(logDir, name + "_update.log");
+                string logPath = GetWinPckLogPath(pckFilePath);
+                Directory.CreateDirectory(Path.GetDirectoryName(logPath));
                 using (StreamWriter sw = new StreamWriter(logPath, false))
                 {
                     sw.WriteLine("pck: " + pckFilePath);
@@ -3253,6 +4344,15 @@ namespace FWEledit
             }
             catch
             { }
+        }
+
+        private string GetWinPckLogPath(string pckFilePath)
+        {
+            string root = !string.IsNullOrWhiteSpace(WorkspaceRootPath)
+                ? WorkspaceRootPath
+                : Path.GetTempPath();
+            string name = Path.GetFileName(pckFilePath) ?? "pck";
+            return Path.Combine(root, "winpck_logs", name + "_update.log");
         }
 
         private void TryWriteSpckLog(string sourcePath, string spckPath, int exitCode, string stdout, string stderr)
@@ -3323,11 +4423,7 @@ namespace FWEledit
             {
                 "configs",
                 "surfaces",
-                "models",
-                "gfx",
-                "grasses",
-                "litmodels",
-                "moxing"
+                "script"
             };
 
             for (int i = 0; i < packages.Length; i++)
@@ -3421,10 +4517,18 @@ namespace FWEledit
         {
             private const uint Key1 = 566434367;
             private const uint Key2 = 408690725;
+            private const uint AngelicaKey1 = 2828235874;
+            private const uint AngelicaKey2 = 4054070867;
             private const int FooterSize = 272;
             private const int PathBytes = 260;
             private const int MinEntrySize = PathBytes + 12;
             private const int MaxEntrySize = 1024 * 1024;
+            private sealed class PckKeySet
+            {
+                public uint EntrySizeKey1 { get; set; }
+                public uint EntrySizeKey2 { get; set; }
+                public uint FileTableOffsetKey { get; set; }
+            }
             private sealed class ExtractablePckEntry
             {
                 public string RelativePath { get; set; }
@@ -3449,7 +4553,7 @@ namespace FWEledit
                     using (PckConcatStream stream = new PckConcatStream(pckPath, pkxPath))
                     using (BinaryReader br = new BinaryReader(stream))
                     {
-                        long length = stream.Length;
+                        long length = GetPackageLogicalLength(stream, br);
                         if (length < FooterSize + 8)
                         {
                             return false;
@@ -3457,7 +4561,8 @@ namespace FWEledit
 
                         uint entryCount;
                         long tableOffset;
-                        if (!TryReadFooter(stream, br, length, out tableOffset, out entryCount))
+                        PckKeySet keySet;
+                        if (!TryReadFooter(stream, br, length, out tableOffset, out entryCount, out keySet))
                         {
                             return false;
                         }
@@ -3467,7 +4572,7 @@ namespace FWEledit
                         for (uint i = 0; i < entryCount; i++)
                         {
                             int entrySize;
-                            if (!TryReadEntrySize(br, length, out entrySize))
+                            if (!TryReadEntrySize(br, length, keySet, out entrySize))
                             {
                                 entrySizeInvalid++;
                                 break;
@@ -3543,7 +4648,7 @@ namespace FWEledit
                     using (PckConcatStream stream = new PckConcatStream(pckPath, pkxPath))
                     using (BinaryReader br = new BinaryReader(stream))
                     {
-                        long length = stream.Length;
+                        long length = GetPackageLogicalLength(stream, br);
                         if (length < FooterSize + 8)
                         {
                             error = "Package is too short.";
@@ -3552,7 +4657,8 @@ namespace FWEledit
 
                         uint entryCount;
                         long tableOffset;
-                        if (!TryReadFooter(stream, br, length, out tableOffset, out entryCount))
+                        PckKeySet keySet;
+                        if (!TryReadFooter(stream, br, length, out tableOffset, out entryCount, out keySet))
                         {
                             error = "Failed to decode package footer.";
                             return false;
@@ -3563,7 +4669,7 @@ namespace FWEledit
                         for (uint i = 0; i < entryCount; i++)
                         {
                             int entrySize;
-                            if (!TryReadEntrySize(br, length, out entrySize))
+                            if (!TryReadEntrySize(br, length, keySet, out entrySize))
                             {
                                 break;
                             }
@@ -3587,7 +4693,7 @@ namespace FWEledit
                             }
 
                             uint rawOffset = BitConverter.ToUInt32(raw, PathBytes + 0);
-                            uint rawCompressedSize = BitConverter.ToUInt32(raw, PathBytes + 4);
+                            uint rawCompressedSize = BitConverter.ToUInt32(raw, PathBytes + 8);
                             if (rawCompressedSize == 0)
                             {
                                 continue;
@@ -3674,7 +4780,7 @@ namespace FWEledit
                     using (PckConcatStream stream = new PckConcatStream(pckPath, pkxPath))
                     using (BinaryReader br = new BinaryReader(stream))
                     {
-                        long length = stream.Length;
+                        long length = GetPackageLogicalLength(stream, br);
                         if (length < FooterSize + 8)
                         {
                             error = "Package is too short.";
@@ -3683,7 +4789,8 @@ namespace FWEledit
 
                         uint entryCount;
                         long tableOffset;
-                        if (!TryReadFooter(stream, br, length, out tableOffset, out entryCount))
+                        PckKeySet keySet;
+                        if (!TryReadFooter(stream, br, length, out tableOffset, out entryCount, out keySet))
                         {
                             error = "Failed to decode package footer.";
                             return false;
@@ -3696,7 +4803,7 @@ namespace FWEledit
                         for (uint i = 0; i < entryCount; i++)
                         {
                             int entrySize;
-                            if (!TryReadEntrySize(br, length, out entrySize))
+                            if (!TryReadEntrySize(br, length, keySet, out entrySize))
                             {
                                 break;
                             }
@@ -3721,7 +4828,7 @@ namespace FWEledit
                             }
 
                             uint rawOffset = BitConverter.ToUInt32(raw, PathBytes + 0);
-                            uint rawCompressedSize = BitConverter.ToUInt32(raw, PathBytes + 4);
+                            uint rawCompressedSize = BitConverter.ToUInt32(raw, PathBytes + 8);
                             if (rawCompressedSize == 0)
                             {
                                 continue;
@@ -3783,10 +4890,51 @@ namespace FWEledit
                 }
             }
 
-            private static bool TryReadFooter(Stream stream, BinaryReader br, long length, out long tableOffset, out uint entryCount)
+            private static long GetPackageLogicalLength(Stream stream, BinaryReader br)
+            {
+                long physicalLength = stream != null ? stream.Length : 0;
+                if (stream == null || br == null || physicalLength < 12)
+                {
+                    return physicalLength;
+                }
+
+                long previous = stream.Position;
+                try
+                {
+                    stream.Seek(0, SeekOrigin.Begin);
+                    uint signature = br.ReadUInt32();
+                    uint logicalLength = br.ReadUInt32();
+                    uint signature2 = br.ReadUInt32();
+                    if (signature == 1305093103
+                        && signature2 == 1453361591
+                        && logicalLength >= 12
+                        && logicalLength <= physicalLength)
+                    {
+                        return logicalLength;
+                    }
+                }
+                catch
+                {
+                }
+                finally
+                {
+                    try
+                    {
+                        stream.Seek(previous, SeekOrigin.Begin);
+                    }
+                    catch
+                    {
+                    }
+                }
+
+                return physicalLength;
+            }
+
+            private static bool TryReadFooter(Stream stream, BinaryReader br, long length, out long tableOffset, out uint entryCount, out PckKeySet keySet)
             {
                 tableOffset = 0;
                 entryCount = 0;
+                keySet = null;
                 if (stream == null || br == null)
                 {
                     return false;
@@ -3803,11 +4951,6 @@ namespace FWEledit
                 {
                     return false;
                 }
-                tableOffset = rawOffset ^ Key1;
-                if (tableOffset < 0 || tableOffset >= length)
-                {
-                    return false;
-                }
 
                 stream.Seek(length - 8, SeekOrigin.Begin);
                 if (!TryReadUInt32(br, out entryCount))
@@ -3819,10 +4962,28 @@ namespace FWEledit
                     return false;
                 }
 
-                return true;
+                PckKeySet[] keySets = new PckKeySet[]
+                {
+                    new PckKeySet { FileTableOffsetKey = Key1, EntrySizeKey1 = Key1, EntrySizeKey2 = Key2 },
+                    new PckKeySet { FileTableOffsetKey = AngelicaKey1, EntrySizeKey1 = AngelicaKey1, EntrySizeKey2 = AngelicaKey2 },
+                    new PckKeySet { FileTableOffsetKey = 0, EntrySizeKey1 = 0, EntrySizeKey2 = 0 }
+                };
+
+                for (int i = 0; i < keySets.Length; i++)
+                {
+                    long candidateOffset = rawOffset ^ keySets[i].FileTableOffsetKey;
+                    if (candidateOffset >= 12 && candidateOffset < length)
+                    {
+                        tableOffset = candidateOffset;
+                        keySet = keySets[i];
+                        return true;
+                    }
+                }
+
+                return false;
             }
 
-            private static bool TryReadEntrySize(BinaryReader br, long length, out int entrySize)
+            private static bool TryReadEntrySize(BinaryReader br, long length, PckKeySet keySet, out int entrySize)
             {
                 entrySize = 0;
                 if (br == null || br.BaseStream == null || br.BaseStream.Position + 8 > length)
@@ -3837,8 +4998,8 @@ namespace FWEledit
                     return false;
                 }
 
-                uint sizeA = sizeX1 ^ Key1;
-                uint sizeB = sizeX2 ^ Key2;
+                uint sizeA = sizeX1 ^ (keySet != null ? keySet.EntrySizeKey1 : Key1);
+                uint sizeB = sizeX2 ^ (keySet != null ? keySet.EntrySizeKey2 : Key2);
                 uint resolvedSize = sizeA == sizeB ? sizeA : 0;
                 if (resolvedSize == 0)
                 {
@@ -4259,14 +5420,6 @@ namespace FWEledit
                     }
                 }
 
-                if (!string.IsNullOrWhiteSpace(GameRootPath))
-                {
-                    string gr = Path.Combine(GameRootPath, "resources", pkgRootName);
-                    if (Directory.Exists(gr))
-                    {
-                        return gr;
-                    }
-                }
             }
             catch
             { }
@@ -4362,16 +5515,7 @@ namespace FWEledit
             // FW production path (same basis used by paid editor).
             if (!string.IsNullOrWhiteSpace(WorkspaceRootPath))
             {
-                string iconsetRoot = Path.Combine(WorkspaceRootPath, "resources", "surfaces.pck.files", "iconset");
-                if (TryFindIconsetPair(iconsetRoot, out sourceFilename, out iconListFilename))
-                {
-                    return true;
-                }
-            }
-
-            if (!string.IsNullOrWhiteSpace(GameRootPath))
-            {
-                string iconsetRoot = Path.Combine(GameRootPath, "resources", "surfaces.pck.files", "iconset");
+                string iconsetRoot = Path.Combine(WorkspaceRootPath, "resources", ".materialized", "surfaces", "iconset");
                 if (TryFindIconsetPair(iconsetRoot, out sourceFilename, out iconListFilename))
                 {
                     return true;
@@ -4532,7 +5676,7 @@ namespace FWEledit
             {
                 string line;
                 arrTheme = new List<string>();
-                string theme_list = ResolveResourceFileAny("theme.txt", Path.Combine("configs.pck.files", "theme.txt"));
+                string theme_list = ResolveResourceFileAny(Path.Combine("data", "theme.txt"), "theme.txt");
                 Encoding enc = Encoding.GetEncoding("GBK");
                 int lines = File.ReadAllLines(theme_list).Length;
                 StreamReader file = new StreamReader(theme_list, enc);
@@ -4568,8 +5712,7 @@ namespace FWEledit
             string iconlist_ivtrm = ResolveResourceFileAny(
                 Path.Combine("data", "item_color.txt"),
                 Path.Combine("configs", "item_color.txt"),
-                "item_color.txt",
-                Path.Combine("configs.pck.files", "item_color.txt"));
+                "item_color.txt");
 
             string extension = Path.GetExtension(iconlist_ivtrm);
             if (extension == ".txt")
@@ -4651,8 +5794,7 @@ namespace FWEledit
             {
                 string path = ResolveResourceFileAny(
                     Path.Combine("data", "item_ext_desc.txt"),
-                    "item_ext_desc.txt",
-                    Path.Combine("configs.pck.files", "item_ext_desc.txt"));
+                    "item_ext_desc.txt");
                 string extension = Path.GetExtension(path);
                 if (File.Exists(path))
                 {
@@ -4839,8 +5981,7 @@ namespace FWEledit
             }
             String path = ResolveResourceFileAny(
                 Path.Combine("data", "skillstr.txt"),
-                "skillstr.txt",
-                Path.Combine("configs.pck.files", "skillstr.txt"));
+                "skillstr.txt");
             if (File.Exists(path))
             {
                 try
@@ -4872,8 +6013,7 @@ namespace FWEledit
             }
             String path = ResolveResourceFileAny(
                 Path.Combine("data", "addon_table.txt"),
-                "addon_table.txt",
-                Path.Combine("configs.pck.files", "addon_table.txt"));
+                "addon_table.txt");
             sessionService.AddonsList = new SortedList();
             if (File.Exists(path))
             {
@@ -4906,8 +6046,7 @@ namespace FWEledit
                 // FW fallback: map addon id -> addon type from item_ext_prop.txt
                 string itemExtPropPath = ResolveResourceFileAny(
                     Path.Combine("data", "item_ext_prop.txt"),
-                    "item_ext_prop.txt",
-                    Path.Combine("configs.pck.files", "item_ext_prop.txt"));
+                    "item_ext_prop.txt");
                 if (File.Exists(itemExtPropPath))
                 {
                     try
@@ -4993,8 +6132,7 @@ namespace FWEledit
             sessionService.LocalizationText = new SortedList();
             string path = ResolveResourceFileAny(
                 Path.Combine("data", "language_en.txt"),
-                "language_en.txt",
-                Path.Combine("configs.pck.files", "language_en.txt"));
+                "language_en.txt");
             if (!File.Exists(path))
             {
                 string editorOverride = Path.Combine(Application.StartupPath ?? string.Empty, "resources", "data", "language_en.txt");
@@ -5025,8 +6163,7 @@ namespace FWEledit
                 // FW builds may not ship language_en.txt; fallback to skillstr key/value pairs.
                 string skillPath = ResolveResourceFileAny(
                     Path.Combine("data", "skillstr.txt"),
-                    "skillstr.txt",
-                    Path.Combine("configs.pck.files", "skillstr.txt"));
+                    "skillstr.txt");
                 if (File.Exists(skillPath))
                 {
                     try
@@ -5279,8 +6416,7 @@ namespace FWEledit
             }
             string path = ResolveResourceFileAny(
                 Path.Combine("data", "buff_str.txt"),
-                "buff_str.txt",
-                Path.Combine("configs.pck.files", "buff_str.txt"));
+                "buff_str.txt");
             if (File.Exists(path))
             {
                 try

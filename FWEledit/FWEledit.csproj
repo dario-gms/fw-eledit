@@ -22,7 +22,7 @@
     <UpdateRequired>false</UpdateRequired>
     <MapFileExtensions>true</MapFileExtensions>
     <ApplicationRevision>0</ApplicationRevision>
-    <ApplicationVersion>0.9.5.21</ApplicationVersion>
+    <ApplicationVersion>0.9.5.22</ApplicationVersion>
     <IsWebBootstrapper>false</IsWebBootstrapper>
     <UseApplicationTrust>false</UseApplicationTrust>
     <BootstrapperEnabled>true</BootstrapperEnabled>
@@ -111,6 +111,7 @@
       <Private>true</Private>
     </Reference>
     <Reference Include="System" />
+    <Reference Include="System.Configuration" />
     <Reference Include="System.Core" />
     <Reference Include="System.IO.Compression" />
     <Reference Include="System.IO.Compression.FileSystem" />
@@ -150,6 +151,7 @@
     <Compile Include="Catalogs\BindFlagCatalog.cs" />
     <Compile Include="Catalogs\EquipmentLocationCatalog.cs" />
     <Compile Include="Catalogs\EquipmentMaskCatalog.cs" />
+    <Compile Include="Catalogs\EquipmentUsingTypeCatalog.cs" />
     <Compile Include="Catalogs\EquipmentTypeCatalog.cs" />
     <Compile Include="Catalogs\ImmuneTypeCatalog.cs" />
     <Compile Include="Catalogs\ProcTypeCatalog.cs" />
@@ -361,6 +363,10 @@
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="MainWindow.NpcSellService.cs">
+      <DependentUpon>MainWindow.cs</DependentUpon>
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="MainWindow.ClearCache.cs">
       <DependentUpon>MainWindow.cs</DependentUpon>
       <SubType>Form</SubType>
     </Compile>
@@ -810,6 +816,7 @@
     <Compile Include="Services\ItemTooltipUiService.cs" />
     <Compile Include="Services\EmbeddedModelPreviewLoaderService.cs" />
     <Compile Include="Services\ModelPackageNotificationService.cs" />
+    <Compile Include="Services\PckRawCopyImportService.cs" />
     <Compile Include="Services\PckEntryReaderService.cs" />
     <Compile Include="Services\ModelPreviewService.cs" />
     <Compile Include="Services\NpcExportService.cs" />
@@ -1095,6 +1102,9 @@
     <Compile Include="Views\TitleGraphicIconPickerWindow.cs">
       <SubType>Form</SubType>
     </Compile>
+    <Compile Include="Views\PckExplorerWindow.cs">
+      <SubType>Form</SubType>
+    </Compile>
     <Compile Include="Views\CombinedServicesPickerWindow.cs">
       <SubType>Form</SubType>
     </Compile>
@@ -1175,6 +1185,9 @@
   <ItemGroup>
     <Content Include="0000.ico" />
     <Content Include="app.ico" />
+    <Content Include="Resources\about_logo.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
     <Content Include="DDSReader\DDSReader.csproj" />
     <Content Include="DDSReader\DDSReader.mdp" />
     <Content Include="DDSReader\DDSReader.xml" />

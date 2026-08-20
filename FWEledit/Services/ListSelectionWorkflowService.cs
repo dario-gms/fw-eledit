@@ -44,7 +44,7 @@ namespace FWEledit
 
             List<object[]> rows;
             bool canUseCachedRows = !request.UseLightweightRows;
-            if (!canUseCachedRows || !request.ListDisplayService.TryGetListDisplayRows(request.ListIndex, out rows))
+            if (!canUseCachedRows || !request.ListDisplayService.TryGetListDisplayRows(request.ListCollection, request.ListIndex, out rows))
             {
                 rows = request.ListRowBuilderService.BuildRows(
                     request.ListCollection,
@@ -55,7 +55,7 @@ namespace FWEledit
                     !request.UseLightweightRows);
                 if (!request.UseLightweightRows)
                 {
-                    request.ListDisplayService.SetListDisplayRows(request.ListIndex, rows);
+                    request.ListDisplayService.SetListDisplayRows(request.ListCollection, request.ListIndex, rows);
                 }
             }
 

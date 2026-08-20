@@ -206,5 +206,35 @@ namespace FWEledit.Properties
 				this["UseDarkMode"] = value;
 			}
 		}
+
+		[global::System.Configuration.UserScopedSettingAttribute()]
+		[global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+		[global::System.Configuration.DefaultSettingValueAttribute("")]
+		public string LastItemPackageExportFolder
+		{
+			get
+			{
+				return ((string)(this["LastItemPackageExportFolder"]));
+			}
+			set
+			{
+				this["LastItemPackageExportFolder"] = value;
+			}
+		}
+
+		[global::System.Configuration.UserScopedSettingAttribute()]
+		[global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+		[global::System.Configuration.DefaultSettingValueAttribute("")]
+		public string PckExplorerVisibleExtensions
+		{
+			get
+			{
+				return ((string)(this["PckExplorerVisibleExtensions"]));
+			}
+			set
+			{
+				this["PckExplorerVisibleExtensions"] = value;
+			}
+		}
 	}
 }

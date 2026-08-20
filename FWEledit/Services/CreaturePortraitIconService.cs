@@ -12,7 +12,6 @@ namespace FWEledit
         private readonly TgaImageService tgaImageService = new TgaImageService();
         private readonly PckEntryReaderService pckEntryReaderService = new PckEntryReaderService();
         private readonly Dictionary<string, Bitmap> cache = new Dictionary<string, Bitmap>(StringComparer.OrdinalIgnoreCase);
-        private Dictionary<string, string> portraitFileIndex;
 
         public bool TryResolvePortrait(
             CacheSave database,
@@ -268,19 +267,6 @@ namespace FWEledit
             List<string> candidates = BuildPathCandidates(mappedPath);
             for (int i = 0; i < candidates.Count; i++)
             {
-                string filePath = ResolveExtractedFile(candidates[i]);
-                if (!string.IsNullOrWhiteSpace(filePath))
-                {
-                    Bitmap bitmap = LoadImageFromFile(filePath);
-                    if (bitmap != null)
-                    {
-                        return bitmap;
-                    }
-                }
-            }
-
-            for (int i = 0; i < candidates.Count; i++)
-            {
                 Bitmap bitmap = LoadImageFromPackage(candidates[i]);
                 if (bitmap != null)
                 {
@@ -289,38 +275,6 @@ namespace FWEledit
             }
 
             return null;
-        }
-
-        private Bitmap LoadImageFromFile(string filePath)
-        {
-            string extension = Path.GetExtension(filePath) ?? string.Empty;
-            if (string.Equals(extension, ".tga", StringComparison.OrdinalIgnoreCase))
-            {
-                return tgaImageService.TryLoad(filePath);
-            }
-            if (string.Equals(extension, ".dds", StringComparison.OrdinalIgnoreCase))
-            {
-                try
-                {
-                    return DDS.LoadImage(filePath, true);
-                }
-                catch
-                {
-                    return null;
-                }
-            }
-
-            try
-            {
-                using (Bitmap source = new Bitmap(filePath))
-                {
-                    return new Bitmap(source);
-                }
-            }
-            catch
-            {
-                return null;
-            }
         }
 
         private Bitmap LoadImageFromPackage(string relativePath)
@@ -366,111 +320,6 @@ namespace FWEledit
             catch
             {
                 return null;
-            }
-        }
-
-        private string ResolveExtractedFile(string relativePath)
-        {
-            string normalized = StripSurfacesPrefix(NormalizePath(relativePath));
-            if (string.IsNullOrWhiteSpace(normalized))
-            {
-                return string.Empty;
-            }
-
-            if (Path.IsPathRooted(normalized) && File.Exists(normalized))
-            {
-                return normalized;
-            }
-
-            string[] roots = new string[]
-            {
-                Path.Combine(AssetManager.WorkspaceRootPath ?? string.Empty, "resources", "surfaces.pck.files"),
-                Path.Combine(AssetManager.GameRootPath ?? string.Empty, "resources", "surfaces.pck.files")
-            };
-
-            for (int i = 0; i < roots.Length; i++)
-            {
-                if (string.IsNullOrWhiteSpace(roots[i]))
-                {
-                    continue;
-                }
-
-                string candidate = Path.Combine(roots[i], normalized);
-                if (File.Exists(candidate))
-                {
-                    return candidate;
-                }
-            }
-
-            EnsurePortraitFileIndex(roots);
-            string fileName = Path.GetFileName(normalized);
-            if (!string.IsNullOrWhiteSpace(fileName) && portraitFileIndex != null)
-            {
-                string indexedPath;
-                if (portraitFileIndex.TryGetValue(fileName, out indexedPath) && File.Exists(indexedPath))
-                {
-                    return indexedPath;
-                }
-            }
-
-            return string.Empty;
-        }
-
-        private void EnsurePortraitFileIndex(string[] roots)
-        {
-            if (portraitFileIndex != null)
-            {
-                return;
-            }
-
-            portraitFileIndex = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            if (roots == null)
-            {
-                return;
-            }
-
-            for (int i = 0; i < roots.Length; i++)
-            {
-                string root = roots[i];
-                if (string.IsNullOrWhiteSpace(root) || !Directory.Exists(root))
-                {
-                    continue;
-                }
-
-                string[] searchRoots = new string[]
-                {
-                    Path.Combine(root, "head"),
-                    Path.Combine(root, "iconset")
-                };
-
-                for (int r = 0; r < searchRoots.Length; r++)
-                {
-                    if (!Directory.Exists(searchRoots[r]))
-                    {
-                        continue;
-                    }
-
-                    try
-                    {
-                        string[] files = Directory.GetFiles(searchRoots[r], "*.*", SearchOption.AllDirectories);
-                        for (int f = 0; f < files.Length; f++)
-                        {
-                            string extension = Path.GetExtension(files[f]);
-                            if (!IsSupportedImageExtension(extension))
-                            {
-                                continue;
-                            }
-
-                            string fileName = Path.GetFileName(files[f]);
-                            if (!string.IsNullOrWhiteSpace(fileName) && !portraitFileIndex.ContainsKey(fileName))
-                            {
-                                portraitFileIndex.Add(fileName, files[f]);
-                            }
-                        }
-                    }
-                    catch
-                    { }
-                }
             }
         }
 

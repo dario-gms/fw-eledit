@@ -277,7 +277,6 @@ namespace FWEledit
         private Image ResolveIcon(string iconKey)
         {
             if (database != null
-                && database.sourceBitmap != null
                 && !string.IsNullOrWhiteSpace(iconKey)
                 && database.ContainsKey(iconKey))
             {

@@ -66,6 +66,7 @@ namespace FWEledit
             this.saveToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.exportContainerToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.toolStripMenuItem2 = new System.Windows.Forms.ToolStripMenuItem();
+            this.clearCacheToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.logicReplaceToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.fieldReplaceToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.toolStripSeparator5 = new System.Windows.Forms.ToolStripSeparator();
@@ -455,23 +456,22 @@ namespace FWEledit
             // 
             this.toolStripMenuItem2.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
             this.toolStripMenuItem2.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] {
-            this.logicReplaceToolStripMenuItem,
-            this.fieldReplaceToolStripMenuItem,
-            this.toolStripSeparator5,
-            this.skillInvalidCheck136OnlyToolStripMenuItem,
-            this.skillReplaceToolStripMenuItem,
-            this.tomeInvalidCheck136OnlyToolStripMenuItem,
-            this.tomeReplace136OnlyToolStripMenuItem,
-            this.propertyInvalidChaeck136OnlyToolStripMenuItem,
-            this.propertyReplaceToolStripMenuItem,
-            this.probabilityVerification136OnlyToolStripMenuItem,
-            this.taskOverflowCheck143OnlyToolStripMenuItem});
+            this.clearCacheToolStripMenuItem});
             this.toolStripMenuItem2.ImageScaling = System.Windows.Forms.ToolStripItemImageScaling.None;
             this.toolStripMenuItem2.Name = "toolStripMenuItem2";
             this.toolStripMenuItem2.Padding = new System.Windows.Forms.Padding(0);
             this.toolStripMenuItem2.Size = new System.Drawing.Size(31, 20);
             this.toolStripMenuItem2.Text = "Edit";
             this.toolStripMenuItem2.TextAlign = System.Drawing.ContentAlignment.MiddleLeft;
+            // 
+            // clearCacheToolStripMenuItem
+            // 
+            this.clearCacheToolStripMenuItem.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
+            this.clearCacheToolStripMenuItem.Name = "clearCacheToolStripMenuItem";
+            this.clearCacheToolStripMenuItem.Size = new System.Drawing.Size(180, 22);
+            this.clearCacheToolStripMenuItem.Text = "Clear Cache";
+            this.clearCacheToolStripMenuItem.TextAlign = System.Drawing.ContentAlignment.MiddleLeft;
+            this.clearCacheToolStripMenuItem.Click += new System.EventHandler(this.click_clearCache);
             // 
             // logicReplaceToolStripMenuItem
             // 
@@ -839,6 +839,7 @@ namespace FWEledit
         private System.Windows.Forms.ToolStripMenuItem saveToolStripMenuItem;
         private System.Windows.Forms.ToolStripMenuItem exportContainerToolStripMenuItem;
         private System.Windows.Forms.ToolStripMenuItem toolStripMenuItem2;
+        private System.Windows.Forms.ToolStripMenuItem clearCacheToolStripMenuItem;
         private System.Windows.Forms.ToolStripMenuItem logicReplaceToolStripMenuItem;
         private System.Windows.Forms.ToolStripMenuItem fieldReplaceToolStripMenuItem;
         private System.Windows.Forms.ToolStripSeparator toolStripSeparator5;

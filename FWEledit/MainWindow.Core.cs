@@ -476,7 +476,8 @@ namespace FWEledit
                 gameFolderDialogService,
                 navigationStateService,
                 LoadGameFolder,
-                message => MessageBox.Show(message));
+                message => MessageBox.Show(message),
+                this);
 		}
 
         private void click_load_last_folder(object sender, EventArgs e)

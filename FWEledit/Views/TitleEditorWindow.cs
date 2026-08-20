@@ -32,6 +32,7 @@ namespace FWEledit
         private ComboBox categoryBox;
         private TextBox nameBox;
         private CheckBox graphicTitleCheckBox;
+        private CheckBox graphicChatCheckBox;
         private TextBox iconPathBox;
         private Button iconPathPickerButton;
         private Button iconPathImportButton;
@@ -214,7 +215,7 @@ namespace FWEledit
             editor.Dock = DockStyle.Fill;
             editor.RowCount = 3;
             editor.ColumnCount = 1;
-            editor.RowStyles.Add(new RowStyle(SizeType.Absolute, 456));
+            editor.RowStyles.Add(new RowStyle(SizeType.Absolute, 484));
             editor.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             editor.RowStyles.Add(new RowStyle(SizeType.Absolute, 46));
             editor.Padding = new Padding(8);
@@ -227,7 +228,7 @@ namespace FWEledit
             TableLayoutPanel editLayout = new TableLayoutPanel();
             editLayout.Dock = DockStyle.Fill;
             editLayout.ColumnCount = 2;
-            editLayout.RowCount = 13;
+            editLayout.RowCount = 14;
             editLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 92));
             editLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             editGroup.Controls.Add(editLayout);
@@ -254,6 +255,12 @@ namespace FWEledit
             graphicTitleCheckBox.AutoSize = true;
             graphicTitleCheckBox.BackColor = back;
             graphicTitleCheckBox.ForeColor = text;
+            graphicChatCheckBox = new CheckBox();
+            graphicChatCheckBox.Text = "Show graphic title in chat";
+            graphicChatCheckBox.Dock = DockStyle.Left;
+            graphicChatCheckBox.AutoSize = true;
+            graphicChatCheckBox.BackColor = back;
+            graphicChatCheckBox.ForeColor = text;
             iconPathBox = BuildTextBox();
             iconPathPickerButton = BuildButton("...");
             iconPathPickerButton.Width = 34;
@@ -284,13 +291,14 @@ namespace FWEledit
             AddEditorRow(editLayout, 2, "Category:", categoryBox);
             AddEditorRow(editLayout, 3, "Name:", nameBox);
             AddEditorRow(editLayout, 4, "Graphic:", graphicTitleCheckBox);
-            AddEditorRow(editLayout, 5, "Icon path:", BuildIconPathEditor());
-            AddEditorRow(editLayout, 6, "Texture size:", BuildGraphicImportSizeEditor());
-            AddEditorRow(editLayout, 7, "Description:", descriptionBox);
+            AddEditorRow(editLayout, 5, "Chat:", graphicChatCheckBox);
+            AddEditorRow(editLayout, 6, "Icon path:", BuildIconPathEditor());
+            AddEditorRow(editLayout, 7, "Texture size:", BuildGraphicImportSizeEditor());
+            AddEditorRow(editLayout, 8, "Description:", descriptionBox);
             for (int i = 0; i < bonusBoxes.Length; i++)
             {
                 bonusBoxes[i] = BuildTextBox();
-                AddEditorRow(editLayout, i + 8, "Bonus " + (i + 1).ToString(CultureInfo.InvariantCulture) + ":", bonusBoxes[i]);
+                AddEditorRow(editLayout, i + 9, "Bonus " + (i + 1).ToString(CultureInfo.InvariantCulture) + ":", bonusBoxes[i]);
             }
 
             TabControl lowerTabs = new TabControl();
@@ -557,6 +565,10 @@ namespace FWEledit
 
                 iconPathBox.Text = picker.SelectedPath ?? string.Empty;
                 graphicTitleCheckBox.Checked = !string.IsNullOrWhiteSpace(iconPathBox.Text);
+                if (!graphicTitleCheckBox.Checked)
+                {
+                    graphicChatCheckBox.Checked = false;
+                }
                 ApplyEditorTextToSelected();
                 MarkDirty();
                 RebuildGrid();
@@ -593,6 +605,7 @@ namespace FWEledit
 
                 iconPathBox.Text = importedPath;
                 graphicTitleCheckBox.Checked = true;
+                graphicChatCheckBox.Checked = false;
                 ApplyEditorTextToSelected();
                 MarkDirty();
                 pendingSurfaceChanges = true;
@@ -618,6 +631,7 @@ namespace FWEledit
                     idBox.Value = 0;
                     nameBox.Text = string.Empty;
                     graphicTitleCheckBox.Checked = false;
+                    graphicChatCheckBox.Checked = false;
                     iconPathBox.Text = string.Empty;
                     descriptionBox.Text = string.Empty;
                     for (int i = 0; i < bonusBoxes.Length; i++)
@@ -634,6 +648,7 @@ namespace FWEledit
                 idBox.Value = Math.Max(idBox.Minimum, Math.Min(idBox.Maximum, title.Id));
                 nameBox.Text = title.TitleText ?? string.Empty;
                 graphicTitleCheckBox.Checked = title.IsGraphicTitle;
+                graphicChatCheckBox.Checked = title.IsGraphicTitle && title.ShowGraphicInChat;
                 iconPathBox.Text = title.IconPath ?? string.Empty;
                 descriptionBox.Text = title.Description ?? string.Empty;
                 for (int i = 0; i < bonusBoxes.Length; i++)
@@ -690,6 +705,7 @@ namespace FWEledit
             title.CategoryDisplay = GetSelectedCategoryDisplay();
             title.IconPath = iconPathBox.Text.Trim();
             title.IsGraphicTitle = graphicTitleCheckBox.Checked && !string.IsNullOrWhiteSpace(title.IconPath);
+            title.ShowGraphicInChat = title.IsGraphicTitle && graphicChatCheckBox.Checked;
             title.Description = descriptionBox.Text;
             title.AddonDescriptions = new string[5];
             for (int i = 0; i < bonusBoxes.Length; i++)
@@ -716,6 +732,7 @@ namespace FWEledit
             title.CategoryDisplay = GetSelectedCategoryDisplay();
             title.IconPath = iconPathBox.Text.Trim();
             title.IsGraphicTitle = graphicTitleCheckBox.Checked && !string.IsNullOrWhiteSpace(title.IconPath);
+            title.ShowGraphicInChat = title.IsGraphicTitle && graphicChatCheckBox.Checked;
             title.Description = descriptionBox.Text;
             title.AddonDescriptions = new string[5];
             for (int i = 0; i < bonusBoxes.Length; i++)
@@ -888,6 +905,7 @@ namespace FWEledit
                 AddonDescriptions = new string[5],
                 IconPath = string.Empty,
                 IsGraphicTitle = false,
+                ShowGraphicInChat = false,
                 CategoryPathKey = string.Empty,
                 CategoryDisplay = "! Uncategorized"
             };
@@ -1658,6 +1676,7 @@ namespace FWEledit
             categoryBox.SelectedIndexChanged += editorValueChanged;
             nameBox.TextChanged += editorValueChanged;
             graphicTitleCheckBox.CheckedChanged += editorValueChanged;
+            graphicChatCheckBox.CheckedChanged += editorValueChanged;
             iconPathBox.TextChanged += editorValueChanged;
             descriptionBox.TextChanged += editorValueChanged;
             for (int i = 0; i < bonusBoxes.Length; i++)
@@ -1892,6 +1911,7 @@ namespace FWEledit
                 AddonDescriptions = title.AddonDescriptions != null ? (string[])title.AddonDescriptions.Clone() : new string[5],
                 IconPath = title.IconPath ?? string.Empty,
                 IsGraphicTitle = title.IsGraphicTitle,
+                ShowGraphicInChat = title.ShowGraphicInChat,
                 CategoryPathKey = title.CategoryPathKey ?? string.Empty,
                 CategoryDisplay = title.CategoryDisplay ?? string.Empty
             };
@@ -1911,6 +1931,7 @@ namespace FWEledit
             target.AddonDescriptions = source.AddonDescriptions != null ? (string[])source.AddonDescriptions.Clone() : new string[5];
             target.IconPath = source.IconPath;
             target.IsGraphicTitle = source.IsGraphicTitle;
+            target.ShowGraphicInChat = source.ShowGraphicInChat;
             target.CategoryPathKey = source.CategoryPathKey;
             target.CategoryDisplay = source.CategoryDisplay;
         }

@@ -63,6 +63,11 @@ namespace FWEledit
             return EquipmentMaskCatalog.IsEquipmentMaskFieldName(fieldName);
         }
 
+        public bool IsEquipmentUsingTypeFieldName(string fieldName)
+        {
+            return EquipmentUsingTypeCatalog.IsEquipmentUsingTypeFieldName(fieldName);
+        }
+
         public bool IsEquipmentLocationFieldName(string fieldName)
         {
             return EquipmentLocationCatalog.IsEquipmentLocationFieldName(fieldName);
@@ -147,6 +152,7 @@ namespace FWEledit
                 || IsProfessionMaskFieldName(fieldName)
                 || IsRaceMaskFieldName(fieldName)
                 || IsEquipmentMaskFieldName(fieldName)
+                || IsEquipmentUsingTypeFieldName(fieldName)
                 || IsEquipmentLocationFieldName(fieldName)
                 || IsEquipmentTypeFieldName(fieldName)
                 || IsModelProfessionFieldName(fieldName)
