@@ -1802,9 +1802,9 @@ namespace FWEledit
         {
             return (value ?? string.Empty)
                 .Replace("\\", "\\\\")
-                .Replace("\r\n", "\\n")
-                .Replace("\n", "\\n")
-                .Replace("\r", "\\n")
+                .Replace("\r\n", "\\r")
+                .Replace("\n", "\\r")
+                .Replace("\r", "\\r")
                 .Replace("\t", "\\t")
                 .Replace("\"", "\\\"")
                 .Replace("%", "%%");
@@ -2117,13 +2117,10 @@ namespace FWEledit
             {
             }
 
-            cleaned = cleaned
-                .Replace("\\r", Environment.NewLine)
-                .Replace("\\n", Environment.NewLine)
+            cleaned = NormalizeScriptLineEndings(cleaned)
                 .Replace("\\t", "\t")
                 .Replace("\\\"", "\"")
                 .Replace("%%", "%")
-                .Replace("\r", Environment.NewLine)
                 .Trim();
 
             while (cleaned.StartsWith("%s", StringComparison.Ordinal))
@@ -2137,15 +2134,22 @@ namespace FWEledit
         private static string DecodeScriptLiteralPreserveFormatting(string text)
         {
             string cleaned = DecodeLuaEscapedUtf8(text ?? string.Empty);
-            cleaned = cleaned
-                .Replace("\\r", Environment.NewLine)
-                .Replace("\\n", Environment.NewLine)
+            cleaned = NormalizeScriptLineEndings(cleaned)
                 .Replace("\\t", "\t")
                 .Replace("\\\"", "\"")
-                .Replace("%%", "%")
-                .Replace("\r", Environment.NewLine);
+                .Replace("%%", "%");
 
             return cleaned.Trim();
+        }
+
+        private static string NormalizeScriptLineEndings(string value)
+        {
+            return (value ?? string.Empty)
+                .Replace("\\r", "\n")
+                .Replace("\\n", "\n")
+                .Replace("\r\n", "\n")
+                .Replace("\r", "\n")
+                .Replace("\n", Environment.NewLine);
         }
 
         private static string DecodeLuaEscapedUtf8(string text)

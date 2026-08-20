@@ -1950,6 +1950,10 @@ namespace FWEledit
             {
                 OpenRaceMaskPickerForValueRow(targetRow);
             }
+            else if (itemFieldClassifierService.IsEquipmentUsingTypeFieldName(fieldName))
+            {
+                OpenEquipmentMaskPickerForValueRow(targetRow);
+            }
             else if (itemFieldClassifierService.IsEquipmentMaskFieldName(fieldName))
             {
                 OpenEquipmentMaskPickerForValueRow(targetRow);
@@ -2155,6 +2159,7 @@ namespace FWEledit
                     fieldName);
             bool isProfessionMaskField = itemFieldClassifierService != null && itemFieldClassifierService.IsProfessionMaskFieldName(fieldName);
             bool isRaceMaskField = itemFieldClassifierService != null && itemFieldClassifierService.IsRaceMaskFieldName(fieldName);
+            bool isEquipmentUsingTypeField = itemFieldClassifierService != null && itemFieldClassifierService.IsEquipmentUsingTypeFieldName(fieldName);
             bool isEquipmentMaskField = itemFieldClassifierService != null && itemFieldClassifierService.IsEquipmentMaskFieldName(fieldName);
             bool isEquipmentLocationField = itemFieldClassifierService != null && itemFieldClassifierService.IsEquipmentLocationFieldName(fieldName);
             bool isEquipmentTypeField = itemFieldClassifierService != null && itemFieldClassifierService.IsEquipmentTypeFieldName(fieldName);
@@ -2339,13 +2344,16 @@ namespace FWEledit
                 menu.Items.Add("Choose Allowed Races...", null, (menuSender, args) => OpenRaceMaskPickerForValueRow(rowIndex));
             }
 
-            if (isEquipmentMaskField)
+            if (isEquipmentUsingTypeField || isEquipmentMaskField)
             {
                 if (menu.Items.Count > 0)
                 {
                     menu.Items.Add(new ToolStripSeparator());
                 }
-                menu.Items.Add("Choose Equipment Slots...", null, (menuSender, args) => OpenEquipmentMaskPickerForValueRow(rowIndex));
+                menu.Items.Add(
+                    isEquipmentUsingTypeField ? "Choose Equipment Using Types..." : "Choose Equipment Slots...",
+                    null,
+                    (menuSender, args) => OpenEquipmentMaskPickerForValueRow(rowIndex));
             }
 
             if (isEquipmentLocationField)

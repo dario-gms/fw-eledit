@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Globalization;
 using System.Windows.Forms;
@@ -10,14 +11,25 @@ namespace FWEledit
         private readonly CheckedListBox checkedListBox;
         private readonly Label summaryLabel;
         private readonly TextBox descriptionTextBox;
+        private readonly IList<EquipmentMaskOption> options;
+        private readonly string emptyDescription;
 
         public uint SelectedValue { get; private set; }
 
         public EquipmentMaskPickerWindow(uint currentValue)
+            : this(currentValue, EquipmentMaskCatalog.Options, "Choose equipment slots...", "Select one or more equipment slots.")
+        {
+        }
+
+        public EquipmentMaskPickerWindow(uint currentValue, IList<EquipmentMaskOption> options, string title, string emptyDescription)
         {
             SelectedValue = currentValue;
+            this.options = options ?? EquipmentMaskCatalog.Options;
+            this.emptyDescription = string.IsNullOrWhiteSpace(emptyDescription)
+                ? "Select one or more options."
+                : emptyDescription;
 
-            Text = "Choose equipment slots...";
+            Text = string.IsNullOrWhiteSpace(title) ? "Choose equipment mask..." : title;
             StartPosition = FormStartPosition.CenterParent;
             MinimumSize = new Size(430, 440);
             Size = new Size(540, 620);
@@ -124,9 +136,9 @@ namespace FWEledit
         private void LoadOptions(uint currentValue)
         {
             checkedListBox.Items.Clear();
-            for (int i = 0; i < EquipmentMaskCatalog.Options.Count; i++)
+            for (int i = 0; i < options.Count; i++)
             {
-                EquipmentMaskOption option = EquipmentMaskCatalog.Options[i];
+                EquipmentMaskOption option = options[i];
                 if (option == null)
                 {
                     continue;
@@ -182,7 +194,7 @@ namespace FWEledit
             EquipmentMaskOption selected = checkedListBox.SelectedItem as EquipmentMaskOption;
             descriptionTextBox.Text = selected != null
                 ? selected.Label + Environment.NewLine + Environment.NewLine + (selected.Description ?? string.Empty)
-                : "Select one or more equipment slots.";
+                : emptyDescription;
         }
 
         private void ConfirmSelection()

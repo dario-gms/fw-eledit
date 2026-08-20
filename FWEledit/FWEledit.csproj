@@ -22,7 +22,7 @@
     <UpdateRequired>false</UpdateRequired>
     <MapFileExtensions>true</MapFileExtensions>
     <ApplicationRevision>0</ApplicationRevision>
-    <ApplicationVersion>0.9.5.21</ApplicationVersion>
+    <ApplicationVersion>0.9.5.22</ApplicationVersion>
     <IsWebBootstrapper>false</IsWebBootstrapper>
     <UseApplicationTrust>false</UseApplicationTrust>
     <BootstrapperEnabled>true</BootstrapperEnabled>
@@ -151,6 +151,7 @@
     <Compile Include="Catalogs\BindFlagCatalog.cs" />
     <Compile Include="Catalogs\EquipmentLocationCatalog.cs" />
     <Compile Include="Catalogs\EquipmentMaskCatalog.cs" />
+    <Compile Include="Catalogs\EquipmentUsingTypeCatalog.cs" />
     <Compile Include="Catalogs\EquipmentTypeCatalog.cs" />
     <Compile Include="Catalogs\ImmuneTypeCatalog.cs" />
     <Compile Include="Catalogs\ProcTypeCatalog.cs" />

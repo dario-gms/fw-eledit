@@ -565,9 +565,9 @@ namespace FWEledit
 
                 iconPathBox.Text = picker.SelectedPath ?? string.Empty;
                 graphicTitleCheckBox.Checked = !string.IsNullOrWhiteSpace(iconPathBox.Text);
-                if (graphicTitleCheckBox.Checked)
+                if (!graphicTitleCheckBox.Checked)
                 {
-                    graphicChatCheckBox.Checked = true;
+                    graphicChatCheckBox.Checked = false;
                 }
                 ApplyEditorTextToSelected();
                 MarkDirty();
@@ -605,7 +605,7 @@ namespace FWEledit
 
                 iconPathBox.Text = importedPath;
                 graphicTitleCheckBox.Checked = true;
-                graphicChatCheckBox.Checked = true;
+                graphicChatCheckBox.Checked = false;
                 ApplyEditorTextToSelected();
                 MarkDirty();
                 pendingSurfaceChanges = true;

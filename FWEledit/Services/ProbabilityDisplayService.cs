@@ -102,6 +102,13 @@ namespace FWEledit
             }
 
             string normalized = fieldName.Trim();
+            if (normalized.StartsWith("extend_identify_attr_tool_", StringComparison.OrdinalIgnoreCase)
+                && normalized.EndsWith("_probability", StringComparison.OrdinalIgnoreCase))
+            {
+                scale = PercentageStorageScale.WholePercent;
+                return true;
+            }
+
             if (string.Equals(normalized, "catch_pet_success_factor", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(normalized, "catch_pet_hp_limit", StringComparison.OrdinalIgnoreCase))
             {

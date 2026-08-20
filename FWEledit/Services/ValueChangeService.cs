@@ -105,6 +105,10 @@ namespace FWEledit
             {
                 valueToSet = BooleanFlagCatalog.NormalizeInput(valueToSet);
             }
+            else if (EquipmentUsingTypeCatalog.IsEquipmentUsingTypeFieldName(request.FieldName))
+            {
+                valueToSet = EquipmentUsingTypeCatalog.NormalizeInput(valueToSet);
+            }
             else if (EquipmentMaskCatalog.IsEquipmentMaskFieldName(request.FieldName))
             {
                 valueToSet = EquipmentMaskCatalog.NormalizeInput(valueToSet);
@@ -291,6 +295,10 @@ namespace FWEledit
             else if (BooleanFlagCatalog.IsYesNoFieldName(request.FieldName))
             {
                 result.DisplayValue = BooleanFlagCatalog.FormatDisplay(valueToSet);
+            }
+            else if (EquipmentUsingTypeCatalog.IsEquipmentUsingTypeFieldName(request.FieldName))
+            {
+                result.DisplayValue = EquipmentUsingTypeCatalog.FormatDisplay(valueToSet);
             }
             else if (EquipmentMaskCatalog.IsEquipmentMaskFieldName(request.FieldName))
             {

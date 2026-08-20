@@ -2,6 +2,18 @@
 
 This file keeps the older release notes that used to live in the README. The README now shows only the newest release notes so it stays easier to scan.
 
+## What's New in v0.9.5.21
+
+- Added the advanced Title Editor under Tools for `title_def_u.lua`, with searchable title rows, category editing, color rendering, bonus fields, live preview, and graphic-title controls.
+- Added PCK-only title editing: the editor reads `title_def_u.lua` from `script.pck`, saves it back through the package update flow, creates backups, and validates/reloads the result without relying on extracted resource folders.
+- Added graphic-title import from PNG/GIF/SVG into game-ready TGA assets stored through `surfaces.pck`, including automatic backup handling and preview refresh.
+- Added a graphic icon selector for existing title graphics, plus an explicit `Enable graphic title` toggle so normal and graphic titles can be switched intentionally.
+- Added graphic texture-size presets and custom width/height options for imported title graphics, making it easier to tune how titles scale in game while preserving aspect ratio.
+- Improved the advanced title UI with more editing space, graphic thumbnails in the title list, better category handling, rendered title colors/descriptions, and higher-quality graphic previews.
+- Project/app version metadata updated to `v0.9.5.21`.
+
+---
+
 ## What's New in v0.9.5.20
 
 - Added and polished the first `npcgen.data` editor under Tools, with NPC/monster rows, controllers, position/direction/ext fields, grouped parameters, resource rows, attach rows, save support, and tighter integration with the main editor's icon and name-color lookups.

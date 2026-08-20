@@ -125,7 +125,7 @@ namespace FWEledit
                 progressBar_progress,
                 itemListThemeService,
                 UpdatePickIconButtonState,
-                () => change_item(null, null),
+                RefreshCurrentItemValuesForSelectedTab,
                 () => viewModel.EnableSelectionItem,
                 searchSuggestionList_MouseClick,
                 searchSuggestionList_KeyDown,

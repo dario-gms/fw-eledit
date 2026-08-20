@@ -222,6 +222,10 @@ namespace FWEledit
                 {
                     fieldValue = BooleanFlagCatalog.FormatDisplay(fieldValue);
                 }
+                else if (EquipmentUsingTypeCatalog.IsEquipmentUsingTypeFieldName(fieldName))
+                {
+                    fieldValue = EquipmentUsingTypeCatalog.FormatDisplay(fieldValue);
+                }
                 else if (EquipmentMaskCatalog.IsEquipmentMaskFieldName(fieldName))
                 {
                     fieldValue = EquipmentMaskCatalog.FormatDisplay(fieldValue);
@@ -300,7 +304,9 @@ namespace FWEledit
                     string listName = listCollection.Lists[listIndex].listName ?? string.Empty;
                     fieldValue = modelPickerService.FormatModelPathIdDisplay(database, fieldValue, fieldName, listName);
                 }
-                else if (itemReferenceService != null && itemReferenceService.IsReferenceField(listCollection, listIndex, elementIndex, fieldName))
+                else if (itemReferenceService != null
+                    && CouldResolveReference(rawValue)
+                    && itemReferenceService.IsReferenceField(listCollection, listIndex, elementIndex, fieldName))
                 {
                     if (itemReferenceService.TryResolveReferenceOption(
                         listCollection,
@@ -355,6 +361,12 @@ namespace FWEledit
             }
 
             return rows;
+        }
+
+        private static bool CouldResolveReference(string rawValue)
+        {
+            int id;
+            return int.TryParse(rawValue, out id) && id > 0;
         }
     }
 }

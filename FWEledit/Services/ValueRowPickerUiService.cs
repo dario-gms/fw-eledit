@@ -257,6 +257,13 @@ namespace FWEledit
                         openRaceMaskPicker(e.RowIndex);
                     }
                 }
+                else if (fieldClassifier.IsEquipmentUsingTypeFieldName(fieldName))
+                {
+                    if (openEquipmentMaskPicker != null)
+                    {
+                        openEquipmentMaskPicker(e.RowIndex);
+                    }
+                }
                 else if (fieldClassifier.IsEquipmentMaskFieldName(fieldName))
                 {
                     if (openEquipmentMaskPicker != null)
@@ -1477,7 +1484,8 @@ namespace FWEledit
             }
 
             string fieldName = ValueGridFieldNameService.GetFieldName(itemGrid, rowIndex);
-            if (!fieldClassifier.IsEquipmentMaskFieldName(fieldName))
+            bool isUsingTypeMask = fieldClassifier.IsEquipmentUsingTypeFieldName(fieldName);
+            if (!fieldClassifier.IsEquipmentMaskFieldName(fieldName) && !isUsingTypeMask)
             {
                 return;
             }
@@ -1486,7 +1494,13 @@ namespace FWEledit
             uint currentValue;
             EquipmentMaskCatalog.TryParseValue(rawValue, out currentValue);
 
-            using (EquipmentMaskPickerWindow picker = new EquipmentMaskPickerWindow(currentValue))
+            using (EquipmentMaskPickerWindow picker = isUsingTypeMask
+                ? new EquipmentMaskPickerWindow(
+                    currentValue,
+                    EquipmentUsingTypeCatalog.Options,
+                    "Choose equipment using types...",
+                    "Select one or more equipment using types.")
+                : new EquipmentMaskPickerWindow(currentValue))
             {
                 if (picker.ShowDialog(owner) != DialogResult.OK)
                 {

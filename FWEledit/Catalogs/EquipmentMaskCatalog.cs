@@ -63,7 +63,6 @@ namespace FWEledit
                 || string.Equals(normalized, "hide_equip_mask", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(normalized, "show_mask", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(normalized, "disable_show_mask", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(normalized, "equip_usingtype_mask", StringComparison.OrdinalIgnoreCase)
                 || normalized.EndsWith("_equip_mask", StringComparison.OrdinalIgnoreCase);
         }
 
