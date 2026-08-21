@@ -48,7 +48,10 @@ namespace FWEledit
         private bool pathDataDirty = false;
         private readonly SortedList<int, string> pendingPathDataEntries = new SortedList<int, string>();
         private readonly PckEntryReaderService pckEntryReaderService = new PckEntryReaderService();
+        private readonly ClientResourceMapService clientResourceMapService = new ClientResourceMapService();
         private readonly object loadSync = new object();
+        private ClientResourceMap currentClientResourceMap;
+        private string warmedClientResourceMapId = string.Empty;
         private readonly object itemDescriptionCacheSync = new object();
         private string cachedItemDescriptionSignature = string.Empty;
         private string cachedItemDescriptionPath = string.Empty;
@@ -132,6 +135,8 @@ namespace FWEledit
                     pathDataDirty = false;
                     pendingPathDataEntries.Clear();
                     ClearDirectImageFallbackCache();
+                    currentClientResourceMap = null;
+                    warmedClientResourceMapId = string.Empty;
                     lock (loadSync)
                     {
                         imagesx = null;
@@ -494,6 +499,7 @@ namespace FWEledit
                 Directory.CreateDirectory(GetWorkspaceDataRoot());
                 EnsureWorkspacePathDataPrepared();
                 EnsureWorkspacePckPrepared("configs", false);
+                EnsureClientResourceMapReady();
 
                 return true;
             }
@@ -528,22 +534,26 @@ namespace FWEledit
                         if (slash > 0)
                         {
                             dirtyPackages.Add(relative.Substring(0, slash));
+                            InvalidateClientResourceMap();
                             return;
                         }
                     }
                     if (full.StartsWith(configsRoot, StringComparison.OrdinalIgnoreCase))
                     {
                         dirtyPackages.Add("configs");
+                        InvalidateClientResourceMap();
                         return;
                     }
                     if (full.StartsWith(surfacesRoot, StringComparison.OrdinalIgnoreCase))
                     {
                         dirtyPackages.Add("surfaces");
+                        InvalidateClientResourceMap();
                         return;
                     }
                     if (full.StartsWith(scriptRoot, StringComparison.OrdinalIgnoreCase))
                     {
                         dirtyPackages.Add("script");
+                        InvalidateClientResourceMap();
                         return;
                     }
                 }
@@ -553,10 +563,78 @@ namespace FWEledit
                     string.Equals(full, Path.GetFullPath(workspacePathData), StringComparison.OrdinalIgnoreCase))
                 {
                     pathDataDirty = true;
+                    InvalidateClientResourceMap();
                 }
             }
             catch
             { }
+        }
+
+        private ClientResourceMap EnsureClientResourceMapReady()
+        {
+            if (currentClientResourceMap != null)
+            {
+                return currentClientResourceMap;
+            }
+
+            currentClientResourceMap = clientResourceMapService.LoadOrBuild(GameRootPath, WorkspaceRootPath, pckEntryReaderService);
+            PrewarmClientResourceMapPackagesInBackground(currentClientResourceMap);
+            return currentClientResourceMap;
+        }
+
+        private void InvalidateClientResourceMap()
+        {
+            currentClientResourceMap = null;
+            warmedClientResourceMapId = string.Empty;
+            clientResourceMapService.Invalidate(GameRootPath);
+        }
+
+        private void PrewarmClientResourceMapPackagesInBackground(ClientResourceMap map)
+        {
+            if (map == null || string.IsNullOrWhiteSpace(map.ClientId))
+            {
+                return;
+            }
+
+            if (string.Equals(warmedClientResourceMapId, map.ClientId, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            warmedClientResourceMapId = map.ClientId;
+            HashSet<string> available = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (map.Packages != null)
+            {
+                for (int i = 0; i < map.Packages.Count; i++)
+                {
+                    if (map.Packages[i] != null && !string.IsNullOrWhiteSpace(map.Packages[i].Name))
+                    {
+                        available.Add(map.Packages[i].Name.Trim());
+                    }
+                }
+            }
+
+            string[] preferred =
+            {
+                "configs",
+                "surfaces",
+                "script",
+                "models",
+                "models2",
+                "gfx",
+                "grasses",
+                "shaders",
+                "litmodels",
+                "moxing"
+            };
+
+            for (int i = 0; i < preferred.Length; i++)
+            {
+                if (available.Contains(preferred[i]))
+                {
+                    PrewarmPackageIndexInBackground(preferred[i]);
+                }
+            }
         }
 
         public void MarkWorkspacePackageDirty(string packageName)
@@ -569,6 +647,7 @@ namespace FWEledit
             try
             {
                 dirtyPackages.Add(packageName.Trim());
+                InvalidateClientResourceMap();
             }
             catch
             { }
@@ -582,6 +661,7 @@ namespace FWEledit
                 cachedItemDescriptionPath = string.Empty;
                 cachedItemDescriptionPayload = null;
             }
+            InvalidateClientResourceMap();
         }
 
         public bool ImportStagedPackageAssets(string packageName, string stagingDirectory, out string error)
@@ -2272,6 +2352,20 @@ namespace FWEledit
         private SortedList<int, string> LoadPathById()
         {
             SortedList<int, string> result = new SortedList<int, string>();
+            ClientResourceMap map = EnsureClientResourceMapReady();
+            if (map != null && map.PathById != null && map.PathById.Count > 0)
+            {
+                foreach (KeyValuePair<int, string> pair in map.PathById)
+                {
+                    if (!result.ContainsKey(pair.Key))
+                    {
+                        result.Add(pair.Key, pair.Value);
+                    }
+                }
+
+                return result;
+            }
+
             string pathDataFile = ResolvePathDataFile();
             if (string.IsNullOrWhiteSpace(pathDataFile) || !File.Exists(pathDataFile))
             {
@@ -3389,8 +3483,61 @@ namespace FWEledit
             string targetPath = Path.Combine(targetRoot, safeRelative);
             string targetDirectory = Path.GetDirectoryName(targetPath) ?? targetRoot;
             Directory.CreateDirectory(targetDirectory);
+            if (FilePayloadMatches(targetPath, payload))
+            {
+                return targetPath;
+            }
+
             File.WriteAllBytes(targetPath, payload);
             return targetPath;
+        }
+
+        private static bool FilePayloadMatches(string path, byte[] payload)
+        {
+            if (string.IsNullOrWhiteSpace(path) || payload == null || !File.Exists(path))
+            {
+                return false;
+            }
+
+            try
+            {
+                FileInfo info = new FileInfo(path);
+                if (info.Length != payload.Length)
+                {
+                    return false;
+                }
+
+                using (FileStream fs = File.OpenRead(path))
+                {
+                    int offset = 0;
+                    byte[] buffer = new byte[81920];
+                    while (offset < payload.Length)
+                    {
+                        int expected = Math.Min(buffer.Length, payload.Length - offset);
+                        int read = fs.Read(buffer, 0, expected);
+                        if (read != expected)
+                        {
+                            return false;
+                        }
+
+                        for (int i = 0; i < read; i++)
+                        {
+                            if (buffer[i] != payload[offset + i])
+                            {
+                                return false;
+                            }
+                        }
+
+                        offset += read;
+                    }
+                }
+
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private static string NormalizeMaterializedRelativePath(string relativePath)
@@ -3590,6 +3737,33 @@ namespace FWEledit
             return ResolveResourceFileAny(relativePaths);
         }
 
+        private bool TryGetClientResourceTextPayload(string fileName, out byte[] payload)
+        {
+            payload = null;
+            if (string.IsNullOrWhiteSpace(fileName))
+            {
+                return false;
+            }
+
+            ClientResourceMap map = EnsureClientResourceMapReady();
+            if (map == null || map.TextResources == null)
+            {
+                return false;
+            }
+
+            ClientResourcePayload resource;
+            if (!map.TextResources.TryGetValue(fileName, out resource)
+                || resource == null
+                || resource.Payload == null
+                || resource.Payload.Length == 0)
+            {
+                return false;
+            }
+
+            payload = resource.Payload;
+            return true;
+        }
+
         public string EnsureItemExtDescriptionFile()
         {
             byte[] payload;
@@ -3629,6 +3803,34 @@ namespace FWEledit
             }
 
             string targetRoot = Path.Combine(workspaceResources, ".materialized", "configs");
+            ClientResourceMap map = EnsureClientResourceMapReady();
+            if (map != null
+                && map.ItemExtDescription != null
+                && map.ItemExtDescription.Payload != null
+                && map.ItemExtDescription.Payload.Length > 0)
+            {
+                string relativePath = string.IsNullOrWhiteSpace(map.ItemExtDescription.RelativePath)
+                    ? "item_ext_desc.txt"
+                    : map.ItemExtDescription.RelativePath;
+                string written = WriteMaterializedResource(targetRoot, relativePath, map.ItemExtDescription.Payload);
+                if (string.IsNullOrWhiteSpace(written))
+                {
+                    written = Path.Combine(targetRoot, relativePath);
+                }
+                DeleteStaleMaterializedItemDescriptionAliases(targetRoot, relativePath);
+
+                lock (itemDescriptionCacheSync)
+                {
+                    cachedItemDescriptionSignature = signature;
+                    cachedItemDescriptionPath = written;
+                    cachedItemDescriptionPayload = map.ItemExtDescription.Payload;
+                }
+
+                payload = map.ItemExtDescription.Payload;
+                materializedPath = written;
+                return true;
+            }
+
             string[] candidates = new string[]
             {
                 "item_ext_desc.txt",
@@ -5461,6 +5663,11 @@ namespace FWEledit
 
         private bool TryResolveIconsetFiles(out string sourceFilename, out string iconListFilename)
         {
+            if (TryEnsureClientResourceIconsetFiles(out sourceFilename, out iconListFilename))
+            {
+                return true;
+            }
+
             bool TryFindIconsetPair(string iconsetRoot, out string imgPath, out string txtPath)
             {
                 imgPath = string.Empty;
@@ -5552,6 +5759,52 @@ namespace FWEledit
             sourceFilename = ResolveResourceFile(Path.Combine("surfaces", "iconset", "iconlist_ivtr0.dds"));
             iconListFilename = ResolveResourceFile(Path.Combine("surfaces", "iconset", "iconlist_ivtr0.txt"));
             return File.Exists(sourceFilename) && File.Exists(iconListFilename);
+        }
+
+        private bool TryEnsureClientResourceIconsetFiles(out string sourceFilename, out string iconListFilename)
+        {
+            sourceFilename = string.Empty;
+            iconListFilename = string.Empty;
+
+            try
+            {
+                ClientResourceMap map = EnsureClientResourceMapReady();
+                if (map == null
+                    || map.Iconset == null
+                    || map.Iconset.Image == null
+                    || map.Iconset.Text == null
+                    || map.Iconset.Image.Payload == null
+                    || map.Iconset.Text.Payload == null
+                    || map.Iconset.Image.Payload.Length == 0
+                    || map.Iconset.Text.Payload.Length == 0)
+                {
+                    return false;
+                }
+
+                string workspaceResources = GetWorkspaceResourcesRoot();
+                if (string.IsNullOrWhiteSpace(workspaceResources))
+                {
+                    return false;
+                }
+
+                string targetRoot = Path.Combine(workspaceResources, ".materialized", "surfaces");
+                string imageRelativePath = string.IsNullOrWhiteSpace(map.Iconset.Image.RelativePath)
+                    ? Path.Combine("surfaces", "iconset", "iconlist_ivtr0.dds")
+                    : map.Iconset.Image.RelativePath;
+                string textRelativePath = string.IsNullOrWhiteSpace(map.Iconset.Text.RelativePath)
+                    ? Path.Combine("surfaces", "iconset", "iconlist_ivtr0.txt")
+                    : map.Iconset.Text.RelativePath;
+
+                sourceFilename = WriteMaterializedResource(targetRoot, imageRelativePath, map.Iconset.Image.Payload);
+                iconListFilename = WriteMaterializedResource(targetRoot, textRelativePath, map.Iconset.Text.Payload);
+                return File.Exists(sourceFilename) && File.Exists(iconListFilename);
+            }
+            catch
+            {
+                sourceFilename = string.Empty;
+                iconListFilename = string.Empty;
+                return false;
+            }
         }
 
         public bool TryGetIconsetPair(out string sourceFilename, out string iconListFilename)
@@ -5676,10 +5929,18 @@ namespace FWEledit
             {
                 string line;
                 arrTheme = new List<string>();
-                string theme_list = ResolveResourceFileAny(Path.Combine("data", "theme.txt"), "theme.txt");
                 Encoding enc = Encoding.GetEncoding("GBK");
-                int lines = File.ReadAllLines(theme_list).Length;
-                StreamReader file = new StreamReader(theme_list, enc);
+                byte[] themePayload;
+                StreamReader file;
+                if (TryGetClientResourceTextPayload("theme.txt", out themePayload))
+                {
+                    file = new StreamReader(new MemoryStream(themePayload), enc);
+                }
+                else
+                {
+                    string theme_list = ResolveResourceFileAny(Path.Combine("data", "theme.txt"), "theme.txt");
+                    file = new StreamReader(theme_list, enc);
+                }
                 int count = 0;
 
                 while ((line = file.ReadLine()) != null)
@@ -5709,49 +5970,75 @@ namespace FWEledit
         {
             string line;
             item_color = new SortedList<int, int>();
-            string iconlist_ivtrm = ResolveResourceFileAny(
-                Path.Combine("data", "item_color.txt"),
-                Path.Combine("configs", "item_color.txt"),
-                "item_color.txt");
-
-            string extension = Path.GetExtension(iconlist_ivtrm);
-            if (extension == ".txt")
+            byte[] itemColorPayload;
+            if (TryGetClientResourceTextPayload("item_color.txt", out itemColorPayload))
             {
-                Encoding enc = Encoding.GetEncoding("GBK");
-                int lines = File.ReadAllLines(iconlist_ivtrm).Length;
-                StreamReader file = new StreamReader(iconlist_ivtrm, enc);
-                int count = 0;
-                while ((line = file.ReadLine()) != null)
+                using (StreamReader file = new StreamReader(new MemoryStream(itemColorPayload), Encoding.GetEncoding("GBK")))
                 {
-                    string[] data = line.Split(null);
-                    try
+                    while ((line = file.ReadLine()) != null)
                     {
-                        string v1 = data[0].ToString();
-                        string v2 = data[1].ToString();
-                        if (v1.Length > 0 && v2.Length > 0)
+                        TryReadItemColorLine(line, item_color);
+                    }
+                }
+            }
+            else
+            {
+                string iconlist_ivtrm = ResolveResourceFileAny(
+                    Path.Combine("data", "item_color.txt"),
+                    Path.Combine("configs", "item_color.txt"),
+                    "item_color.txt");
+
+                string extension = Path.GetExtension(iconlist_ivtrm);
+                if (extension == ".txt")
+                {
+                    Encoding enc = Encoding.GetEncoding("GBK");
+                    using (StreamReader file = new StreamReader(iconlist_ivtrm, enc))
+                    {
+                        while ((line = file.ReadLine()) != null)
                         {
-                            item_color.Add(int.Parse(v1), int.Parse(v2));
-                        }
-                        else
-                        {
-                            if (v1.Length > 0)
-                            {
-                                item_color.Add(int.Parse(v1), 0);
-                            }
-                            if (v2.Length > 0)
-                            {
-                                item_color.Add(0, int.Parse(v2));
-                            }
+                            TryReadItemColorLine(line, item_color);
                         }
                     }
-                    catch (Exception) { }
-                    count++;
                 }
-                file.Close();
             }
             database.item_color = item_color;
 
             //loaditem_desc();
+        }
+
+        private static void TryReadItemColorLine(string line, SortedList<int, int> target)
+        {
+            if (string.IsNullOrWhiteSpace(line) || target == null)
+            {
+                return;
+            }
+
+            string[] data = line.Split((char[])null, StringSplitOptions.RemoveEmptyEntries);
+            if (data.Length == 0)
+            {
+                return;
+            }
+
+            try
+            {
+                int v1;
+                int v2 = 0;
+                if (!int.TryParse(data[0], out v1))
+                {
+                    return;
+                }
+                if (data.Length > 1)
+                {
+                    int.TryParse(data[1], out v2);
+                }
+                if (!target.ContainsKey(v1))
+                {
+                    target.Add(v1, v2);
+                }
+            }
+            catch
+            {
+            }
         }
 
         //public void loaditem_desc()
@@ -5792,20 +6079,18 @@ namespace FWEledit
             }
             try
             {
-                string path = ResolveResourceFileAny(
-                    Path.Combine("data", "item_ext_desc.txt"),
-                    "item_ext_desc.txt");
-                string extension = Path.GetExtension(path);
-                if (File.Exists(path))
+                byte[] payload;
+                string materializedPath;
+                string error;
+                if (TryEnsureItemExtDescriptionPayload(out payload, out materializedPath, out error)
+                    && payload != null
+                    && payload.Length > 0)
                 {
                     try
                     {
-                        StreamReader sr = new StreamReader(path, Encoding.Unicode);
-                        sessionService.ItemExtDesc = sr.ReadToEnd().Split(new char[] { '\"' });
+                        sessionService.ItemExtDesc = Encoding.Unicode.GetString(payload).Split(new char[] { '\"' });
                         string[] temp = sessionService.ItemExtDesc[0].Split(new char[] { '\n' });
                         sessionService.ItemExtDesc[0] = temp[temp.Length - 1];
-                        sr.Dispose();
-                        sr.Close();
                     }
                     catch (Exception e)
                     {
@@ -5979,6 +6264,21 @@ namespace FWEledit
                 sessionService.SkillStr = database.skillstr;
                 return;
             }
+            byte[] skillPayload;
+            if (TryGetClientResourceTextPayload("skillstr.txt", out skillPayload))
+            {
+                try
+                {
+                    sessionService.SkillStr = Encoding.Unicode.GetString(skillPayload).Split(new char[] { '\"' });
+                    string[] temp = sessionService.SkillStr[0].Split(new char[] { '\n' });
+                    sessionService.SkillStr[0] = temp[temp.Length - 1];
+                    database.skillstr = sessionService.SkillStr;
+                    return;
+                }
+                catch
+                {
+                }
+            }
             String path = ResolveResourceFileAny(
                 Path.Combine("data", "skillstr.txt"),
                 "skillstr.txt");
@@ -6015,26 +6315,30 @@ namespace FWEledit
                 Path.Combine("data", "addon_table.txt"),
                 "addon_table.txt");
             sessionService.AddonsList = new SortedList();
-            if (File.Exists(path))
+            byte[] addonPayload;
+            if (TryGetClientResourceTextPayload("addon_table.txt", out addonPayload))
             {
                 try
                 {
-                    StreamReader sr = new StreamReader(path, Encoding.Unicode);
-
-                    char[] seperator = new char[] { '\t' };
-                    string line;
-                    string[] split;
-                    while (!sr.EndOfStream)
+                    using (MemoryStream ms = new MemoryStream(addonPayload))
+                    using (StreamReader sr = new StreamReader(ms, Encoding.Unicode))
                     {
-                        line = sr.ReadLine();
-                        if (line.Contains("\t") && line != "" && !line.StartsWith("/") && !line.StartsWith("#"))
-                        {
-                            split = line.Split(seperator);
-                            sessionService.AddonsList.Add(split[0], split[1]);
-                        }
+                        ReadAddonTableLines(sr, sessionService.AddonsList);
                     }
-
-                    sr.Close();
+                }
+                catch (Exception e)
+                {
+                    MessageBox.Show("ERROR LOADING ADDON LIST\n" + e.Message);
+                }
+            }
+            else if (File.Exists(path))
+            {
+                try
+                {
+                    using (StreamReader sr = new StreamReader(path, Encoding.Unicode))
+                    {
+                        ReadAddonTableLines(sr, sessionService.AddonsList);
+                    }
                 }
                 catch (Exception e)
                 {
@@ -6044,78 +6348,14 @@ namespace FWEledit
             else
             {
                 // FW fallback: map addon id -> addon type from item_ext_prop.txt
-                string itemExtPropPath = ResolveResourceFileAny(
-                    Path.Combine("data", "item_ext_prop.txt"),
-                    "item_ext_prop.txt");
-                if (File.Exists(itemExtPropPath))
+                byte[] itemExtPropPayload;
+                if (TryGetClientResourceTextPayload("item_ext_prop.txt", out itemExtPropPayload))
                 {
                     try
                     {
-                        using (StreamReader sr = new StreamReader(itemExtPropPath, Encoding.GetEncoding("GBK")))
+                        using (StreamReader sr = new StreamReader(new MemoryStream(itemExtPropPayload), Encoding.GetEncoding("GBK")))
                         {
-                            int currentType = -1;
-                            bool inBlock = false;
-                            while (!sr.EndOfStream)
-                            {
-                                string line = sr.ReadLine();
-                                if (string.IsNullOrWhiteSpace(line))
-                                {
-                                    continue;
-                                }
-                                string trimmed = line.Trim();
-                                if (trimmed.StartsWith("//") || trimmed.StartsWith("/*") || trimmed.StartsWith("*") || trimmed.StartsWith("*/"))
-                                {
-                                    continue;
-                                }
-
-                                if (trimmed.StartsWith("type:", StringComparison.OrdinalIgnoreCase))
-                                {
-                                    string rawType = trimmed.Substring(5).Trim();
-                                    int parsedType;
-                                    if (int.TryParse(rawType, out parsedType))
-                                    {
-                                        currentType = parsedType;
-                                        inBlock = false;
-                                    }
-                                    continue;
-                                }
-
-                                if (trimmed.StartsWith("{"))
-                                {
-                                    inBlock = true;
-                                    continue;
-                                }
-                                if (trimmed.StartsWith("}"))
-                                {
-                                    inBlock = false;
-                                    continue;
-                                }
-
-                                if (!inBlock || currentType < 0)
-                                {
-                                    continue;
-                                }
-
-                                string[] ids = trimmed.Split(new char[] { ',', ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
-                                for (int i = 0; i < ids.Length; i++)
-                                {
-                                    int id;
-                                    if (!int.TryParse(ids[i], out id))
-                                    {
-                                        continue;
-                                    }
-                                    string idKey = id.ToString();
-                                    string typeValue = currentType.ToString();
-                                    if (sessionService.AddonsList.ContainsKey(idKey))
-                                    {
-                                        sessionService.AddonsList[idKey] = typeValue;
-                                    }
-                                    else
-                                    {
-                                        sessionService.AddonsList.Add(idKey, typeValue);
-                                    }
-                                }
-                            }
+                            ReadItemExtPropAddonLines(sr, sessionService.AddonsList);
                         }
                     }
                     catch
@@ -6123,79 +6363,215 @@ namespace FWEledit
                         sessionService.AddonsList = new SortedList();
                     }
                 }
+                else
+                {
+                    string itemExtPropPath = ResolveResourceFileAny(
+                        Path.Combine("data", "item_ext_prop.txt"),
+                        "item_ext_prop.txt");
+                    if (File.Exists(itemExtPropPath))
+                    {
+                        try
+                        {
+                            using (StreamReader sr = new StreamReader(itemExtPropPath, Encoding.GetEncoding("GBK")))
+                            {
+                                ReadItemExtPropAddonLines(sr, sessionService.AddonsList);
+                            }
+                        }
+                        catch
+                        {
+                            sessionService.AddonsList = new SortedList();
+                        }
+                    }
+                }
             }
             database.addonslist = sessionService.AddonsList;
+        }
+
+        private static void ReadAddonTableLines(StreamReader sr, SortedList target)
+        {
+            if (sr == null || target == null)
+            {
+                return;
+            }
+
+            char[] seperator = new char[] { '\t' };
+            while (!sr.EndOfStream)
+            {
+                string line = sr.ReadLine();
+                if (!string.IsNullOrEmpty(line)
+                    && line.Contains("\t")
+                    && !line.StartsWith("/")
+                    && !line.StartsWith("#"))
+                {
+                    string[] split = line.Split(seperator);
+                    if (split.Length >= 2 && !target.Contains(split[0]))
+                    {
+                        target.Add(split[0], split[1]);
+                    }
+                }
+            }
+        }
+
+        private static void ReadItemExtPropAddonLines(StreamReader sr, SortedList target)
+        {
+            if (sr == null || target == null)
+            {
+                return;
+            }
+
+            int currentType = -1;
+            bool inBlock = false;
+            while (!sr.EndOfStream)
+            {
+                string line = sr.ReadLine();
+                if (string.IsNullOrWhiteSpace(line))
+                {
+                    continue;
+                }
+                string trimmed = line.Trim();
+                if (trimmed.StartsWith("//") || trimmed.StartsWith("/*") || trimmed.StartsWith("*") || trimmed.StartsWith("*/"))
+                {
+                    continue;
+                }
+
+                if (trimmed.StartsWith("type:", StringComparison.OrdinalIgnoreCase))
+                {
+                    string rawType = trimmed.Substring(5).Trim();
+                    int parsedType;
+                    if (int.TryParse(rawType, out parsedType))
+                    {
+                        currentType = parsedType;
+                        inBlock = false;
+                    }
+                    continue;
+                }
+
+                if (trimmed.StartsWith("{"))
+                {
+                    inBlock = true;
+                    continue;
+                }
+                if (trimmed.StartsWith("}"))
+                {
+                    inBlock = false;
+                    continue;
+                }
+
+                if (!inBlock || currentType < 0)
+                {
+                    continue;
+                }
+
+                string[] ids = trimmed.Split(new char[] { ',', ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+                for (int i = 0; i < ids.Length; i++)
+                {
+                    int id;
+                    if (!int.TryParse(ids[i], out id))
+                    {
+                        continue;
+                    }
+                    string idKey = id.ToString();
+                    string typeValue = currentType.ToString();
+                    if (target.ContainsKey(idKey))
+                    {
+                        target[idKey] = typeValue;
+                    }
+                    else
+                    {
+                        target.Add(idKey, typeValue);
+                    }
+                }
+            }
         }
 
         public void LoadLocalizationText()
         {
             sessionService.LocalizationText = new SortedList();
-            string path = ResolveResourceFileAny(
-                Path.Combine("data", "language_en.txt"),
-                "language_en.txt");
-            if (!File.Exists(path))
+            byte[] languagePayload;
+            bool loaded = false;
+            if (TryGetClientResourceTextPayload("language_en.txt", out languagePayload))
             {
-                string editorOverride = Path.Combine(Application.StartupPath ?? string.Empty, "resources", "data", "language_en.txt");
-                if (File.Exists(editorOverride))
-                {
-                    path = editorOverride;
-                }
-            }
-            if (!File.Exists(path))
-            {
-                string paidToolPath = FindPaidToolLanguageFile();
-                if (!string.IsNullOrWhiteSpace(paidToolPath) && File.Exists(paidToolPath))
-                {
-                    path = paidToolPath;
-                    TryMirrorPaidLocalizationToLocal(paidToolPath);
-                }
-            }
-
-            if (File.Exists(path))
-            {
-                if (!TryLoadLocalizationFile(path))
+                loaded = TryLoadLocalizationPayload(languagePayload);
+                if (!loaded)
                 {
                     MessageBox.Show("ERROR LOADING LOCALIZATION\nFailed to parse language file.");
                 }
             }
-            else
+
+            if (!loaded)
+            {
+                string editorOverride = Path.Combine(Application.StartupPath ?? string.Empty, "resources", "data", "language_en.txt");
+                if (File.Exists(editorOverride) && TryLoadLocalizationFile(editorOverride))
+                {
+                    loaded = true;
+                }
+            }
+
+            string path = string.Empty;
+            if (!loaded)
+            {
+                path = ResolveResourceFileAny(
+                    Path.Combine("data", "language_en.txt"),
+                    "language_en.txt");
+                if (File.Exists(path))
+                {
+                    loaded = TryLoadLocalizationFile(path);
+                    if (!loaded)
+                    {
+                        MessageBox.Show("ERROR LOADING LOCALIZATION\nFailed to parse language file.");
+                    }
+                }
+            }
+
+            if (!loaded)
+            {
+                string paidToolPath = FindPaidToolLanguageFile();
+                if (!string.IsNullOrWhiteSpace(paidToolPath) && File.Exists(paidToolPath))
+                {
+                    loaded = TryLoadLocalizationFile(paidToolPath);
+                    if (loaded)
+                    {
+                        TryMirrorPaidLocalizationToLocal(paidToolPath);
+                    }
+                }
+            }
+
+            if (!loaded)
             {
                 // FW builds may not ship language_en.txt; fallback to skillstr key/value pairs.
-                string skillPath = ResolveResourceFileAny(
-                    Path.Combine("data", "skillstr.txt"),
-                    "skillstr.txt");
-                if (File.Exists(skillPath))
+                byte[] skillPayload;
+                if (TryGetClientResourceTextPayload("skillstr.txt", out skillPayload))
                 {
                     try
                     {
-                        using (StreamReader sr = new StreamReader(skillPath, Encoding.Unicode))
+                        using (StreamReader sr = new StreamReader(new MemoryStream(skillPayload), Encoding.Unicode))
                         {
-                            while (!sr.EndOfStream)
-                            {
-                                string line = sr.ReadLine();
-                                if (string.IsNullOrWhiteSpace(line) || line.StartsWith("/") || line.StartsWith("#"))
-                                {
-                                    continue;
-                                }
-                                int firstQuote = line.IndexOf('"');
-                                int lastQuote = line.LastIndexOf('"');
-                                if (firstQuote <= 0 || lastQuote <= firstQuote)
-                                {
-                                    continue;
-                                }
-                                string key = line.Substring(0, firstQuote).Trim();
-                                string value = line.Substring(firstQuote + 1, lastQuote - firstQuote - 1);
-                                if (key.Length == 0 || sessionService.LocalizationText.ContainsKey(key))
-                                {
-                                    continue;
-                                }
-                                sessionService.LocalizationText.Add(key, value);
-                            }
+                            ReadLocalizationFallbackPairs(sr, sessionService.LocalizationText);
                         }
                     }
                     catch
                     {
                         sessionService.LocalizationText = new SortedList();
+                    }
+                }
+                else
+                {
+                    string skillPath = ResolveResourceFileAny(
+                        Path.Combine("data", "skillstr.txt"),
+                        "skillstr.txt");
+                    if (File.Exists(skillPath))
+                    {
+                        try
+                        {
+                            using (StreamReader sr = new StreamReader(skillPath, Encoding.Unicode))
+                            {
+                                ReadLocalizationFallbackPairs(sr, sessionService.LocalizationText);
+                            }
+                        }
+                        catch
+                        {
+                            sessionService.LocalizationText = new SortedList();
+                        }
                     }
                 }
             }
@@ -6204,46 +6580,107 @@ namespace FWEledit
             database.LocalizationText = sessionService.LocalizationText;
         }
 
-        private bool TryLoadLocalizationFile(string path)
+        private bool TryLoadLocalizationPayload(byte[] payload)
         {
+            if (payload == null || payload.Length == 0)
+            {
+                return false;
+            }
+
             try
             {
-                using (StreamReader sr = new StreamReader(path, Encoding.UTF8, true))
+                using (StreamReader sr = new StreamReader(new MemoryStream(payload), Encoding.UTF8, true))
                 {
-                    char[] seperator = new char[] { '"' };
-                    while (!sr.EndOfStream)
-                    {
-                        string line = sr.ReadLine();
-                        if (string.IsNullOrWhiteSpace(line) || line.StartsWith("/") || line.StartsWith("#"))
-                        {
-                            continue;
-                        }
-                        string[] split = line.Split(seperator);
-                        if (split.Length < 2)
-                        {
-                            continue;
-                        }
-                        string key = split[0].Trim();
-                        string value = split[1];
-                        if (key.Length == 0)
-                        {
-                            continue;
-                        }
-                        if (sessionService.LocalizationText.ContainsKey(key))
-                        {
-                            sessionService.LocalizationText[key] = value;
-                        }
-                        else
-                        {
-                            sessionService.LocalizationText.Add(key, value);
-                        }
-                    }
+                    ReadLocalizationLines(sr, sessionService.LocalizationText);
                 }
                 return true;
             }
             catch
             {
                 return false;
+            }
+        }
+
+        private bool TryLoadLocalizationFile(string path)
+        {
+            try
+            {
+                using (StreamReader sr = new StreamReader(path, Encoding.UTF8, true))
+                {
+                    ReadLocalizationLines(sr, sessionService.LocalizationText);
+                }
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static void ReadLocalizationLines(StreamReader sr, SortedList target)
+        {
+            if (sr == null || target == null)
+            {
+                return;
+            }
+
+            char[] seperator = new char[] { '"' };
+            while (!sr.EndOfStream)
+            {
+                string line = sr.ReadLine();
+                if (string.IsNullOrWhiteSpace(line) || line.StartsWith("/") || line.StartsWith("#"))
+                {
+                    continue;
+                }
+                string[] split = line.Split(seperator);
+                if (split.Length < 2)
+                {
+                    continue;
+                }
+                string key = split[0].Trim();
+                string value = split[1];
+                if (key.Length == 0)
+                {
+                    continue;
+                }
+                if (target.ContainsKey(key))
+                {
+                    target[key] = value;
+                }
+                else
+                {
+                    target.Add(key, value);
+                }
+            }
+        }
+
+        private static void ReadLocalizationFallbackPairs(StreamReader sr, SortedList target)
+        {
+            if (sr == null || target == null)
+            {
+                return;
+            }
+
+            while (!sr.EndOfStream)
+            {
+                string line = sr.ReadLine();
+                if (string.IsNullOrWhiteSpace(line) || line.StartsWith("/") || line.StartsWith("#"))
+                {
+                    continue;
+                }
+                int firstQuote = line.IndexOf('"');
+                int lastQuote = line.LastIndexOf('"');
+                if (firstQuote <= 0 || lastQuote <= firstQuote)
+                {
+                    continue;
+                }
+                string key = line.Substring(0, firstQuote).Trim();
+                string value = line.Substring(firstQuote + 1, lastQuote - firstQuote - 1);
+                if (key.Length == 0 || target.ContainsKey(key))
+                {
+                    continue;
+                }
+                target.Add(key, value);
             }
         }
 
@@ -6413,6 +6850,21 @@ namespace FWEledit
             {
                 sessionService.BuffStr = database.buff_str;
                 return;
+            }
+            byte[] buffPayload;
+            if (TryGetClientResourceTextPayload("buff_str.txt", out buffPayload))
+            {
+                try
+                {
+                    sessionService.BuffStr = Encoding.Unicode.GetString(buffPayload).Split(new char[] { '\"' });
+                    string[] temp = sessionService.BuffStr[0].Split(new char[] { '\n' });
+                    sessionService.BuffStr[0] = temp[temp.Length - 1];
+                    database.buff_str = sessionService.BuffStr;
+                    return;
+                }
+                catch
+                {
+                }
             }
             string path = ResolveResourceFileAny(
                 Path.Combine("data", "buff_str.txt"),

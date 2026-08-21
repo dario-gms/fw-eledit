@@ -1794,7 +1794,7 @@ namespace FWEledit
                 return;
             }
 
-            int previewRowIndex = ResolveGenderAwareModelPreviewRow(itemGrid, rowIndex, modelPickerService, pathIdResolutionService);
+            int previewRowIndex = ResolveGenderAwareModelPreviewRow(itemGrid, rowIndex, listName, database, modelPickerService, pathIdResolutionService);
             string previewFieldName = previewRowIndex == rowIndex
                 ? fieldName
                 : ValueGridFieldNameService.GetFieldName(itemGrid, previewRowIndex);
@@ -2043,16 +2043,28 @@ namespace FWEledit
         private static int ResolveGenderAwareModelPreviewRow(
             DataGridView itemGrid,
             int currentRowIndex,
+            string listName,
+            CacheSave database,
             ModelPickerService modelPickerService,
             PathIdResolutionService pathIdResolutionService)
         {
+            string currentFieldName = ValueGridFieldNameService.GetFieldName(itemGrid, currentRowIndex);
+            if (ShouldPreferSpecializedPreviewField(currentFieldName, listName)
+                || TryGetCurrentPathId(itemGrid, currentRowIndex, modelPickerService, pathIdResolutionService) <= 0)
+            {
+                int specializedRow = FindFirstValidSpecializedPreviewRow(itemGrid, listName, database, modelPickerService, pathIdResolutionService);
+                if (specializedRow >= 0)
+                {
+                    return specializedRow;
+                }
+            }
+
             int gender = ResolveItemGenderValue(itemGrid);
             if (gender != 0 && gender != 1)
             {
                 return currentRowIndex;
             }
 
-            string currentFieldName = ValueGridFieldNameService.GetFieldName(itemGrid, currentRowIndex);
             if (string.IsNullOrWhiteSpace(currentFieldName))
             {
                 return currentRowIndex;
@@ -2109,6 +2121,99 @@ namespace FWEledit
             }
 
             return bestRow >= 0 ? bestRow : currentRowIndex;
+        }
+
+        private static int FindFirstValidSpecializedPreviewRow(
+            DataGridView itemGrid,
+            string listName,
+            CacheSave database,
+            ModelPickerService modelPickerService,
+            PathIdResolutionService pathIdResolutionService)
+        {
+            if (itemGrid == null || itemGrid.Rows == null)
+            {
+                return -1;
+            }
+
+            for (int i = 0; i < itemGrid.Rows.Count; i++)
+            {
+                string fieldName = ValueGridFieldNameService.GetFieldName(itemGrid, i);
+                if (!IsSpecializedPreviewModelField(fieldName, listName))
+                {
+                    continue;
+                }
+
+                int pathId = TryGetCurrentPathId(itemGrid, i, modelPickerService, pathIdResolutionService);
+                if (pathId <= 0)
+                {
+                    continue;
+                }
+
+                int resolvedPathId;
+                string mappedPath;
+                if (modelPickerService == null
+                    || modelPickerService.TryResolveModelPathById(
+                        database,
+                        pathId,
+                        fieldName,
+                        listName,
+                        out resolvedPathId,
+                        out mappedPath,
+                        true))
+                {
+                    return i;
+                }
+            }
+
+            return -1;
+        }
+
+        private static bool ShouldPreferSpecializedPreviewField(string fieldName, string listName)
+        {
+            if (string.IsNullOrWhiteSpace(fieldName))
+            {
+                return false;
+            }
+
+            string normalized = fieldName.Trim();
+            if (!string.Equals(normalized, "file_matter", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            return IsSpecializedPreviewList(listName);
+        }
+
+        private static bool IsSpecializedPreviewModelField(string fieldName, string listName)
+        {
+            if (string.IsNullOrWhiteSpace(fieldName))
+            {
+                return false;
+            }
+
+            string normalized = fieldName.Trim();
+            string normalizedListName = listName ?? string.Empty;
+            if (normalizedListName.IndexOf("PET_BEDGE_ESSENCE", StringComparison.OrdinalIgnoreCase) >= 0
+                || normalizedListName.IndexOf("PET_BADGE_ESSENCE", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return normalized.StartsWith("file_to_shown", StringComparison.OrdinalIgnoreCase);
+            }
+
+            if (normalizedListName.IndexOf("VEHICLE_ESSENCE", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return normalized.StartsWith("file_models", StringComparison.OrdinalIgnoreCase)
+                    || normalized.StartsWith("model_name", StringComparison.OrdinalIgnoreCase);
+            }
+
+            return false;
+        }
+
+        private static bool IsSpecializedPreviewList(string listName)
+        {
+            string normalizedListName = listName ?? string.Empty;
+            return normalizedListName.IndexOf("PET_BEDGE_ESSENCE", StringComparison.OrdinalIgnoreCase) >= 0
+                || normalizedListName.IndexOf("PET_BADGE_ESSENCE", StringComparison.OrdinalIgnoreCase) >= 0
+                || normalizedListName.IndexOf("VEHICLE_ESSENCE", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private static int ResolveItemGenderValue(DataGridView itemGrid)

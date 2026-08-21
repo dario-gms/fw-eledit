@@ -752,6 +752,7 @@
     <Compile Include="Services\AboutWindowCommandService.cs" />
     <Compile Include="Services\ClassMaskService.cs" />
     <Compile Include="Services\ClassMaskCommandService.cs" />
+    <Compile Include="Services\ClientResourceMapService.cs" />
     <Compile Include="Services\ComboBoxThemeRendererService.cs" />
     <Compile Include="Services\ConfigFileService.cs" />
     <Compile Include="Services\ConfigWindowCommandService.cs" />
