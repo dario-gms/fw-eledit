@@ -13,6 +13,9 @@ namespace FWEledit
     {
         private const int CurrentFormatVersion = 2;
         private const string MapFileName = "client-map-v2.json.gz";
+        private static readonly object MemoryCacheSync = new object();
+        private static readonly Dictionary<string, ClientResourceMap> MemoryCache =
+            new Dictionary<string, ClientResourceMap>(StringComparer.OrdinalIgnoreCase);
 
         public ClientResourceMap LoadOrBuild(string gameRoot, string workspaceRoot, PckEntryReaderService pckReader)
         {
@@ -28,13 +31,20 @@ namespace FWEledit
                 string canonicalRoot = GetCanonicalRoot(gameRoot);
                 string mapPath = GetMapPath(gameRoot);
                 ClientResourceMap loaded;
+                if (TryLoadFromMemory(mapPath, clientId, canonicalRoot, signatures, out loaded))
+                {
+                    return loaded;
+                }
+
                 if (TryLoad(mapPath, clientId, canonicalRoot, signatures, out loaded))
                 {
+                    StoreInMemory(mapPath, loaded);
                     return loaded;
                 }
 
                 ClientResourceMap built = Build(gameRoot, workspaceRoot, clientId, canonicalRoot, signatures, pckReader);
                 Save(mapPath, built);
+                StoreInMemory(mapPath, built);
                 return built;
             }
             catch
@@ -48,6 +58,14 @@ namespace FWEledit
             try
             {
                 string mapPath = GetMapPath(gameRoot);
+                if (!string.IsNullOrWhiteSpace(mapPath))
+                {
+                    lock (MemoryCacheSync)
+                    {
+                        MemoryCache.Remove(mapPath);
+                    }
+                }
+
                 if (!string.IsNullOrWhiteSpace(mapPath) && File.Exists(mapPath))
                 {
                     File.Delete(mapPath);
@@ -55,6 +73,50 @@ namespace FWEledit
             }
             catch
             {
+            }
+        }
+
+        private static bool TryLoadFromMemory(
+            string mapPath,
+            string clientId,
+            string canonicalRoot,
+            Dictionary<string, ClientResourceFileSignature> currentSignatures,
+            out ClientResourceMap map)
+        {
+            map = null;
+            if (string.IsNullOrWhiteSpace(mapPath))
+            {
+                return false;
+            }
+
+            lock (MemoryCacheSync)
+            {
+                ClientResourceMap cached;
+                if (!MemoryCache.TryGetValue(mapPath, out cached)
+                    || cached == null
+                    || cached.FormatVersion != CurrentFormatVersion
+                    || !string.Equals(cached.ClientId ?? string.Empty, clientId ?? string.Empty, StringComparison.OrdinalIgnoreCase)
+                    || !string.Equals(cached.CanonicalClientRoot ?? string.Empty, canonicalRoot ?? string.Empty, StringComparison.OrdinalIgnoreCase)
+                    || !SignaturesMatch(cached.Files, currentSignatures))
+                {
+                    return false;
+                }
+
+                map = cached;
+                return true;
+            }
+        }
+
+        private static void StoreInMemory(string mapPath, ClientResourceMap map)
+        {
+            if (string.IsNullOrWhiteSpace(mapPath) || map == null)
+            {
+                return;
+            }
+
+            lock (MemoryCacheSync)
+            {
+                MemoryCache[mapPath] = map;
             }
         }
 
