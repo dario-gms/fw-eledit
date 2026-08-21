@@ -8,13 +8,19 @@ namespace FWEledit
     {
         public const int NoneValue = 0;
         public const int ItemValue = 1;
+        public const int GoldCoinValue = 2;
+        public const int SoulCoinValue = 3;
         public const int TitleValue = 4;
+        public const int SoulLeavesValue = 5;
 
         private static readonly List<QualityOption> RewardTypeOptions = new List<QualityOption>
         {
             new QualityOption { Value = NoneValue, Label = "None" },
             new QualityOption { Value = ItemValue, Label = "Item" },
-            new QualityOption { Value = TitleValue, Label = "Title" }
+            new QualityOption { Value = GoldCoinValue, Label = "Gold coin" },
+            new QualityOption { Value = SoulCoinValue, Label = "Soul coin" },
+            new QualityOption { Value = TitleValue, Label = "Title" },
+            new QualityOption { Value = SoulLeavesValue, Label = "Soul leaves" }
         };
 
         public static List<QualityOption> Options
@@ -52,7 +58,7 @@ namespace FWEledit
                 return false;
             }
 
-            string[] parts = rewardIdFieldName.Trim().Split('_');
+            string[] parts = SplitFieldName(rewardIdFieldName);
             if (parts.Length == 4
                 && string.Equals(parts[0], "reward", StringComparison.OrdinalIgnoreCase)
                 && string.Equals(parts[3], "id", StringComparison.OrdinalIgnoreCase))
@@ -135,9 +141,24 @@ namespace FWEledit
                 return ItemValue.ToString(CultureInfo.InvariantCulture);
             }
 
+            if (normalized == "gold" || normalized == "goldcoin" || normalized == "goldcoins")
+            {
+                return GoldCoinValue.ToString(CultureInfo.InvariantCulture);
+            }
+
+            if (normalized == "soul" || normalized == "soulcoin" || normalized == "soulcoins")
+            {
+                return SoulCoinValue.ToString(CultureInfo.InvariantCulture);
+            }
+
             if (normalized == "title" || normalized == "titles")
             {
                 return TitleValue.ToString(CultureInfo.InvariantCulture);
+            }
+
+            if (normalized == "soulleaf" || normalized == "soulleaves" || normalized == "leaf" || normalized == "leaves")
+            {
+                return SoulLeavesValue.ToString(CultureInfo.InvariantCulture);
             }
 
             return trimmed;
@@ -151,7 +172,7 @@ namespace FWEledit
                 return false;
             }
 
-            string[] parts = fieldName.Trim().Split('_');
+            string[] parts = SplitFieldName(fieldName);
             if (parts.Length == 4
                 && string.Equals(parts[0], "reward", StringComparison.OrdinalIgnoreCase)
                 && string.Equals(parts[3], "type", StringComparison.OrdinalIgnoreCase))
@@ -169,6 +190,13 @@ namespace FWEledit
             }
 
             return false;
+        }
+
+        private static string[] SplitFieldName(string fieldName)
+        {
+            return (fieldName ?? string.Empty).Trim().Split(
+                new[] { '_', ' ', '-' },
+                StringSplitOptions.RemoveEmptyEntries);
         }
 
         private static bool IsRandomGiftBagList(eListCollection listCollection, int listIndex)

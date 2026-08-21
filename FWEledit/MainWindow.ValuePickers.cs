@@ -118,6 +118,17 @@ namespace FWEledit
                 this);
         }
 
+        private void OpenPetFoodUsagePickerForValueRow(int rowIndex)
+        {
+            mainWindowValuePickerCoordinatorService.OpenPetFoodUsagePickerForValueRow(
+                mainWindowValueRowPickerUiService,
+                valueRowPickerUiService,
+                dataGridView_item,
+                rowIndex,
+                itemFieldClassifierService,
+                this);
+        }
+
         private void OpenPetHeroPickerForValueRow(int rowIndex)
         {
             mainWindowValuePickerCoordinatorService.OpenPetHeroPickerForValueRow(
@@ -547,6 +558,11 @@ namespace FWEledit
                 }
             }
 
+            if (TryResolveFirstSpecializedModelPreviewField(listIndex, elementIndex, fields, out fieldIndex, out fieldName, out pathId))
+            {
+                return true;
+            }
+
             for (int i = 0; i < fields.Length; i++)
             {
                 string candidateFieldName = fields[i] ?? string.Empty;
@@ -579,6 +595,69 @@ namespace FWEledit
                     pathId = candidatePathId;
                     return true;
                 }
+            }
+
+            return false;
+        }
+
+        private bool TryResolveFirstSpecializedModelPreviewField(
+            int listIndex,
+            int elementIndex,
+            string[] fields,
+            out int fieldIndex,
+            out string fieldName,
+            out int pathId)
+        {
+            fieldIndex = -1;
+            fieldName = string.Empty;
+            pathId = 0;
+
+            if (fields == null)
+            {
+                return false;
+            }
+
+            string listName = sessionService != null
+                && sessionService.ListCollection != null
+                && listIndex >= 0
+                && listIndex < sessionService.ListCollection.Lists.Length
+                    ? sessionService.ListCollection.Lists[listIndex].listName ?? string.Empty
+                    : string.Empty;
+
+            for (int i = 0; i < fields.Length; i++)
+            {
+                string candidateFieldName = fields[i] ?? string.Empty;
+                if (!IsSpecializedPreviewModelField(candidateFieldName, listName))
+                {
+                    continue;
+                }
+
+                string rawValue = sessionService.ListCollection.GetValue(listIndex, elementIndex, i);
+                int candidatePathId;
+                if (!(modelPickerService.TryExtractPathId(rawValue, out candidatePathId) || int.TryParse(rawValue, out candidatePathId))
+                    || candidatePathId <= 0)
+                {
+                    continue;
+                }
+
+                int resolvedPathId;
+                string mappedPath;
+                if (!modelPickerService.TryResolveModelPathById(
+                    sessionService.Database,
+                    candidatePathId,
+                    candidateFieldName,
+                    listName,
+                    out resolvedPathId,
+                    out mappedPath,
+                    true))
+                {
+                    continue;
+                }
+
+                fieldIndex = i;
+                fieldName = candidateFieldName;
+                pathId = candidatePathId;
+                return true;
             }
 
             return false;
@@ -953,6 +1032,19 @@ namespace FWEledit
 
         private void DrawReferenceValueIcon(Graphics graphics, ItemReferenceOption option, Rectangle bounds)
         {
+            Color accentColor;
+            if (IsColorPlanReference(option)
+                && TryParseReferenceAccentColor(option != null ? option.AccentHex : string.Empty, out accentColor))
+            {
+                using (SolidBrush fill = new SolidBrush(accentColor))
+                using (Pen border = new Pen(Color.FromArgb(210, 220, 232)))
+                {
+                    graphics.FillRectangle(fill, bounds);
+                    graphics.DrawRectangle(border, bounds.Left, bounds.Top, bounds.Width - 1, bounds.Height - 1);
+                }
+                return;
+            }
+
             Bitmap icon = Properties.Resources.NoIcon;
             if (sessionService != null
                 && sessionService.Database != null
@@ -977,8 +1069,19 @@ namespace FWEledit
             graphics.DrawImage(icon, bounds);
         }
 
+        private static bool IsColorPlanReference(ItemReferenceOption option)
+        {
+            return option != null
+                && (option.ListName ?? string.Empty).IndexOf("COLOR_PLAN_CONFIG", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
         private Color ResolveReferenceValueTextColor(ItemReferenceOption option, bool selected, Color fallback)
         {
+            if (IsColorPlanReference(option))
+            {
+                return selected ? Color.White : fallback;
+            }
+
             Color accentColor;
             if (TryParseReferenceAccentColor(option != null ? option.AccentHex : string.Empty, out accentColor))
             {
@@ -1785,16 +1888,118 @@ namespace FWEledit
                 return -1;
             }
 
+            int specialized = FindFirstSpecializedModelFieldRow();
+            if (specialized >= 0)
+            {
+                return specialized;
+            }
+
             for (int i = 0; i < dataGridView_item.Rows.Count; i++)
             {
                 string fieldName = ValueGridFieldNameService.GetFieldName(dataGridView_item, i);
-                if (itemFieldClassifierService.IsModelUsageFieldName(fieldName))
+                if (itemFieldClassifierService.IsModelUsageFieldName(fieldName) && IsValidPreviewModelRow(i))
                 {
                     return i;
                 }
             }
 
             return -1;
+        }
+
+        private int FindFirstSpecializedModelFieldRow()
+        {
+            if (dataGridView_item == null)
+            {
+                return -1;
+            }
+
+            int listIndex = comboBox_lists != null ? comboBox_lists.SelectedIndex : -1;
+            string listName = sessionService != null
+                && sessionService.ListCollection != null
+                && listIndex >= 0
+                && listIndex < sessionService.ListCollection.Lists.Length
+                    ? sessionService.ListCollection.Lists[listIndex].listName ?? string.Empty
+                    : string.Empty;
+
+            for (int i = 0; i < dataGridView_item.Rows.Count; i++)
+            {
+                string fieldName = ValueGridFieldNameService.GetFieldName(dataGridView_item, i);
+                if (IsSpecializedPreviewModelField(fieldName, listName) && IsValidPreviewModelRow(i))
+                {
+                    return i;
+                }
+            }
+
+            return -1;
+        }
+
+        private bool IsValidPreviewModelRow(int rowIndex)
+        {
+            if (dataGridView_item == null
+                || rowIndex < 0
+                || rowIndex >= dataGridView_item.Rows.Count
+                || modelPickerService == null
+                || sessionService == null
+                || sessionService.Database == null)
+            {
+                return false;
+            }
+
+            int listIndex = comboBox_lists != null ? comboBox_lists.SelectedIndex : -1;
+            string listName = sessionService.ListCollection != null
+                && listIndex >= 0
+                && listIndex < sessionService.ListCollection.Lists.Length
+                    ? sessionService.ListCollection.Lists[listIndex].listName ?? string.Empty
+                    : string.Empty;
+            string fieldName = ValueGridFieldNameService.GetFieldName(dataGridView_item, rowIndex);
+
+            object raw = dataGridView_item.Rows[rowIndex].Cells[2].Tag;
+            ValueCellState state = raw as ValueCellState;
+            string rawValue = state != null
+                ? state.RawValue
+                : Convert.ToString(raw ?? dataGridView_item.Rows[rowIndex].Cells[2].Value);
+
+            int pathId;
+            if (!(modelPickerService.TryExtractPathId(rawValue, out pathId) || int.TryParse(rawValue, out pathId))
+                || pathId <= 0)
+            {
+                return false;
+            }
+
+            int resolvedPathId;
+            string mappedPath;
+            return modelPickerService.TryResolveModelPathById(
+                sessionService.Database,
+                pathId,
+                fieldName,
+                listName,
+                out resolvedPathId,
+                out mappedPath,
+                true);
+        }
+
+        private static bool IsSpecializedPreviewModelField(string fieldName, string listName)
+        {
+            if (string.IsNullOrWhiteSpace(fieldName))
+            {
+                return false;
+            }
+
+            string normalized = fieldName.Trim();
+            string normalizedListName = listName ?? string.Empty;
+            if (normalizedListName.IndexOf("PET_BEDGE_ESSENCE", StringComparison.OrdinalIgnoreCase) >= 0
+                || normalizedListName.IndexOf("PET_BADGE_ESSENCE", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return normalized.StartsWith("file_to_shown", StringComparison.OrdinalIgnoreCase);
+            }
+
+            if (normalizedListName.IndexOf("VEHICLE_ESSENCE", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return normalized.StartsWith("file_models", StringComparison.OrdinalIgnoreCase)
+                    || normalized.StartsWith("model_name", StringComparison.OrdinalIgnoreCase);
+            }
+
+            return false;
         }
 
         private int FindFirstEquipmentModelFieldRow(bool includeLowDetailFields, int preferredGender)
@@ -1907,6 +2112,10 @@ namespace FWEledit
             {
                 OpenPetFoodTypePickerForValueRow(targetRow);
             }
+            else if (itemFieldClassifierService.IsPetFoodUsageFieldName(fieldName))
+            {
+                OpenPetFoodUsagePickerForValueRow(targetRow);
+            }
             else if (itemFieldClassifierService.IsPetHeroFieldName(fieldName))
             {
                 OpenPetHeroPickerForValueRow(targetRow);
@@ -2017,6 +2226,7 @@ namespace FWEledit
                 OpenItemQualityPickerForValueRow,
                 OpenGenderTypePickerForValueRow,
                 OpenPetFoodTypePickerForValueRow,
+                OpenPetFoodUsagePickerForValueRow,
                 OpenPetHeroPickerForValueRow,
                 OpenImmuneTypePickerForValueRow,
                 OpenBindFlagPickerForValueRow,
@@ -2143,6 +2353,7 @@ namespace FWEledit
             bool isItemQualityField = itemFieldClassifierService != null && itemFieldClassifierService.IsItemQualityFieldName(fieldName);
             bool isGenderTypeField = itemFieldClassifierService != null && itemFieldClassifierService.IsGenderTypeFieldName(fieldName);
             bool isPetFoodTypeField = itemFieldClassifierService != null && itemFieldClassifierService.IsPetFoodTypeFieldName(fieldName);
+            bool isPetFoodUsageField = itemFieldClassifierService != null && itemFieldClassifierService.IsPetFoodUsageFieldName(fieldName);
             bool isPetHeroField = itemFieldClassifierService != null && itemFieldClassifierService.IsPetHeroFieldName(fieldName);
             bool isImmuneTypeField = itemFieldClassifierService != null && itemFieldClassifierService.IsImmuneTypeFieldName(fieldName);
             bool isBindFlagField = itemFieldClassifierService != null && itemFieldClassifierService.IsBindFlagFieldName(fieldName);
@@ -2270,6 +2481,15 @@ namespace FWEledit
                     menu.Items.Add(new ToolStripSeparator());
                 }
                 menu.Items.Add("Choose Pet Food Type...", null, (menuSender, args) => OpenPetFoodTypePickerForValueRow(rowIndex));
+            }
+
+            if (isPetFoodUsageField)
+            {
+                if (menu.Items.Count > 0)
+                {
+                    menu.Items.Add(new ToolStripSeparator());
+                }
+                menu.Items.Add("Choose Pet Food Usage...", null, (menuSender, args) => OpenPetFoodUsagePickerForValueRow(rowIndex));
             }
 
             if (isPetHeroField)

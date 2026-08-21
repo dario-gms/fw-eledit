@@ -130,13 +130,26 @@ namespace FWEledit
                 return true;
             }
 
+            if (string.Equals(normalized, "keep_time_prop", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(normalized, "keep_refine_prop", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(normalized, "keep_pstone_prop", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(normalized, "basic_prob", StringComparison.OrdinalIgnoreCase))
+            {
+                scale = IsIntegralFieldType(fieldType)
+                    ? PercentageStorageScale.WholePercent
+                    : PercentageStorageScale.UnitFraction;
+                return true;
+            }
+
             bool looksLikeProbability = normalized.IndexOf("probability", StringComparison.OrdinalIgnoreCase) >= 0;
             bool looksLikePercent = normalized.IndexOf("percent", StringComparison.OrdinalIgnoreCase) >= 0;
+            bool looksLikeShortProbability = normalized.EndsWith("_prob", StringComparison.OrdinalIgnoreCase)
+                || normalized.IndexOf("_prob_", StringComparison.OrdinalIgnoreCase) >= 0;
             bool looksLikeRatio = normalized.EndsWith("_ratio", StringComparison.OrdinalIgnoreCase)
                 || normalized.IndexOf("_ratio_", StringComparison.OrdinalIgnoreCase) >= 0
                 || normalized.StartsWith("quality_ratio_", StringComparison.OrdinalIgnoreCase);
 
-            if (!looksLikeProbability && !looksLikePercent && !looksLikeRatio)
+            if (!looksLikeProbability && !looksLikePercent && !looksLikeShortProbability && !looksLikeRatio)
             {
                 return false;
             }
@@ -155,7 +168,7 @@ namespace FWEledit
                 return true;
             }
 
-            if (looksLikeProbability)
+            if (looksLikeProbability || looksLikeShortProbability)
             {
                 if (IsIntegralFieldType(fieldType))
                 {

@@ -129,7 +129,7 @@ namespace FWEledit
 
                         if (fwDescriptionEditor != null)
                         {
-                            fwDescriptionEditor.Text = string.Empty;
+                            SetDescriptionEditorTextFromCode(string.Empty);
                         }
 
                         RenderDescriptionPreview(string.Empty);
@@ -817,6 +817,11 @@ namespace FWEledit
                 fwDescriptionColorButton.Visible = !enabled;
             }
 
+            if (fwDescriptionUndoButton != null)
+            {
+                fwDescriptionUndoButton.Visible = !enabled;
+            }
+
             if (fwDescriptionLineBreakButton != null)
             {
                 fwDescriptionLineBreakButton.Visible = !enabled;
@@ -1115,7 +1120,7 @@ namespace FWEledit
 
                 if (fwDescriptionEditor != null && !string.Equals(fwDescriptionEditor.Text, descText, StringComparison.Ordinal))
                 {
-                    fwDescriptionEditor.Text = descText;
+                    SetDescriptionEditorTextFromCode(descText);
                 }
             }
             finally
@@ -1180,6 +1185,11 @@ namespace FWEledit
             if (fwDescriptionColorButton != null)
             {
                 fwDescriptionColorButton.Visible = !enabled;
+            }
+
+            if (fwDescriptionUndoButton != null)
+            {
+                fwDescriptionUndoButton.Visible = !enabled;
             }
 
             if (fwDescriptionLineBreakButton != null)
@@ -1754,9 +1764,17 @@ namespace FWEledit
             {
                 fwDescriptionPreview.TextChanged += addon_package_desc_changed;
             }
+            if (fwDescriptionEditor != null)
+            {
+                fwDescriptionEditor.KeyDown += description_editor_key_down;
+            }
             if (fwDescriptionColorButton != null)
             {
                 fwDescriptionColorButton.Click += click_description_color;
+            }
+            if (fwDescriptionUndoButton != null)
+            {
+                fwDescriptionUndoButton.Click += (s, e) => UndoDescriptionEdit();
             }
             if (fwDescriptionLineBreakButton != null)
             {
@@ -1774,6 +1792,18 @@ namespace FWEledit
             {
                 fwDescriptionTitleFontButton.Click += (s, e) => InsertDescriptionTag("^O057", "^O053");
             }
+        }
+
+        private void description_editor_key_down(object sender, KeyEventArgs e)
+        {
+            if (e == null || e.KeyCode != Keys.Z || !e.Control || e.Alt || e.Shift)
+            {
+                return;
+            }
+
+            UndoDescriptionEdit();
+            e.SuppressKeyPress = true;
+            e.Handled = true;
         }
 
         private void click_description_color(object sender, EventArgs e)
@@ -1795,6 +1825,36 @@ namespace FWEledit
         private void InsertDescriptionTag(string tag, bool resetAfterSelection)
         {
             InsertDescriptionTag(tag, resetAfterSelection ? "^FFFFFF" : string.Empty);
+        }
+
+        private void UndoDescriptionEdit()
+        {
+            if (fwDescriptionEditor == null || !fwDescriptionEditor.CanUndo)
+            {
+                return;
+            }
+
+            fwDescriptionEditor.Undo();
+            fwDescriptionEditor.ClearUndo();
+            fwDescriptionEditor.Modified = false;
+            fwDescriptionEditor.Focus();
+        }
+
+        private void SetDescriptionEditorTextFromCode(string text)
+        {
+            if (fwDescriptionEditor == null)
+            {
+                return;
+            }
+
+            string safeText = text ?? string.Empty;
+            if (!string.Equals(fwDescriptionEditor.Text, safeText, StringComparison.Ordinal))
+            {
+                fwDescriptionEditor.Text = safeText;
+            }
+
+            fwDescriptionEditor.ClearUndo();
+            fwDescriptionEditor.Modified = false;
         }
 
         private void InsertDescriptionTag(string tag, string resetTag)

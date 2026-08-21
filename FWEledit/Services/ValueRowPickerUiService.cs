@@ -122,6 +122,7 @@ namespace FWEledit
             Action<int> openItemQualityPicker,
             Action<int> openGenderTypePicker,
             Action<int> openPetFoodTypePicker,
+            Action<int> openPetFoodUsagePicker,
             Action<int> openPetHeroPicker,
             Action<int> openImmuneTypePicker,
             Action<int> openBindFlagPicker,
@@ -188,6 +189,13 @@ namespace FWEledit
                     if (openPetFoodTypePicker != null)
                     {
                         openPetFoodTypePicker(e.RowIndex);
+                    }
+                }
+                else if (fieldClassifier.IsPetFoodUsageFieldName(fieldName))
+                {
+                    if (openPetFoodUsagePicker != null)
+                    {
+                        openPetFoodUsagePicker(e.RowIndex);
                     }
                 }
                 else if (fieldClassifier.IsPetHeroFieldName(fieldName))
@@ -993,6 +1001,39 @@ namespace FWEledit
             }
         }
 
+        public void OpenPetFoodUsagePickerForValueRow(
+            DataGridView itemGrid,
+            int rowIndex,
+            ItemFieldClassifierService fieldClassifier,
+            IWin32Window owner)
+        {
+            if (itemGrid == null || rowIndex < 0 || rowIndex >= itemGrid.Rows.Count)
+            {
+                return;
+            }
+
+            string fieldName = ValueGridFieldNameService.GetFieldName(itemGrid, rowIndex);
+            if (fieldClassifier == null || !fieldClassifier.IsPetFoodUsageFieldName(fieldName))
+            {
+                return;
+            }
+
+            int currentValue = 0;
+            string rawValue = GetValueCellRawValue(itemGrid, rowIndex);
+            int.TryParse(rawValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out currentValue);
+
+            using (QualityPickerWindow picker = new QualityPickerWindow(new List<QualityOption>(PetFoodUsageCatalog.Options), currentValue))
+            {
+                picker.Text = "Choose pet food usage...";
+                if (picker.ShowDialog(owner) != DialogResult.OK)
+                {
+                    return;
+                }
+
+                SetValueCellRawValue(itemGrid, rowIndex, picker.SelectedValue.ToString(CultureInfo.InvariantCulture));
+            }
+        }
+
         public void OpenPetHeroPickerForValueRow(
             DataGridView itemGrid,
             int rowIndex,
@@ -1251,6 +1292,8 @@ namespace FWEledit
                 ? itemReferenceService.BuildTitleDefinitionOptions()
                 : itemReferenceService.IsTaskTargetIndex(targetListIndex)
                     ? itemReferenceService.BuildTaskOptions(database)
+                : itemReferenceService.IsConversationTargetIndex(targetListIndex)
+                    ? itemReferenceService.BuildConversationOptions(listCollection)
                 : itemReferenceService.IsItemListTargetIndex(targetListIndex)
                     ? itemReferenceService.BuildSearchableItemOptions(listCollection, database, iconResolutionService)
                     : targetListIndex >= 0
@@ -1269,6 +1312,8 @@ namespace FWEledit
                 ? "title"
                 : itemReferenceService.IsTaskTargetIndex(targetListIndex)
                 ? "task"
+                : itemReferenceService.IsConversationTargetIndex(targetListIndex)
+                ? "dialog"
                 : targetListIndex >= 0 && targetListIndex < listCollection.Lists.Length
                 ? listCollection.Lists[targetListIndex].listName ?? "Item"
                 : "item";
@@ -1794,7 +1839,7 @@ namespace FWEledit
                 return;
             }
 
-            int previewRowIndex = ResolveGenderAwareModelPreviewRow(itemGrid, rowIndex, modelPickerService, pathIdResolutionService);
+            int previewRowIndex = ResolveGenderAwareModelPreviewRow(itemGrid, rowIndex, listName, database, modelPickerService, pathIdResolutionService);
             string previewFieldName = previewRowIndex == rowIndex
                 ? fieldName
                 : ValueGridFieldNameService.GetFieldName(itemGrid, previewRowIndex);
@@ -2043,16 +2088,28 @@ namespace FWEledit
         private static int ResolveGenderAwareModelPreviewRow(
             DataGridView itemGrid,
             int currentRowIndex,
+            string listName,
+            CacheSave database,
             ModelPickerService modelPickerService,
             PathIdResolutionService pathIdResolutionService)
         {
+            string currentFieldName = ValueGridFieldNameService.GetFieldName(itemGrid, currentRowIndex);
+            if (ShouldPreferSpecializedPreviewField(currentFieldName, listName)
+                || TryGetCurrentPathId(itemGrid, currentRowIndex, modelPickerService, pathIdResolutionService) <= 0)
+            {
+                int specializedRow = FindFirstValidSpecializedPreviewRow(itemGrid, listName, database, modelPickerService, pathIdResolutionService);
+                if (specializedRow >= 0)
+                {
+                    return specializedRow;
+                }
+            }
+
             int gender = ResolveItemGenderValue(itemGrid);
             if (gender != 0 && gender != 1)
             {
                 return currentRowIndex;
             }
 
-            string currentFieldName = ValueGridFieldNameService.GetFieldName(itemGrid, currentRowIndex);
             if (string.IsNullOrWhiteSpace(currentFieldName))
             {
                 return currentRowIndex;
@@ -2109,6 +2166,99 @@ namespace FWEledit
             }
 
             return bestRow >= 0 ? bestRow : currentRowIndex;
+        }
+
+        private static int FindFirstValidSpecializedPreviewRow(
+            DataGridView itemGrid,
+            string listName,
+            CacheSave database,
+            ModelPickerService modelPickerService,
+            PathIdResolutionService pathIdResolutionService)
+        {
+            if (itemGrid == null || itemGrid.Rows == null)
+            {
+                return -1;
+            }
+
+            for (int i = 0; i < itemGrid.Rows.Count; i++)
+            {
+                string fieldName = ValueGridFieldNameService.GetFieldName(itemGrid, i);
+                if (!IsSpecializedPreviewModelField(fieldName, listName))
+                {
+                    continue;
+                }
+
+                int pathId = TryGetCurrentPathId(itemGrid, i, modelPickerService, pathIdResolutionService);
+                if (pathId <= 0)
+                {
+                    continue;
+                }
+
+                int resolvedPathId;
+                string mappedPath;
+                if (modelPickerService == null
+                    || modelPickerService.TryResolveModelPathById(
+                        database,
+                        pathId,
+                        fieldName,
+                        listName,
+                        out resolvedPathId,
+                        out mappedPath,
+                        true))
+                {
+                    return i;
+                }
+            }
+
+            return -1;
+        }
+
+        private static bool ShouldPreferSpecializedPreviewField(string fieldName, string listName)
+        {
+            if (string.IsNullOrWhiteSpace(fieldName))
+            {
+                return false;
+            }
+
+            string normalized = fieldName.Trim();
+            if (!string.Equals(normalized, "file_matter", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            return IsSpecializedPreviewList(listName);
+        }
+
+        private static bool IsSpecializedPreviewModelField(string fieldName, string listName)
+        {
+            if (string.IsNullOrWhiteSpace(fieldName))
+            {
+                return false;
+            }
+
+            string normalized = fieldName.Trim();
+            string normalizedListName = listName ?? string.Empty;
+            if (normalizedListName.IndexOf("PET_BEDGE_ESSENCE", StringComparison.OrdinalIgnoreCase) >= 0
+                || normalizedListName.IndexOf("PET_BADGE_ESSENCE", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return normalized.StartsWith("file_to_shown", StringComparison.OrdinalIgnoreCase);
+            }
+
+            if (normalizedListName.IndexOf("VEHICLE_ESSENCE", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return normalized.StartsWith("file_models", StringComparison.OrdinalIgnoreCase)
+                    || normalized.StartsWith("model_name", StringComparison.OrdinalIgnoreCase);
+            }
+
+            return false;
+        }
+
+        private static bool IsSpecializedPreviewList(string listName)
+        {
+            string normalizedListName = listName ?? string.Empty;
+            return normalizedListName.IndexOf("PET_BEDGE_ESSENCE", StringComparison.OrdinalIgnoreCase) >= 0
+                || normalizedListName.IndexOf("PET_BADGE_ESSENCE", StringComparison.OrdinalIgnoreCase) >= 0
+                || normalizedListName.IndexOf("VEHICLE_ESSENCE", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private static int ResolveItemGenderValue(DataGridView itemGrid)

@@ -63,6 +63,7 @@ namespace FWEledit
         private Button fwDescriptionSaveButton;
         private Label fwDescriptionStatusLabel;
         private Button fwDescriptionColorButton;
+        private Button fwDescriptionUndoButton;
         private Button fwDescriptionLineBreakButton;
         private Button fwDescriptionNormalFontButton;
         private Button fwDescriptionSmallFontButton;

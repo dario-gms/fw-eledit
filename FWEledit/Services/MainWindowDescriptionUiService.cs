@@ -83,8 +83,25 @@ namespace FWEledit
                 viewModel,
                 workflowService,
                 itemDescResolver,
-                text => editor.Text = text,
+                text => SetEditorTextFromCode(editor, text),
                 renderPreview);
+        }
+
+        private static void SetEditorTextFromCode(TextBox editor, string text)
+        {
+            if (editor == null)
+            {
+                return;
+            }
+
+            string safeText = text ?? string.Empty;
+            if (!string.Equals(editor.Text, safeText, StringComparison.Ordinal))
+            {
+                editor.Text = safeText;
+            }
+
+            editor.ClearUndo();
+            editor.Modified = false;
         }
 
         public void HandleDescriptionChanged(

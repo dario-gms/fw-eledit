@@ -139,6 +139,25 @@ namespace FWEledit
                 owner);
         }
 
+        public void OpenPetFoodUsagePickerForValueRow(
+            ValueRowPickerUiService valueRowPickerUiService,
+            DataGridView valuesGrid,
+            int rowIndex,
+            ItemFieldClassifierService fieldClassifierService,
+            IWin32Window owner)
+        {
+            if (valueRowPickerUiService == null)
+            {
+                return;
+            }
+
+            valueRowPickerUiService.OpenPetFoodUsagePickerForValueRow(
+                valuesGrid,
+                rowIndex,
+                fieldClassifierService,
+                owner);
+        }
+
         public void OpenPetHeroPickerForValueRow(
             ValueRowPickerUiService valueRowPickerUiService,
             DataGridView valuesGrid,
@@ -623,6 +642,7 @@ namespace FWEledit
             Action<int> openQualityPicker,
             Action<int> openGenderTypePicker,
             Action<int> openPetFoodTypePicker,
+            Action<int> openPetFoodUsagePicker,
             Action<int> openPetHeroPicker,
             Action<int> openImmuneTypePicker,
             Action<int> openBindFlagPicker,
@@ -661,6 +681,7 @@ namespace FWEledit
                 openQualityPicker,
                 openGenderTypePicker,
                 openPetFoodTypePicker,
+                openPetFoodUsagePicker,
                 openPetHeroPicker,
                 openImmuneTypePicker,
                 openBindFlagPicker,

@@ -1,6 +1,7 @@
 # Build artifacts
 bin/
 obj/
+tools/preview-profile/Resources/
 *.exe
 *.pdb
 

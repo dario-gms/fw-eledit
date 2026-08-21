@@ -28,6 +28,11 @@ namespace FWEledit
             return PetFoodTypeCatalog.IsPetFoodTypeFieldName(fieldName);
         }
 
+        public bool IsPetFoodUsageFieldName(string fieldName)
+        {
+            return PetFoodUsageCatalog.IsPetFoodUsageFieldName(fieldName);
+        }
+
         public bool IsPetHeroFieldName(string fieldName)
         {
             return PetHeroCatalog.IsPetHeroFieldName(fieldName);
@@ -141,6 +146,7 @@ namespace FWEledit
                 || IsAddonTypeField(listCollection, listIndex, fieldName)
                 || IsItemQualityFieldName(fieldName)
                 || IsGenderTypeFieldName(fieldName)
+                || IsPetFoodUsageFieldName(fieldName)
                 || IsPetFoodTypeFieldName(fieldName)
                 || IsPetHeroFieldName(fieldName)
                 || IsImmuneTypeFieldName(fieldName)

@@ -13,13 +13,15 @@ namespace FWEledit
             string editorRoot = Path.Combine(localAppData, "FWEledit");
             string workspaceRoot = Path.Combine(editorRoot, "workspace");
             string pckIndexCacheRoot = Path.Combine(editorRoot, "pck-index-cache");
+            string clientMapsRoot = Path.Combine(editorRoot, "client-maps");
 
             string message =
                 "Clear FWEledit cache and restart the application?\n\n" +
                 "This deletes only editor-generated cache folders:\n" +
                 "- workspace copies and extracted/materialized PCK files\n" +
                 "- cached path.data/resources used by the editor\n" +
-                "- PCK index cache\n\n" +
+                "- PCK index cache\n" +
+                "- persistent client resource maps\n\n" +
                 "It does not delete your game client, resources, backups, or project files.\n\n" +
                 "Continue?";
 
@@ -41,7 +43,7 @@ namespace FWEledit
             try
             {
                 string error;
-                if (!TryClearEditorCache(workspaceRoot, pckIndexCacheRoot, out error))
+                if (!TryClearEditorCache(workspaceRoot, pckIndexCacheRoot, clientMapsRoot, out error))
                 {
                     MessageBox.Show(
                         this,
@@ -60,13 +62,14 @@ namespace FWEledit
             }
         }
 
-        private static bool TryClearEditorCache(string workspaceRoot, string pckIndexCacheRoot, out string error)
+        private static bool TryClearEditorCache(string workspaceRoot, string pckIndexCacheRoot, string clientMapsRoot, out string error)
         {
             error = string.Empty;
             try
             {
                 TryDeleteDirectory(workspaceRoot);
                 TryDeleteDirectory(pckIndexCacheRoot);
+                TryDeleteDirectory(clientMapsRoot);
                 return true;
             }
             catch (Exception ex)
