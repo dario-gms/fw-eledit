@@ -22,7 +22,7 @@
     <UpdateRequired>false</UpdateRequired>
     <MapFileExtensions>true</MapFileExtensions>
     <ApplicationRevision>0</ApplicationRevision>
-    <ApplicationVersion>0.9.5.22</ApplicationVersion>
+    <ApplicationVersion>0.9.5.23</ApplicationVersion>
     <IsWebBootstrapper>false</IsWebBootstrapper>
     <UseApplicationTrust>false</UseApplicationTrust>
     <BootstrapperEnabled>true</BootstrapperEnabled>
@@ -155,6 +155,7 @@
     <Compile Include="Catalogs\EquipmentTypeCatalog.cs" />
     <Compile Include="Catalogs\ImmuneTypeCatalog.cs" />
     <Compile Include="Catalogs\ProcTypeCatalog.cs" />
+    <Compile Include="Catalogs\PetFoodUsageCatalog.cs" />
     <Compile Include="Catalogs\PetFoodTypeCatalog.cs" />
     <Compile Include="Catalogs\PetHeroCatalog.cs" />
     <Compile Include="Catalogs\ProfessionMaskCatalog.cs" />
@@ -1002,7 +1003,10 @@
     <Compile Include="Services\ControlRedrawScope.cs" />
     <Compile Include="Services\CreaturePortraitIconService.cs" />
     <Compile Include="Services\MonsterDropPortraitService.cs" />
+    <Compile Include="Services\NpcHotelPortraitService.cs" />
+    <Compile Include="Services\NpcLearnProducePortraitService.cs" />
     <Compile Include="Services\NpcSellPortraitService.cs" />
+    <Compile Include="Services\NpcTalkPortraitService.cs" />
     <Compile Include="Services\NpcTransmitPortraitService.cs" />
     <Compile Include="Services\NpcTradePortraitService.cs" />
     <Compile Include="Services\IconListAvailabilityService.cs" />

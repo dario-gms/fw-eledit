@@ -118,6 +118,17 @@ namespace FWEledit
                 this);
         }
 
+        private void OpenPetFoodUsagePickerForValueRow(int rowIndex)
+        {
+            mainWindowValuePickerCoordinatorService.OpenPetFoodUsagePickerForValueRow(
+                mainWindowValueRowPickerUiService,
+                valueRowPickerUiService,
+                dataGridView_item,
+                rowIndex,
+                itemFieldClassifierService,
+                this);
+        }
+
         private void OpenPetHeroPickerForValueRow(int rowIndex)
         {
             mainWindowValuePickerCoordinatorService.OpenPetHeroPickerForValueRow(
@@ -1021,6 +1032,19 @@ namespace FWEledit
 
         private void DrawReferenceValueIcon(Graphics graphics, ItemReferenceOption option, Rectangle bounds)
         {
+            Color accentColor;
+            if (IsColorPlanReference(option)
+                && TryParseReferenceAccentColor(option != null ? option.AccentHex : string.Empty, out accentColor))
+            {
+                using (SolidBrush fill = new SolidBrush(accentColor))
+                using (Pen border = new Pen(Color.FromArgb(210, 220, 232)))
+                {
+                    graphics.FillRectangle(fill, bounds);
+                    graphics.DrawRectangle(border, bounds.Left, bounds.Top, bounds.Width - 1, bounds.Height - 1);
+                }
+                return;
+            }
+
             Bitmap icon = Properties.Resources.NoIcon;
             if (sessionService != null
                 && sessionService.Database != null
@@ -1045,8 +1069,19 @@ namespace FWEledit
             graphics.DrawImage(icon, bounds);
         }
 
+        private static bool IsColorPlanReference(ItemReferenceOption option)
+        {
+            return option != null
+                && (option.ListName ?? string.Empty).IndexOf("COLOR_PLAN_CONFIG", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
         private Color ResolveReferenceValueTextColor(ItemReferenceOption option, bool selected, Color fallback)
         {
+            if (IsColorPlanReference(option))
+            {
+                return selected ? Color.White : fallback;
+            }
+
             Color accentColor;
             if (TryParseReferenceAccentColor(option != null ? option.AccentHex : string.Empty, out accentColor))
             {
@@ -2077,6 +2112,10 @@ namespace FWEledit
             {
                 OpenPetFoodTypePickerForValueRow(targetRow);
             }
+            else if (itemFieldClassifierService.IsPetFoodUsageFieldName(fieldName))
+            {
+                OpenPetFoodUsagePickerForValueRow(targetRow);
+            }
             else if (itemFieldClassifierService.IsPetHeroFieldName(fieldName))
             {
                 OpenPetHeroPickerForValueRow(targetRow);
@@ -2187,6 +2226,7 @@ namespace FWEledit
                 OpenItemQualityPickerForValueRow,
                 OpenGenderTypePickerForValueRow,
                 OpenPetFoodTypePickerForValueRow,
+                OpenPetFoodUsagePickerForValueRow,
                 OpenPetHeroPickerForValueRow,
                 OpenImmuneTypePickerForValueRow,
                 OpenBindFlagPickerForValueRow,
@@ -2313,6 +2353,7 @@ namespace FWEledit
             bool isItemQualityField = itemFieldClassifierService != null && itemFieldClassifierService.IsItemQualityFieldName(fieldName);
             bool isGenderTypeField = itemFieldClassifierService != null && itemFieldClassifierService.IsGenderTypeFieldName(fieldName);
             bool isPetFoodTypeField = itemFieldClassifierService != null && itemFieldClassifierService.IsPetFoodTypeFieldName(fieldName);
+            bool isPetFoodUsageField = itemFieldClassifierService != null && itemFieldClassifierService.IsPetFoodUsageFieldName(fieldName);
             bool isPetHeroField = itemFieldClassifierService != null && itemFieldClassifierService.IsPetHeroFieldName(fieldName);
             bool isImmuneTypeField = itemFieldClassifierService != null && itemFieldClassifierService.IsImmuneTypeFieldName(fieldName);
             bool isBindFlagField = itemFieldClassifierService != null && itemFieldClassifierService.IsBindFlagFieldName(fieldName);
@@ -2440,6 +2481,15 @@ namespace FWEledit
                     menu.Items.Add(new ToolStripSeparator());
                 }
                 menu.Items.Add("Choose Pet Food Type...", null, (menuSender, args) => OpenPetFoodTypePickerForValueRow(rowIndex));
+            }
+
+            if (isPetFoodUsageField)
+            {
+                if (menu.Items.Count > 0)
+                {
+                    menu.Items.Add(new ToolStripSeparator());
+                }
+                menu.Items.Add("Choose Pet Food Usage...", null, (menuSender, args) => OpenPetFoodUsagePickerForValueRow(rowIndex));
             }
 
             if (isPetHeroField)

@@ -9,10 +9,14 @@ namespace FWEledit
         private const int AllListsTargetIndex = -1;
         private const int ItemListsTargetIndex = -2;
         private const int TasksTargetIndex = -4;
+        private const int ConversationTargetIndex = -5;
         private const int TitleDefinitionsTargetIndex = TitleDefinitionCatalog.TargetListIndex;
         private readonly NpcTradePortraitService npcTradePortraitService = new NpcTradePortraitService();
+        private readonly NpcTalkPortraitService npcTalkPortraitService = new NpcTalkPortraitService();
         private readonly NpcSellPortraitService npcSellPortraitService = new NpcSellPortraitService();
         private readonly NpcTransmitPortraitService npcTransmitPortraitService = new NpcTransmitPortraitService();
+        private readonly NpcHotelPortraitService npcHotelPortraitService = new NpcHotelPortraitService();
+        private readonly NpcLearnProducePortraitService npcLearnProducePortraitService = new NpcLearnProducePortraitService();
         private readonly MonsterDropPortraitService monsterDropPortraitService = new MonsterDropPortraitService();
         private readonly CreaturePortraitIconService creaturePortraitIconService = new CreaturePortraitIconService();
 
@@ -119,6 +123,11 @@ namespace FWEledit
             return targetListIndex == TasksTargetIndex;
         }
 
+        public bool IsConversationTargetIndex(int targetListIndex)
+        {
+            return targetListIndex == ConversationTargetIndex;
+        }
+
         public bool IsItemBearingList(eListCollection listCollection, int listIndex)
         {
             return IsItemList(listCollection, listIndex);
@@ -180,7 +189,12 @@ namespace FWEledit
             {
                 targetListName = "PET_BEDGE_ESSENCE";
             }
-            else if (string.Equals(name, "id_level_exp", StringComparison.OrdinalIgnoreCase))
+            else if (string.Equals(name, "id_recipe", StringComparison.OrdinalIgnoreCase))
+            {
+                targetListName = "RECIPE_ESSENCE";
+            }
+            else if (string.Equals(name, "id_level_exp", StringComparison.OrdinalIgnoreCase)
+                && !IsPetBedgeEssenceListName(sourceListName))
             {
                 targetListName = "PLAYER_SUB_PROF_LEVEL_EXP_CONFIG";
             }
@@ -267,6 +281,26 @@ namespace FWEledit
 
                 targetListIndex = ItemListsTargetIndex;
                 return true;
+            }
+            else if (IsMergeRecipeItemReferenceField(sourceListName, name))
+            {
+                targetListIndex = ItemListsTargetIndex;
+                return true;
+            }
+            else if (string.Equals(sourceListName, "RECIPE_ESSENCE", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(name, "produce_type", StringComparison.OrdinalIgnoreCase))
+            {
+                targetListName = "PRODUCE_TYPE_ESSENCE";
+            }
+            else if (string.Equals(sourceListName, "NPC_TALK_SERVICE", StringComparison.OrdinalIgnoreCase)
+                && FieldNameEquals(name, "id_dialog"))
+            {
+                targetListIndex = ConversationTargetIndex;
+                return true;
+            }
+            else if (IsNpcLearnProduceSkillReferenceField(sourceListName, name))
+            {
+                targetListName = "PRODUCE_TYPE_ESSENCE";
             }
             else if (string.Equals(sourceListName, "NPC_SELL_SERVICE", StringComparison.OrdinalIgnoreCase)
                 && IsNpcSellGoodsField(name))
@@ -360,6 +394,14 @@ namespace FWEledit
             {
                 return rawValue ?? string.Empty;
             }
+            if (targetListIndex == ConversationTargetIndex && TryFindOptionById(listCollection, targetListIndex, id, database, iconResolutionService, out option))
+            {
+                return string.IsNullOrWhiteSpace(option.Name) ? rawValue : option.Name;
+            }
+            if (targetListIndex == ConversationTargetIndex)
+            {
+                return rawValue ?? string.Empty;
+            }
 
             if (targetListIndex >= 0 && TryFindOptionById(listCollection, targetListIndex, id, database, iconResolutionService, out option))
             {
@@ -424,6 +466,14 @@ namespace FWEledit
             {
                 return false;
             }
+            if (targetListIndex == ConversationTargetIndex && TryFindOptionById(listCollection, targetListIndex, id, database, iconResolutionService, out option))
+            {
+                return true;
+            }
+            if (targetListIndex == ConversationTargetIndex)
+            {
+                return false;
+            }
 
             if (targetListIndex >= 0 && TryFindOptionById(listCollection, targetListIndex, id, database, iconResolutionService, out option))
             {
@@ -484,6 +534,10 @@ namespace FWEledit
             }
 
             if (targetListIndex == TasksTargetIndex && TryFindOptionByName(listCollection, targetListIndex, value.Trim(), out option))
+            {
+                return option.Id.ToString();
+            }
+            if (targetListIndex == ConversationTargetIndex && TryFindOptionByName(listCollection, targetListIndex, value.Trim(), out option))
             {
                 return option.Id.ToString();
             }
@@ -561,6 +615,10 @@ namespace FWEledit
             {
                 return BuildTaskOptions(database);
             }
+            if (targetListIndex == ConversationTargetIndex)
+            {
+                return BuildConversationOptions(listCollection);
+            }
 
             if (targetListIndex == TitleDefinitionsTargetIndex)
             {
@@ -604,6 +662,22 @@ namespace FWEledit
             return options;
         }
 
+        public List<ItemReferenceOption> BuildConversationOptions(eListCollection listCollection)
+        {
+            EnsureCacheContext(listCollection, cachedDatabase, cachedIconResolutionService);
+
+            List<ItemReferenceOption> options;
+            if (optionsByListIndex.TryGetValue(ConversationTargetIndex, out options))
+            {
+                return options;
+            }
+
+            options = BuildConversationOptionsUncached(listCollection);
+            optionsByListIndex[ConversationTargetIndex] = options;
+            IndexOptions(ConversationTargetIndex, options);
+            return options;
+        }
+
         private List<ItemReferenceOption> BuildOptionsUncached(eListCollection listCollection, int targetListIndex, CacheSave database, IconResolutionService iconResolutionService)
         {
             List<ItemReferenceOption> options = new List<ItemReferenceOption>();
@@ -622,6 +696,9 @@ namespace FWEledit
                 : null;
             Dictionary<int, ItemReferenceOption> suiteEquipmentUsageMap = string.Equals(normalizedListName, "SUITE_ESSENCE", StringComparison.OrdinalIgnoreCase)
                 ? BuildSuiteEquipmentUsageMap(listCollection, targetListIndex, database, iconResolutionService)
+                : null;
+            Dictionary<int, ItemReferenceOption> produceTypeUsageMap = string.Equals(normalizedListName, "PRODUCE_TYPE_ESSENCE", StringComparison.OrdinalIgnoreCase)
+                ? BuildProduceTypeUsageMap(listCollection, database, iconResolutionService)
                 : null;
             string inheritedTypeSourceListName;
             string inheritedTypeFieldName;
@@ -669,12 +746,36 @@ namespace FWEledit
                         iconKey = sellPortraitPath;
                     }
                 }
+                else if (string.Equals(normalizedListName, "NPC_TALK_SERVICE", StringComparison.OrdinalIgnoreCase))
+                {
+                    string talkPortraitPath;
+                    if (npcTalkPortraitService.TryResolveTalkPortraitPath(listCollection, database, id, out talkPortraitPath))
+                    {
+                        iconKey = talkPortraitPath;
+                    }
+                }
                 else if (string.Equals(normalizedListName, "NPC_TRANSMIT_SERVICE", StringComparison.OrdinalIgnoreCase))
                 {
                     string transmitPortraitPath;
                     if (npcTransmitPortraitService.TryResolveTransmitPortraitPath(listCollection, database, id, out transmitPortraitPath))
                     {
                         iconKey = transmitPortraitPath;
+                    }
+                }
+                else if (string.Equals(normalizedListName, "NPC_HOTEL_SERVICE", StringComparison.OrdinalIgnoreCase))
+                {
+                    string hotelPortraitPath;
+                    if (npcHotelPortraitService.TryResolveHotelPortraitPath(listCollection, database, id, out hotelPortraitPath))
+                    {
+                        iconKey = hotelPortraitPath;
+                    }
+                }
+                else if (string.Equals(normalizedListName, "NPC_LEARN_PRODUCE_SERVICE", StringComparison.OrdinalIgnoreCase))
+                {
+                    string learnProducePortraitPath;
+                    if (npcLearnProducePortraitService.TryResolveLearnProducePortraitPath(listCollection, database, id, out learnProducePortraitPath))
+                    {
+                        iconKey = learnProducePortraitPath;
                     }
                 }
                 else if (string.Equals(normalizedListName, "DROPTABLE_ESSENCE", StringComparison.OrdinalIgnoreCase))
@@ -747,6 +848,33 @@ namespace FWEledit
                         }
                     }
                 }
+                else if (string.Equals(normalizedListName, "PRODUCE_TYPE_ESSENCE", StringComparison.OrdinalIgnoreCase))
+                {
+                    ItemReferenceOption sourceItemOption;
+                    if (produceTypeUsageMap != null && produceTypeUsageMap.TryGetValue(id, out sourceItemOption) && sourceItemOption != null)
+                    {
+                        if (!string.IsNullOrWhiteSpace(sourceItemOption.IconKey))
+                        {
+                            iconKey = sourceItemOption.IconKey;
+                        }
+
+                        if (sourceItemOption.Quality >= 0)
+                        {
+                            quality = sourceItemOption.Quality;
+                        }
+                    }
+                }
+
+                string accentHex = string.Empty;
+                string secondaryText = string.Empty;
+                if (string.Equals(normalizedListName, "COLOR_PLAN_CONFIG", StringComparison.OrdinalIgnoreCase))
+                {
+                    accentHex = BuildColorPlanAccentHex(listCollection, targetListIndex, i);
+                    if (!string.IsNullOrWhiteSpace(accentHex))
+                    {
+                        secondaryText = "#" + accentHex;
+                    }
+                }
 
                 options.Add(new ItemReferenceOption
                 {
@@ -756,11 +884,92 @@ namespace FWEledit
                     Name = name,
                     ListName = listName,
                     IconKey = iconKey,
-                    Quality = quality
+                    Quality = quality,
+                    AccentHex = accentHex,
+                    SecondaryText = secondaryText
                 });
             }
 
             return options;
+        }
+
+        private static string BuildColorPlanAccentHex(eListCollection listCollection, int listIndex, int elementIndex)
+        {
+            int redMinField = FindFieldIndex(listCollection, listIndex, "red_min");
+            int redMaxField = FindFieldIndex(listCollection, listIndex, "red_max");
+            int greenMinField = FindFieldIndex(listCollection, listIndex, "green_min");
+            int greenMaxField = FindFieldIndex(listCollection, listIndex, "green_max");
+            int blueMinField = FindFieldIndex(listCollection, listIndex, "blue_min");
+            int blueMaxField = FindFieldIndex(listCollection, listIndex, "blue_max");
+            if (redMinField < 0
+                || redMaxField < 0
+                || greenMinField < 0
+                || greenMaxField < 0
+                || blueMinField < 0
+                || blueMaxField < 0)
+            {
+                return string.Empty;
+            }
+
+            int redMin = GetColorPlanChannelValue(listCollection, listIndex, elementIndex, redMinField);
+            int redMax = GetColorPlanChannelValue(listCollection, listIndex, elementIndex, redMaxField);
+            int greenMin = GetColorPlanChannelValue(listCollection, listIndex, elementIndex, greenMinField);
+            int greenMax = GetColorPlanChannelValue(listCollection, listIndex, elementIndex, greenMaxField);
+            int blueMin = GetColorPlanChannelValue(listCollection, listIndex, elementIndex, blueMinField);
+            int blueMax = GetColorPlanChannelValue(listCollection, listIndex, elementIndex, blueMaxField);
+
+            int red = (redMin + redMax) / 2;
+            int green = (greenMin + greenMax) / 2;
+            int blue = (blueMin + blueMax) / 2;
+            return red.ToString("X2") + green.ToString("X2") + blue.ToString("X2");
+        }
+
+        private static int GetColorPlanChannelValue(eListCollection listCollection, int listIndex, int elementIndex, int fieldIndex)
+        {
+            if (fieldIndex < 0)
+            {
+                return 0;
+            }
+
+            int value;
+            if (!int.TryParse(listCollection.GetValue(listIndex, elementIndex, fieldIndex), out value))
+            {
+                return 0;
+            }
+
+            if (value < 0)
+            {
+                return 0;
+            }
+            if (value > 255)
+            {
+                return 255;
+            }
+            return value;
+        }
+
+        private static int FindFieldIndex(eListCollection listCollection, int listIndex, string fieldName)
+        {
+            if (listCollection == null
+                || listIndex < 0
+                || listIndex >= listCollection.Lists.Length
+                || listCollection.Lists[listIndex] == null
+                || listCollection.Lists[listIndex].elementFields == null
+                || string.IsNullOrWhiteSpace(fieldName))
+            {
+                return -1;
+            }
+
+            string[] fields = listCollection.Lists[listIndex].elementFields;
+            for (int i = 0; i < fields.Length; i++)
+            {
+                if (string.Equals(fields[i], fieldName, StringComparison.OrdinalIgnoreCase))
+                {
+                    return i;
+                }
+            }
+
+            return -1;
         }
 
         private static List<ItemReferenceOption> BuildTaskOptionsUncached(CacheSave database)
@@ -798,6 +1007,96 @@ namespace FWEledit
             }
 
             return options;
+        }
+
+        private static List<ItemReferenceOption> BuildConversationOptionsUncached(eListCollection listCollection)
+        {
+            List<ItemReferenceOption> options = new List<ItemReferenceOption>();
+            eListConversation conversation = TryLoadConversation(listCollection);
+            if (conversation == null || conversation.talk_procs == null)
+            {
+                return options;
+            }
+
+            for (int i = 0; i < conversation.talk_proc_count && i < conversation.talk_procs.Length; i++)
+            {
+                talk_proc talk = conversation.talk_procs[i];
+                if (talk == null || talk.id_talk <= 0)
+                {
+                    continue;
+                }
+
+                string name = CleanConversationText(talk.GetText());
+                if (string.IsNullOrWhiteSpace(name))
+                {
+                    name = "Dialog " + talk.id_talk.ToString();
+                }
+
+                options.Add(new ItemReferenceOption
+                {
+                    ListIndex = ConversationTargetIndex,
+                    ElementIndex = i,
+                    Id = talk.id_talk,
+                    Name = name,
+                    ListName = "Dialogs",
+                    IconKey = string.Empty,
+                    Quality = -1,
+                    Kind = "Dialog"
+                });
+            }
+
+            return options;
+        }
+
+        private static eListConversation TryLoadConversation(eListCollection listCollection)
+        {
+            if (listCollection == null
+                || listCollection.Lists == null
+                || listCollection.ConversationListIndex < 0
+                || listCollection.ConversationListIndex >= listCollection.Lists.Length
+                || listCollection.Lists[listCollection.ConversationListIndex] == null
+                || listCollection.Lists[listCollection.ConversationListIndex].elementValues == null
+                || listCollection.Lists[listCollection.ConversationListIndex].elementValues.Length == 0
+                || listCollection.Lists[listCollection.ConversationListIndex].elementValues[0] == null
+                || listCollection.Lists[listCollection.ConversationListIndex].elementValues[0].Length == 0)
+            {
+                return null;
+            }
+
+            byte[] raw = listCollection.Lists[listCollection.ConversationListIndex].elementValues[0][0] as byte[];
+            if (raw == null || raw.Length == 0)
+            {
+                return null;
+            }
+
+            try
+            {
+                return new eListConversation(raw);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static string CleanConversationText(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return string.Empty;
+            }
+
+            return value.Replace("\0", string.Empty).Trim();
+        }
+
+        private static bool FieldNameEquals(string fieldName, string expected)
+        {
+            return string.Equals(NormalizeFieldKey(fieldName), NormalizeFieldKey(expected), StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string NormalizeFieldKey(string fieldName)
+        {
+            return (fieldName ?? string.Empty).Trim().Replace(" ", "_");
         }
 
         private static string BuildTaskSecondaryText(CacheSave database, ItemDupe task)
@@ -995,6 +1294,87 @@ namespace FWEledit
             }
 
             return map;
+        }
+
+        private Dictionary<int, ItemReferenceOption> BuildProduceTypeUsageMap(
+            eListCollection listCollection,
+            CacheSave database,
+            IconResolutionService iconResolutionService)
+        {
+            Dictionary<int, ItemReferenceOption> map = new Dictionary<int, ItemReferenceOption>();
+            int recipeListIndex;
+            if (!TryFindListIndexByName(listCollection, "RECIPE_ESSENCE", out recipeListIndex)
+                || listCollection.Lists[recipeListIndex] == null
+                || listCollection.Lists[recipeListIndex].elementFields == null
+                || listCollection.Lists[recipeListIndex].elementValues == null)
+            {
+                return map;
+            }
+
+            string[] fields = listCollection.Lists[recipeListIndex].elementFields;
+            int produceTypeFieldIndex = GetFieldIndex(fields, "produce_type");
+            List<int> productFieldIndexes = GetRecipeProducedItemFieldIndexes(fields);
+            if (produceTypeFieldIndex < 0 || productFieldIndexes.Count == 0)
+            {
+                return map;
+            }
+
+            for (int elementIndex = 0; elementIndex < listCollection.Lists[recipeListIndex].elementValues.Length; elementIndex++)
+            {
+                int produceTypeId;
+                if (!int.TryParse(listCollection.GetValue(recipeListIndex, elementIndex, produceTypeFieldIndex), out produceTypeId)
+                    || produceTypeId <= 0
+                    || map.ContainsKey(produceTypeId))
+                {
+                    continue;
+                }
+
+                for (int i = 0; i < productFieldIndexes.Count; i++)
+                {
+                    int itemId;
+                    if (!int.TryParse(listCollection.GetValue(recipeListIndex, elementIndex, productFieldIndexes[i]), out itemId)
+                        || itemId <= 0)
+                    {
+                        continue;
+                    }
+
+                    ItemReferenceOption itemOption;
+                    if (TryBuildItemOptionByIdUncached(listCollection, itemId, database, iconResolutionService, out itemOption))
+                    {
+                        map[produceTypeId] = itemOption;
+                        break;
+                    }
+                }
+            }
+
+            return map;
+        }
+
+        private static List<int> GetRecipeProducedItemFieldIndexes(string[] fields)
+        {
+            List<int> productFields = new List<int>();
+            List<int> acquiredFields = new List<int>();
+            if (fields == null)
+            {
+                return productFields;
+            }
+
+            for (int i = 0; i < fields.Length; i++)
+            {
+                string field = fields[i] ?? string.Empty;
+                if (field.IndexOf("products_", StringComparison.OrdinalIgnoreCase) >= 0
+                    && field.EndsWith("_id_to_make", StringComparison.OrdinalIgnoreCase))
+                {
+                    productFields.Add(i);
+                }
+                else if (field.IndexOf("acquired_", StringComparison.OrdinalIgnoreCase) >= 0
+                    && field.EndsWith("_id", StringComparison.OrdinalIgnoreCase))
+                {
+                    acquiredFields.Add(i);
+                }
+            }
+
+            return productFields.Count > 0 ? productFields : acquiredFields;
         }
 
         private bool TryBuildItemOptionByIdUncached(
@@ -1666,6 +2046,35 @@ namespace FWEledit
                 || string.Equals(listName, "EQUIPMENT_ESSENCE", StringComparison.OrdinalIgnoreCase);
         }
 
+        private static bool IsPetBedgeEssenceListName(string listName)
+        {
+            return !string.IsNullOrWhiteSpace(listName)
+                && (listName.IndexOf("PET_BEDGE_ESSENCE", StringComparison.OrdinalIgnoreCase) >= 0
+                    || listName.IndexOf("PET_BADGE_ESSENCE", StringComparison.OrdinalIgnoreCase) >= 0);
+        }
+
+        private static bool IsMergeRecipeEssenceListName(string listName)
+        {
+            return !string.IsNullOrWhiteSpace(listName)
+                && listName.IndexOf("MERGE_RECIPE_ESSENCE", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static bool IsMergeRecipeItemReferenceField(string sourceListName, string fieldName)
+        {
+            if (!IsMergeRecipeEssenceListName(sourceListName) || string.IsNullOrWhiteSpace(fieldName))
+            {
+                return false;
+            }
+
+            string normalized = fieldName.Trim();
+            return (normalized.StartsWith("makes_", StringComparison.OrdinalIgnoreCase)
+                    && normalized.IndexOf("_id", StringComparison.OrdinalIgnoreCase) >= 0)
+                || (normalized.StartsWith("mains_", StringComparison.OrdinalIgnoreCase)
+                    && normalized.IndexOf("_id_main", StringComparison.OrdinalIgnoreCase) >= 0)
+                || (normalized.StartsWith("helpers_", StringComparison.OrdinalIgnoreCase)
+                    && normalized.EndsWith("_id", StringComparison.OrdinalIgnoreCase));
+        }
+
         private static bool TryGetMappedTargetListName(string sourceListName, string fieldName, out string targetListName)
         {
             targetListName = null;
@@ -1884,6 +2293,13 @@ namespace FWEledit
             }
 
             if (string.Equals(sourceListName, "RECIPE_ESSENCE", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(fieldName, "produce_type", StringComparison.OrdinalIgnoreCase))
+            {
+                targetListName = "PRODUCE_TYPE_ESSENCE";
+                return true;
+            }
+
+            if (string.Equals(sourceListName, "RECIPE_ESSENCE", StringComparison.OrdinalIgnoreCase)
                 && (IsNumberedIdField(fieldName, "materials_") || IsNumberedIdField(fieldName, "acquired_")))
             {
                 targetListName = null;
@@ -1915,6 +2331,17 @@ namespace FWEledit
         {
             return string.Equals(sourceListName, "NPC_ESSENCE", StringComparison.OrdinalIgnoreCase)
                 && string.Equals(fieldName, "id_src_monster", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsNpcLearnProduceSkillReferenceField(string sourceListName, string fieldName)
+        {
+            if (string.IsNullOrWhiteSpace(sourceListName) || string.IsNullOrWhiteSpace(fieldName))
+            {
+                return false;
+            }
+
+            return string.Equals(sourceListName, "NPC_LEARN_PRODUCE_SERVICE", StringComparison.OrdinalIgnoreCase)
+                && fieldName.IndexOf("produce_skill", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private static bool IsSuiteReferenceField(string fieldName)

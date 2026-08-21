@@ -612,12 +612,15 @@ namespace FWEledit
             string resourcesRoot = Path.Combine(gameRoot, "resources");
             if (Directory.Exists(resourcesRoot))
             {
-                foreach (string file in Directory.GetFiles(resourcesRoot, "*.pck"))
+                foreach (string file in Directory.EnumerateFiles(resourcesRoot, "*.*", SearchOption.TopDirectoryOnly))
                 {
-                    AddSignature(signatures, "resources/" + Path.GetFileName(file), file);
-                }
-                foreach (string file in Directory.GetFiles(resourcesRoot, "*.pkx"))
-                {
+                    string extension = Path.GetExtension(file);
+                    if (!string.Equals(extension, ".pck", StringComparison.OrdinalIgnoreCase)
+                        && !string.Equals(extension, ".pkx", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
                     AddSignature(signatures, "resources/" + Path.GetFileName(file), file);
                 }
             }

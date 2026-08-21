@@ -12,14 +12,15 @@ FWEledit is based on [sELedit++ by Wrechid](https://github.com/Wrechid/sELedit-)
 
 ---
 
-## What's New in v0.9.5.22
+## What's New in v0.9.5.23
 
-- Added a built-in PCK Explorer / Importer with live 3D preview, package type filters, persistent filter selection, existing-client model highlighting, destination package selection, progress feedback, safer package updates, and detailed import audit summaries.
-- Improved model, effect, mount, handhold, weapon, icon, and item-package workflows with automatic cross-PCK dependency resolution, package-aware model picking, gender-aware equipment/fashion previews, and more reliable imports for assets stored outside their original package.
-- Reworked description handling so item descriptions are loaded from and saved back to `configs.pck` without requiring manually extracted files, while keeping cached browsing fast and supporting clone/delete description cleanup.
-- Expanded the Advanced Title Editor with graphic title controls, chat-display toggles, improved title formatting preservation, and safer script/surface package updates.
-- Added `Edit > Clear Cache`, refreshed the About window, cleaned up visible Tools menu entries, and improved equipment-field editing for percentages, using-type masks, and faster `Refine` / `Other` tab loading.
-- Project/app version metadata updated to `v0.9.5.22`.
+- Added per-client resource maps and warmer reference/list caches to make repeat opens, list switching, and package-backed description reads faster without relying on manually extracted files.
+- Expanded parser, selector, reference, and inherited-icon coverage for service and recipe lists, including `Pet Bedge`, `Pet Food`, `Merge Recipe`, `NPC Hotel`, `Produce Type`, `NPC Learn Produce`, `NPC Talk Service`, `Aircraft`, `Vehicle`, and `Random Gift Bag`.
+- Fixed `NPC_TALK_SERVICE.id_dialog` so it resolves against real conversation/dialog entries and opens a dialog-specific picker instead of the generic all-list item selector.
+- Improved description editing reliability with normal undo behavior, `configs.pck` save confirmation, reload-safe package writes, and restored in-game update flow.
+- Refined Advanced Title handling so graphic titles can be controlled separately for player/chat display while preserving text-line formatting and avoiding unintended icons on system messages.
+- Added `COLOR_PLAN_CONFIG` swatches in aircraft color fields, plus clearer Yes/No and gender displays for aircraft-related fields.
+- Project/app version metadata updated to `v0.9.5.23`.
 
 Previous release notes were moved to [docs/WHATS_NEW.md](docs/WHATS_NEW.md).
 

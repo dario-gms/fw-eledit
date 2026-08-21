@@ -25,6 +25,7 @@ namespace FWEledit
         public Button DescriptionSaveButton { get; set; }
         public Label DescriptionStatusLabel { get; set; }
         public Button DescriptionColorButton { get; set; }
+        public Button DescriptionUndoButton { get; set; }
         public Button DescriptionLineBreakButton { get; set; }
         public Button DescriptionNormalFontButton { get; set; }
         public Button DescriptionSmallFontButton { get; set; }

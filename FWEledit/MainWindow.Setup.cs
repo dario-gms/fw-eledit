@@ -157,6 +157,7 @@ namespace FWEledit
             fwDescriptionSaveButton = layout.DescriptionSaveButton;
             fwDescriptionStatusLabel = layout.DescriptionStatusLabel;
             fwDescriptionColorButton = layout.DescriptionColorButton;
+            fwDescriptionUndoButton = layout.DescriptionUndoButton;
             fwDescriptionLineBreakButton = layout.DescriptionLineBreakButton;
             fwDescriptionNormalFontButton = layout.DescriptionNormalFontButton;
             fwDescriptionSmallFontButton = layout.DescriptionSmallFontButton;

@@ -12,39 +12,42 @@ namespace FWEledit
                 return false;
             }
 
-            string normalized = fieldName.Trim();
-            return string.Equals(normalized, "is_forbid_transfer_ehance", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(normalized, "is_forbid_transfer_enhance", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(normalized, "bind_return_town", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(normalized, "is_undercity", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(normalized, "is_used_for_transfer_world", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(normalized, "is_alpha_fashion_equip", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(normalized, "can_decompose", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(normalized, "can_auction", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(normalized, "sell_for_bind_money", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(normalized, "is_category", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(normalized, "is_shared_in_team", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(normalized, "is_hared_by_team", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(normalized, "is_boss", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(normalized, "is_fly_state", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(normalized, "is_exp_affected_by_kill_num", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(normalized, "has_attack_behavior", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(normalized, "is_collide_monster", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(normalized, "hide_aggressive_tag", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(normalized, "show_on_minimap", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(normalized, "show_injured_info", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(normalized, "show_damage_info", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(normalized, "can_selected", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(normalized, "can_select_by_tab", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(normalized, "auto_lock", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(normalized, "show_hint", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(normalized, "return_to_ori_place_after_battle", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(normalized, "is_fast", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(normalized, "aggressive_mode", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(normalized, "patroll_mode", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(normalized, "patrol_mode", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(normalized, "can_attack", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(normalized, "hide_name", StringComparison.OrdinalIgnoreCase);
+            string normalized = NormalizeFieldName(fieldName);
+            return normalized == "is_forbid_transfer_ehance"
+                || normalized == "is_forbid_transfer_enhance"
+                || normalized == "bind_return_town"
+                || normalized == "is_undercity"
+                || normalized == "is_used_for_transfer_world"
+                || normalized == "is_alpha_fashion_equip"
+                || normalized == "is_two_player"
+                || normalized == "can_change_color"
+                || normalized == "can_decompose"
+                || normalized == "can_auction"
+                || normalized == "sell_for_bind_money"
+                || normalized == "is_category"
+                || normalized == "is_shared_in_team"
+                || normalized == "is_hared_by_team"
+                || normalized == "is_boss"
+                || normalized == "is_fly_state"
+                || normalized == "is_exp_affected_by_kill_num"
+                || normalized == "has_attack_behavior"
+                || normalized == "is_collide_monster"
+                || normalized == "hide_aggressive_tag"
+                || normalized == "show_on_minimap"
+                || normalized == "show_injured_info"
+                || normalized == "show_damage_info"
+                || normalized == "can_selected"
+                || normalized == "can_select_by_tab"
+                || normalized == "auto_lock"
+                || normalized == "show_hint"
+                || normalized == "return_to_ori_place_after_battle"
+                || normalized == "is_fast"
+                || normalized == "stand_mode"
+                || normalized == "aggressive_mode"
+                || normalized == "patroll_mode"
+                || normalized == "patrol_mode"
+                || normalized == "can_attack"
+                || normalized == "hide_name";
         }
 
         public static string FormatDisplay(string rawValue)
@@ -95,6 +98,15 @@ namespace FWEledit
         {
             string normalized = NormalizeInput(value);
             return string.Equals(normalized, "1", StringComparison.Ordinal) ? "0" : "1";
+        }
+
+        private static string NormalizeFieldName(string fieldName)
+        {
+            return (fieldName ?? string.Empty)
+                .Trim()
+                .Replace(' ', '_')
+                .Replace('-', '_')
+                .ToLowerInvariant();
         }
     }
 }

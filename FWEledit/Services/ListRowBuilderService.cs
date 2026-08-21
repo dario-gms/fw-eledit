@@ -12,11 +12,20 @@ namespace FWEledit
             public int IconFieldIndex;
         }
 
+        private struct ProduceTypeIconSource
+        {
+            public int RecipeListIndex;
+            public int RecipeElementIndex;
+        }
+
         private readonly IconResolutionService iconResolutionService;
         private readonly CreaturePortraitIconService creaturePortraitIconService;
         private readonly NpcTradePortraitService npcTradePortraitService;
+        private readonly NpcTalkPortraitService npcTalkPortraitService;
         private readonly NpcSellPortraitService npcSellPortraitService;
         private readonly NpcTransmitPortraitService npcTransmitPortraitService;
+        private readonly NpcHotelPortraitService npcHotelPortraitService;
+        private readonly NpcLearnProducePortraitService npcLearnProducePortraitService;
         private readonly MonsterDropPortraitService monsterDropPortraitService;
         private eListCollection cachedItemIconSourceCollection;
         private Dictionary<int, ItemIconSource> cachedItemIconSourcesById;
@@ -26,8 +35,11 @@ namespace FWEledit
             this.iconResolutionService = iconResolutionService;
             this.creaturePortraitIconService = new CreaturePortraitIconService();
             this.npcTradePortraitService = new NpcTradePortraitService();
+            this.npcTalkPortraitService = new NpcTalkPortraitService();
             this.npcSellPortraitService = new NpcSellPortraitService();
             this.npcTransmitPortraitService = new NpcTransmitPortraitService();
+            this.npcHotelPortraitService = new NpcHotelPortraitService();
+            this.npcLearnProducePortraitService = new NpcLearnProducePortraitService();
             this.monsterDropPortraitService = new MonsterDropPortraitService();
         }
 
@@ -106,10 +118,15 @@ namespace FWEledit
             bool isDropTableList = string.Equals(normalizedListName, "DROPTABLE_ESSENCE", System.StringComparison.OrdinalIgnoreCase);
             bool isItemTradeList = string.Equals(normalizedListName, "ITEM_TRADE_ESSENCE", System.StringComparison.OrdinalIgnoreCase);
             bool isItemTradePageList = string.Equals(normalizedListName, "ITEM_TRADE_PAGE_CONFIG", System.StringComparison.OrdinalIgnoreCase);
+            bool isNpcTalkServiceList = string.Equals(normalizedListName, "NPC_TALK_SERVICE", System.StringComparison.OrdinalIgnoreCase);
             bool isNpcSellServiceList = string.Equals(normalizedListName, "NPC_SELL_SERVICE", System.StringComparison.OrdinalIgnoreCase);
             bool isNpcTransmitServiceList = string.Equals(normalizedListName, "NPC_TRANSMIT_SERVICE", System.StringComparison.OrdinalIgnoreCase);
+            bool isNpcHotelServiceList = string.Equals(normalizedListName, "NPC_HOTEL_SERVICE", System.StringComparison.OrdinalIgnoreCase);
+            bool isNpcLearnProduceServiceList = string.Equals(normalizedListName, "NPC_LEARN_PRODUCE_SERVICE", System.StringComparison.OrdinalIgnoreCase);
             bool isAddonPackageList = string.Equals(normalizedListName, "ADDON_PACKAGE_CONFIG", System.StringComparison.OrdinalIgnoreCase);
             bool isSuiteList = string.Equals(normalizedListName, "SUITE_ESSENCE", System.StringComparison.OrdinalIgnoreCase);
+            bool isMergeRecipeList = string.Equals(normalizedListName, "MERGE_RECIPE_ESSENCE", System.StringComparison.OrdinalIgnoreCase);
+            bool isProduceTypeList = string.Equals(normalizedListName, "PRODUCE_TYPE_ESSENCE", System.StringComparison.OrdinalIgnoreCase);
             string inheritedTypeSourceListName;
             string inheritedTypeFieldName;
             bool isInheritedTypeList = TryGetInheritedTypeIconSource(normalizedListName, out inheritedTypeSourceListName, out inheritedTypeFieldName);
@@ -117,6 +134,10 @@ namespace FWEledit
             List<int> dropFieldIndexes = isDropTableList ? GetDropFieldIndexes(listCollection.Lists[listIndex].elementFields) : null;
             List<int> tradePageGoodsFieldIndexes = isItemTradePageList ? GetTradePageGoodsFieldIndexes(listCollection.Lists[listIndex].elementFields) : null;
             List<int> suiteEquipmentFieldIndexes = isSuiteList ? GetSuiteEquipmentFieldIndexes(listCollection.Lists[listIndex].elementFields) : null;
+            List<int> mergeRecipeItemFieldIndexes = isMergeRecipeList ? GetMergeRecipeItemFieldIndexes(listCollection.Lists[listIndex].elementFields) : null;
+            Dictionary<int, ProduceTypeIconSource> produceTypeIconSourceById = includeIcons && isProduceTypeList
+                ? BuildProduceTypeIconSourceMap(listCollection)
+                : null;
             Dictionary<int, int> dropTableRowById = includeIcons && isDropTableList ? BuildDropTableRowIndexMap(listCollection, listIndex) : null;
             Dictionary<int, Bitmap> addonPackageIconById = includeIcons && isAddonPackageList ? BuildAddonPackageIconMap(listCollection, database) : null;
             Dictionary<int, Bitmap> inheritedTypeIconById = includeIcons && isInheritedTypeList
@@ -126,7 +147,7 @@ namespace FWEledit
                     inheritedTypeSourceListName,
                     inheritedTypeFieldName)
                 : null;
-            bool requiresInheritedItemIcons = includeIcons && (isDropTableList || isItemTradePageList || isSuiteList);
+            bool requiresInheritedItemIcons = includeIcons && (isDropTableList || isItemTradePageList || isSuiteList || isMergeRecipeList || isProduceTypeList);
             Dictionary<int, ItemIconSource> itemIconSourcesById = requiresInheritedItemIcons ? BuildItemIconSourceMap(listCollection) : null;
             Dictionary<int, Bitmap> itemIconById = requiresInheritedItemIcons ? new Dictionary<int, Bitmap>() : null;
 
@@ -197,6 +218,17 @@ namespace FWEledit
                             img = tradePageIcon;
                         }
                     }
+                    else if (includeIcons && isNpcTalkServiceList)
+                    {
+                        if (int.TryParse(listCollection.GetValue(listIndex, e, 0), out int talkServiceId))
+                        {
+                            if (npcTalkPortraitService.TryResolveTalkPortrait(listCollection, database, talkServiceId, out Bitmap talkIcon)
+                                && talkIcon != null)
+                            {
+                                img = talkIcon;
+                            }
+                        }
+                    }
                     else if (includeIcons && isNpcSellServiceList)
                     {
                         if (int.TryParse(listCollection.GetValue(listIndex, e, 0), out int sellServiceId))
@@ -216,6 +248,28 @@ namespace FWEledit
                                 && transmitIcon != null)
                             {
                                 img = transmitIcon;
+                            }
+                        }
+                    }
+                    else if (includeIcons && isNpcHotelServiceList)
+                    {
+                        if (int.TryParse(listCollection.GetValue(listIndex, e, 0), out int hotelServiceId))
+                        {
+                            if (npcHotelPortraitService.TryResolveHotelPortrait(listCollection, database, hotelServiceId, out Bitmap hotelIcon)
+                                && hotelIcon != null)
+                            {
+                                img = hotelIcon;
+                            }
+                        }
+                    }
+                    else if (includeIcons && isNpcLearnProduceServiceList)
+                    {
+                        if (int.TryParse(listCollection.GetValue(listIndex, e, 0), out int learnProduceServiceId))
+                        {
+                            if (npcLearnProducePortraitService.TryResolveLearnProducePortrait(listCollection, database, learnProduceServiceId, out Bitmap learnProduceIcon)
+                                && learnProduceIcon != null)
+                            {
+                                img = learnProduceIcon;
                             }
                         }
                     }
@@ -242,6 +296,36 @@ namespace FWEledit
                         if (suiteIcon != null)
                         {
                             img = suiteIcon;
+                        }
+                    }
+                    else if (includeIcons && isMergeRecipeList)
+                    {
+                        Bitmap mergeRecipeIcon = ResolveMergeRecipeIcon(
+                            listCollection,
+                            database,
+                            listIndex,
+                            e,
+                            mergeRecipeItemFieldIndexes,
+                            itemIconSourcesById,
+                            itemIconById);
+                        if (mergeRecipeIcon != null)
+                        {
+                            img = mergeRecipeIcon;
+                        }
+                    }
+                    else if (includeIcons && isProduceTypeList)
+                    {
+                        Bitmap produceTypeIcon = ResolveProduceTypeIcon(
+                            listCollection,
+                            database,
+                            listIndex,
+                            e,
+                            produceTypeIconSourceById,
+                            itemIconSourcesById,
+                            itemIconById);
+                        if (produceTypeIcon != null)
+                        {
+                            img = produceTypeIcon;
                         }
                     }
                     else if (includeIcons && isInheritedTypeList)
@@ -300,8 +384,11 @@ namespace FWEledit
             bool isDropTableList = string.Equals(normalizedListName, "DROPTABLE_ESSENCE", System.StringComparison.OrdinalIgnoreCase);
             bool isItemTradeList = string.Equals(normalizedListName, "ITEM_TRADE_ESSENCE", System.StringComparison.OrdinalIgnoreCase);
             bool isItemTradePageList = string.Equals(normalizedListName, "ITEM_TRADE_PAGE_CONFIG", System.StringComparison.OrdinalIgnoreCase);
+            bool isNpcTalkServiceList = string.Equals(normalizedListName, "NPC_TALK_SERVICE", System.StringComparison.OrdinalIgnoreCase);
             bool isNpcSellServiceList = string.Equals(normalizedListName, "NPC_SELL_SERVICE", System.StringComparison.OrdinalIgnoreCase);
             bool isNpcTransmitServiceList = string.Equals(normalizedListName, "NPC_TRANSMIT_SERVICE", System.StringComparison.OrdinalIgnoreCase);
+            bool isNpcHotelServiceList = string.Equals(normalizedListName, "NPC_HOTEL_SERVICE", System.StringComparison.OrdinalIgnoreCase);
+            bool isNpcLearnProduceServiceList = string.Equals(normalizedListName, "NPC_LEARN_PRODUCE_SERVICE", System.StringComparison.OrdinalIgnoreCase);
             bool isAddonPackageList = string.Equals(normalizedListName, "ADDON_PACKAGE_CONFIG", System.StringComparison.OrdinalIgnoreCase);
 
             if (isDropTableList)
@@ -363,6 +450,18 @@ namespace FWEledit
                 }
             }
 
+            if (isNpcTalkServiceList)
+            {
+                int talkServiceId;
+                Bitmap talkIcon;
+                if (int.TryParse(listCollection.GetValue(listIndex, elementIndex, 0), out talkServiceId)
+                    && npcTalkPortraitService.TryResolveTalkPortrait(listCollection, database, talkServiceId, out talkIcon)
+                    && talkIcon != null)
+                {
+                    return talkIcon;
+                }
+            }
+
             if (isNpcSellServiceList)
             {
                 int sellServiceId;
@@ -384,6 +483,30 @@ namespace FWEledit
                     && transmitIcon != null)
                 {
                     return transmitIcon;
+                }
+            }
+
+            if (isNpcHotelServiceList)
+            {
+                int hotelServiceId;
+                Bitmap hotelIcon;
+                if (int.TryParse(listCollection.GetValue(listIndex, elementIndex, 0), out hotelServiceId)
+                    && npcHotelPortraitService.TryResolveHotelPortrait(listCollection, database, hotelServiceId, out hotelIcon)
+                    && hotelIcon != null)
+                {
+                    return hotelIcon;
+                }
+            }
+
+            if (isNpcLearnProduceServiceList)
+            {
+                int learnProduceServiceId;
+                Bitmap learnProduceIcon;
+                if (int.TryParse(listCollection.GetValue(listIndex, elementIndex, 0), out learnProduceServiceId)
+                    && npcLearnProducePortraitService.TryResolveLearnProducePortrait(listCollection, database, learnProduceServiceId, out learnProduceIcon)
+                    && learnProduceIcon != null)
+                {
+                    return learnProduceIcon;
                 }
             }
 
@@ -413,6 +536,38 @@ namespace FWEledit
                 if (suiteIcon != null)
                 {
                     return suiteIcon;
+                }
+            }
+
+            if (string.Equals(normalizedListName, "MERGE_RECIPE_ESSENCE", System.StringComparison.OrdinalIgnoreCase))
+            {
+                Bitmap mergeRecipeIcon = ResolveMergeRecipeIcon(
+                    listCollection,
+                    database,
+                    listIndex,
+                    elementIndex,
+                    GetMergeRecipeItemFieldIndexes(listCollection.Lists[listIndex].elementFields),
+                    BuildItemIconSourceMap(listCollection),
+                    new Dictionary<int, Bitmap>());
+                if (mergeRecipeIcon != null)
+                {
+                    return mergeRecipeIcon;
+                }
+            }
+
+            if (string.Equals(normalizedListName, "PRODUCE_TYPE_ESSENCE", System.StringComparison.OrdinalIgnoreCase))
+            {
+                Bitmap produceTypeIcon = ResolveProduceTypeIcon(
+                    listCollection,
+                    database,
+                    listIndex,
+                    elementIndex,
+                    BuildProduceTypeIconSourceMap(listCollection),
+                    BuildItemIconSourceMap(listCollection),
+                    new Dictionary<int, Bitmap>());
+                if (produceTypeIcon != null)
+                {
+                    return produceTypeIcon;
                 }
             }
 
@@ -564,6 +719,88 @@ namespace FWEledit
             return null;
         }
 
+        private Bitmap ResolveMergeRecipeIcon(
+            eListCollection listCollection,
+            CacheSave database,
+            int listIndex,
+            int elementIndex,
+            List<int> itemFieldIndexes,
+            Dictionary<int, ItemIconSource> itemIconSourcesById,
+            Dictionary<int, Bitmap> itemIconById)
+        {
+            if (listCollection == null || itemFieldIndexes == null || itemFieldIndexes.Count == 0)
+            {
+                return null;
+            }
+
+            for (int i = 0; i < itemFieldIndexes.Count; i++)
+            {
+                int itemId;
+                if (!int.TryParse(listCollection.GetValue(listIndex, elementIndex, itemFieldIndexes[i]), out itemId) || itemId <= 0)
+                {
+                    continue;
+                }
+
+                Bitmap icon;
+                if (TryResolveItemIconById(listCollection, database, itemId, itemIconSourcesById, itemIconById, out icon))
+                {
+                    return icon;
+                }
+            }
+
+            return null;
+        }
+
+        private Bitmap ResolveProduceTypeIcon(
+            eListCollection listCollection,
+            CacheSave database,
+            int listIndex,
+            int elementIndex,
+            Dictionary<int, ProduceTypeIconSource> produceTypeIconSourceById,
+            Dictionary<int, ItemIconSource> itemIconSourcesById,
+            Dictionary<int, Bitmap> itemIconById)
+        {
+            if (listCollection == null || produceTypeIconSourceById == null)
+            {
+                return null;
+            }
+
+            int produceTypeId;
+            if (!int.TryParse(listCollection.GetValue(listIndex, elementIndex, 0), out produceTypeId) || produceTypeId <= 0)
+            {
+                return null;
+            }
+
+            ProduceTypeIconSource source;
+            if (!produceTypeIconSourceById.TryGetValue(produceTypeId, out source)
+                || source.RecipeListIndex < 0
+                || source.RecipeListIndex >= listCollection.Lists.Length
+                || source.RecipeElementIndex < 0
+                || source.RecipeElementIndex >= listCollection.Lists[source.RecipeListIndex].elementValues.Length)
+            {
+                return null;
+            }
+
+            List<int> productFieldIndexes = GetRecipeProductItemFieldIndexes(listCollection.Lists[source.RecipeListIndex].elementFields);
+            for (int i = 0; i < productFieldIndexes.Count; i++)
+            {
+                int itemId;
+                if (!int.TryParse(listCollection.GetValue(source.RecipeListIndex, source.RecipeElementIndex, productFieldIndexes[i]), out itemId)
+                    || itemId <= 0)
+                {
+                    continue;
+                }
+
+                Bitmap icon;
+                if (TryResolveItemIconById(listCollection, database, itemId, itemIconSourcesById, itemIconById, out icon))
+                {
+                    return icon;
+                }
+            }
+
+            return null;
+        }
+
         private static int GetFirstNonZeroDropId(eListCollection listCollection, int listIndex, int elementIndex, List<int> dropFieldIndexes)
         {
             for (int i = 0; i < dropFieldIndexes.Count; i++)
@@ -626,6 +863,47 @@ namespace FWEledit
 
             cachedItemIconSourceCollection = listCollection;
             cachedItemIconSourcesById = map;
+            return map;
+        }
+
+        private static Dictionary<int, ProduceTypeIconSource> BuildProduceTypeIconSourceMap(eListCollection listCollection)
+        {
+            Dictionary<int, ProduceTypeIconSource> map = new Dictionary<int, ProduceTypeIconSource>();
+            int recipeListIndex = FindListIndexByNormalizedName(listCollection, "RECIPE_ESSENCE");
+            if (recipeListIndex < 0
+                || listCollection.Lists[recipeListIndex] == null
+                || listCollection.Lists[recipeListIndex].elementFields == null
+                || listCollection.Lists[recipeListIndex].elementValues == null)
+            {
+                return map;
+            }
+
+            string[] fields = listCollection.Lists[recipeListIndex].elementFields;
+            int produceTypeFieldIndex = GetFieldIndex(fields, "produce_type");
+            List<int> productFieldIndexes = GetRecipeProductItemFieldIndexes(fields);
+            if (produceTypeFieldIndex < 0 || productFieldIndexes.Count == 0)
+            {
+                return map;
+            }
+
+            for (int elementIndex = 0; elementIndex < listCollection.Lists[recipeListIndex].elementValues.Length; elementIndex++)
+            {
+                int produceTypeId;
+                if (!int.TryParse(listCollection.GetValue(recipeListIndex, elementIndex, produceTypeFieldIndex), out produceTypeId)
+                    || produceTypeId <= 0
+                    || map.ContainsKey(produceTypeId)
+                    || !HasPositiveValueInAnyField(listCollection, recipeListIndex, elementIndex, productFieldIndexes))
+                {
+                    continue;
+                }
+
+                map[produceTypeId] = new ProduceTypeIconSource
+                {
+                    RecipeListIndex = recipeListIndex,
+                    RecipeElementIndex = elementIndex
+                };
+            }
+
             return map;
         }
 
@@ -896,6 +1174,79 @@ namespace FWEledit
             return indexes;
         }
 
+        private static List<int> GetMergeRecipeItemFieldIndexes(string[] fields)
+        {
+            List<int> producedItemIndexes = new List<int>();
+            List<int> inputItemIndexes = new List<int>();
+            if (fields == null)
+            {
+                return producedItemIndexes;
+            }
+
+            for (int i = 0; i < fields.Length; i++)
+            {
+                string fieldName = fields[i] ?? string.Empty;
+                if (fieldName.StartsWith("makes_", System.StringComparison.OrdinalIgnoreCase)
+                    && fieldName.IndexOf("_id", System.StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    producedItemIndexes.Add(i);
+                }
+                else if ((fieldName.StartsWith("mains_", System.StringComparison.OrdinalIgnoreCase)
+                        && fieldName.IndexOf("_id_main", System.StringComparison.OrdinalIgnoreCase) >= 0)
+                    || (fieldName.StartsWith("helpers_", System.StringComparison.OrdinalIgnoreCase)
+                        && fieldName.EndsWith("_id", System.StringComparison.OrdinalIgnoreCase)))
+                {
+                    inputItemIndexes.Add(i);
+                }
+            }
+
+            producedItemIndexes.AddRange(inputItemIndexes);
+            return producedItemIndexes;
+        }
+
+        private static List<int> GetRecipeProductItemFieldIndexes(string[] fields)
+        {
+            List<int> productIndexes = new List<int>();
+            List<int> acquiredIndexes = new List<int>();
+            if (fields == null)
+            {
+                return productIndexes;
+            }
+
+            for (int i = 0; i < fields.Length; i++)
+            {
+                string fieldName = fields[i] ?? string.Empty;
+                if (fieldName.StartsWith("products_", System.StringComparison.OrdinalIgnoreCase)
+                    && fieldName.IndexOf("id_to_make", System.StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    productIndexes.Add(i);
+                }
+                else if (fieldName.StartsWith("acquired_", System.StringComparison.OrdinalIgnoreCase)
+                    && (fieldName.EndsWith("_id", System.StringComparison.OrdinalIgnoreCase)
+                        || fieldName.IndexOf("_id_", System.StringComparison.OrdinalIgnoreCase) >= 0))
+                {
+                    acquiredIndexes.Add(i);
+                }
+            }
+
+            productIndexes.AddRange(acquiredIndexes);
+            return productIndexes;
+        }
+
+        private static bool HasPositiveValueInAnyField(eListCollection listCollection, int listIndex, int elementIndex, List<int> fieldIndexes)
+        {
+            for (int i = 0; i < fieldIndexes.Count; i++)
+            {
+                int value;
+                if (int.TryParse(listCollection.GetValue(listIndex, elementIndex, fieldIndexes[i]), out value) && value > 0)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         private static int GetFieldIndex(string[] fields, string fieldName)
         {
             if (fields == null)
@@ -906,6 +1257,25 @@ namespace FWEledit
             for (int i = 0; i < fields.Length; i++)
             {
                 if (string.Equals(fields[i], fieldName, System.StringComparison.OrdinalIgnoreCase))
+                {
+                    return i;
+                }
+            }
+
+            return -1;
+        }
+
+        private static int FindListIndexByNormalizedName(eListCollection listCollection, string normalizedName)
+        {
+            if (listCollection == null || listCollection.Lists == null || string.IsNullOrWhiteSpace(normalizedName))
+            {
+                return -1;
+            }
+
+            for (int i = 0; i < listCollection.Lists.Length; i++)
+            {
+                if (listCollection.Lists[i] != null
+                    && string.Equals(NormalizeListName(listCollection.Lists[i].listName), normalizedName, System.StringComparison.OrdinalIgnoreCase))
                 {
                     return i;
                 }

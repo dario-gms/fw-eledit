@@ -9,7 +9,7 @@ namespace FWEledit
 		{
             bool previousSuppressSelectionHistory = suppressSelectionHistory;
             pendingAutoSelectionHistoryListIndex = -1;
-            bool useLightweightStartupLoad = false;
+            bool useLightweightStartupLoad = ShouldUseLightweightListRender(comboBox_lists != null ? comboBox_lists.SelectedIndex : -1);
             if (!previousSuppressSelectionHistory)
             {
                 suppressSelectionHistory = true;

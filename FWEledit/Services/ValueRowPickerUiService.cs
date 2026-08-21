@@ -122,6 +122,7 @@ namespace FWEledit
             Action<int> openItemQualityPicker,
             Action<int> openGenderTypePicker,
             Action<int> openPetFoodTypePicker,
+            Action<int> openPetFoodUsagePicker,
             Action<int> openPetHeroPicker,
             Action<int> openImmuneTypePicker,
             Action<int> openBindFlagPicker,
@@ -188,6 +189,13 @@ namespace FWEledit
                     if (openPetFoodTypePicker != null)
                     {
                         openPetFoodTypePicker(e.RowIndex);
+                    }
+                }
+                else if (fieldClassifier.IsPetFoodUsageFieldName(fieldName))
+                {
+                    if (openPetFoodUsagePicker != null)
+                    {
+                        openPetFoodUsagePicker(e.RowIndex);
                     }
                 }
                 else if (fieldClassifier.IsPetHeroFieldName(fieldName))
@@ -993,6 +1001,39 @@ namespace FWEledit
             }
         }
 
+        public void OpenPetFoodUsagePickerForValueRow(
+            DataGridView itemGrid,
+            int rowIndex,
+            ItemFieldClassifierService fieldClassifier,
+            IWin32Window owner)
+        {
+            if (itemGrid == null || rowIndex < 0 || rowIndex >= itemGrid.Rows.Count)
+            {
+                return;
+            }
+
+            string fieldName = ValueGridFieldNameService.GetFieldName(itemGrid, rowIndex);
+            if (fieldClassifier == null || !fieldClassifier.IsPetFoodUsageFieldName(fieldName))
+            {
+                return;
+            }
+
+            int currentValue = 0;
+            string rawValue = GetValueCellRawValue(itemGrid, rowIndex);
+            int.TryParse(rawValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out currentValue);
+
+            using (QualityPickerWindow picker = new QualityPickerWindow(new List<QualityOption>(PetFoodUsageCatalog.Options), currentValue))
+            {
+                picker.Text = "Choose pet food usage...";
+                if (picker.ShowDialog(owner) != DialogResult.OK)
+                {
+                    return;
+                }
+
+                SetValueCellRawValue(itemGrid, rowIndex, picker.SelectedValue.ToString(CultureInfo.InvariantCulture));
+            }
+        }
+
         public void OpenPetHeroPickerForValueRow(
             DataGridView itemGrid,
             int rowIndex,
@@ -1251,6 +1292,8 @@ namespace FWEledit
                 ? itemReferenceService.BuildTitleDefinitionOptions()
                 : itemReferenceService.IsTaskTargetIndex(targetListIndex)
                     ? itemReferenceService.BuildTaskOptions(database)
+                : itemReferenceService.IsConversationTargetIndex(targetListIndex)
+                    ? itemReferenceService.BuildConversationOptions(listCollection)
                 : itemReferenceService.IsItemListTargetIndex(targetListIndex)
                     ? itemReferenceService.BuildSearchableItemOptions(listCollection, database, iconResolutionService)
                     : targetListIndex >= 0
@@ -1269,6 +1312,8 @@ namespace FWEledit
                 ? "title"
                 : itemReferenceService.IsTaskTargetIndex(targetListIndex)
                 ? "task"
+                : itemReferenceService.IsConversationTargetIndex(targetListIndex)
+                ? "dialog"
                 : targetListIndex >= 0 && targetListIndex < listCollection.Lists.Length
                 ? listCollection.Lists[targetListIndex].listName ?? "Item"
                 : "item";

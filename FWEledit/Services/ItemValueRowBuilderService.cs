@@ -206,6 +206,10 @@ namespace FWEledit
                 {
                     fieldValue = PetFoodTypeCatalog.FormatDisplay(fieldValue);
                 }
+                else if (PetFoodUsageCatalog.IsPetFoodUsageFieldName(fieldName))
+                {
+                    fieldValue = PetFoodUsageCatalog.FormatDisplay(fieldValue);
+                }
                 else if (PetHeroCatalog.IsPetHeroFieldName(fieldName))
                 {
                     fieldValue = PetHeroCatalog.FormatDisplay(fieldValue);

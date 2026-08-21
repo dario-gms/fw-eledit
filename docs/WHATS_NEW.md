@@ -2,6 +2,17 @@
 
 This file keeps the older release notes that used to live in the README. The README now shows only the newest release notes so it stays easier to scan.
 
+## What's New in v0.9.5.22
+
+- Added a built-in PCK Explorer / Importer with live 3D preview, package type filters, persistent filter selection, existing-client model highlighting, destination package selection, progress feedback, safer package updates, and detailed import audit summaries.
+- Improved model, effect, mount, handhold, weapon, icon, and item-package workflows with automatic cross-PCK dependency resolution, package-aware model picking, gender-aware equipment/fashion previews, and more reliable imports for assets stored outside their original package.
+- Reworked description handling so item descriptions are loaded from and saved back to `configs.pck` without requiring manually extracted files, while keeping cached browsing fast and supporting clone/delete description cleanup.
+- Expanded the Advanced Title Editor with graphic title controls, chat-display toggles, improved title formatting preservation, and safer script/surface package updates.
+- Added `Edit > Clear Cache`, refreshed the About window, cleaned up visible Tools menu entries, and improved equipment-field editing for percentages, using-type masks, and faster `Refine` / `Other` tab loading.
+- Project/app version metadata updated to `v0.9.5.22`.
+
+---
+
 ## What's New in v0.9.5.21
 
 - Added the advanced Title Editor under Tools for `title_def_u.lua`, with searchable title rows, category editing, color rendering, bonus fields, live preview, and graphic-title controls.

@@ -566,6 +566,7 @@ namespace FWEledit
             descriptionEditor.ScrollBars = ScrollBars.Both;
             descriptionEditor.AcceptsReturn = true;
             descriptionEditor.AcceptsTab = true;
+            descriptionEditor.ShortcutsEnabled = true;
             descriptionEditor.WordWrap = false;
             descriptionEditor.Font = new Font("Consolas", 9F, FontStyle.Regular, GraphicsUnit.Point, ((byte)(0)));
             descriptionEditor.BorderStyle = BorderStyle.FixedSingle;
@@ -596,6 +597,7 @@ namespace FWEledit
             descriptionToolbar.BackColor = Color.FromArgb(238, 241, 245);
 
             Button descriptionColorButton = CreateDescriptionToolButton("Color...");
+            Button descriptionUndoButton = CreateDescriptionToolButton("Undo");
             Button descriptionLineBreakButton = CreateDescriptionToolButton("Line");
             Button descriptionNormalFontButton = CreateDescriptionToolButton("Normal");
             Button descriptionSmallFontButton = CreateDescriptionToolButton("Small");
@@ -603,12 +605,14 @@ namespace FWEledit
 
             ToolTip descriptionToolTip = new ToolTip();
             descriptionToolTip.SetToolTip(descriptionColorButton, "Insert FW color tag (^RRGGBB).");
+            descriptionToolTip.SetToolTip(descriptionUndoButton, "Undo the last source text edit (Ctrl+Z).");
             descriptionToolTip.SetToolTip(descriptionLineBreakButton, "Insert a line break.");
             descriptionToolTip.SetToolTip(descriptionNormalFontButton, "Switch to Raven's normal hint font (^O053).");
             descriptionToolTip.SetToolTip(descriptionSmallFontButton, "Switch to Raven's smaller emphasis font (^O005).");
             descriptionToolTip.SetToolTip(descriptionTitleFontButton, "Switch to the larger title hint font (^O057).");
 
             descriptionToolbar.Controls.Add(descriptionColorButton);
+            descriptionToolbar.Controls.Add(descriptionUndoButton);
             descriptionToolbar.Controls.Add(descriptionLineBreakButton);
             descriptionToolbar.Controls.Add(descriptionNormalFontButton);
             descriptionToolbar.Controls.Add(descriptionSmallFontButton);
@@ -689,6 +693,7 @@ namespace FWEledit
                 DescriptionSaveButton = descriptionSaveButton,
                 DescriptionStatusLabel = descriptionStatusLabel,
                 DescriptionColorButton = descriptionColorButton,
+                DescriptionUndoButton = descriptionUndoButton,
                 DescriptionLineBreakButton = descriptionLineBreakButton,
                 DescriptionNormalFontButton = descriptionNormalFontButton,
                 DescriptionSmallFontButton = descriptionSmallFontButton,

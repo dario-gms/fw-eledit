@@ -476,11 +476,14 @@ namespace FWEledit
         private void DrawIcon(Graphics graphics, ItemReferenceOption option, Rectangle bounds)
         {
             Bitmap icon = Properties.Resources.NoIcon;
+            Color accentColor;
+            bool drawAccentSwatch = TryParseAccentColor(option != null ? option.AccentHex : string.Empty, out accentColor);
             if (database != null && !string.IsNullOrWhiteSpace(option.IconKey))
             {
                 if (database.ContainsKey(option.IconKey))
                 {
                     icon = database.images(option.IconKey);
+                    drawAccentSwatch = false;
                 }
                 else
                 {
@@ -488,11 +491,27 @@ namespace FWEledit
                     if (portrait != null)
                     {
                         icon = portrait;
+                        drawAccentSwatch = false;
                     }
                 }
             }
 
-            graphics.DrawImage(icon, bounds);
+            if (drawAccentSwatch)
+            {
+                using (SolidBrush brush = new SolidBrush(accentColor))
+                {
+                    graphics.FillRectangle(brush, bounds);
+                }
+                using (SolidBrush gloss = new SolidBrush(Color.FromArgb(54, Color.White)))
+                {
+                    graphics.FillRectangle(gloss, new Rectangle(bounds.Left, bounds.Top, bounds.Width, Math.Max(1, bounds.Height / 3)));
+                }
+            }
+            else
+            {
+                graphics.DrawImage(icon, bounds);
+            }
+
             using (Pen pen = new Pen(Color.FromArgb(62, 70, 80)))
             {
                 graphics.DrawRectangle(pen, bounds);
@@ -501,6 +520,11 @@ namespace FWEledit
 
         private static Color ResolveTextColor(ItemReferenceOption option, bool selected)
         {
+            if (IsColorPlanReference(option))
+            {
+                return selected ? Color.White : Color.FromArgb(226, 231, 239);
+            }
+
             Color accentColor;
             if (TryParseAccentColor(option != null ? option.AccentHex : string.Empty, out accentColor))
             {
@@ -573,10 +597,11 @@ namespace FWEledit
 
             if (!string.IsNullOrWhiteSpace(option.AccentHex))
             {
-                lines.Add("Title color: #" + option.AccentHex.Trim().TrimStart('#').ToUpperInvariant());
+                lines.Add((IsColorPlanReference(option) ? "Color: #" : "Title color: #") + option.AccentHex.Trim().TrimStart('#').ToUpperInvariant());
             }
 
-            if (!string.IsNullOrWhiteSpace(option.SecondaryText))
+            if (!string.IsNullOrWhiteSpace(option.SecondaryText)
+                && !IsDuplicateAccentText(option))
             {
                 lines.Add(option.SecondaryText);
             }
@@ -589,6 +614,24 @@ namespace FWEledit
 
             detailsBox.Text = string.Join(Environment.NewLine, lines.ToArray()).Trim();
             UpdateTitleEditor();
+        }
+
+        private static bool IsColorPlanReference(ItemReferenceOption option)
+        {
+            return option != null
+                && (option.ListName ?? string.Empty).IndexOf("COLOR_PLAN_CONFIG", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static bool IsDuplicateAccentText(ItemReferenceOption option)
+        {
+            if (option == null || string.IsNullOrWhiteSpace(option.AccentHex) || string.IsNullOrWhiteSpace(option.SecondaryText))
+            {
+                return false;
+            }
+
+            string accent = option.AccentHex.Trim().TrimStart('#');
+            string secondary = option.SecondaryText.Trim().TrimStart('#');
+            return string.Equals(accent, secondary, StringComparison.OrdinalIgnoreCase);
         }
 
         private Label CreateEditorLabel(string text)

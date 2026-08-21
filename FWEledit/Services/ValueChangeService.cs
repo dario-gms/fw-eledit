@@ -89,6 +89,10 @@ namespace FWEledit
             {
                 valueToSet = PetFoodTypeCatalog.NormalizeInput(valueToSet);
             }
+            else if (PetFoodUsageCatalog.IsPetFoodUsageFieldName(request.FieldName))
+            {
+                valueToSet = PetFoodUsageCatalog.NormalizeInput(valueToSet);
+            }
             else if (PetHeroCatalog.IsPetHeroFieldName(request.FieldName))
             {
                 valueToSet = PetHeroCatalog.NormalizeInput(valueToSet);
@@ -279,6 +283,10 @@ namespace FWEledit
             else if (PetFoodTypeCatalog.IsPetFoodTypeFieldName(request.FieldName))
             {
                 result.DisplayValue = PetFoodTypeCatalog.FormatDisplay(valueToSet);
+            }
+            else if (PetFoodUsageCatalog.IsPetFoodUsageFieldName(request.FieldName))
+            {
+                result.DisplayValue = PetFoodUsageCatalog.FormatDisplay(valueToSet);
             }
             else if (PetHeroCatalog.IsPetHeroFieldName(request.FieldName))
             {

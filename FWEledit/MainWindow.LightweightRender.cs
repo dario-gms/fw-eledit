@@ -6,6 +6,37 @@ namespace FWEledit
 {
     public partial class MainWindow : Form
     {
+        private const int LightweightListRenderThreshold = 1000;
+
+        private bool ShouldUseLightweightListRender(int listIndex)
+        {
+            try
+            {
+                if (listIndex < 0
+                    || sessionService == null
+                    || sessionService.ListCollection == null
+                    || listDisplayService == null
+                    || listIndex >= sessionService.ListCollection.Lists.Length)
+                {
+                    return false;
+                }
+
+                if (listDisplayService.TryGetListDisplayRows(sessionService.ListCollection, listIndex, out _))
+                {
+                    return false;
+                }
+
+                var list = sessionService.ListCollection.Lists[listIndex];
+                return list != null
+                    && list.elementValues != null
+                    && list.elementValues.Length >= LightweightListRenderThreshold;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         private void ResetLightweightListRenderState(int listIndex, bool lightweight)
         {
             lightweightListRenderIndex = lightweight ? listIndex : -1;
