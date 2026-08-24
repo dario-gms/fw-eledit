@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System;
 using System.Windows.Forms;
 
 namespace FWEledit
@@ -25,6 +26,7 @@ namespace FWEledit
             }
 
             ListSelectionResult selection = workflowService.BuildSelection(request);
+            int currentItemId = GetCurrentItemId(elementGrid);
 
             elementGrid.SuspendLayout();
             elementGrid.Rows.Clear();
@@ -64,9 +66,23 @@ namespace FWEledit
             }
 
             elementGrid.ResumeLayout();
-            if (elementGrid.Rows.Count > 0 && elementGrid.CurrentCell == null)
+            if (elementGrid.Rows.Count > 0)
             {
-                elementGrid.CurrentCell = elementGrid.Rows[0].Cells[0];
+                int restoredRow;
+                if (currentItemId > 0 && TryRestoreCurrentItem(elementGrid, currentItemId, out restoredRow))
+                {
+                    try
+                    {
+                        elementGrid.FirstDisplayedScrollingRowIndex = restoredRow;
+                    }
+                    catch
+                    {
+                    }
+                }
+                else if (elementGrid.CurrentCell == null)
+                {
+                    elementGrid.CurrentCell = elementGrid.Rows[0].Cells[0];
+                }
             }
 
             if (updateDescription != null)
@@ -81,6 +97,51 @@ namespace FWEledit
             {
                 persistNavigation();
             }
+        }
+
+        private static int GetCurrentItemId(DataGridView elementGrid)
+        {
+            if (elementGrid == null || elementGrid.CurrentCell == null)
+            {
+                return 0;
+            }
+
+            int rowIndex = elementGrid.CurrentCell.RowIndex;
+            if (rowIndex < 0 || rowIndex >= elementGrid.Rows.Count)
+            {
+                return 0;
+            }
+
+            int itemId;
+            return int.TryParse(Convert.ToString(elementGrid.Rows[rowIndex].Cells[0].Value), out itemId)
+                ? itemId
+                : 0;
+        }
+
+        private static bool TryRestoreCurrentItem(DataGridView elementGrid, int itemId, out int restoredRow)
+        {
+            restoredRow = -1;
+            if (elementGrid == null || itemId <= 0)
+            {
+                return false;
+            }
+
+            for (int rowIndex = 0; rowIndex < elementGrid.Rows.Count; rowIndex++)
+            {
+                int rowId;
+                if (!int.TryParse(Convert.ToString(elementGrid.Rows[rowIndex].Cells[0].Value), out rowId) || rowId != itemId)
+                {
+                    continue;
+                }
+
+                elementGrid.ClearSelection();
+                elementGrid.CurrentCell = elementGrid.Rows[rowIndex].Cells[0];
+                elementGrid.Rows[rowIndex].Selected = true;
+                restoredRow = rowIndex;
+                return true;
+            }
+
+            return false;
         }
     }
 }

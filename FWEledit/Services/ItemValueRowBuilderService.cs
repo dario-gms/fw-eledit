@@ -372,5 +372,6 @@ namespace FWEledit
             int id;
             return int.TryParse(rawValue, out id) && id > 0;
         }
+
     }
 }

@@ -2194,7 +2194,9 @@ namespace FWEledit
                 return true;
             }
 
-            if (fieldName.Contains("color_plan"))
+            if (fieldName.StartsWith("color_plan_id", StringComparison.OrdinalIgnoreCase)
+                || fieldName.EndsWith("_color_plan_id", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(fieldName, "color_plan_id", StringComparison.OrdinalIgnoreCase))
             {
                 targetListName = "COLOR_PLAN_CONFIG";
                 return true;

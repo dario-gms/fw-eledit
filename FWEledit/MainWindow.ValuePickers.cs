@@ -40,10 +40,46 @@ namespace FWEledit
                 fwEquipmentTabDecompose,
                 fwEquipmentTabOther,
                 fwDescriptionTab,
+                fwModelPreviewTab,
+                HasModelPreviewFields(lists, listIndex),
                 MonsterFieldCatalog.IsMonsterEssenceList(lists, listIndex),
                 fwMonsterMasteryTab,
                 fwMonsterLevelUpTab,
                 fwMonsterOtherTab);
+
+            if (!HasModelPreviewFields(lists, listIndex))
+            {
+                ClearEmbeddedModelPreview("No model preview for this list.");
+            }
+        }
+
+        private bool HasModelPreviewFields(eListCollection lists, int listIndex)
+        {
+            if (lists == null || listIndex < 0 || listIndex >= lists.Lists.Length || itemFieldClassifierService == null)
+            {
+                return false;
+            }
+
+            eList list = lists.Lists[listIndex];
+            if (list == null || list.elementFields == null)
+            {
+                return false;
+            }
+
+            string listName = list.listName ?? string.Empty;
+            for (int i = 0; i < list.elementFields.Length; i++)
+            {
+                string fieldName = list.elementFields[i] ?? string.Empty;
+                if (IsSpecializedPreviewModelField(fieldName, listName)
+                    || IsEquipmentWearableModelFieldName(fieldName, true)
+                    || (itemFieldClassifierService.IsModelUsageFieldName(fieldName)
+                        && !string.Equals(fieldName.Trim(), "file_matter", StringComparison.OrdinalIgnoreCase)))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private void OpenModelPickerForValueRow(int rowIndex)
@@ -397,6 +433,210 @@ namespace FWEledit
         private void OpenModelPreviewForCurrentItem()
         {
             OpenModelPreviewForCurrentItem(true, true);
+        }
+
+        private async void RefreshEmbeddedModelPreviewForCurrentItem(bool showMissingMessage, bool preferFirstModelField)
+        {
+            if (fwModelPreviewHostPanel == null
+                || fwModelPreviewHostPanel.IsDisposed
+                || fwModelPreviewTab == null
+                || fwRightTabs == null
+                || fwRightTabs.SelectedTab != fwModelPreviewTab
+                || sessionService == null
+                || sessionService.AssetManager == null
+                || sessionService.Database == null
+                || sessionService.ListCollection == null
+                || comboBox_lists == null
+                || modelPreviewService == null
+                || modelPickerService == null
+                || itemFieldClassifierService == null)
+            {
+                return;
+            }
+
+            int listIndex = comboBox_lists.SelectedIndex;
+            int elementIndex = ResolveCurrentElementIndex();
+            int fieldIndex;
+            string fieldName;
+            int pathId;
+            if (!TryResolveEmbeddedModelPreviewField(preferFirstModelField, listIndex, elementIndex, out fieldIndex, out fieldName, out pathId))
+            {
+                ClearEmbeddedModelPreview(showMissingMessage ? "This item does not have a model preview field." : "No model preview for this item.");
+                return;
+            }
+
+            string listName = sessionService.ListCollection.Lists[listIndex].listName ?? string.Empty;
+            int requestId = System.Threading.Interlocked.Increment(ref fwEmbeddedModelPreviewRequestId);
+            SetEmbeddedModelPreviewStatus("Loading preview...");
+
+            await Task.Delay(90);
+            if (requestId != fwEmbeddedModelPreviewRequestId)
+            {
+                return;
+            }
+
+            CurrentItemModelPreviewResult result = await Task.Run(delegate
+            {
+                CurrentItemModelPreviewResult buildResult = new CurrentItemModelPreviewResult();
+                string errorMessage;
+                ModelPreviewMeshData meshData;
+                bool ok = modelPreviewService.TryBuildPreviewMeshData(
+                    sessionService.AssetManager,
+                    sessionService.Database,
+                    pathId,
+                    fieldName,
+                    listName,
+                    modelPickerService,
+                    out meshData,
+                    out errorMessage);
+
+                buildResult.Success = ok;
+                buildResult.Error = errorMessage ?? string.Empty;
+                buildResult.MeshData = meshData;
+                return buildResult;
+            });
+
+            if (requestId != fwEmbeddedModelPreviewRequestId)
+            {
+                return;
+            }
+
+            if (!result.Success || result.MeshData == null)
+            {
+                ClearEmbeddedModelPreview(string.IsNullOrWhiteSpace(result.Error) ? "Model preview unavailable." : result.Error);
+                return;
+            }
+
+            ShowEmbeddedModelPreview(result.MeshData);
+            if (fwModelPreviewOpenButton != null)
+            {
+                fwModelPreviewOpenButton.Enabled = true;
+            }
+        }
+
+        private bool TryResolveEmbeddedModelPreviewField(
+            bool preferFirstModelField,
+            int listIndex,
+            int elementIndex,
+            out int fieldIndex,
+            out string fieldName,
+            out int pathId)
+        {
+            fieldIndex = -1;
+            fieldName = string.Empty;
+            pathId = 0;
+
+            if (!preferFirstModelField
+                && dataGridView_item != null
+                && dataGridView_item.CurrentCell != null
+                && IsModelFieldRow(dataGridView_item.CurrentCell.RowIndex))
+            {
+                int rowIndex = dataGridView_item.CurrentCell.RowIndex;
+                string candidateFieldName = ValueGridFieldNameService.GetFieldName(dataGridView_item, rowIndex);
+                int candidatePathId = TryGetModelPathIdFromValueRow(rowIndex);
+                if (candidatePathId > 0)
+                {
+                    int resolvedPathId;
+                    string mappedPath;
+                    if (modelPickerService.TryResolveModelPathById(
+                        sessionService.Database,
+                        candidatePathId,
+                        candidateFieldName,
+                        sessionService.ListCollection.Lists[listIndex].listName ?? string.Empty,
+                        out resolvedPathId,
+                        out mappedPath,
+                        true))
+                    {
+                        fieldIndex = valueRowIndexService.GetFieldIndexForValueRow(dataGridView_item, rowIndex);
+                        fieldName = candidateFieldName;
+                        pathId = candidatePathId;
+                        return true;
+                    }
+                }
+            }
+
+            return TryResolveFirstModelPreviewFieldForCurrentItem(listIndex, elementIndex, out fieldIndex, out fieldName, out pathId);
+        }
+
+        private int TryGetModelPathIdFromValueRow(int rowIndex)
+        {
+            if (dataGridView_item == null || rowIndex < 0 || rowIndex >= dataGridView_item.Rows.Count)
+            {
+                return 0;
+            }
+
+            object raw = dataGridView_item.Rows[rowIndex].Cells[2].Tag;
+            string rawValue = raw != null
+                ? Convert.ToString(raw)
+                : Convert.ToString(dataGridView_item.Rows[rowIndex].Cells[2].Value);
+            int pathId;
+            if (modelPickerService != null && modelPickerService.TryExtractPathId(rawValue, out pathId))
+            {
+                return pathId;
+            }
+            if (int.TryParse(rawValue, out pathId))
+            {
+                return pathId;
+            }
+            return 0;
+        }
+
+        private void ShowEmbeddedModelPreview(ModelPreviewMeshData meshData)
+        {
+            if (meshData == null || fwModelPreviewHostPanel == null || fwModelPreviewHostPanel.IsDisposed)
+            {
+                return;
+            }
+
+            if (fwModelPreviewStatusLabel != null)
+            {
+                fwModelPreviewStatusLabel.Visible = false;
+            }
+
+            if (fwEmbeddedModelPreviewWindow == null || fwEmbeddedModelPreviewWindow.IsDisposed)
+            {
+                fwEmbeddedModelPreviewWindow = new ModelPreviewWindow(meshData, false, IntPtr.Zero);
+                fwEmbeddedModelPreviewWindow.TopLevel = false;
+                fwEmbeddedModelPreviewWindow.FormBorderStyle = FormBorderStyle.None;
+                fwEmbeddedModelPreviewWindow.Dock = DockStyle.Fill;
+                fwEmbeddedModelPreviewWindow.ShowInTaskbar = false;
+                fwEmbeddedModelPreviewWindow.SetEmbeddedViewportOnlyMode(true);
+                fwModelPreviewHostPanel.Controls.Add(fwEmbeddedModelPreviewWindow);
+                fwEmbeddedModelPreviewWindow.Show();
+            }
+            else
+            {
+                fwEmbeddedModelPreviewWindow.ReplaceMeshData(meshData);
+            }
+
+            fwEmbeddedModelPreviewWindow.Visible = true;
+            fwEmbeddedModelPreviewWindow.BringToFront();
+        }
+
+        private void ClearEmbeddedModelPreview(string message)
+        {
+            System.Threading.Interlocked.Increment(ref fwEmbeddedModelPreviewRequestId);
+            if (fwEmbeddedModelPreviewWindow != null && !fwEmbeddedModelPreviewWindow.IsDisposed)
+            {
+                fwEmbeddedModelPreviewWindow.Visible = false;
+            }
+            SetEmbeddedModelPreviewStatus(message);
+            if (fwModelPreviewOpenButton != null)
+            {
+                fwModelPreviewOpenButton.Enabled = false;
+            }
+        }
+
+        private void SetEmbeddedModelPreviewStatus(string message)
+        {
+            if (fwModelPreviewStatusLabel == null || fwModelPreviewStatusLabel.IsDisposed)
+            {
+                return;
+            }
+
+            fwModelPreviewStatusLabel.Text = string.IsNullOrWhiteSpace(message) ? "No model preview." : message;
+            fwModelPreviewStatusLabel.Visible = true;
+            fwModelPreviewStatusLabel.BringToFront();
         }
 
         private async void OpenModelPreviewForCurrentItem(bool showMessages, bool enableLivePreview)
@@ -838,6 +1078,12 @@ namespace FWEledit
             UpdateRawValueEditorFromCurrentCell();
             UpdateAddonPackageDescEditorFromCurrentCell();
             RefreshLiveModelPreviewFromCurrentRow(false);
+            if (dataGridView_item != null
+                && dataGridView_item.CurrentCell != null
+                && IsModelFieldRow(dataGridView_item.CurrentCell.RowIndex))
+            {
+                RefreshEmbeddedModelPreviewForCurrentItem(false, false);
+            }
         }
 
         private void RememberCurrentValueFieldSelection()

@@ -22,6 +22,10 @@ namespace FWEledit
             "building", "configs", "gfx", "grasses", "interfaces", "litmodels", "loddata", "models", "models2",
             "moxing", "script", "sfx", "shaders", "surfaces", "textures", "music"
         };
+        private static readonly string[] ModelReferencePackageFallbacks = new string[]
+        {
+            "models", "models2", "moxing", "litmodels", "shaders", "grasses", "surfaces"
+        };
         private static readonly HashSet<string> CoreRuntimePackages = new HashSet<string>(
             new string[]
             {
@@ -66,9 +70,9 @@ namespace FWEledit
                     result.ErrorMessage = "Invalid source item.";
                     return result;
                 }
-                if (!IsEquipmentEssenceList(list))
+                if (!IsTransferPackageSupportedList(list))
                 {
-                    result.ErrorMessage = "Item package export currently supports only Equipment Essence.";
+                    result.ErrorMessage = "Item package export currently supports Equipment, Aircraft and Vehicle Essence.";
                     return result;
                 }
                 if (string.IsNullOrWhiteSpace(outputFile))
@@ -78,10 +82,12 @@ namespace FWEledit
                 }
 
                 ReportProgress(progress, "Reading item", "Collecting element fields and path.data entries...", 0, 0, true);
+                assetManager.EnsurePathDataLoaded();
                 ItemTransferPackageManifest manifest = BuildManifest(listCollection, database, listIndex, itemIndex);
 
-                ReportProgress(progress, "Collecting equipment assets", "Finding direct model, icon and file paths from this equipment item...", 0, 0, true);
+                ReportProgress(progress, "Collecting item assets", "Finding direct model, icon and file paths from this item...", 0, 0, true);
                 Dictionary<string, ItemTransferAssetEntry> assetsByKey = CollectDirectAssets(manifest, database, assetManager);
+                AddManifestPathDataAssets(manifest, assetsByKey, assetManager);
 
                 AddPreviewResolvedDependencies(assetsByKey, manifest, assetManager, progress);
                 ExpandEquipmentModelCompanions(assetsByKey, assetManager, progress, cancellationToken);
@@ -134,8 +140,27 @@ namespace FWEledit
                 }
 
                 result.Success = true;
-                result.AssetCount = manifest.Assets.Count;
+                result.AssetCount = CountPackageAssets(outputFile);
                 result.MissingAssetCount = result.MissingAssets.Count;
+
+                if (HasCriticalMissingAssets(result.MissingAssets))
+                {
+                    TryDeletePartialPackage(outputFile);
+                    result.Success = false;
+                    result.ErrorMessage = BuildMissingAssetsErrorMessage(result.MissingAssets);
+                    ReportProgress(progress, "Export failed", result.ErrorMessage, result.AssetCount, manifest.Assets.Count, false);
+                    return result;
+                }
+
+                if (result.AssetCount == 0 && HasVisualPathDataEntries(manifest))
+                {
+                    TryDeletePartialPackage(outputFile);
+                    result.Success = false;
+                    result.ErrorMessage = BuildNoVisualAssetsErrorMessage(manifest);
+                    ReportProgress(progress, "Export failed", result.ErrorMessage, result.AssetCount, manifest.Assets.Count, false);
+                    return result;
+                }
+
                 ReportProgress(progress, "Export complete", "Item package created.", result.AssetCount, result.AssetCount, false);
                 return result;
             }
@@ -253,7 +278,7 @@ namespace FWEledit
                         return result;
                     }
 
-                    ReportProgress(progress, "Creating item", "Adding imported equipment to the target list...", 0, 0, true);
+                    ReportProgress(progress, "Creating item", "Adding imported item to the target list...", 0, 0, true);
                     cancellationToken.ThrowIfCancellationRequested();
                     int newIndex = AddManifestItem(listCollection, targetListIndex, manifest, pathIdRemap, packageRemap, idGenerationService, out int newId);
                     result.Success = true;
@@ -503,6 +528,7 @@ namespace FWEledit
         public ItemTransferPackageManifest BuildEquipmentExportManifest(
             eListCollection listCollection,
             CacheSave database,
+            AssetManager assetManager,
             int listIndex,
             int itemIndex)
         {
@@ -515,6 +541,11 @@ namespace FWEledit
                 || itemIndex >= listCollection.Lists[listIndex].elementValues.Length)
             {
                 return null;
+            }
+
+            if (assetManager != null)
+            {
+                assetManager.EnsurePathDataLoaded();
             }
 
             ItemTransferPackageManifest manifest = BuildManifest(listCollection, database, listIndex, itemIndex);
@@ -600,6 +631,42 @@ namespace FWEledit
             }
 
             return assets;
+        }
+
+        private static void AddManifestPathDataAssets(
+            ItemTransferPackageManifest manifest,
+            Dictionary<string, ItemTransferAssetEntry> assets,
+            AssetManager assetManager)
+        {
+            if (manifest == null || manifest.PathDataEntries == null || assets == null || assetManager == null)
+            {
+                return;
+            }
+
+            foreach (ItemTransferPathDataEntry entry in manifest.PathDataEntries)
+            {
+                if (entry == null || string.IsNullOrWhiteSpace(entry.MappedPath))
+                {
+                    continue;
+                }
+
+                string mapped = NormalizePath(entry.MappedPath);
+                string package;
+                string relative;
+                if (!TrySplitPackagePath(mapped, out package, out relative)
+                    || !IsVisualAssetExtension(Path.GetExtension(relative)))
+                {
+                    continue;
+                }
+
+                ItemTransferAssetEntry added;
+                string key = BuildAssetKey(mapped);
+                if ((string.IsNullOrWhiteSpace(key) || !assets.ContainsKey(key))
+                    && !TryAddExistingAsset(assets, mapped, assetManager, out added))
+                {
+                    AddAsset(assets, mapped, assetManager);
+                }
+            }
         }
 
         private static void CollectDirectPathDataEntries(ItemTransferPackageManifest manifest, CacheSave database)
@@ -1363,6 +1430,10 @@ namespace FWEledit
                 {
                     yield return currentPackage + "\\" + currentDirectory + "\\" + normalizedReference;
                 }
+                foreach (string fallback in ResolvePackageFallbackReferenceCandidates(currentPackage, normalizedReference))
+                {
+                    yield return fallback;
+                }
                 yield break;
             }
 
@@ -1374,6 +1445,25 @@ namespace FWEledit
             }
             yield return currentPackage + "\\textures\\" + normalizedReference;
             yield return currentPackage + "\\" + normalizedReference;
+        }
+
+        private static IEnumerable<string> ResolvePackageFallbackReferenceCandidates(string currentPackage, string normalizedReference)
+        {
+            if (string.IsNullOrWhiteSpace(normalizedReference) || normalizedReference.IndexOf('\\') < 0)
+            {
+                yield break;
+            }
+
+            for (int i = 0; i < ModelReferencePackageFallbacks.Length; i++)
+            {
+                string package = ModelReferencePackageFallbacks[i];
+                if (string.Equals(package, currentPackage, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                yield return package + "\\" + normalizedReference;
+            }
         }
 
         private static IEnumerable<string> BuildCompanionPrefixes(string package, string directory, string fileName)
@@ -1805,8 +1895,10 @@ namespace FWEledit
 
         private static string ResolveFallbackPackageForSourcePackage(ItemTransferPackageManifest manifest, string sourcePackage)
         {
-            if (SourcePackageContainsRelativePrefix(manifest, sourcePackage, "player\\")
-                || SourcePackageContainsRelativePrefix(manifest, sourcePackage, "players\\"))
+            string normalizedSourcePackage = NormalizePackageName(sourcePackage);
+            if (string.Equals(normalizedSourcePackage, "moxing", StringComparison.OrdinalIgnoreCase)
+                && (SourcePackageContainsRelativePrefix(manifest, sourcePackage, "player\\")
+                    || SourcePackageContainsRelativePrefix(manifest, sourcePackage, "players\\")))
             {
                 return PlayerAssetFallbackPackage;
             }
@@ -2550,6 +2642,10 @@ namespace FWEledit
                     {
                         value = mappedPathId.ToString(CultureInfo.InvariantCulture);
                     }
+                    else if (LooksLikeAssetPath(value))
+                    {
+                        value = RemapMappedPackage(value, packageRemap);
+                    }
                 }
                 else if (LooksLikeAssetPath(value))
                 {
@@ -2720,8 +2816,35 @@ namespace FWEledit
                     }
                 }
             }
+            if (IsAircraftEssenceListName(manifest.SourceListName))
+            {
+                for (int i = 0; i < listCollection.Lists.Length; i++)
+                {
+                    if (IsAircraftEssenceList(listCollection.Lists[i]))
+                    {
+                        return i;
+                    }
+                }
+            }
+            if (IsVehicleEssenceListName(manifest.SourceListName))
+            {
+                for (int i = 0; i < listCollection.Lists.Length; i++)
+                {
+                    if (IsVehicleEssenceList(listCollection.Lists[i]))
+                    {
+                        return i;
+                    }
+                }
+            }
 
             return -1;
+        }
+
+        public static bool IsTransferPackageSupportedList(eList list)
+        {
+            return IsEquipmentEssenceList(list)
+                || IsAircraftEssenceList(list)
+                || IsVehicleEssenceList(list);
         }
 
         public static bool IsEquipmentEssenceList(eList list)
@@ -2735,24 +2858,56 @@ namespace FWEledit
             return HasEquipmentEssenceFields(list);
         }
 
+        private static bool IsAircraftEssenceList(eList list)
+        {
+            string listName = list != null ? list.listName : string.Empty;
+            if (IsAircraftEssenceListName(listName))
+            {
+                return true;
+            }
+
+            return HasAircraftEssenceFields(list);
+        }
+
+        private static bool IsVehicleEssenceList(eList list)
+        {
+            string listName = list != null ? list.listName : string.Empty;
+            if (IsVehicleEssenceListName(listName))
+            {
+                return true;
+            }
+
+            return HasVehicleEssenceFields(list);
+        }
+
         private static bool IsEquipmentEssenceListName(string listName)
         {
-            if (string.Equals(listName, "Equipment", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(listName, "Equipment Essence", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(listName, "EQUIPMENT_ESSENCE", StringComparison.OrdinalIgnoreCase))
+            return IsKnownEssenceListName(listName, "Equipment", "Equipment Essence", "EQUIPMENT_ESSENCE");
+        }
+
+        private static bool IsAircraftEssenceListName(string listName)
+        {
+            return IsKnownEssenceListName(listName, "Aircraft", "Aircraft Essence", "AIRCRAFT_ESSENCE");
+        }
+
+        private static bool IsVehicleEssenceListName(string listName)
+        {
+            return IsKnownEssenceListName(listName, "Vehicle", "Vehicle Essence", "VEHICLE_ESSENCE");
+        }
+
+        private static bool IsKnownEssenceListName(string listName, string shortName, string friendlyName, string configName)
+        {
+            if (string.Equals(listName, shortName, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(listName, friendlyName, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(listName, configName, StringComparison.OrdinalIgnoreCase))
             {
                 return true;
             }
 
             string normalizedName = NormalizeListName(listName);
-            if (string.Equals(normalizedName, "Equipment", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(normalizedName, "Equipment Essence", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(normalizedName, "EQUIPMENT_ESSENCE", StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-
-            return false;
+            return string.Equals(normalizedName, shortName, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(normalizedName, friendlyName, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(normalizedName, configName, StringComparison.OrdinalIgnoreCase);
         }
 
         private static bool HasEquipmentEssenceFields(eList list)
@@ -2784,6 +2939,58 @@ namespace FWEledit
             return hasItemQuality && hasEquipMask && hasFileMatter && hasFileIcon && hasModelPath;
         }
 
+        private static bool HasAircraftEssenceFields(eList list)
+        {
+            if (list == null || list.elementFields == null)
+            {
+                return false;
+            }
+
+            bool hasModelName = false;
+            bool hasFileIcon = false;
+            bool hasAircraftMotion = false;
+            bool hasAircraftColor = false;
+            for (int i = 0; i < list.elementFields.Length; i++)
+            {
+                string field = NormalizeFieldNameKey(list.elementFields[i]);
+                hasModelName |= field.StartsWith("model_name", StringComparison.Ordinal);
+                hasFileIcon |= string.Equals(field, "file_icon", StringComparison.Ordinal)
+                    || string.Equals(field, "file_icon1", StringComparison.Ordinal);
+                hasAircraftMotion |= string.Equals(field, "cruise_speed", StringComparison.Ordinal)
+                    || string.Equals(field, "sprint_speed", StringComparison.Ordinal)
+                    || string.Equals(field, "fly_mode", StringComparison.Ordinal);
+                hasAircraftColor |= string.Equals(field, "color_plan_id_1", StringComparison.Ordinal)
+                    || string.Equals(field, "color_plan_id_2", StringComparison.Ordinal);
+            }
+
+            return hasModelName && hasFileIcon && hasAircraftMotion && hasAircraftColor;
+        }
+
+        private static bool HasVehicleEssenceFields(eList list)
+        {
+            if (list == null || list.elementFields == null)
+            {
+                return false;
+            }
+
+            bool hasFileModels = false;
+            bool hasFileIcon = false;
+            bool hasRaceMask = false;
+            bool hasMovement = false;
+            for (int i = 0; i < list.elementFields.Length; i++)
+            {
+                string field = NormalizeFieldNameKey(list.elementFields[i]);
+                hasFileModels |= field.StartsWith("file_models", StringComparison.Ordinal);
+                hasFileIcon |= string.Equals(field, "file_icon", StringComparison.Ordinal)
+                    || string.Equals(field, "file_icon1", StringComparison.Ordinal);
+                hasRaceMask |= string.Equals(field, "race_mask", StringComparison.Ordinal);
+                hasMovement |= string.Equals(field, "speed", StringComparison.Ordinal)
+                    || string.Equals(field, "height", StringComparison.Ordinal);
+            }
+
+            return hasFileModels && hasFileIcon && hasRaceMask && hasMovement;
+        }
+
         private static string NormalizeListName(string listName)
         {
             if (string.IsNullOrWhiteSpace(listName))
@@ -2792,7 +2999,18 @@ namespace FWEledit
             }
 
             string[] split = listName.Split(new string[] { " - " }, StringSplitOptions.None);
-            return split.Length > 1 ? split[1].Trim() : listName.Trim();
+            string normalized = split.Length > 1 ? split[1].Trim() : listName.Trim();
+            Match displayNameMatch = Regex.Match(normalized, @"^\[\d+\]\s*(.+)$");
+            return displayNameMatch.Success ? displayNameMatch.Groups[1].Value.Trim() : normalized;
+        }
+
+        private static string NormalizeFieldNameKey(string fieldName)
+        {
+            return (fieldName ?? string.Empty)
+                .Trim()
+                .Replace(' ', '_')
+                .Replace('-', '_')
+                .ToLowerInvariant();
         }
 
         private static void WriteTextEntry(ZipArchive archive, string name, string text)
@@ -2819,9 +3037,108 @@ namespace FWEledit
             }
         }
 
+        private static bool HasCriticalMissingAssets(IEnumerable<string> missingAssets)
+        {
+            if (missingAssets == null)
+            {
+                return false;
+            }
+
+            foreach (string missing in missingAssets)
+            {
+                string normalized = NormalizePath(missing ?? string.Empty);
+                if (IsNonCriticalDisplayAsset(normalized))
+                {
+                    continue;
+                }
+
+                string extension = Path.GetExtension(normalized);
+                if (IsModelLikeExtension(extension) || IsTextureLikeExtension(extension))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool IsNonCriticalDisplayAsset(string normalizedPath)
+        {
+            if (string.IsNullOrWhiteSpace(normalizedPath))
+            {
+                return false;
+            }
+
+            string path = normalizedPath.Replace('/', '\\').Trim().TrimStart('\\');
+            return path.StartsWith("surfaces\\", StringComparison.OrdinalIgnoreCase)
+                || path.StartsWith("sfx\\", StringComparison.OrdinalIgnoreCase)
+                || path.StartsWith("interface\\", StringComparison.OrdinalIgnoreCase)
+                || path.StartsWith("interfaces\\", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsTextureLikeExtension(string ext)
+        {
+            return string.Equals(ext, ".dds", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(ext, ".tga", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(ext, ".bmp", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(ext, ".png", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(ext, ".jpg", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(ext, ".jpeg", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string BuildMissingAssetsErrorMessage(IEnumerable<string> missingAssets)
+        {
+            List<string> missing = (missingAssets ?? Enumerable.Empty<string>())
+                .Where(path => !string.IsNullOrWhiteSpace(path))
+                .Take(8)
+                .ToList();
+
+            string message = "Export failed because required model assets are missing from the source client.";
+            if (missing.Count > 0)
+            {
+                message += "\nMissing assets:\n- " + string.Join("\n- ", missing);
+            }
+
+            return message;
+        }
+
+        private static bool HasVisualPathDataEntries(ItemTransferPackageManifest manifest)
+        {
+            return manifest != null
+                && manifest.PathDataEntries != null
+                && manifest.PathDataEntries.Any(entry => entry != null && IsVisualAssetExtension(Path.GetExtension(entry.MappedPath ?? string.Empty)));
+        }
+
+        private static bool IsVisualAssetExtension(string ext)
+        {
+            return IsModelLikeExtension(ext)
+                || IsTextureLikeExtension(ext)
+                || string.Equals(ext, ".gfx", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string BuildNoVisualAssetsErrorMessage(ItemTransferPackageManifest manifest)
+        {
+            List<string> visualPaths = (manifest != null && manifest.PathDataEntries != null
+                    ? manifest.PathDataEntries
+                    : Enumerable.Empty<ItemTransferPathDataEntry>())
+                .Where(entry => entry != null && IsVisualAssetExtension(Path.GetExtension(entry.MappedPath ?? string.Empty)))
+                .Select(entry => entry.MappedPath)
+                .Where(path => !string.IsNullOrWhiteSpace(path))
+                .Take(8)
+                .ToList();
+
+            string message = "Export failed because no visual assets were written to the item package.";
+            if (visualPaths.Count > 0)
+            {
+                message += "\nExpected visual assets:\n- " + string.Join("\n- ", visualPaths);
+            }
+
+            return message;
+        }
+
         private static bool IsPackageAssetPathIdField(string fieldName)
         {
-            string normalized = (fieldName ?? string.Empty).ToLowerInvariant();
+            string normalized = NormalizeFieldNameKey(fieldName);
             if (string.IsNullOrWhiteSpace(normalized))
             {
                 return false;
@@ -2835,6 +3152,7 @@ namespace FWEledit
                 || string.Equals(normalized, "music_drop", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(normalized, "id_change_model", StringComparison.OrdinalIgnoreCase)
                 || normalized.StartsWith("file_model", StringComparison.OrdinalIgnoreCase)
+                || normalized.StartsWith("file_models", StringComparison.OrdinalIgnoreCase)
                 || (normalized.StartsWith("models_", StringComparison.OrdinalIgnoreCase)
                     && normalized.Contains("_file_model"))
                 || normalized.StartsWith("gfx_", StringComparison.OrdinalIgnoreCase)
@@ -2850,8 +3168,9 @@ namespace FWEledit
 
         private static bool IsModelAssetPathIdField(string fieldName)
         {
-            string normalized = (fieldName ?? string.Empty).ToLowerInvariant();
+            string normalized = NormalizeFieldNameKey(fieldName);
             return normalized.StartsWith("file_model", StringComparison.OrdinalIgnoreCase)
+                || normalized.StartsWith("file_models", StringComparison.OrdinalIgnoreCase)
                 || (normalized.StartsWith("models_", StringComparison.OrdinalIgnoreCase)
                     && normalized.Contains("_file_model"))
                 || string.Equals(normalized, "id_change_model", StringComparison.OrdinalIgnoreCase);

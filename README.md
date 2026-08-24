@@ -12,15 +12,16 @@ FWEledit is based on [sELedit++ by Wrechid](https://github.com/Wrechid/sELedit-)
 
 ---
 
-## What's New in v0.9.5.23
+## What's New in v0.9.5.24
 
-- Added per-client resource maps and warmer reference/list caches to make repeat opens, list switching, and package-backed description reads faster without relying on manually extracted files.
-- Expanded parser, selector, reference, and inherited-icon coverage for service and recipe lists, including `Pet Bedge`, `Pet Food`, `Merge Recipe`, `NPC Hotel`, `Produce Type`, `NPC Learn Produce`, `NPC Talk Service`, `Aircraft`, `Vehicle`, and `Random Gift Bag`.
-- Fixed `NPC_TALK_SERVICE.id_dialog` so it resolves against real conversation/dialog entries and opens a dialog-specific picker instead of the generic all-list item selector.
-- Improved description editing reliability with normal undo behavior, `configs.pck` save confirmation, reload-safe package writes, and restored in-game update flow.
-- Refined Advanced Title handling so graphic titles can be controlled separately for player/chat display while preserving text-line formatting and avoiding unintended icons on system messages.
-- Added `COLOR_PLAN_CONFIG` swatches in aircraft color fields, plus clearer Yes/No and gender displays for aircraft-related fields.
-- Project/app version metadata updated to `v0.9.5.23`.
+- Stabilized startup and session restore so the editor keeps the last selected list/item after background cache, icon, reference, and list refreshes complete.
+- Added first-open cache progress feedback and improved per-client map hydration so new clients do heavy indexing visibly, while repeat opens and list switching stay responsive.
+- Improved model-backed workflows for `Equipment`, `Aircraft`, `Vehicle`, `Monster`, `NPC`, and pet-related lists with embedded preview coverage, safer model field resolution, and corrected non-model preview fallbacks.
+- Hardened PCK Explorer and item package import/export so cross-package model, GFX, aircraft, vehicle, equipment, mount, handhold, weapon, texture, shader, and script dependencies preserve their source package mapping and report clearer audits.
+- Expanded item package support to `Aircraft Essence` and `Vehicle Essence`, while restoring reliable equipment package exports/imports for clients with resources spread across packages such as `models`, `models2`, `moxing`, `grasses`, `gfx`, and `shaders`.
+- Fixed Advanced Title loading for clients whose `script.pck` title data uses alternate layouts, and kept graphic-title display controls from affecting unrelated system messages.
+- Continued parser/reference/icon cleanup for aircraft colors, pet food, pet bedge stats, merge recipes, NPC services, random gift bags, and dialog/service selectors.
+- Project/app version metadata updated to `v0.9.5.24`.
 
 Previous release notes were moved to [docs/WHATS_NEW.md](docs/WHATS_NEW.md).
 

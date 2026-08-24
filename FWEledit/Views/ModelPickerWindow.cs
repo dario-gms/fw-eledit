@@ -41,6 +41,8 @@ namespace FWEledit
         private readonly ProgressBar loadingProgress;
         private readonly Button previewButton;
         private readonly DataGridView grid;
+        private readonly Panel embeddedPreviewHostPanel;
+        private readonly Label embeddedPreviewStatusLabel;
         private readonly Label statusLabel;
         private readonly ContextMenuStrip entryMenu;
         private readonly ToolStripMenuItem previewModelMenuItem;
@@ -56,6 +58,7 @@ namespace FWEledit
         private static readonly List<ModelPickerEntry> EmptyEntries = new List<ModelPickerEntry>();
         private const string AllPackagesFilter = "All packages";
         private bool previewWindowOpened;
+        private ModelPreviewWindow embeddedPreviewWindow;
         private int previewLoadInProgress;
         private int previewPendingAuto;
         private int previewPendingForce;
@@ -151,7 +154,11 @@ namespace FWEledit
             BackColor = Color.White;
             Font = new Font("Segoe UI", 9F, FontStyle.Regular, GraphicsUnit.Point, ((byte)(0)));
             KeyDown += OnKeyDown;
-            FormClosed += (s, e) => CancelAggressivePrefetch();
+            FormClosed += (s, e) =>
+            {
+                CancelAggressivePrefetch();
+                DisposeEmbeddedPreviewWindow();
+            };
 
             Panel top = new Panel();
             top.Dock = DockStyle.Top;
@@ -351,9 +358,66 @@ namespace FWEledit
             okButton.Click += (s, e) => ConfirmSelection();
             bottom.Controls.Add(okButton);
 
-            Controls.Add(grid);
+            SplitContainer contentSplit = new SplitContainer();
+            contentSplit.Dock = DockStyle.Fill;
+            contentSplit.Orientation = Orientation.Vertical;
+            contentSplit.FixedPanel = FixedPanel.Panel2;
+            contentSplit.SplitterWidth = 4;
+            contentSplit.Panel1MinSize = 1;
+            contentSplit.Panel2MinSize = 1;
+            contentSplit.BackColor = Color.FromArgb(35, 35, 35);
+            contentSplit.Panel1.Controls.Add(grid);
+
+            TableLayoutPanel previewLayout = new TableLayoutPanel();
+            previewLayout.Dock = DockStyle.Fill;
+            previewLayout.ColumnCount = 1;
+            previewLayout.RowCount = 2;
+            previewLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            previewLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 28F));
+            previewLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+            previewLayout.BackColor = Color.FromArgb(18, 18, 18);
+
+            Label previewCaption = new Label();
+            previewCaption.Text = "Model Preview";
+            previewCaption.Dock = DockStyle.Fill;
+            previewCaption.TextAlign = ContentAlignment.MiddleCenter;
+            previewCaption.BackColor = Color.FromArgb(32, 38, 47);
+            previewCaption.ForeColor = Color.White;
+            previewCaption.Font = new Font("Segoe UI", 9F, FontStyle.Bold, GraphicsUnit.Point, ((byte)(0)));
+            previewLayout.Controls.Add(previewCaption, 0, 0);
+
+            embeddedPreviewHostPanel = new Panel();
+            embeddedPreviewHostPanel.Dock = DockStyle.Fill;
+            embeddedPreviewHostPanel.BackColor = Color.FromArgb(18, 18, 18);
+            embeddedPreviewHostPanel.BorderStyle = BorderStyle.FixedSingle;
+
+            embeddedPreviewStatusLabel = new Label();
+            embeddedPreviewStatusLabel.Dock = DockStyle.Fill;
+            embeddedPreviewStatusLabel.Text = "Select a model.";
+            embeddedPreviewStatusLabel.TextAlign = ContentAlignment.MiddleCenter;
+            embeddedPreviewStatusLabel.ForeColor = Color.FromArgb(150, 164, 180);
+            embeddedPreviewStatusLabel.BackColor = Color.FromArgb(18, 18, 18);
+            embeddedPreviewHostPanel.Controls.Add(embeddedPreviewStatusLabel);
+            previewLayout.Controls.Add(embeddedPreviewHostPanel, 0, 1);
+
+            contentSplit.Panel2.Controls.Add(previewLayout);
+
+            Controls.Add(contentSplit);
             Controls.Add(bottom);
             Controls.Add(top);
+            Shown += (s, e) =>
+            {
+                const int desiredListMinWidth = 520;
+                const int desiredPreviewMinWidth = 300;
+                int availableWidth = contentSplit.ClientSize.Width;
+                if (availableWidth > desiredListMinWidth + desiredPreviewMinWidth + contentSplit.SplitterWidth)
+                {
+                    int previewWidth = Math.Min(440, Math.Max(320, availableWidth / 3));
+                    int splitterDistance = availableWidth - previewWidth - contentSplit.SplitterWidth;
+                    int maxDistance = availableWidth - desiredPreviewMinWidth - contentSplit.SplitterWidth;
+                    contentSplit.SplitterDistance = Math.Max(desiredListMinWidth, Math.Min(maxDistance, splitterDistance));
+                }
+            };
 
             filterTimer = new System.Windows.Forms.Timer();
             filterTimer.Interval = 200;
@@ -1491,11 +1555,6 @@ namespace FWEledit
             {
                 return;
             }
-            if (!force && !previewWindowOpened)
-            {
-                return;
-            }
-
             if (Interlocked.CompareExchange(ref previewLoadInProgress, 1, 0) != 0)
             {
                 if (force)
@@ -1532,9 +1591,21 @@ namespace FWEledit
                 }
                 if (string.IsNullOrWhiteSpace(mappedPath))
                 {
-                    modelPreviewService.ShowPreviewMessage("Invalid model path.", force, Handle);
+                    if (force)
+                    {
+                        modelPreviewService.ShowPreviewMessage("Invalid model path.", true, Handle);
+                    }
+                    else
+                    {
+                        ShowEmbeddedPreviewStatus("Invalid model path.");
+                    }
                     previewWindowOpened = modelPreviewService.IsPreviewWindowOpen();
                     return;
+                }
+
+                if (!force)
+                {
+                    ShowEmbeddedPreviewStatus("Loading preview...");
                 }
 
                 ModelPreviewMeshData meshData = null;
@@ -1555,11 +1626,19 @@ namespace FWEledit
 
                 if (!ok)
                 {
-                    modelPreviewService.ShowPreviewMessage(error, force, Handle);
+                    if (force)
+                    {
+                        modelPreviewService.ShowPreviewMessage(error, true, Handle);
+                    }
+                    else
+                    {
+                        ShowEmbeddedPreviewStatus(string.IsNullOrWhiteSpace(error) ? "Model preview unavailable." : error);
+                    }
                     previewWindowOpened = modelPreviewService.IsPreviewWindowOpen();
                     return;
                 }
 
+                ShowEmbeddedPreview(meshData);
                 if (force)
                 {
                     modelPreviewService.ShowPreviewWindow(meshData, true, Handle);
@@ -1567,10 +1646,9 @@ namespace FWEledit
                 }
                 else
                 {
-                    if (!modelPreviewService.TryUpdateOpenPreviewWindow(meshData))
+                    if (previewWindowOpened && !modelPreviewService.TryUpdateOpenPreviewWindow(meshData))
                     {
                         previewWindowOpened = false;
-                        return;
                     }
                 }
                 if (selected.PathId > 0)
@@ -1622,6 +1700,70 @@ namespace FWEledit
                     ScheduleAutoPreview();
                 }
             }
+        }
+
+        private void ShowEmbeddedPreview(ModelPreviewMeshData meshData)
+        {
+            if (meshData == null || embeddedPreviewHostPanel == null || embeddedPreviewHostPanel.IsDisposed)
+            {
+                return;
+            }
+
+            if (embeddedPreviewStatusLabel != null)
+            {
+                embeddedPreviewStatusLabel.Visible = false;
+            }
+
+            if (embeddedPreviewWindow == null || embeddedPreviewWindow.IsDisposed)
+            {
+                embeddedPreviewWindow = new ModelPreviewWindow(meshData, false, IntPtr.Zero);
+                embeddedPreviewWindow.TopLevel = false;
+                embeddedPreviewWindow.FormBorderStyle = FormBorderStyle.None;
+                embeddedPreviewWindow.Dock = DockStyle.Fill;
+                embeddedPreviewWindow.ShowInTaskbar = false;
+                embeddedPreviewWindow.SetEmbeddedViewportOnlyMode(true);
+                embeddedPreviewHostPanel.Controls.Add(embeddedPreviewWindow);
+                embeddedPreviewWindow.Show();
+            }
+            else
+            {
+                embeddedPreviewWindow.ReplaceMeshData(meshData);
+            }
+
+            embeddedPreviewWindow.Visible = true;
+            embeddedPreviewWindow.BringToFront();
+        }
+
+        private void ShowEmbeddedPreviewStatus(string message)
+        {
+            if (embeddedPreviewWindow != null && !embeddedPreviewWindow.IsDisposed)
+            {
+                embeddedPreviewWindow.Visible = false;
+            }
+            if (embeddedPreviewStatusLabel == null || embeddedPreviewStatusLabel.IsDisposed)
+            {
+                return;
+            }
+            embeddedPreviewStatusLabel.Text = string.IsNullOrWhiteSpace(message) ? "Model preview unavailable." : message;
+            embeddedPreviewStatusLabel.Visible = true;
+            embeddedPreviewStatusLabel.BringToFront();
+        }
+
+        private void DisposeEmbeddedPreviewWindow()
+        {
+            if (embeddedPreviewWindow == null)
+            {
+                return;
+            }
+            try
+            {
+                embeddedPreviewWindow.Close();
+                embeddedPreviewWindow.Dispose();
+            }
+            catch
+            {
+            }
+            embeddedPreviewWindow = null;
         }
 
         private static Control FindFocusedDescendant(Control root)

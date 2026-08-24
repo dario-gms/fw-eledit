@@ -10,6 +10,7 @@ namespace FWEledit
             public int ListIndex { get; set; }
             public string Text { get; set; }
             public Bitmap Icon { get; set; }
+            public bool IconResolved { get; set; }
 
             public override string ToString()
             {
@@ -24,6 +25,17 @@ namespace FWEledit
             ListDisplayService listDisplayService,
             ListRowBuilderService listRowBuilderService)
         {
+            PopulateLists(comboBox, listCollection, database, listDisplayService, listRowBuilderService, true);
+        }
+
+        public void PopulateLists(
+            ComboBox comboBox,
+            eListCollection listCollection,
+            CacheSave database,
+            ListDisplayService listDisplayService,
+            ListRowBuilderService listRowBuilderService,
+            bool includeIcons)
+        {
             if (comboBox == null)
             {
                 return;
@@ -37,7 +49,7 @@ namespace FWEledit
 
             for (int l = 0; l < listCollection.Lists.Length; l++)
             {
-                comboBox.Items.Add(BuildListComboItem(listCollection, database, listDisplayService, listRowBuilderService, l));
+                comboBox.Items.Add(BuildListComboItem(listCollection, database, listDisplayService, listRowBuilderService, l, includeIcons));
             }
         }
 
@@ -47,6 +59,17 @@ namespace FWEledit
             ListDisplayService listDisplayService,
             ListRowBuilderService listRowBuilderService,
             int listIndex)
+        {
+            return BuildListComboItem(listCollection, database, listDisplayService, listRowBuilderService, listIndex, true);
+        }
+
+        public ListComboItem BuildListComboItem(
+            eListCollection listCollection,
+            CacheSave database,
+            ListDisplayService listDisplayService,
+            ListRowBuilderService listRowBuilderService,
+            int listIndex,
+            bool includeIcon)
         {
             if (listCollection == null
                 || listCollection.Lists == null
@@ -58,7 +81,8 @@ namespace FWEledit
                 {
                     ListIndex = listIndex,
                     Text = "[" + listIndex + "] Unknown (0)",
-                    Icon = Properties.Resources.NoIcon
+                    Icon = Properties.Resources.NoIcon,
+                    IconResolved = true
                 };
             }
 
@@ -71,7 +95,7 @@ namespace FWEledit
                 : 0;
 
             Bitmap icon = Properties.Resources.NoIcon;
-            if (count > 0 && listRowBuilderService != null)
+            if (includeIcon && count > 0 && listRowBuilderService != null)
             {
                 icon = listRowBuilderService.BuildRowIcon(listCollection, database, listIndex, 0) ?? Properties.Resources.NoIcon;
             }
@@ -80,7 +104,8 @@ namespace FWEledit
             {
                 ListIndex = listIndex,
                 Text = "[" + listIndex + "] " + friendlyListName + " (" + count + ")",
-                Icon = icon
+                Icon = icon,
+                IconResolved = includeIcon || count == 0
             };
         }
 
@@ -100,6 +125,37 @@ namespace FWEledit
 
             existing.Text = text ?? string.Empty;
             comboBox.Items[listIndex] = existing;
+        }
+
+        public void EnsureListIcon(
+            ComboBox comboBox,
+            eListCollection listCollection,
+            CacheSave database,
+            ListDisplayService listDisplayService,
+            ListRowBuilderService listRowBuilderService,
+            int listIndex)
+        {
+            if (comboBox == null
+                || listCollection == null
+                || listIndex < 0
+                || listIndex >= comboBox.Items.Count)
+            {
+                return;
+            }
+
+            ListComboItem existing = comboBox.Items[listIndex] as ListComboItem;
+            if (existing != null && existing.IconResolved)
+            {
+                return;
+            }
+
+            comboBox.Items[listIndex] = BuildListComboItem(
+                listCollection,
+                database,
+                listDisplayService,
+                listRowBuilderService,
+                listIndex,
+                true);
         }
     }
 }

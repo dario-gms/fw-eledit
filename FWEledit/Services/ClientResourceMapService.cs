@@ -53,6 +53,38 @@ namespace FWEledit
             }
         }
 
+        public bool HasValidMap(string gameRoot, string workspaceRoot)
+        {
+            if (string.IsNullOrWhiteSpace(gameRoot) || !Directory.Exists(gameRoot))
+            {
+                return false;
+            }
+
+            try
+            {
+                Dictionary<string, ClientResourceFileSignature> signatures = BuildSignatures(gameRoot, workspaceRoot);
+                string clientId = BuildClientId(gameRoot);
+                string canonicalRoot = GetCanonicalRoot(gameRoot);
+                string mapPath = GetMapPath(gameRoot);
+                ClientResourceMap loaded;
+                if (TryLoadFromMemory(mapPath, clientId, canonicalRoot, signatures, out loaded))
+                {
+                    return true;
+                }
+
+                if (TryLoad(mapPath, clientId, canonicalRoot, signatures, out loaded))
+                {
+                    StoreInMemory(mapPath, loaded);
+                    return true;
+                }
+            }
+            catch
+            {
+            }
+
+            return false;
+        }
+
         public void Invalidate(string gameRoot)
         {
             try

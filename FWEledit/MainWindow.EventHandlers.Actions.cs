@@ -224,9 +224,9 @@ namespace FWEledit
             {
                 return;
             }
-            if (!ItemTransferPackageService.IsEquipmentEssenceList(sessionService.ListCollection.Lists[listIndex]))
+            if (!ItemTransferPackageService.IsTransferPackageSupportedList(sessionService.ListCollection.Lists[listIndex]))
             {
-                MessageBox.Show("Item package export currently supports only Equipment Essence.");
+                MessageBox.Show("Item package export currently supports Equipment, Aircraft and Vehicle Essence.");
                 return;
             }
 
@@ -276,7 +276,7 @@ namespace FWEledit
                     SaveLastItemPackageExportFolder(Path.GetDirectoryName(dialog.FileName));
 
                     using (ItemTransferProgressWindow progressWindow = ShowItemTransferProgressWindow(
-                        "Export Equipment Package",
+                        "Export Item Package",
                         "Preparing export",
                         safeName))
                     {
@@ -309,7 +309,7 @@ namespace FWEledit
             }
 
             string selectedOutputDirectory = gameFolderDialogService.PromptForGameFolder(
-                "Choose a folder for the exported equipment packages.",
+                "Choose a folder for the exported item packages.",
                 GetLastItemPackageExportFolder(),
                 this);
             if (string.IsNullOrWhiteSpace(selectedOutputDirectory))
@@ -320,9 +320,9 @@ namespace FWEledit
             SaveLastItemPackageExportFolder(selectedOutputDirectory);
 
             using (ItemTransferProgressWindow progressWindow = ShowItemTransferProgressWindow(
-                "Export Equipment Packages",
+                "Export Item Packages",
                 "Preparing batch export",
-                elementIndices.Length.ToString() + " equipment packages"))
+                elementIndices.Length.ToString() + " item packages"))
             {
 
                 ItemTransferExportResult result;
@@ -498,24 +498,27 @@ namespace FWEledit
             string toolPath = FindEquipmentPackageToolPath();
             if (string.IsNullOrWhiteSpace(toolPath) || !File.Exists(toolPath))
             {
-                result.ErrorMessage = "Equipment package tool was not found.";
+                result.ErrorMessage = "Item package tool was not found.";
                 return result;
             }
 
-            if (string.IsNullOrWhiteSpace(AssetManager.GameRootPath) || !Directory.Exists(AssetManager.GameRootPath))
+            string exportGameRoot = ResolveCurrentExportGameRoot();
+            if (string.IsNullOrWhiteSpace(exportGameRoot) || !Directory.Exists(exportGameRoot))
             {
                 result.ErrorMessage = "Game root path is not configured.";
                 return result;
             }
 
+            AssetManager.GameRootPath = exportGameRoot;
             ItemTransferPackageManifest manifest = itemTransferPackageService.BuildEquipmentExportManifest(
                 sessionService.ListCollection,
                 sessionService.Database,
+                sessionService.AssetManager,
                 listIndex,
                 elementIndex);
             if (manifest == null)
             {
-                result.ErrorMessage = "Failed to build equipment export manifest.";
+                result.ErrorMessage = "Failed to build item export manifest.";
                 return result;
             }
 
@@ -529,8 +532,8 @@ namespace FWEledit
             {
                 var request = new
                 {
-                    GameRootPath = AssetManager.GameRootPath,
-                    WorkspaceRootPath = AssetManager.WorkspaceRootPath,
+                    GameRootPath = exportGameRoot,
+                    WorkspaceRootPath = string.Empty,
                     OutputFile = outputFile,
                     ResultFile = resultFile,
                     Manifest = manifest
@@ -539,7 +542,7 @@ namespace FWEledit
                 File.WriteAllText(requestFile, JsonConvert.SerializeObject(request, Formatting.Indented), Encoding.UTF8);
                 progress?.Invoke(new ItemTransferProgressInfo
                 {
-                    Stage = "Starting equipment package tool",
+                    Stage = "Starting item package tool",
                     Detail = Path.GetFileName(toolPath),
                     Current = 0,
                     Total = 0,
@@ -583,7 +586,7 @@ namespace FWEledit
 
                     if (!process.Start())
                     {
-                        result.ErrorMessage = "Failed to start equipment package tool.";
+                        result.ErrorMessage = "Failed to start item package tool.";
                         return result;
                     }
 
@@ -616,10 +619,11 @@ namespace FWEledit
                                 toolError = stderr.ToString().Trim();
                             }
                             result.ErrorMessage = string.IsNullOrWhiteSpace(toolError)
-                                ? "Equipment package tool failed."
+                                ? "Item package tool failed."
                                 : toolError;
                         }
                         result.Success = false;
+                        WriteItemPackageExportAudit(requestFile, resultFile, result, exportGameRoot, manifest);
                     }
 
                     return result;
@@ -640,6 +644,103 @@ namespace FWEledit
                 TryDeleteTempFile(requestFile);
                 TryDeleteTempFile(resultFile);
             }
+        }
+
+        private static void WriteItemPackageExportAudit(
+            string requestFile,
+            string resultFile,
+            ItemTransferExportResult result,
+            string exportGameRoot,
+            ItemTransferPackageManifest manifest)
+        {
+            try
+            {
+                string auditDir = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "FWEledit",
+                    "logs",
+                    "item_package_export");
+                Directory.CreateDirectory(auditDir);
+
+                string stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss", System.Globalization.CultureInfo.InvariantCulture);
+                string baseName = "export_" + stamp;
+                if (manifest != null && manifest.OriginalId > 0)
+                {
+                    baseName += "_" + manifest.OriginalId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                }
+
+                string auditFile = Path.Combine(auditDir, baseName + ".log");
+                StringBuilder sb = new StringBuilder();
+                sb.AppendLine("FWEledit item package export audit");
+                sb.AppendLine("GameRootPath: " + (exportGameRoot ?? string.Empty));
+                sb.AppendLine("WorkspaceRootPath: <disabled for source export>");
+                if (manifest != null)
+                {
+                    sb.AppendLine("SourceList: " + manifest.SourceListIndex.ToString(System.Globalization.CultureInfo.InvariantCulture) + " - " + (manifest.SourceListName ?? string.Empty));
+                    sb.AppendLine("OriginalId: " + manifest.OriginalId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                    sb.AppendLine("OriginalName: " + (manifest.OriginalName ?? string.Empty));
+                    sb.AppendLine("PathDataEntries: " + (manifest.PathDataEntries != null ? manifest.PathDataEntries.Count : 0).ToString(System.Globalization.CultureInfo.InvariantCulture));
+                    sb.AppendLine("AssetsInManifest: " + (manifest.Assets != null ? manifest.Assets.Count : 0).ToString(System.Globalization.CultureInfo.InvariantCulture));
+                }
+                if (result != null)
+                {
+                    sb.AppendLine("Success: " + result.Success.ToString());
+                    sb.AppendLine("AssetCount: " + result.AssetCount.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                    sb.AppendLine("MissingAssetCount: " + result.MissingAssetCount.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                    sb.AppendLine("ErrorMessage: " + (result.ErrorMessage ?? string.Empty));
+                    if (result.MissingAssets != null && result.MissingAssets.Count > 0)
+                    {
+                        sb.AppendLine("MissingAssets:");
+                        foreach (string missing in result.MissingAssets.Take(100))
+                        {
+                            sb.AppendLine("- " + missing);
+                        }
+                    }
+                }
+
+                File.WriteAllText(auditFile, sb.ToString(), Encoding.UTF8);
+                if (File.Exists(requestFile))
+                {
+                    File.Copy(requestFile, Path.Combine(auditDir, baseName + ".request.json"), true);
+                }
+                if (File.Exists(resultFile))
+                {
+                    File.Copy(resultFile, Path.Combine(auditDir, baseName + ".result.json"), true);
+                }
+
+                if (result != null)
+                {
+                    result.ErrorMessage = (result.ErrorMessage ?? "Failed to export item package.")
+                        + "\nAudit log: " + auditFile;
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        private string ResolveCurrentExportGameRoot()
+        {
+            string elementsPath = viewModel != null ? viewModel.ElementsPath : string.Empty;
+            if (!string.IsNullOrWhiteSpace(elementsPath) && File.Exists(elementsPath))
+            {
+                try
+                {
+                    string dataDir = Path.GetDirectoryName(elementsPath);
+                    string root = !string.IsNullOrWhiteSpace(dataDir) ? Path.GetDirectoryName(dataDir) : string.Empty;
+                    if (!string.IsNullOrWhiteSpace(root)
+                        && Directory.Exists(root)
+                        && Directory.Exists(Path.Combine(root, "resources")))
+                    {
+                        return root;
+                    }
+                }
+                catch
+                {
+                }
+            }
+
+            return AssetManager.GameRootPath ?? string.Empty;
         }
 
         private static void HandleEquipmentPackageToolOutput(string line, Action<ItemTransferProgressInfo> progress)
@@ -761,7 +862,7 @@ namespace FWEledit
                     return;
                 }
 
-                using (ItemTransferProgressWindow progressWindow = new ItemTransferProgressWindow("Import Equipment Package"))
+                using (ItemTransferProgressWindow progressWindow = new ItemTransferProgressWindow("Import Item Package"))
                 {
                     progressWindow.StartPosition = FormStartPosition.CenterParent;
                     progressWindow.Show(this);

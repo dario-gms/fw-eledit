@@ -1599,7 +1599,7 @@ namespace FWEledit
             }
         }
 
-        private static bool AddQueuedImport(Dictionary<string, ImportAssetRequest> queued, Queue<ImportAssetRequest> pending, ImportAssetRequest request)
+        private bool AddQueuedImport(Dictionary<string, ImportAssetRequest> queued, Queue<ImportAssetRequest> pending, ImportAssetRequest request)
         {
             if (request == null)
             {
@@ -1610,6 +1610,7 @@ namespace FWEledit
             request.TargetPackage = NormalizePackageName(request.TargetPackage);
             request.SourceRelativePath = NormalizePath(request.SourceRelativePath);
             request.TargetRelativePath = NormalizePath(request.TargetRelativePath);
+            NormalizeDependencyTargetPackage(request);
             if (string.IsNullOrWhiteSpace(request.SourcePackage)
                 || string.IsNullOrWhiteSpace(request.TargetPackage)
                 || string.IsNullOrWhiteSpace(request.SourceRelativePath)
@@ -1627,6 +1628,28 @@ namespace FWEledit
             queued[key] = request;
             pending.Enqueue(request);
             return true;
+        }
+
+        private void NormalizeDependencyTargetPackage(ImportAssetRequest request)
+        {
+            if (request == null || request.IsRoot)
+            {
+                return;
+            }
+
+            string sourcePackage = NormalizePackageName(request.SourcePackage);
+            string targetPackage = NormalizePackageName(request.TargetPackage);
+            string extension = Path.GetExtension(request.TargetRelativePath);
+            if (!IsModelLikeExtension(extension)
+                || !IsEffectPackage(targetPackage)
+                || !IsModelAssetPackage(sourcePackage)
+                || !TargetPackageExists(sourcePackage))
+            {
+                return;
+            }
+
+            request.TargetPackage = sourcePackage;
+            request.TargetRelativePath = NormalizePackageRelativePath(sourcePackage, request.SourceRelativePath);
         }
 
         private void StageImportAsset(
@@ -1715,7 +1738,9 @@ namespace FWEledit
             return string.Equals(package, "models", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(package, "models2", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(package, "litmodels", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(package, "moxing", StringComparison.OrdinalIgnoreCase);
+                || string.Equals(package, "moxing", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(package, "gfx", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(package, "gfx2", StringComparison.OrdinalIgnoreCase);
         }
 
         private static List<PckRawCopyImportItem> BuildRawCopyItems(IEnumerable<ImportAssetRequest> requests)
@@ -2941,6 +2966,24 @@ namespace FWEledit
                 || string.Equals(extension, ".stck", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(extension, ".att", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(extension, ".sgc", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsEffectPackage(string packageName)
+        {
+            string package = NormalizePackageName(packageName);
+            return string.Equals(package, "gfx", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(package, "gfx2", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsModelAssetPackage(string packageName)
+        {
+            string package = NormalizePackageName(packageName);
+            return string.Equals(package, "models", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(package, "models2", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(package, "litmodels", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(package, "moxing", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(package, "grasses", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(package, "shaders", StringComparison.OrdinalIgnoreCase);
         }
 
         private static bool IsEffectDescriptorExtension(string extension)

@@ -21,11 +21,6 @@ namespace FWEledit
                     return false;
                 }
 
-                if (listDisplayService.TryGetListDisplayRows(sessionService.ListCollection, listIndex, out _))
-                {
-                    return false;
-                }
-
                 var list = sessionService.ListCollection.Lists[listIndex];
                 return list != null
                     && list.elementValues != null
@@ -44,6 +39,58 @@ namespace FWEledit
             if (visibleIconHydrationTimer != null)
             {
                 visibleIconHydrationTimer.Stop();
+            }
+        }
+
+        private void StartListIconHydration()
+        {
+            nextListIconHydrationIndex = 0;
+
+            if (listIconHydrationTimer == null)
+            {
+                HydrateNextListComboIcons();
+                return;
+            }
+
+            listIconHydrationTimer.Stop();
+            listIconHydrationTimer.Start();
+        }
+
+        private void HydrateNextListComboIcons()
+        {
+            if (comboBox_lists == null
+                || sessionService == null
+                || sessionService.ListCollection == null
+                || listComboPopulationService == null
+                || listRowBuilderService == null)
+            {
+                if (listIconHydrationTimer != null)
+                {
+                    listIconHydrationTimer.Stop();
+                }
+                return;
+            }
+
+            const int IconsPerTick = 1;
+            int hydrated = 0;
+            int itemCount = comboBox_lists.Items.Count;
+            while (nextListIconHydrationIndex < itemCount && hydrated < IconsPerTick)
+            {
+                listComboPopulationService.EnsureListIcon(
+                    comboBox_lists,
+                    sessionService.ListCollection,
+                    sessionService.Database,
+                    listDisplayService,
+                    listRowBuilderService,
+                    nextListIconHydrationIndex);
+
+                nextListIconHydrationIndex++;
+                hydrated++;
+            }
+
+            if (nextListIconHydrationIndex >= itemCount && listIconHydrationTimer != null)
+            {
+                listIconHydrationTimer.Stop();
             }
         }
 
@@ -66,10 +113,16 @@ namespace FWEledit
                 || comboBox_lists == null
                 || sessionService == null
                 || sessionService.ListCollection == null
-                || sessionService.Database == null
-                || sessionService.Database.sourceBitmap == null
                 || comboBox_lists.SelectedIndex != lightweightListRenderIndex
-                || dataGridView_elems.Rows.Count == 0
+                || dataGridView_elems.Rows.Count == 0)
+            {
+                return;
+            }
+
+            ApplyVisibleElementRowQualityStyles();
+
+            if (sessionService.Database == null
+                || sessionService.Database.sourceBitmap == null
                 || listRowBuilderService == null)
             {
                 return;
@@ -129,6 +182,67 @@ namespace FWEledit
             if (hasUpdates)
             {
                 dataGridView_elems.Refresh();
+            }
+        }
+
+        private void ApplyVisibleElementRowQualityStyles()
+        {
+            if (lightweightListRenderIndex < 0
+                || dataGridView_elems == null
+                || comboBox_lists == null
+                || sessionService == null
+                || sessionService.ListCollection == null
+                || comboBox_lists.SelectedIndex != lightweightListRenderIndex
+                || dataGridView_elems.Rows.Count == 0
+                || itemQualityRowStyleService == null)
+            {
+                return;
+            }
+
+            int firstDisplayedRow = dataGridView_elems.FirstDisplayedScrollingRowIndex;
+            if (firstDisplayedRow < 0)
+            {
+                firstDisplayedRow = 0;
+            }
+
+            int displayedRowCount = dataGridView_elems.DisplayedRowCount(true);
+            if (displayedRowCount <= 0)
+            {
+                displayedRowCount = Math.Min(dataGridView_elems.Rows.Count, 32);
+            }
+
+            int lastDisplayedRow = Math.Min(dataGridView_elems.Rows.Count - 1, firstDisplayedRow + displayedRowCount - 1);
+            using (new ControlRedrawScope(dataGridView_elems))
+            {
+                for (int rowIndex = firstDisplayedRow; rowIndex <= lastDisplayedRow; rowIndex++)
+                {
+                    int elementIndex = elementIndexResolverService.ResolveElementIndexFromGridRow(
+                        sessionService.ListCollection,
+                        lightweightListRenderIndex,
+                        rowIndex,
+                        dataGridView_elems);
+                    if (elementIndex < 0)
+                    {
+                        continue;
+                    }
+
+                    DataGridViewRow row = dataGridView_elems.Rows[rowIndex];
+                    if (row == null)
+                    {
+                        continue;
+                    }
+
+                    itemQualityRowStyleService.ApplyQualityStyle(
+                        sessionService.ListCollection,
+                        lightweightListRenderIndex,
+                        elementIndex,
+                        row,
+                        dataGridView_elems,
+                        index => fieldIndexLookupService.GetItemQualityFieldIndex(sessionService.ListCollection, index),
+                        quality => itemQualityColorService.GetQualityColor(quality),
+                        (entityListIndex, entityEntryIndex) => GetEntityNameColor(entityListIndex, entityEntryIndex),
+                        (color, factor) => colorShadeService.Darken(color, factor));
+                }
             }
         }
     }

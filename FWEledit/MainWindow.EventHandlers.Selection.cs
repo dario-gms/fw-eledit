@@ -10,6 +10,7 @@ namespace FWEledit
             bool previousSuppressSelectionHistory = suppressSelectionHistory;
             pendingAutoSelectionHistoryListIndex = -1;
             bool useLightweightStartupLoad = ShouldUseLightweightListRender(comboBox_lists != null ? comboBox_lists.SelectedIndex : -1);
+            bool isRestoringSessionState = viewModel != null && viewModel.IsRestoringSessionState;
             if (!previousSuppressSelectionHistory)
             {
                 suppressSelectionHistory = true;
@@ -73,6 +74,11 @@ namespace FWEledit
                 RefreshVisibleReferenceCounts();
             }
 
+            if (isRestoringSessionState)
+            {
+                return;
+            }
+
             UpdateNpcSellServiceUiForSelection();
             UpdateAddonPackageDescEditorFromCurrentCell();
             EnsureReferencesTabIsLast();
@@ -86,6 +92,11 @@ namespace FWEledit
 
         private void change_item(object sender, EventArgs ea)
 		{
+            if (viewModel != null && viewModel.IsRestoringSessionState)
+            {
+                return;
+            }
+
             int currentListIndex = comboBox_lists != null ? comboBox_lists.SelectedIndex : -1;
             RememberCurrentValueFieldSelection();
 
@@ -133,6 +144,7 @@ namespace FWEledit
             UpdateRawValueEditorFromCurrentCell();
             UpdateAddonPackageDescEditorFromCurrentCell();
             RefreshLiveModelPreviewFromCurrentRow(true);
+            RefreshEmbeddedModelPreviewForCurrentItem(false, true);
             EnsureReferencesTabIsLast();
             UpdateReferencesTabForSelection();
             bool skipAutoSelectionHistory =
@@ -199,6 +211,7 @@ namespace FWEledit
             UpdateRawValueEditorFromCurrentCell();
             UpdateAddonPackageDescEditorFromCurrentCell();
             RefreshLiveModelPreviewFromCurrentRow(true);
+            RefreshEmbeddedModelPreviewForCurrentItem(false, true);
         }
 
 
@@ -304,6 +317,12 @@ namespace FWEledit
                 viewModel);
 
             RefreshLiveModelPreviewFromCurrentRow(false);
+            if (dataGridView_item != null
+                && dataGridView_item.CurrentCell != null
+                && IsModelFieldRow(dataGridView_item.CurrentCell.RowIndex))
+            {
+                RefreshEmbeddedModelPreviewForCurrentItem(false, false);
+            }
             UpdateRawValueEditorFromCurrentCell();
             UpdateDescriptionTabForSelection();
             if (string.Equals(editedFieldName, "id", StringComparison.OrdinalIgnoreCase)

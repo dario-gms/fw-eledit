@@ -470,7 +470,9 @@ namespace FWEledit
                 }
 
                 RebuildGrid();
-                statusLabel.Text = "Loaded " + titles.Count.ToString(CultureInfo.InvariantCulture) + " titles from script.pck";
+                string loadStatus = TitleDefinitionCatalog.GetLoadStatus();
+                statusLabel.Text = "Loaded " + titles.Count.ToString(CultureInfo.InvariantCulture) + " titles from script.pck"
+                    + (string.IsNullOrWhiteSpace(loadStatus) ? string.Empty : " - " + loadStatus);
                 dirty = false;
             }
             catch (Exception ex)

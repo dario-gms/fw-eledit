@@ -684,6 +684,11 @@ namespace FWEledit
                 package = "litmodels";
                 relative = relative.Substring("litmodels\\".Length);
             }
+            else if (relative.StartsWith("shaders\\", StringComparison.OrdinalIgnoreCase))
+            {
+                package = "shaders";
+                relative = relative.Substring("shaders\\".Length);
+            }
             else if (relative.StartsWith("moxing\\", StringComparison.OrdinalIgnoreCase))
             {
                 package = "moxing";
@@ -780,6 +785,12 @@ namespace FWEledit
             {
                 package = "litmodels";
                 relative = normalized.Substring("litmodels\\".Length);
+                return;
+            }
+            if (normalized.StartsWith("shaders\\", StringComparison.OrdinalIgnoreCase))
+            {
+                package = "shaders";
+                relative = normalized.Substring("shaders\\".Length);
                 return;
             }
             if (normalized.StartsWith("moxing\\", StringComparison.OrdinalIgnoreCase))
@@ -1292,6 +1303,7 @@ namespace FWEledit
             AddUniquePackage(packageCandidates, seenPackages, "grasses");
             AddUniquePackage(packageCandidates, seenPackages, "litmodels");
             AddUniquePackage(packageCandidates, seenPackages, "moxing");
+            AddUniquePackage(packageCandidates, seenPackages, "shaders");
             AddUniquePackage(packageCandidates, seenPackages, "surfaces");
             AddUniquePackage(packageCandidates, seenPackages, string.Empty);
 
@@ -1922,6 +1934,7 @@ namespace FWEledit
             AddUniquePackage(packageFallbacks, seenPackages, "models");
             AddUniquePackage(packageFallbacks, seenPackages, "litmodels");
             AddUniquePackage(packageFallbacks, seenPackages, "moxing");
+            AddUniquePackage(packageFallbacks, seenPackages, "shaders");
             AddUniquePackage(packageFallbacks, seenPackages, "surfaces");
             AddUniquePackage(packageFallbacks, seenPackages, string.Empty);
 
@@ -4577,6 +4590,7 @@ namespace FWEledit
             AddUniquePackage(packageCandidates, seenPackages, "models2");
             AddUniquePackage(packageCandidates, seenPackages, "litmodels");
             AddUniquePackage(packageCandidates, seenPackages, "moxing");
+            AddUniquePackage(packageCandidates, seenPackages, "shaders");
             AddUniquePackage(packageCandidates, seenPackages, "surfaces");
             AddUniquePackage(packageCandidates, seenPackages, "configs");
             AddUniquePackage(packageCandidates, seenPackages, string.Empty);
