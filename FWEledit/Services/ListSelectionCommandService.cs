@@ -61,13 +61,13 @@ namespace FWEledit
                 selectedListIndex,
                 listCollection != null ? listCollection.ConversationListIndex : -1,
                 elementGrid,
-                itemGrid,
-                offsetBox,
-                xrefMenuItem,
-                applyQualityColor,
-                updateDescription,
-                updatePickIcon,
-                persistNavigation);
+                    itemGrid,
+                    offsetBox,
+                    xrefMenuItem,
+                    useLightweightRows ? null : applyQualityColor,
+                    updateDescription,
+                    updatePickIcon,
+                    persistNavigation);
         }
     }
 }

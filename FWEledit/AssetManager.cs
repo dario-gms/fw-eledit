@@ -52,6 +52,8 @@ namespace FWEledit
         private readonly object loadSync = new object();
         private ClientResourceMap currentClientResourceMap;
         private string warmedClientResourceMapId = string.Empty;
+        private bool workspacePrepared;
+        private string workspacePreparedGameRoot = string.Empty;
         private readonly object itemDescriptionCacheSync = new object();
         private string cachedItemDescriptionSignature = string.Empty;
         private string cachedItemDescriptionPath = string.Empty;
@@ -137,6 +139,8 @@ namespace FWEledit
                     ClearDirectImageFallbackCache();
                     currentClientResourceMap = null;
                     warmedClientResourceMapId = string.Empty;
+                    workspacePrepared = false;
+                    workspacePreparedGameRoot = string.Empty;
                     lock (loadSync)
                     {
                         imagesx = null;
@@ -494,17 +498,32 @@ namespace FWEledit
                 }
 
                 WorkspaceRootPath = GetWorkspaceRootForCurrentGame();
+                string currentRoot = GameRootPath ?? string.Empty;
+                if (workspacePrepared
+                    && string.Equals(workspacePreparedGameRoot, currentRoot, StringComparison.OrdinalIgnoreCase)
+                    && !pathDataDirty
+                    && pendingPathDataEntries.Count == 0
+                    && dirtyPackages.Count == 0)
+                {
+                    EnsureClientResourceMapReady();
+                    return true;
+                }
+
                 Directory.CreateDirectory(WorkspaceRootPath);
                 Directory.CreateDirectory(GetWorkspaceResourcesRoot());
                 Directory.CreateDirectory(GetWorkspaceDataRoot());
                 EnsureWorkspacePathDataPrepared();
                 EnsureWorkspacePckPrepared("configs", false);
                 EnsureClientResourceMapReady();
+                workspacePrepared = true;
+                workspacePreparedGameRoot = currentRoot;
 
                 return true;
             }
             catch
             {
+                workspacePrepared = false;
+                workspacePreparedGameRoot = string.Empty;
                 return false;
             }
         }
@@ -534,6 +553,7 @@ namespace FWEledit
                         if (slash > 0)
                         {
                             dirtyPackages.Add(relative.Substring(0, slash));
+                            workspacePrepared = false;
                             InvalidateClientResourceMap();
                             return;
                         }
@@ -541,18 +561,21 @@ namespace FWEledit
                     if (full.StartsWith(configsRoot, StringComparison.OrdinalIgnoreCase))
                     {
                         dirtyPackages.Add("configs");
+                        workspacePrepared = false;
                         InvalidateClientResourceMap();
                         return;
                     }
                     if (full.StartsWith(surfacesRoot, StringComparison.OrdinalIgnoreCase))
                     {
                         dirtyPackages.Add("surfaces");
+                        workspacePrepared = false;
                         InvalidateClientResourceMap();
                         return;
                     }
                     if (full.StartsWith(scriptRoot, StringComparison.OrdinalIgnoreCase))
                     {
                         dirtyPackages.Add("script");
+                        workspacePrepared = false;
                         InvalidateClientResourceMap();
                         return;
                     }
@@ -563,6 +586,7 @@ namespace FWEledit
                     string.Equals(full, Path.GetFullPath(workspacePathData), StringComparison.OrdinalIgnoreCase))
                 {
                     pathDataDirty = true;
+                    workspacePrepared = false;
                     InvalidateClientResourceMap();
                 }
             }
@@ -580,6 +604,22 @@ namespace FWEledit
             currentClientResourceMap = clientResourceMapService.LoadOrBuild(GameRootPath, WorkspaceRootPath, pckEntryReaderService);
             PrewarmClientResourceMapPackagesInBackground(currentClientResourceMap);
             return currentClientResourceMap;
+        }
+
+        public bool HasValidClientResourceMap()
+        {
+            if (currentClientResourceMap != null)
+            {
+                return true;
+            }
+
+            string workspaceRoot = WorkspaceRootPath;
+            if (string.IsNullOrWhiteSpace(workspaceRoot) && !string.IsNullOrWhiteSpace(GameRootPath))
+            {
+                workspaceRoot = GetWorkspaceRootForCurrentGame();
+            }
+
+            return clientResourceMapService.HasValidMap(GameRootPath, workspaceRoot);
         }
 
         private void InvalidateClientResourceMap()
@@ -2010,6 +2050,26 @@ namespace FWEledit
             }
 
             return true;
+        }
+
+        public bool EnsurePathDataLoaded()
+        {
+            if (string.IsNullOrWhiteSpace(GameRootPath) || !Directory.Exists(GameRootPath))
+            {
+                sessionService.Database = database;
+                return false;
+            }
+
+            lock (loadSync)
+            {
+                EnsureWorkspaceReady();
+                if (database.pathById == null || database.pathById.Count == 0)
+                {
+                    database.pathById = LoadPathById();
+                }
+                sessionService.Database = database;
+                return database.pathById != null && database.pathById.Count > 0;
+            }
         }
 
         private void EnsureVisualAssetsLoadedInternal(bool enabled)

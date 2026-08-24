@@ -148,6 +148,7 @@ namespace FWEledit
             fwMonsterMasteryTab = layout.MonsterMasteryTab;
             fwMonsterLevelUpTab = layout.MonsterLevelUpTab;
             fwMonsterOtherTab = layout.MonsterOtherTab;
+            fwModelPreviewTab = layout.ModelPreviewTab;
             fwReferencesTab = layout.ReferencesTab;
             fwReferencesTabs = layout.ReferencesTabs;
             fwReferencesGrid = layout.ReferencesGrid;
@@ -164,6 +165,9 @@ namespace FWEledit
             fwDescriptionTitleFontButton = layout.DescriptionTitleFontButton;
             fwAddonPackageDescEditorPanel = layout.AddonPackageDescEditorPanel;
             fwAddonPackageDescEditor = layout.AddonPackageDescEditor;
+            fwModelPreviewHostPanel = layout.ModelPreviewHostPanel;
+            fwModelPreviewStatusLabel = layout.ModelPreviewStatusLabel;
+            fwModelPreviewOpenButton = layout.ModelPreviewOpenButton;
             fwInlinePickIconButton = layout.InlinePickIconButton;
             fwRawValueUpButton = layout.RawValueUpButton;
             fwRawValueDownButton = layout.RawValueDownButton;
@@ -197,6 +201,12 @@ namespace FWEledit
                     HydrateVisibleElementRowIcons();
                 };
             }
+            if (listIconHydrationTimer == null)
+            {
+                listIconHydrationTimer = new System.Windows.Forms.Timer();
+                listIconHydrationTimer.Interval = 250;
+                listIconHydrationTimer.Tick += (s, e) => HydrateNextListComboIcons();
+            }
             if (dataGridView_elems != null)
             {
                 dataGridView_elems.Scroll += (s, e) =>
@@ -226,6 +236,11 @@ namespace FWEledit
                     {
                         UpdateDescriptionTabForSelection();
                     }
+
+                    if (fwModelPreviewTab != null && fwRightTabs.SelectedTab == fwModelPreviewTab)
+                    {
+                        RefreshEmbeddedModelPreviewForCurrentItem(true, true);
+                    }
                 };
             }
             InitializeEmbeddedReferencesTab();
@@ -237,8 +252,28 @@ namespace FWEledit
             InitializeAddonPackageDescEditor();
             InitializeRawValueEditor();
             InitializeNpcSellServicePageUi();
+            InitializeEmbeddedModelPreviewPanel();
             UpdateThemeToggleButton();
             fwLayoutInitialized = true;
+        }
+
+        private void InitializeEmbeddedModelPreviewPanel()
+        {
+            if (fwModelPreviewOpenButton != null)
+            {
+                fwModelPreviewOpenButton.Click += (s, e) =>
+                {
+                    if (dataGridView_item != null
+                        && dataGridView_item.CurrentCell != null
+                        && IsModelFieldRow(dataGridView_item.CurrentCell.RowIndex))
+                    {
+                        OpenModelPreviewForValueRow(dataGridView_item.CurrentCell.RowIndex);
+                        return;
+                    }
+
+                    OpenModelPreviewForCurrentItem();
+                };
+            }
         }
 
         private void PruneLegacyMainMenuItems()

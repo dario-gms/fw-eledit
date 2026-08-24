@@ -22,7 +22,7 @@
     <UpdateRequired>false</UpdateRequired>
     <MapFileExtensions>true</MapFileExtensions>
     <ApplicationRevision>0</ApplicationRevision>
-    <ApplicationVersion>0.9.5.23</ApplicationVersion>
+    <ApplicationVersion>0.9.5.24</ApplicationVersion>
     <IsWebBootstrapper>false</IsWebBootstrapper>
     <UseApplicationTrust>false</UseApplicationTrust>
     <BootstrapperEnabled>true</BootstrapperEnabled>
@@ -1077,6 +1077,9 @@
     <Compile Include="Views\ItemTransferProgressWindow.cs">
       <SubType>Form</SubType>
     </Compile>
+    <Compile Include="Views\ClientCacheBuildProgressWindow.cs">
+      <SubType>Form</SubType>
+    </Compile>
     <Compile Include="Views\ModelPickerWindow.cs">
       <SubType>Form</SubType>
     </Compile>
@@ -1237,6 +1240,18 @@
       <Link>tools\FWPck\pckdll_x64.dll</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <Content Include="..\tools\equipment-package\FWEquipmentPackageTool.exe">
+      <Link>tools\equipment-package\FWEquipmentPackageTool.exe</Link>
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\tools\equipment-package\FWEquipmentPackageTool.pdb">
+      <Link>tools\equipment-package\FWEquipmentPackageTool.pdb</Link>
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\tools\equipment-package\Ionic.Zlib.dll">
+      <Link>tools\equipment-package\Ionic.Zlib.dll</Link>
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
     <Content Include="..\tools\7za.exe">
       <Link>tools\7za.exe</Link>
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
@@ -1280,6 +1295,9 @@
   </ItemGroup>
   <Target Name="BuildWinPckHelper" BeforeTargets="BeforeBuild">
     <MSBuild Projects="..\FWPckUpdater\FWPckUpdater.csproj" Targets="Build" Properties="Configuration=$(Configuration);Platform=x64" />
+  </Target>
+  <Target Name="BuildEquipmentPackageTool" BeforeTargets="BeforeBuild">
+    <MSBuild Projects="..\FWEquipmentPackageTool\FWEquipmentPackageTool.csproj" Targets="Build" Properties="Configuration=$(Configuration);Platform=AnyCPU" />
   </Target>
 </Project>
 

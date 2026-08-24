@@ -355,10 +355,14 @@ namespace FWEledit
                 {
                     if (rightTabs.SelectedTab != null && rightTabs.SelectedTab.Tag is EquipmentValuesTab)
                     {
-                        MoveValuesInspectorToSelectedTab(rightTabs, valuesInspectorPanel);
-                        if (changeItem != null && (canChangeItem == null || canChangeItem()))
+                        EquipmentValuesTab selectedValuesTab = (EquipmentValuesTab)rightTabs.SelectedTab.Tag;
+                        if (selectedValuesTab != EquipmentValuesTab.Preview)
                         {
-                            changeItem();
+                            MoveValuesInspectorToSelectedTab(rightTabs, valuesInspectorPanel);
+                            if (changeItem != null && (canChangeItem == null || canChangeItem()))
+                            {
+                                changeItem();
+                            }
                         }
                     }
                     if (updatePickIconButtonState != null)
@@ -430,6 +434,9 @@ namespace FWEledit
             TabPage monsterOtherTab = new TabPage("Other");
             monsterOtherTab.Padding = new Padding(0, 6, 0, 0);
             monsterOtherTab.Tag = EquipmentValuesTab.MonsterOther;
+            TabPage modelPreviewTab = new TabPage("Preview");
+            modelPreviewTab.Padding = new Padding(0, 6, 0, 0);
+            modelPreviewTab.Tag = EquipmentValuesTab.Preview;
             TabPage referencesTab = new TabPage("References");
             referencesTab.Padding = new Padding(0, 6, 0, 0);
 
@@ -626,6 +633,46 @@ namespace FWEledit
             descriptionLayout.Controls.Add(descriptionEditor, 0, 5);
             descriptionTab.Controls.Add(descriptionLayout);
 
+            TableLayoutPanel modelPreviewLayout = new TableLayoutPanel();
+            modelPreviewLayout.Dock = DockStyle.Fill;
+            modelPreviewLayout.Margin = new Padding(0);
+            modelPreviewLayout.ColumnCount = 1;
+            modelPreviewLayout.RowCount = 3;
+            modelPreviewLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            modelPreviewLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 30F));
+            modelPreviewLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+            modelPreviewLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 34F));
+            modelPreviewLayout.BackColor = Color.FromArgb(31, 34, 39);
+
+            Label modelPreviewCaption = CreateSectionLabel("Model Preview");
+            modelPreviewCaption.Dock = DockStyle.Fill;
+            modelPreviewLayout.Controls.Add(modelPreviewCaption, 0, 0);
+
+            Panel modelPreviewHostPanel = new Panel();
+            modelPreviewHostPanel.Dock = DockStyle.Fill;
+            modelPreviewHostPanel.Margin = new Padding(0);
+            modelPreviewHostPanel.BackColor = Color.FromArgb(18, 20, 23);
+            modelPreviewHostPanel.BorderStyle = BorderStyle.FixedSingle;
+
+            Label modelPreviewStatusLabel = new Label();
+            modelPreviewStatusLabel.Dock = DockStyle.Fill;
+            modelPreviewStatusLabel.TextAlign = ContentAlignment.MiddleCenter;
+            modelPreviewStatusLabel.Text = "Select an item with a model.";
+            modelPreviewStatusLabel.ForeColor = Color.FromArgb(155, 169, 185);
+            modelPreviewStatusLabel.BackColor = Color.FromArgb(18, 20, 23);
+            modelPreviewHostPanel.Controls.Add(modelPreviewStatusLabel);
+            modelPreviewLayout.Controls.Add(modelPreviewHostPanel, 0, 1);
+
+            Button modelPreviewOpenButton = new Button();
+            modelPreviewOpenButton.Text = "Open Preview Window";
+            modelPreviewOpenButton.Dock = DockStyle.Fill;
+            modelPreviewOpenButton.Margin = new Padding(0, 6, 0, 0);
+            modelPreviewOpenButton.FlatStyle = FlatStyle.Flat;
+            modelPreviewOpenButton.Enabled = false;
+            modelPreviewLayout.Controls.Add(modelPreviewOpenButton, 0, 2);
+
+            modelPreviewTab.Controls.Add(modelPreviewLayout);
+
             rightTabs.TabPages.Add(valuesTab);
             rightTabs.TabPages.Add(equipmentTabRefine);
             rightTabs.TabPages.Add(equipmentTabModels);
@@ -633,6 +680,7 @@ namespace FWEledit
             rightTabs.TabPages.Add(monsterMasteryTab);
             rightTabs.TabPages.Add(monsterLevelUpTab);
             rightTabs.TabPages.Add(monsterOtherTab);
+            rightTabs.TabPages.Add(modelPreviewTab);
             rightTabs.TabPages.Add(descriptionTab);
             rightTabs.TabPages.Add(referencesTab);
 
@@ -684,6 +732,7 @@ namespace FWEledit
                 MonsterMasteryTab = monsterMasteryTab,
                 MonsterLevelUpTab = monsterLevelUpTab,
                 MonsterOtherTab = monsterOtherTab,
+                ModelPreviewTab = modelPreviewTab,
                 ReferencesTab = referencesTab,
                 ReferencesTabs = referencesTabs,
                 ReferencesGrid = referencesGrid,
@@ -700,6 +749,9 @@ namespace FWEledit
                 DescriptionTitleFontButton = descriptionTitleFontButton,
                 AddonPackageDescEditorPanel = addonPackageDescEditorPanel,
                 AddonPackageDescEditor = addonPackageDescEditor,
+                ModelPreviewHostPanel = modelPreviewHostPanel,
+                ModelPreviewStatusLabel = modelPreviewStatusLabel,
+                ModelPreviewOpenButton = modelPreviewOpenButton,
                 InlinePickIconButton = inlinePickIconButton,
                 RawValueUpButton = rawValueUpButton,
                 RawValueDownButton = rawValueDownButton,

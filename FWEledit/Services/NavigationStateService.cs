@@ -44,10 +44,9 @@ namespace FWEledit
             {
                 WriteSetting(() =>
                 {
-                    Properties.Settings.Default.LastGameFolder = string.Empty;
-                    Properties.Settings.Default.RecentGameFolders = string.Empty;
+                    Properties.Settings.Default.LastRunVersion = displayVersion;
+                    Properties.Settings.Default.Save();
                 });
-                ResetOnStartup(displayVersion);
                 return true;
             }
             return false;

@@ -44,6 +44,7 @@ namespace FWEledit
         private TabPage fwMonsterMasteryTab;
         private TabPage fwMonsterLevelUpTab;
         private TabPage fwMonsterOtherTab;
+        private TabPage fwModelPreviewTab;
         private TabPage fwReferencesTab;
         private TabControl fwReferencesTabs;
         private DataGridView fwReferencesGrid;
@@ -70,6 +71,11 @@ namespace FWEledit
         private Button fwDescriptionTitleFontButton;
         private Panel fwAddonPackageDescEditorPanel;
         private TextBox fwAddonPackageDescEditor;
+        private Panel fwModelPreviewHostPanel;
+        private Label fwModelPreviewStatusLabel;
+        private Button fwModelPreviewOpenButton;
+        private ModelPreviewWindow fwEmbeddedModelPreviewWindow;
+        private int fwEmbeddedModelPreviewRequestId;
         private bool fwSuppressAddonPackageDescEditorEvents;
         private int fwAddonPackageDescEditorRowIndex = -1;
         private int fwValueGridListIndex = -1;
@@ -83,6 +89,8 @@ namespace FWEledit
         private int referenceCountRefreshVersion;
         private System.Windows.Forms.Timer referenceCountRefreshTimer;
         private System.Windows.Forms.Timer visibleIconHydrationTimer;
+        private System.Windows.Forms.Timer listIconHydrationTimer;
+        private int nextListIconHydrationIndex;
         private int referencesTabLoadVersion;
         private System.Windows.Forms.Timer referencesTabRefreshTimer;
         private System.Threading.Tasks.Task referenceIndexBuildTask;

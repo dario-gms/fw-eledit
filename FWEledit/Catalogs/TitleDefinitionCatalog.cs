@@ -35,7 +35,7 @@ namespace FWEledit
         public const int TargetListIndex = -3;
 
         private static readonly object SyncRoot = new object();
-        private const string LuaStringPattern = "(?:\"(?<value>(?:\\\\.|[^\"])*)\"|\\[(?<equals>=*)\\[(?<longValue>.*?)\\]\\k<equals>\\])";
+        private const string LuaStringPattern = "(?:\"(?<value>(?:\\\\.|[^\"])*)\"|'(?<singleValue>(?:\\\\.|[^'])*)'|\\[(?<equals>=*)\\[(?<longValue>.*?)\\]\\k<equals>\\])";
         private static readonly Regex EntryRegex = new Regex(
             "title_definition\\[\\s*\"?(?<id>\\d+)\"?\\s*\\]\\s*=\\s*\\{(?<body>.*?)\\}",
             RegexOptions.Compiled | RegexOptions.Singleline);
@@ -57,11 +57,29 @@ namespace FWEledit
         private static readonly Regex BeforeNameRegex = new Regex(
             "title_definition\\[\\s*\"?(?<id>\\d+)\"?\\s*\\]\\.beforename\\s*=\\s*(?<value>\\d+)",
             RegexOptions.Compiled | RegexOptions.Singleline);
+        private static readonly Regex DefinitionAssignmentStartRegex = new Regex(
+            "title_definition\\s*\\[\\s*(?:\"(?<id>\\d+)\"|'(?<id>\\d+)'|(?<id>\\d+))\\s*\\]\\s*=\\s*\\{",
+            RegexOptions.Compiled | RegexOptions.Singleline);
+        private static readonly Regex AggregateDefinitionStartRegex = new Regex(
+            "title_definition\\s*=\\s*\\{",
+            RegexOptions.Compiled | RegexOptions.Singleline);
+        private static readonly Regex AggregateDefinitionEntryStartRegex = new Regex(
+            "\\[\\s*(?:\"(?<id>\\d+)\"|'(?<id>\\d+)'|(?<id>\\d+))\\s*\\]\\s*=\\s*\\{",
+            RegexOptions.Compiled | RegexOptions.Singleline);
         private static readonly Regex LeadingColorRegex = new Regex(
             "\\^(?<hex>[0-9a-fA-F]{6})",
             RegexOptions.Compiled);
+        private static readonly string[] TitleDefinitionLuaCandidates = new string[]
+        {
+            "config\\title_def_u.lua",
+            "config\\Title_Def_U.lua",
+            "config\\title_def.lua",
+            "title_def_u.lua",
+            "title\\title_def_u.lua"
+        };
         private static string cachedGameRoot = string.Empty;
         private static string cachedLuaText = string.Empty;
+        private static string cachedLoadStatus = string.Empty;
         private static bool cacheInitialized;
         private static List<ItemReferenceOption> cachedOptions = new List<ItemReferenceOption>();
         private static Dictionary<int, ItemReferenceOption> cachedById = new Dictionary<int, ItemReferenceOption>();
@@ -198,6 +216,15 @@ namespace FWEledit
             }
         }
 
+        public static string GetLoadStatus()
+        {
+            EnsureCache();
+            lock (SyncRoot)
+            {
+                return cachedLoadStatus ?? string.Empty;
+            }
+        }
+
         public static void InvalidateCache()
         {
             lock (SyncRoot)
@@ -205,6 +232,7 @@ namespace FWEledit
                 cacheInitialized = false;
                 cachedGameRoot = string.Empty;
                 cachedLuaText = string.Empty;
+                cachedLoadStatus = string.Empty;
                 cachedOptions = new List<ItemReferenceOption>();
                 cachedById = new Dictionary<int, ItemReferenceOption>();
                 cachedByName = new Dictionary<string, ItemReferenceOption>(StringComparer.OrdinalIgnoreCase);
@@ -525,11 +553,18 @@ namespace FWEledit
                 cachedCategories = new List<TitleCategoryOption>();
             }
 
-            string luaText = LoadTitleDefinitionLua(gameRoot);
+            string loadStatus;
+            string luaText = LoadTitleDefinitionLua(gameRoot, out loadStatus);
             Dictionary<int, string> iconPathsById = ParseGraphicIconPaths(luaText);
             Dictionary<int, bool> beforeNameById = ParseGraphicBeforeNameFlags(luaText);
             List<object> titleDir = ParseTitleDir(luaText);
             Dictionary<int, EditableTitleDefinition> parsedDefinitions = ParseEditableDefinitions(luaText, iconPathsById, beforeNameById);
+            if (string.IsNullOrWhiteSpace(loadStatus))
+            {
+                loadStatus = parsedDefinitions.Count > 0
+                    ? "Loaded title_def_u.lua from script.pck."
+                    : "Loaded Lua data from script.pck, but no title_definition entries were recognized.";
+            }
             List<TitleCategoryOption> parsedCategories = BuildTitleCategoryOptions(titleDir);
             ApplyCategoriesToDefinitions(parsedDefinitions, titleDir, parsedCategories);
             List<ItemReferenceOption> parsedOptions = BuildOptionsFromDefinitions(parsedDefinitions);
@@ -537,6 +572,7 @@ namespace FWEledit
             lock (SyncRoot)
             {
                 cachedLuaText = luaText ?? string.Empty;
+                cachedLoadStatus = loadStatus ?? string.Empty;
                 cachedDefinitions = parsedDefinitions;
                 cachedTitleDir = titleDir;
                 cachedCategories = parsedCategories;
@@ -565,64 +601,112 @@ namespace FWEledit
 
         private static string LoadTitleDefinitionLua(string gameRoot)
         {
+            string ignored;
+            return LoadTitleDefinitionLua(gameRoot, out ignored);
+        }
+
+        private static string LoadTitleDefinitionLua(string gameRoot, out string status)
+        {
+            status = string.Empty;
             if (string.IsNullOrWhiteSpace(gameRoot))
             {
+                status = "Game root is not configured.";
                 return string.Empty;
             }
 
+            List<string> attempts = new List<string>();
             try
             {
                 PckEntryReaderService reader = new PckEntryReaderService();
                 byte[] payload;
                 string error;
-                if (reader.TryReadFile("script", "config\\title_def_u.lua", out payload, out error)
-                    && payload != null
-                    && payload.Length > 0)
+                for (int i = 0; i < TitleDefinitionLuaCandidates.Length; i++)
                 {
-                    string tempDirectory = Path.Combine(Path.GetTempPath(), "FWEledit", "lua-cache");
-                    Directory.CreateDirectory(tempDirectory);
-                    string sourcePath = Path.Combine(tempDirectory, "title_def_u.lua");
-                    File.WriteAllBytes(sourcePath, payload);
-                    return DecodeOrDecompileLuaFile(sourcePath, payload);
+                    string candidate = TitleDefinitionLuaCandidates[i];
+                    if (reader.TryReadFile("script", candidate, out payload, out error)
+                        && payload != null
+                        && payload.Length > 0)
+                    {
+                        string tempDirectory = Path.Combine(Path.GetTempPath(), "FWEledit", "lua-cache");
+                        Directory.CreateDirectory(tempDirectory);
+                        string sourcePath = Path.Combine(tempDirectory, "script_pck_" + candidate.Replace('\\', '_').Replace('/', '_'));
+                        File.WriteAllBytes(sourcePath, payload);
+                        string decodeStatus;
+                        string luaText = DecodeOrDecompileLuaFile(sourcePath, payload, out decodeStatus);
+                        if (!string.IsNullOrWhiteSpace(luaText))
+                        {
+                            status = "Loaded " + candidate + " from script.pck. " + decodeStatus;
+                            return luaText;
+                        }
+
+                        attempts.Add(candidate + ": " + decodeStatus);
+                    }
+                    else if (!string.IsNullOrWhiteSpace(error))
+                    {
+                        attempts.Add(candidate + ": " + error);
+                    }
                 }
             }
-            catch
+            catch (Exception ex)
             {
+                attempts.Add("managed script.pck reader: " + ex.Message);
             }
 
             try
             {
                 byte[] payload;
-                if (TryReadTitleDefinitionLuaWithWinPck(gameRoot, out payload)
+                string entryPath;
+                string winPckError;
+                if (TryReadTitleDefinitionLuaWithWinPck(gameRoot, out payload, out entryPath, out winPckError)
                     && payload != null
                     && payload.Length > 0)
                 {
                     string tempDirectory = Path.Combine(Path.GetTempPath(), "FWEledit", "lua-cache");
                     Directory.CreateDirectory(tempDirectory);
-                    string sourcePath = Path.Combine(tempDirectory, "title_def_u_winpck.lua");
+                    string sourcePath = Path.Combine(tempDirectory, "winpck_" + entryPath.Replace('\\', '_').Replace('/', '_'));
                     File.WriteAllBytes(sourcePath, payload);
-                    return DecodeOrDecompileLuaFile(sourcePath, payload);
+                    string decodeStatus;
+                    string luaText = DecodeOrDecompileLuaFile(sourcePath, payload, out decodeStatus);
+                    if (!string.IsNullOrWhiteSpace(luaText))
+                    {
+                        status = "Loaded " + entryPath + " from script.pck using WinPCK. " + decodeStatus;
+                        return luaText;
+                    }
+
+                    attempts.Add(entryPath + " via WinPCK: " + decodeStatus);
+                }
+                else if (!string.IsNullOrWhiteSpace(winPckError))
+                {
+                    attempts.Add("WinPCK reader: " + winPckError);
                 }
             }
-            catch
+            catch (Exception ex)
             {
+                attempts.Add("WinPCK reader: " + ex.Message);
             }
 
+            status = attempts.Count > 0
+                ? "Unable to load title definitions. " + string.Join(" | ", attempts.ToArray())
+                : "Unable to load title definitions from script.pck.";
             return string.Empty;
         }
 
-        private static bool TryReadTitleDefinitionLuaWithWinPck(string gameRoot, out byte[] payload)
+        private static bool TryReadTitleDefinitionLuaWithWinPck(string gameRoot, out byte[] payload, out string entryPath, out string error)
         {
             payload = null;
+            entryPath = string.Empty;
+            error = string.Empty;
             string scriptPck = Path.Combine(gameRoot ?? string.Empty, "resources", "script.pck");
             if (!File.Exists(scriptPck))
             {
+                error = "script.pck was not found: " + scriptPck;
                 return false;
             }
 
             string dllDirectory = FindWinPckDllDirectory();
             if (string.IsNullOrWhiteSpace(dllDirectory))
             {
+                error = "pckdll_x64.dll was not found.";
                 return false;
             }
 
@@ -630,32 +714,43 @@ namespace FWEledit
             int openResult = pck_open(scriptPck);
             if (openResult != 0)
             {
+                error = "WinPCK could not open script.pck. Code: " + openResult.ToString(CultureInfo.InvariantCulture);
                 return false;
             }
 
             try
             {
-                IntPtr entry = pck_getFileEntryByPath("config\\title_def_u.lua");
-                if (entry == IntPtr.Zero)
+                for (int i = 0; i < TitleDefinitionLuaCandidates.Length; i++)
                 {
-                    return false;
+                    string candidate = TitleDefinitionLuaCandidates[i];
+                    IntPtr entry = pck_getFileEntryByPath(candidate);
+                    if (entry == IntPtr.Zero)
+                    {
+                        continue;
+                    }
+
+                    ulong size = pck_getFileSizeInEntry(entry);
+                    if (size == 0 || size > int.MaxValue)
+                    {
+                        error = "Invalid size for " + candidate + ".";
+                        return false;
+                    }
+
+                    byte[] buffer = new byte[(int)size];
+                    int readResult = pck_GetSingleFileData(entry, buffer, new UIntPtr(size));
+                    if (readResult != 0)
+                    {
+                        error = "WinPCK could not read " + candidate + ". Code: " + readResult.ToString(CultureInfo.InvariantCulture);
+                        return false;
+                    }
+
+                    payload = buffer;
+                    entryPath = candidate;
+                    return true;
                 }
 
-                ulong size = pck_getFileSizeInEntry(entry);
-                if (size == 0 || size > int.MaxValue)
-                {
-                    return false;
-                }
-
-                byte[] buffer = new byte[(int)size];
-                int readResult = pck_GetSingleFileData(entry, buffer, new UIntPtr(size));
-                if (readResult != 0)
-                {
-                    return false;
-                }
-
-                payload = buffer;
-                return true;
+                error = "None of the known title definition paths were found.";
+                return false;
             }
             finally
             {
@@ -665,8 +760,19 @@ namespace FWEledit
 
         private static string FindWinPckDllDirectory()
         {
+            string assemblyDirectory = string.Empty;
+            try
+            {
+                assemblyDirectory = Path.GetDirectoryName(typeof(TitleDefinitionCatalog).Assembly.Location) ?? string.Empty;
+            }
+            catch
+            {
+                assemblyDirectory = string.Empty;
+            }
+
             string[] roots = new string[]
             {
+                assemblyDirectory,
                 AssetManager.WorkspaceRootPath,
                 AppDomain.CurrentDomain.BaseDirectory,
                 Path.GetDirectoryName(AppDomain.CurrentDomain.BaseDirectory),
@@ -711,7 +817,7 @@ namespace FWEledit
             {
                 return definitions;
             }
-            MatchCollection matches = EntryRegex.Matches(luaText);
+            MatchCollection matches = DefinitionAssignmentStartRegex.Matches(luaText);
             for (int i = 0; i < matches.Count; i++)
             {
                 Match match = matches[i];
@@ -723,37 +829,113 @@ namespace FWEledit
                     continue;
                 }
 
-                string body = match.Groups["body"].Value ?? string.Empty;
-                string rawNote = ExtractFieldRaw(body, NoteRegex);
-                string note = DecodeScriptLiteralPreserveFormatting(rawNote);
-                string description = DecodeScriptLiteralPreserveFormatting(ExtractFieldRaw(body, DescriptionRegex));
-                string iconPath;
-                iconPathsById.TryGetValue(id, out iconPath);
-                bool showGraphicInChat;
-                beforeNameById.TryGetValue(id, out showGraphicInChat);
-                string accentHex = ExtractLeadingColor(rawNote);
-                EditableTitleDefinition definition = new EditableTitleDefinition
+                int braceStart = luaText.IndexOf('{', match.Index + match.Length - 1);
+                int braceEnd = braceStart >= 0 ? FindMatchingBrace(luaText, braceStart) : -1;
+                if (braceStart < 0 || braceEnd <= braceStart)
                 {
-                    Id = id,
-                    AccentHex = accentHex,
-                    TitleText = StripLeadingColorCode(note),
-                    Description = description,
-                    AddonDescriptions = new string[5],
-                    IconPath = iconPath ?? string.Empty,
-                    IsGraphicTitle = !string.IsNullOrWhiteSpace(iconPath),
-                    ShowGraphicInChat = showGraphicInChat
-                };
-
-                for (int addonIndex = 1; addonIndex <= 5; addonIndex++)
-                {
-                    definition.AddonDescriptions[addonIndex - 1] = DecodeScriptLiteralPreserveFormatting(
-                        ExtractNamedStringFieldRaw(body, "addon_desc" + addonIndex.ToString(CultureInfo.InvariantCulture)));
+                    continue;
                 }
 
-                definitions[id] = definition;
+                string body = luaText.Substring(braceStart + 1, braceEnd - braceStart - 1);
+                AddEditableDefinition(definitions, id, body, iconPathsById, beforeNameById);
+            }
+
+            if (definitions.Count == 0)
+            {
+                ParseAggregateEditableDefinitions(luaText, definitions, iconPathsById, beforeNameById);
             }
 
             return definitions;
+        }
+
+        private static void ParseAggregateEditableDefinitions(
+            string luaText,
+            Dictionary<int, EditableTitleDefinition> definitions,
+            Dictionary<int, string> iconPathsById,
+            Dictionary<int, bool> beforeNameById)
+        {
+            if (string.IsNullOrWhiteSpace(luaText) || definitions == null)
+            {
+                return;
+            }
+
+            Match tableMatch = AggregateDefinitionStartRegex.Match(luaText);
+            if (!tableMatch.Success)
+            {
+                return;
+            }
+
+            int tableBraceStart = luaText.IndexOf('{', tableMatch.Index + tableMatch.Length - 1);
+            int tableBraceEnd = tableBraceStart >= 0 ? FindMatchingBrace(luaText, tableBraceStart) : -1;
+            if (tableBraceStart < 0 || tableBraceEnd <= tableBraceStart)
+            {
+                return;
+            }
+
+            string tableBody = luaText.Substring(tableBraceStart + 1, tableBraceEnd - tableBraceStart - 1);
+            MatchCollection matches = AggregateDefinitionEntryStartRegex.Matches(tableBody);
+            for (int i = 0; i < matches.Count; i++)
+            {
+                Match match = matches[i];
+                int id;
+                if (match == null
+                    || !int.TryParse(match.Groups["id"].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out id)
+                    || id <= 0)
+                {
+                    continue;
+                }
+
+                int braceStart = tableBody.IndexOf('{', match.Index + match.Length - 1);
+                int braceEnd = braceStart >= 0 ? FindMatchingBrace(tableBody, braceStart) : -1;
+                if (braceStart < 0 || braceEnd <= braceStart)
+                {
+                    continue;
+                }
+
+                string body = tableBody.Substring(braceStart + 1, braceEnd - braceStart - 1);
+                AddEditableDefinition(definitions, id, body, iconPathsById, beforeNameById);
+            }
+        }
+
+        private static void AddEditableDefinition(
+            Dictionary<int, EditableTitleDefinition> definitions,
+            int id,
+            string body,
+            Dictionary<int, string> iconPathsById,
+            Dictionary<int, bool> beforeNameById)
+        {
+            if (definitions == null || id <= 0)
+            {
+                return;
+            }
+
+            string rawNote = ExtractFieldRaw(body, NoteRegex);
+            string note = DecodeScriptLiteralPreserveFormatting(rawNote);
+            string description = DecodeScriptLiteralPreserveFormatting(ExtractFieldRaw(body, DescriptionRegex));
+            string iconPath;
+            iconPathsById.TryGetValue(id, out iconPath);
+            bool showGraphicInChat;
+            beforeNameById.TryGetValue(id, out showGraphicInChat);
+            string accentHex = ExtractLeadingColor(rawNote);
+            EditableTitleDefinition definition = new EditableTitleDefinition
+            {
+                Id = id,
+                AccentHex = accentHex,
+                TitleText = StripLeadingColorCode(note),
+                Description = description,
+                AddonDescriptions = new string[5],
+                IconPath = iconPath ?? string.Empty,
+                IsGraphicTitle = !string.IsNullOrWhiteSpace(iconPath),
+                ShowGraphicInChat = showGraphicInChat
+            };
+
+            for (int addonIndex = 1; addonIndex <= 5; addonIndex++)
+            {
+                definition.AddonDescriptions[addonIndex - 1] = DecodeScriptLiteralPreserveFormatting(
+                    ExtractNamedStringFieldRaw(body, "addon_desc" + addonIndex.ToString(CultureInfo.InvariantCulture)));
+            }
+
+            definitions[id] = definition;
         }
 
         private static List<ItemReferenceOption> BuildOptionsFromDefinitions(Dictionary<int, EditableTitleDefinition> definitions)
@@ -1175,18 +1357,23 @@ namespace FWEledit
         private static int FindMatchingBrace(string text, int braceStart)
         {
             int depth = 0;
-            bool inString = false;
+            char stringQuote = '\0';
             for (int i = braceStart; i < text.Length; i++)
             {
                 char current = text[i];
-                if (current == '"' && (i == 0 || text[i - 1] != '\\'))
+                if (stringQuote != '\0')
                 {
-                    inString = !inString;
+                    if (current == stringQuote && (i == 0 || text[i - 1] != '\\'))
+                    {
+                        stringQuote = '\0';
+                    }
+
                     continue;
                 }
 
-                if (inString)
+                if (current == '"' || current == '\'')
                 {
+                    stringQuote = current;
                     continue;
                 }
 
@@ -1551,6 +1738,12 @@ namespace FWEledit
                 return quoted.Value ?? string.Empty;
             }
 
+            Group singleQuoted = match.Groups["singleValue"];
+            if (singleQuoted != null && singleQuoted.Success)
+            {
+                return singleQuoted.Value ?? string.Empty;
+            }
+
             Group longValue = match.Groups["longValue"];
             if (longValue != null && longValue.Success)
             {
@@ -1823,13 +2016,38 @@ namespace FWEledit
 
         private static string DecodeOrDecompileLuaFile(string sourcePath, byte[] payload)
         {
+            string ignored;
+            return DecodeOrDecompileLuaFile(sourcePath, payload, out ignored);
+        }
+
+        private static string DecodeOrDecompileLuaFile(string sourcePath, byte[] payload, out string status)
+        {
             string plainText;
-            if (TryDecodePlainLuaText(payload, out plainText))
+            byte[] sourcePayload = payload;
+            if (!string.IsNullOrWhiteSpace(sourcePath) && File.Exists(sourcePath))
             {
+                try
+                {
+                    sourcePayload = File.ReadAllBytes(sourcePath);
+                }
+                catch
+                {
+                    sourcePayload = payload;
+                }
+            }
+
+            if (!IsLuaBytecode(sourcePayload) && TryDecodePlainLuaText(sourcePayload, out plainText))
+            {
+                status = "Decoded as plain Lua text.";
                 return plainText;
             }
 
-            return DecompileLuaFile(sourcePath);
+            string error;
+            string decompiled = DecompileLuaFile(sourcePath, out error);
+            status = string.IsNullOrWhiteSpace(error)
+                ? "Decompiled Lua bytecode."
+                : error;
+            return decompiled;
         }
 
         private static bool TryDecodePlainLuaText(byte[] payload, out string luaText)
@@ -1840,11 +2058,7 @@ namespace FWEledit
                 return false;
             }
 
-            if (payload.Length >= 4
-                && payload[0] == 0x1B
-                && payload[1] == (byte)'L'
-                && payload[2] == (byte)'u'
-                && payload[3] == (byte)'a')
+            if (IsLuaBytecode(payload))
             {
                 return false;
             }
@@ -1861,7 +2075,8 @@ namespace FWEledit
                 try
                 {
                     string decoded = encodings[i].GetString(payload);
-                    if (decoded.IndexOf("title_definition", StringComparison.OrdinalIgnoreCase) >= 0)
+                    if (LooksLikeLuaSourceText(decoded)
+                        && decoded.IndexOf("title_definition", StringComparison.OrdinalIgnoreCase) >= 0)
                     {
                         luaText = decoded.TrimStart('\uFEFF');
                         return true;
@@ -1875,24 +2090,132 @@ namespace FWEledit
             return false;
         }
 
+        private static bool LooksLikeLuaSourceText(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                return false;
+            }
+
+            string trimmed = text.TrimStart('\uFEFF', ' ', '\t', '\r', '\n');
+            if (trimmed.Length == 0 || trimmed[0] == '\x1B')
+            {
+                return false;
+            }
+
+            int inspected = Math.Min(text.Length, 4096);
+            int controlCount = 0;
+            for (int i = 0; i < inspected; i++)
+            {
+                char current = text[i];
+                if (current == '\0')
+                {
+                    return false;
+                }
+
+                if (char.IsControl(current)
+                    && current != '\r'
+                    && current != '\n'
+                    && current != '\t')
+                {
+                    controlCount++;
+                }
+            }
+
+            return controlCount <= Math.Max(2, inspected / 100);
+        }
+
+        private static bool IsLuaBytecode(byte[] payload)
+        {
+            if (payload == null || payload.Length < 4)
+            {
+                return false;
+            }
+
+            for (int i = 0; i <= payload.Length - 4 && i < 32; i++)
+            {
+                if (payload[i] == 0x1B
+                    && payload[i + 1] == (byte)'L'
+                    && payload[i + 2] == (byte)'u'
+                    && payload[i + 3] == (byte)'a')
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         private static string DecompileLuaFile(string sourcePath)
         {
+            string ignored;
+            return DecompileLuaFile(sourcePath, out ignored);
+        }
+
+        private static string DecompileLuaFile(string sourcePath, out string error)
+        {
+            error = string.Empty;
             if (string.IsNullOrWhiteSpace(sourcePath) || !File.Exists(sourcePath))
             {
+                error = "Lua source file was not found.";
                 return string.Empty;
             }
 
             string unluacJar = FindBundledUnluacJar();
             if (string.IsNullOrWhiteSpace(unluacJar) || !File.Exists(unluacJar))
             {
+                error = "Bundled unluac.jar was not found.";
                 return string.Empty;
             }
 
             string workingDirectory = Path.GetDirectoryName(unluacJar) ?? string.Empty;
-            return ExecuteProcessCaptureOutput(
-                "java",
+            string processError;
+            string output = ExecuteProcessCaptureOutput(
+                ResolveJavaExecutable(),
                 "-jar \"" + unluacJar + "\" \"" + sourcePath + "\"",
-                workingDirectory);
+                workingDirectory,
+                out processError);
+            if (string.IsNullOrWhiteSpace(output))
+            {
+                error = string.IsNullOrWhiteSpace(processError)
+                    ? "unluac produced no output."
+                    : processError;
+            }
+
+            return output;
+        }
+
+        private static string ResolveJavaExecutable()
+        {
+            string assemblyDirectory = string.Empty;
+            try
+            {
+                assemblyDirectory = Path.GetDirectoryName(typeof(TitleDefinitionCatalog).Assembly.Location) ?? string.Empty;
+            }
+            catch
+            {
+                assemblyDirectory = string.Empty;
+            }
+
+            string baseDirectory = !string.IsNullOrWhiteSpace(assemblyDirectory)
+                ? assemblyDirectory
+                : (AppDomain.CurrentDomain.BaseDirectory ?? string.Empty);
+            string[] candidates = new string[]
+            {
+                Path.Combine(baseDirectory, "tools", "java", "bin", "java.exe"),
+                Path.Combine(baseDirectory, "jre", "bin", "java.exe"),
+                Path.Combine(baseDirectory, "java", "bin", "java.exe")
+            };
+
+            for (int i = 0; i < candidates.Length; i++)
+            {
+                if (File.Exists(candidates[i]))
+                {
+                    return candidates[i];
+                }
+            }
+
+            return "java";
         }
 
         private static string FindBundledUnluacJar()
@@ -2069,6 +2392,13 @@ namespace FWEledit
 
         private static string ExecuteProcessCaptureOutput(string fileName, string arguments, string workingDirectory)
         {
+            string ignored;
+            return ExecuteProcessCaptureOutput(fileName, arguments, workingDirectory, out ignored);
+        }
+
+        private static string ExecuteProcessCaptureOutput(string fileName, string arguments, string workingDirectory, out string error)
+        {
+            error = string.Empty;
             ProcessStartInfo startInfo = new ProcessStartInfo
             {
                 FileName = fileName,
@@ -2087,21 +2417,41 @@ namespace FWEledit
                 {
                     if (process == null)
                     {
+                        error = "Unable to start " + fileName + ".";
                         return string.Empty;
                     }
 
                     string output = process.StandardOutput.ReadToEnd();
+                    string stderr = process.StandardError.ReadToEnd();
                     process.WaitForExit(30000);
-                    if (!process.HasExited || process.ExitCode != 0)
+                    if (!process.HasExited)
                     {
+                        try
+                        {
+                            process.Kill();
+                        }
+                        catch
+                        {
+                        }
+
+                        error = fileName + " timed out while decompiling Lua.";
+                        return string.Empty;
+                    }
+
+                    if (process.ExitCode != 0)
+                    {
+                        error = string.IsNullOrWhiteSpace(stderr)
+                            ? fileName + " exited with code " + process.ExitCode.ToString(CultureInfo.InvariantCulture) + "."
+                            : stderr.Trim();
                         return string.Empty;
                     }
 
                     return DecodeLuaEscapedUtf8(output);
                 }
             }
-            catch
+            catch (Exception ex)
             {
+                error = "Unable to start " + fileName + ": " + ex.Message;
                 return string.Empty;
             }
         }

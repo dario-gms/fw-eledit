@@ -29,6 +29,14 @@ namespace FWEledit
         private readonly MonsterDropPortraitService monsterDropPortraitService;
         private eListCollection cachedItemIconSourceCollection;
         private Dictionary<int, ItemIconSource> cachedItemIconSourcesById;
+        private eListCollection cachedProduceTypeIconSourceCollection;
+        private Dictionary<int, ProduceTypeIconSource> cachedProduceTypeIconSourcesById;
+        private eListCollection cachedAddonPackageIconCollection;
+        private Dictionary<int, Bitmap> cachedAddonPackageIconsById;
+        private eListCollection cachedInheritedTypeIconCollection;
+        private Dictionary<string, Dictionary<int, Bitmap>> cachedInheritedTypeIconsByKey;
+        private eListCollection cachedDropTableRowCollection;
+        private Dictionary<int, Dictionary<int, int>> cachedDropTableRowsByListIndex;
 
         public ListRowBuilderService(IconResolutionService iconResolutionService)
         {
@@ -866,8 +874,15 @@ namespace FWEledit
             return map;
         }
 
-        private static Dictionary<int, ProduceTypeIconSource> BuildProduceTypeIconSourceMap(eListCollection listCollection)
+        private Dictionary<int, ProduceTypeIconSource> BuildProduceTypeIconSourceMap(eListCollection listCollection)
         {
+            if (listCollection != null
+                && cachedProduceTypeIconSourceCollection == listCollection
+                && cachedProduceTypeIconSourcesById != null)
+            {
+                return cachedProduceTypeIconSourcesById;
+            }
+
             Dictionary<int, ProduceTypeIconSource> map = new Dictionary<int, ProduceTypeIconSource>();
             int recipeListIndex = FindListIndexByNormalizedName(listCollection, "RECIPE_ESSENCE");
             if (recipeListIndex < 0
@@ -875,6 +890,8 @@ namespace FWEledit
                 || listCollection.Lists[recipeListIndex].elementFields == null
                 || listCollection.Lists[recipeListIndex].elementValues == null)
             {
+                cachedProduceTypeIconSourceCollection = listCollection;
+                cachedProduceTypeIconSourcesById = map;
                 return map;
             }
 
@@ -883,6 +900,8 @@ namespace FWEledit
             List<int> productFieldIndexes = GetRecipeProductItemFieldIndexes(fields);
             if (produceTypeFieldIndex < 0 || productFieldIndexes.Count == 0)
             {
+                cachedProduceTypeIconSourceCollection = listCollection;
+                cachedProduceTypeIconSourcesById = map;
                 return map;
             }
 
@@ -904,6 +923,8 @@ namespace FWEledit
                 };
             }
 
+            cachedProduceTypeIconSourceCollection = listCollection;
+            cachedProduceTypeIconSourcesById = map;
             return map;
         }
 
@@ -964,9 +985,18 @@ namespace FWEledit
 
         private Dictionary<int, Bitmap> BuildAddonPackageIconMap(eListCollection listCollection, CacheSave database)
         {
+            if (listCollection != null
+                && cachedAddonPackageIconCollection == listCollection
+                && cachedAddonPackageIconsById != null)
+            {
+                return cachedAddonPackageIconsById;
+            }
+
             Dictionary<int, Bitmap> map = new Dictionary<int, Bitmap>();
             if (listCollection == null || listCollection.Lists == null)
             {
+                cachedAddonPackageIconCollection = listCollection;
+                cachedAddonPackageIconsById = map;
                 return map;
             }
 
@@ -1025,15 +1055,37 @@ namespace FWEledit
                 }
             }
 
+            cachedAddonPackageIconCollection = listCollection;
+            cachedAddonPackageIconsById = map;
             return map;
         }
 
         private Dictionary<int, Bitmap> BuildInheritedTypeIconMap(eListCollection listCollection, CacheSave database, string sourceListName, string typeFieldName)
         {
+            string cacheKey = (sourceListName ?? string.Empty) + "|" + (typeFieldName ?? string.Empty);
+            if (listCollection != null
+                && cachedInheritedTypeIconCollection == listCollection
+                && cachedInheritedTypeIconsByKey != null
+                && cachedInheritedTypeIconsByKey.TryGetValue(cacheKey, out Dictionary<int, Bitmap> cachedMap))
+            {
+                return cachedMap;
+            }
+
             Dictionary<int, Bitmap> map = new Dictionary<int, Bitmap>();
             if (listCollection == null || listCollection.Lists == null)
             {
+                cachedInheritedTypeIconCollection = listCollection;
+                cachedInheritedTypeIconsByKey = new Dictionary<string, Dictionary<int, Bitmap>>(System.StringComparer.OrdinalIgnoreCase)
+                {
+                    { cacheKey, map }
+                };
                 return map;
+            }
+
+            if (cachedInheritedTypeIconCollection != listCollection || cachedInheritedTypeIconsByKey == null)
+            {
+                cachedInheritedTypeIconCollection = listCollection;
+                cachedInheritedTypeIconsByKey = new Dictionary<string, Dictionary<int, Bitmap>>(System.StringComparer.OrdinalIgnoreCase);
             }
 
             for (int listIndex = 0; listIndex < listCollection.Lists.Length; listIndex++)
@@ -1081,6 +1133,7 @@ namespace FWEledit
                 }
             }
 
+            cachedInheritedTypeIconsByKey[cacheKey] = map;
             return map;
         }
 
@@ -1096,8 +1149,16 @@ namespace FWEledit
                 || normalized.StartsWith("enhanced_prop_package_", System.StringComparison.OrdinalIgnoreCase);
         }
 
-        private static Dictionary<int, int> BuildDropTableRowIndexMap(eListCollection listCollection, int listIndex)
+        private Dictionary<int, int> BuildDropTableRowIndexMap(eListCollection listCollection, int listIndex)
         {
+            if (listCollection != null
+                && cachedDropTableRowCollection == listCollection
+                && cachedDropTableRowsByListIndex != null
+                && cachedDropTableRowsByListIndex.TryGetValue(listIndex, out Dictionary<int, int> cachedMap))
+            {
+                return cachedMap;
+            }
+
             Dictionary<int, int> map = new Dictionary<int, int>();
             for (int elementIndex = 0; elementIndex < listCollection.Lists[listIndex].elementValues.Length; elementIndex++)
             {
@@ -1108,6 +1169,13 @@ namespace FWEledit
                 }
             }
 
+            if (cachedDropTableRowCollection != listCollection || cachedDropTableRowsByListIndex == null)
+            {
+                cachedDropTableRowCollection = listCollection;
+                cachedDropTableRowsByListIndex = new Dictionary<int, Dictionary<int, int>>();
+            }
+
+            cachedDropTableRowsByListIndex[listIndex] = map;
             return map;
         }
 

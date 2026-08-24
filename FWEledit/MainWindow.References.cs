@@ -270,11 +270,6 @@ namespace FWEledit
                 return false;
             }
 
-            if (TryLoadPersistedItemReferenceOptionsCache())
-            {
-                return true;
-            }
-
             if (itemReferenceOptionsWarmupTask != null && !itemReferenceOptionsWarmupTask.IsCompleted)
             {
                 return false;
@@ -282,9 +277,13 @@ namespace FWEledit
 
             eListCollection listCollection = sessionService.ListCollection;
             CacheSave database = sessionService.Database;
+            IconResolutionService iconResolver = iconResolutionService;
             itemReferenceOptionsWarmupTask = System.Threading.Tasks.Task.Run(() =>
             {
-                itemReferenceService.BuildSearchableOptions(listCollection, database, iconResolutionService);
+                if (!TryLoadPersistedItemReferenceOptionsCache())
+                {
+                    itemReferenceService.BuildSearchableOptions(listCollection, database, iconResolver);
+                }
             }).ContinueWith(task =>
             {
                 if (IsDisposed || task.IsFaulted || task.IsCanceled)
@@ -415,20 +414,6 @@ namespace FWEledit
                 return false;
             }
 
-            if (TryLoadPersistedReferenceCache())
-            {
-                ScheduleVisibleReferenceCountRefresh();
-                if (IsReferencesTabActive())
-                {
-                    LoadEmbeddedReferencesTabForSelectionAsync();
-                }
-                if (referencesViewerForm != null && !referencesViewerForm.IsDisposed && referencesViewerForm.Visible)
-                {
-                    LoadReferencesViewerForSelectionAsync();
-                }
-                return true;
-            }
-
             if (referenceIndexBuildTask != null && !referenceIndexBuildTask.IsCompleted)
             {
                 return false;
@@ -440,7 +425,10 @@ namespace FWEledit
             referenceIndexBuildTask = System.Threading.Tasks.Task.Run(() =>
             {
                 referenceIndexService.ElementsPath = elementsPath;
-                referenceIndexService.EnsureBuilt(listCollection, referenceService);
+                if (!TryLoadPersistedReferenceCache())
+                {
+                    referenceIndexService.EnsureBuilt(listCollection, referenceService);
+                }
             }).ContinueWith(task =>
             {
                 if (IsDisposed || !IsHandleCreated || task.IsFaulted || task.IsCanceled)
@@ -900,7 +888,28 @@ namespace FWEledit
             {
                 LoadEmbeddedReferencesTabForSelectionAsync();
             }
+            else
+            {
+                ClearEmbeddedReferencesTabForPendingSelection();
+            }
             ScheduleReferencesTabRefresh();
+        }
+
+        private void ClearEmbeddedReferencesTabForPendingSelection()
+        {
+            referencesTabLoadVersion++;
+            if (fwReferencesTabs == null || fwReferencesTabs.IsDisposed)
+            {
+                return;
+            }
+
+            fwReferencesTabs.TabPages.Clear();
+            fwReferencesGridsByKey.Clear();
+            fwReferencesGrid = null;
+            if (fwReferencesTab != null)
+            {
+                fwReferencesTab.Text = "References";
+            }
         }
 
         private void LoadEmbeddedReferencesTabForSelectionAsync()
@@ -976,18 +985,18 @@ namespace FWEledit
             }
 
             ApplyEmbeddedReferencesTabsTheme();
-            if (fwReferencesTabs.TabPages.Count > 0)
-            {
-                if (fwReferencesTab != null)
-                {
-                    fwReferencesTab.Text = "References...";
-                }
-                return;
-            }
 
             fwReferencesTabs.SuspendLayout();
             try
             {
+                fwReferencesTabs.TabPages.Clear();
+                fwReferencesGridsByKey.Clear();
+                fwReferencesGrid = null;
+                if (fwReferencesTab != null)
+                {
+                    fwReferencesTab.Text = "References...";
+                }
+
                 TabPage page = new TabPage("Loading");
                 ApplyEmbeddedReferencesPageTheme(page);
                 DataGridView grid = CreateEmbeddedReferencesGrid();
@@ -1365,50 +1374,6 @@ namespace FWEledit
                     ApplyReferenceCountCell(row, 0);
                     ApplyElementIdUsageStyle(row, 0, duplicateCount > 1);
                 }
-
-                if (targetIds.Count == 0)
-                {
-                    return;
-                }
-
-                System.Threading.Tasks.Task.Run(() =>
-                {
-                    Dictionary<int, int> countsById = ComputeReferenceCountsForIds(listCollection, listIndex, targetIds);
-                    if (IsDisposed || !IsHandleCreated)
-                    {
-                        return;
-                    }
-
-                    BeginInvoke((Action)(() =>
-                    {
-                        if (IsDisposed
-                            || refreshVersion != referenceCountRefreshVersion
-                            || comboBox_lists == null
-                            || comboBox_lists.SelectedIndex != listIndex
-                            || dataGridView_elems == null
-                            || referenceIndexReady)
-                        {
-                            return;
-                        }
-
-                        for (int i = 0; i < targets.Count; i++)
-                        {
-                            VisibleReferenceTarget target = targets[i];
-                            if (target.RowIndex < 0 || target.RowIndex >= dataGridView_elems.Rows.Count)
-                            {
-                                continue;
-                            }
-
-                            int count;
-                            countsById.TryGetValue(target.Id, out count);
-                            int duplicateCount;
-                            duplicateCountsById.TryGetValue(target.Id, out duplicateCount);
-                            DataGridViewRow row = dataGridView_elems.Rows[target.RowIndex];
-                            ApplyReferenceCountCell(row, count);
-                            ApplyElementIdUsageStyle(row, count, duplicateCount > 1);
-                        }
-                    }));
-                });
 
                 return;
             }

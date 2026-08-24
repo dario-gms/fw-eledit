@@ -16,6 +16,7 @@ namespace FWEledit
         public TabPage MonsterMasteryTab { get; set; }
         public TabPage MonsterLevelUpTab { get; set; }
         public TabPage MonsterOtherTab { get; set; }
+        public TabPage ModelPreviewTab { get; set; }
         public TabPage ReferencesTab { get; set; }
         public TabControl ReferencesTabs { get; set; }
         public DataGridView ReferencesGrid { get; set; }
@@ -32,6 +33,9 @@ namespace FWEledit
         public Button DescriptionTitleFontButton { get; set; }
         public Panel AddonPackageDescEditorPanel { get; set; }
         public TextBox AddonPackageDescEditor { get; set; }
+        public Panel ModelPreviewHostPanel { get; set; }
+        public Label ModelPreviewStatusLabel { get; set; }
+        public Button ModelPreviewOpenButton { get; set; }
         public Button InlinePickIconButton { get; set; }
         public Button RawValueUpButton { get; set; }
         public Button RawValueDownButton { get; set; }

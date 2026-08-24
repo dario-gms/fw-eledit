@@ -20,6 +20,10 @@ namespace FWEquipmentPackageTool
             "building", "configs", "gfx", "grasses", "interfaces", "litmodels", "loddata", "models", "models2",
             "moxing", "script", "sfx", "shaders", "surfaces", "textures", "music"
         };
+        private static readonly string[] ModelReferencePackageFallbacks = new string[]
+        {
+            "models", "models2", "moxing", "litmodels", "shaders", "grasses", "surfaces"
+        };
 
         private static readonly Regex AssetExtensionPattern = new Regex(
             "\\.(dds|tga|bmp|png|jpg|jpeg|ski|smd|ecm|gfx|att|sgc|bon|stck|txt|ini|cfg|sdr)$",
@@ -98,10 +102,12 @@ namespace FWEquipmentPackageTool
             {
                 manifest.PathDataEntries = new List<ItemTransferPathDataEntry>();
             }
+            EnsureManifestPathDataEntries(manifest);
 
-            Report("Collecting equipment assets", "Finding direct model, icon and file paths from this equipment item...", 0, 0, true);
+            Report("Collecting item assets", "Finding direct model, icon and file paths from this item...", 0, 0, true);
             Dictionary<string, List<string>> entriesByPackage = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
             Dictionary<string, ItemTransferAssetEntry> assetsByKey = CollectDirectAssets(manifest, assetManager, entriesByPackage);
+            AddManifestPathDataAssets(manifest, assetsByKey, assetManager, entriesByPackage);
             ExpandEquipmentModelCompanions(assetsByKey, assetManager);
             ExpandEquipmentGfxDependencies(assetsByKey, assetManager);
             manifest.Assets = assetsByKey.Values.OrderBy(a => a.Package).ThenBy(a => a.RelativePath).ToList();
@@ -147,8 +153,158 @@ namespace FWEquipmentPackageTool
             result.Success = true;
             result.AssetCount = CountPackageAssets(request.OutputFile);
             result.MissingAssetCount = result.MissingAssets.Count;
+
+            if (HasCriticalMissingAssets(result.MissingAssets))
+            {
+                TryDeletePartialPackage(request.OutputFile);
+                result.Success = false;
+                result.ErrorMessage = BuildMissingAssetsErrorMessage(result.MissingAssets);
+                Report("Export failed", result.ErrorMessage, result.AssetCount, manifest.Assets.Count, false);
+                return result;
+            }
+
+            if (result.AssetCount == 0 && HasVisualPathDataEntries(manifest))
+            {
+                TryDeletePartialPackage(request.OutputFile);
+                result.Success = false;
+                result.ErrorMessage = BuildNoVisualAssetsErrorMessage(manifest);
+                Report("Export failed", result.ErrorMessage, result.AssetCount, manifest.Assets.Count, false);
+                return result;
+            }
+
             Report("Export complete", "Item package created.", result.AssetCount, result.AssetCount, false);
             return result;
+        }
+
+        private static void EnsureManifestPathDataEntries(ItemTransferPackageManifest manifest)
+        {
+            if (manifest == null || manifest.Fields == null)
+            {
+                return;
+            }
+
+            Dictionary<int, string> loadedPathData = null;
+            HashSet<int> knownPathIds = new HashSet<int>(
+                (manifest.PathDataEntries ?? new List<ItemTransferPathDataEntry>())
+                    .Where(p => p != null && p.PathId > 0)
+                    .Select(p => p.PathId));
+
+            foreach (ItemTransferFieldValue field in manifest.Fields)
+            {
+                if (field == null || !IsPackageAssetPathIdField(field.Name))
+                {
+                    continue;
+                }
+
+                int pathId = TryParseInt(field.Value);
+                if (pathId <= 0 || knownPathIds.Contains(pathId))
+                {
+                    continue;
+                }
+
+                if (loadedPathData == null)
+                {
+                    loadedPathData = LoadPathDataById();
+                }
+
+                string mappedPath;
+                if (loadedPathData != null
+                    && loadedPathData.TryGetValue(pathId, out mappedPath)
+                    && !string.IsNullOrWhiteSpace(mappedPath))
+                {
+                    manifest.PathDataEntries.Add(new ItemTransferPathDataEntry
+                    {
+                        PathId = pathId,
+                        MappedPath = NormalizePath(mappedPath)
+                    });
+                    knownPathIds.Add(pathId);
+                }
+            }
+        }
+
+        private static Dictionary<int, string> LoadPathDataById()
+        {
+            Dictionary<int, string> result = new Dictionary<int, string>();
+            string pathDataFile = ResolvePathDataFile();
+            if (string.IsNullOrWhiteSpace(pathDataFile) || !File.Exists(pathDataFile))
+            {
+                return result;
+            }
+
+            try
+            {
+                Encoding encoding = Encoding.GetEncoding("GBK");
+                using (FileStream stream = File.OpenRead(pathDataFile))
+                using (BinaryReader reader = new BinaryReader(stream, encoding))
+                {
+                    if (reader.BaseStream.Length < 8)
+                    {
+                        return result;
+                    }
+
+                    string magic = Encoding.ASCII.GetString(reader.ReadBytes(4));
+                    if (!string.Equals(magic, "DIMP", StringComparison.Ordinal))
+                    {
+                        return result;
+                    }
+
+                    int count = reader.ReadInt32();
+                    for (int i = 0; i < count; i++)
+                    {
+                        if (reader.BaseStream.Position + 8 > reader.BaseStream.Length)
+                        {
+                            break;
+                        }
+
+                        int id = reader.ReadInt32();
+                        int length = reader.ReadInt32();
+                        if (id < 0 || length < 0 || length > 8192 || reader.BaseStream.Position + length > reader.BaseStream.Length)
+                        {
+                            break;
+                        }
+
+                        string mappedPath = encoding.GetString(reader.ReadBytes(length)).Replace('/', '\\');
+                        if (!result.ContainsKey(id))
+                        {
+                            result.Add(id, mappedPath);
+                        }
+                    }
+                }
+            }
+            catch
+            {
+            }
+
+            return result;
+        }
+
+        private static string ResolvePathDataFile()
+        {
+            if (!string.IsNullOrWhiteSpace(AssetManager.WorkspaceRootPath))
+            {
+                string workspacePathData = Path.Combine(AssetManager.WorkspaceRootPath, "data", "path.data");
+                if (File.Exists(workspacePathData))
+                {
+                    return workspacePathData;
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(AssetManager.GameRootPath))
+            {
+                string gamePathData = Path.Combine(AssetManager.GameRootPath, "data", "path.data");
+                if (File.Exists(gamePathData))
+                {
+                    return gamePathData;
+                }
+
+                string felEditPathData = Path.Combine(AssetManager.GameRootPath, "fELedit", "resources", "data", "path.data");
+                if (File.Exists(felEditPathData))
+                {
+                    return felEditPathData;
+                }
+            }
+
+            return string.Empty;
         }
 
         private static Dictionary<string, ItemTransferAssetEntry> CollectDirectAssets(
@@ -211,6 +367,49 @@ namespace FWEquipmentPackageTool
             }
 
             return assets;
+        }
+
+        private static void AddManifestPathDataAssets(
+            ItemTransferPackageManifest manifest,
+            Dictionary<string, ItemTransferAssetEntry> assets,
+            AssetManager assetManager,
+            Dictionary<string, List<string>> entriesByPackage)
+        {
+            if (manifest == null || manifest.PathDataEntries == null || assets == null)
+            {
+                return;
+            }
+
+            foreach (ItemTransferPathDataEntry entry in manifest.PathDataEntries)
+            {
+                if (entry == null || string.IsNullOrWhiteSpace(entry.MappedPath))
+                {
+                    continue;
+                }
+
+                string mapped = NormalizePath(entry.MappedPath);
+                string package;
+                string relative;
+                if (!TrySplitPackagePath(mapped, out package, out relative))
+                {
+                    continue;
+                }
+
+                string extension = Path.GetExtension(relative);
+                if (!IsVisualAssetExtension(extension))
+                {
+                    continue;
+                }
+
+                ItemTransferAssetEntry added;
+                if (ContainsAsset(assets, mapped) || TryAddExistingAsset(assets, mapped, assetManager, out added))
+                {
+                    continue;
+                }
+
+                string fallback;
+                AddAsset(assets, TryResolveFallbackAssetPath(mapped, assetManager, entriesByPackage, out fallback) ? fallback : mapped);
+            }
         }
 
         private static bool AddAsset(Dictionary<string, ItemTransferAssetEntry> assets, string mappedPath)
@@ -629,6 +828,24 @@ namespace FWEquipmentPackageTool
                 return false;
             }
 
+            foreach (string candidatePackage in ModelReferencePackageFallbacks)
+            {
+                if (string.Equals(candidatePackage, package, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                byte[] candidatePayload;
+                string candidateError;
+                if (assetManager.TryReadPackageEntry(candidatePackage, relative, out candidatePayload, out candidateError)
+                    && candidatePayload != null)
+                {
+                    fallbackMappedPath = candidatePackage + "\\" + NormalizePath(relative);
+                    Report("Resolved cross-package fallback", NormalizePath(mappedPath) + " -> " + fallbackMappedPath, 0, 0, true);
+                    return true;
+                }
+            }
+
             List<string> entries;
             if (!entriesByPackage.TryGetValue(package, out entries))
             {
@@ -829,6 +1046,10 @@ namespace FWEquipmentPackageTool
                 {
                     yield return currentPackage + "\\" + currentDirectory + "\\" + normalizedReference;
                 }
+                foreach (string fallback in ResolvePackageFallbackReferenceCandidates(currentPackage, normalizedReference))
+                {
+                    yield return fallback;
+                }
                 yield break;
             }
 
@@ -842,9 +1063,28 @@ namespace FWEquipmentPackageTool
             yield return currentPackage + "\\" + normalizedReference;
         }
 
+        private static IEnumerable<string> ResolvePackageFallbackReferenceCandidates(string currentPackage, string normalizedReference)
+        {
+            if (string.IsNullOrWhiteSpace(normalizedReference) || normalizedReference.IndexOf('\\') < 0)
+            {
+                yield break;
+            }
+
+            for (int i = 0; i < ModelReferencePackageFallbacks.Length; i++)
+            {
+                string package = ModelReferencePackageFallbacks[i];
+                if (string.Equals(package, currentPackage, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                yield return package + "\\" + normalizedReference;
+            }
+        }
+
         private static bool IsPackageAssetPathIdField(string fieldName)
         {
-            string normalized = (fieldName ?? string.Empty).ToLowerInvariant();
+            string normalized = NormalizeFieldNameKey(fieldName);
             return string.Equals(normalized, "file_matter", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(normalized, "file_icon", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(normalized, "file_icon1", StringComparison.OrdinalIgnoreCase)
@@ -853,6 +1093,7 @@ namespace FWEquipmentPackageTool
                 || string.Equals(normalized, "music_drop", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(normalized, "id_change_model", StringComparison.OrdinalIgnoreCase)
                 || normalized.StartsWith("file_model", StringComparison.OrdinalIgnoreCase)
+                || normalized.StartsWith("file_models", StringComparison.OrdinalIgnoreCase)
                 || (normalized.StartsWith("models_", StringComparison.OrdinalIgnoreCase) && normalized.Contains("_file_model"))
                 || normalized.StartsWith("gfx_", StringComparison.OrdinalIgnoreCase)
                 || normalized.Contains("_gfx_")
@@ -899,6 +1140,15 @@ namespace FWEquipmentPackageTool
         private static string NormalizePath(string path)
         {
             return (path ?? string.Empty).Replace('/', '\\').Trim().TrimStart('\\');
+        }
+
+        private static string NormalizeFieldNameKey(string fieldName)
+        {
+            return (fieldName ?? string.Empty)
+                .Trim()
+                .Replace(' ', '_')
+                .Replace('-', '_')
+                .ToLowerInvariant();
         }
 
         private static bool IsGfxAsset(ItemTransferAssetEntry asset)
@@ -970,6 +1220,119 @@ namespace FWEquipmentPackageTool
             using (ZipArchive archive = ZipFile.OpenRead(packageFile))
             {
                 return archive.Entries.Count(entry => entry.FullName.StartsWith("assets/", StringComparison.OrdinalIgnoreCase));
+            }
+        }
+
+        private static bool HasCriticalMissingAssets(IEnumerable<string> missingAssets)
+        {
+            if (missingAssets == null)
+            {
+                return false;
+            }
+
+            foreach (string missing in missingAssets)
+            {
+                string normalized = NormalizePath(missing ?? string.Empty);
+                if (IsNonCriticalDisplayAsset(normalized))
+                {
+                    continue;
+                }
+
+                string extension = Path.GetExtension(normalized);
+                if (IsModelLikeExtension(extension) || IsTextureLikeExtension(extension))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool IsNonCriticalDisplayAsset(string normalizedPath)
+        {
+            if (string.IsNullOrWhiteSpace(normalizedPath))
+            {
+                return false;
+            }
+
+            string path = normalizedPath.Replace('/', '\\').Trim().TrimStart('\\');
+            return path.StartsWith("surfaces\\", StringComparison.OrdinalIgnoreCase)
+                || path.StartsWith("sfx\\", StringComparison.OrdinalIgnoreCase)
+                || path.StartsWith("interface\\", StringComparison.OrdinalIgnoreCase)
+                || path.StartsWith("interfaces\\", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsTextureLikeExtension(string ext)
+        {
+            return string.Equals(ext, ".dds", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(ext, ".tga", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(ext, ".bmp", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(ext, ".png", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(ext, ".jpg", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(ext, ".jpeg", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string BuildMissingAssetsErrorMessage(IEnumerable<string> missingAssets)
+        {
+            List<string> missing = (missingAssets ?? Enumerable.Empty<string>())
+                .Where(path => !string.IsNullOrWhiteSpace(path))
+                .Take(8)
+                .ToList();
+
+            string message = "Export failed because required model assets are missing from the source client.";
+            if (missing.Count > 0)
+            {
+                message += "\nMissing assets:\n- " + string.Join("\n- ", missing);
+            }
+
+            return message;
+        }
+
+        private static bool HasVisualPathDataEntries(ItemTransferPackageManifest manifest)
+        {
+            return manifest != null
+                && manifest.PathDataEntries != null
+                && manifest.PathDataEntries.Any(entry => entry != null && IsVisualAssetExtension(Path.GetExtension(entry.MappedPath ?? string.Empty)));
+        }
+
+        private static bool IsVisualAssetExtension(string ext)
+        {
+            return IsModelLikeExtension(ext)
+                || IsTextureLikeExtension(ext)
+                || string.Equals(ext, ".gfx", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string BuildNoVisualAssetsErrorMessage(ItemTransferPackageManifest manifest)
+        {
+            List<string> visualPaths = (manifest != null && manifest.PathDataEntries != null
+                    ? manifest.PathDataEntries
+                    : Enumerable.Empty<ItemTransferPathDataEntry>())
+                .Where(entry => entry != null && IsVisualAssetExtension(Path.GetExtension(entry.MappedPath ?? string.Empty)))
+                .Select(entry => entry.MappedPath)
+                .Where(path => !string.IsNullOrWhiteSpace(path))
+                .Take(8)
+                .ToList();
+
+            string message = "Export failed because no visual assets were written to the item package.";
+            if (visualPaths.Count > 0)
+            {
+                message += "\nExpected visual assets:\n- " + string.Join("\n- ", visualPaths);
+            }
+
+            return message;
+        }
+
+        private static void TryDeletePartialPackage(string outputFile)
+        {
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(outputFile) && File.Exists(outputFile))
+                {
+                    File.Delete(outputFile);
+                }
+            }
+            catch
+            {
             }
         }
 

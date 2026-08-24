@@ -9,6 +9,7 @@ namespace FWEledit
         MonsterMastery,
         MonsterLevelUp,
         MonsterOther,
+        Preview,
         Other,
         All
     }

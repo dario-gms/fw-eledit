@@ -15,7 +15,8 @@ namespace FWEledit
 
             if (tabs.SelectedTab != null && tabs.SelectedTab.Tag is EquipmentValuesTab)
             {
-                return (EquipmentValuesTab)tabs.SelectedTab.Tag;
+                EquipmentValuesTab selected = (EquipmentValuesTab)tabs.SelectedTab.Tag;
+                return selected == EquipmentValuesTab.Preview ? EquipmentValuesTab.Main : selected;
             }
 
             return EquipmentValuesTab.Main;
@@ -39,6 +40,10 @@ namespace FWEledit
             if (tab == EquipmentValuesTab.All)
             {
                 return true;
+            }
+            if (tab == EquipmentValuesTab.Preview)
+            {
+                return false;
             }
 
             bool isModels = equipmentFieldService.IsEquipmentModelsField(fieldName);
@@ -103,6 +108,8 @@ namespace FWEledit
             TabPage decomposeTab,
             TabPage otherTab,
             TabPage descriptionTab,
+            TabPage previewTab,
+            bool showPreview,
             bool showMonster,
             TabPage monsterMasteryTab,
             TabPage monsterLevelUpTab,
@@ -120,14 +127,19 @@ namespace FWEledit
             SetEquipmentPageVisible(tabs, monsterMasteryTab, showMonster, descriptionTab);
             SetEquipmentPageVisible(tabs, monsterLevelUpTab, showMonster, descriptionTab);
             SetEquipmentPageVisible(tabs, monsterOtherTab, showMonster, descriptionTab);
+            SetEquipmentPageVisible(tabs, previewTab, showPreview, descriptionTab);
 
             if (!show && !showMonster && tabs.SelectedTab != null && tabs.SelectedTab.Tag is EquipmentValuesTab)
             {
                 EquipmentValuesTab selected = (EquipmentValuesTab)tabs.SelectedTab.Tag;
-                if (selected != EquipmentValuesTab.Main)
+                if (selected != EquipmentValuesTab.Main && selected != EquipmentValuesTab.Preview)
                 {
                     SelectTaggedTab(tabs, EquipmentValuesTab.Main);
                 }
+            }
+            if (!showPreview && tabs.SelectedTab != null && ReferenceEquals(tabs.SelectedTab, previewTab))
+            {
+                SelectTaggedTab(tabs, EquipmentValuesTab.Main);
             }
         }
 

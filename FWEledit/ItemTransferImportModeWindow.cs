@@ -15,7 +15,7 @@ namespace FWEledit
 
         public ItemTransferImportModeWindow()
         {
-            Text = "Import Equipment Package";
+            Text = "Import Item Package";
             StartPosition = FormStartPosition.CenterParent;
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
@@ -27,7 +27,7 @@ namespace FWEledit
 
             Label titleLabel = new Label
             {
-                Text = "Choose how this equipment package should be imported.",
+                Text = "Choose how this item package should be imported.",
                 AutoSize = false,
                 Location = new Point(18, 16),
                 Size = new Size(480, 24),
@@ -46,7 +46,7 @@ namespace FWEledit
 
             Label fullStructureDescription = new Label
             {
-                Text = "Creates the Equipment Essence item and imports all required assets.",
+                Text = "Creates the item entry and imports all required assets.",
                 AutoSize = false,
                 Location = new Point(42, 78),
                 Size = new Size(455, 22)
