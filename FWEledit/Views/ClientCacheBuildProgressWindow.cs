@@ -83,6 +83,8 @@ namespace FWEledit
                 return;
             }
 
+            CenterOnOwner();
+
             titleLabel.Text = string.IsNullOrWhiteSpace(stage)
                 ? "Building client cache"
                 : stage;
@@ -100,6 +102,39 @@ namespace FWEledit
             progressBar.Style = ProgressBarStyle.Continuous;
             progressBar.MarqueeAnimationSpeed = 0;
             progressBar.Value = Math.Max(progressBar.Minimum, Math.Min(progressBar.Maximum, percent));
+        }
+
+        protected override void OnShown(EventArgs e)
+        {
+            base.OnShown(e);
+            CenterOnOwner();
+        }
+
+        private void CenterOnOwner()
+        {
+            Form owner = Owner;
+            if (owner == null || owner.IsDisposed)
+            {
+                return;
+            }
+
+            Rectangle ownerBounds = owner.WindowState == FormWindowState.Minimized
+                ? owner.RestoreBounds
+                : owner.Bounds;
+
+            if (ownerBounds.Width <= 0 || ownerBounds.Height <= 0)
+            {
+                return;
+            }
+
+            Rectangle workingArea = Screen.FromControl(owner).WorkingArea;
+            int left = ownerBounds.Left + (ownerBounds.Width - Width) / 2;
+            int top = ownerBounds.Top + (ownerBounds.Height - Height) / 2;
+
+            left = Math.Max(workingArea.Left, Math.Min(left, workingArea.Right - Width));
+            top = Math.Max(workingArea.Top, Math.Min(top, workingArea.Bottom - Height));
+
+            Location = new Point(left, top);
         }
 
         public void AllowCloseAndClose()

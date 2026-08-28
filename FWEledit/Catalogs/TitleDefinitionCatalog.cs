@@ -2561,6 +2561,8 @@ namespace FWEledit
                     ElementIndex = option.ElementIndex,
                     Id = option.Id,
                     Name = option.Name,
+                    RawName = option.RawName,
+                    NameForeColor = option.NameForeColor,
                     ListName = option.ListName,
                     IconKey = option.IconKey,
                     Quality = option.Quality,

@@ -1,4 +1,5 @@
 using System;
+using System.Drawing;
 using System.Windows.Forms;
 
 namespace FWEledit
@@ -124,6 +125,16 @@ namespace FWEledit
                         elementIndex,
                         nameFieldIndex,
                         false);
+                    itemQualityRowStyleService.ApplyQualityStyle(
+                        sessionService.ListCollection,
+                        listIndex,
+                        elementIndex,
+                        dataGridView_elems.Rows[gridRow],
+                        dataGridView_elems,
+                        index => fieldIndexLookupService.GetItemQualityFieldIndex(sessionService.ListCollection, index),
+                        quality => itemQualityColorService.GetQualityColor(quality),
+                        (entityListIndex, entityEntryIndex) => GetEntityNameColor(entityListIndex, entityEntryIndex),
+                        (color, factor) => colorShadeService.Darken(color, factor));
                 }
             }
             finally
@@ -164,6 +175,19 @@ namespace FWEledit
                     DataGridViewCell valueCell = row.Cells[2];
                     valueCell.Style.ForeColor = defaultForeColor;
                     valueCell.Style.SelectionForeColor = defaultSelectionForeColor;
+                    string fieldName = ValueGridFieldNameService.GetFieldName(dataGridView_item, rowIndex);
+                    if (string.Equals(fieldName, "name", StringComparison.OrdinalIgnoreCase))
+                    {
+                        string rawValue = GetRawValueFromCell(valueCell);
+                        Color color;
+                        string text;
+                        if (FwTextColorService.TryParseLeadingColor(rawValue, out color, out text))
+                        {
+                            valueCell.Value = text;
+                            valueCell.Style.ForeColor = color;
+                            valueCell.Style.SelectionForeColor = color;
+                        }
+                    }
                 }
             }
             finally
@@ -172,6 +196,22 @@ namespace FWEledit
             }
 
             dataGridView_item.Refresh();
+        }
+
+        private static string GetRawValueFromCell(DataGridViewCell valueCell)
+        {
+            if (valueCell == null)
+            {
+                return string.Empty;
+            }
+
+            ValueCellState state = valueCell.Tag as ValueCellState;
+            if (state != null)
+            {
+                return state.RawValue ?? string.Empty;
+            }
+
+            return Convert.ToString(valueCell.Tag ?? valueCell.Value) ?? string.Empty;
         }
 
         private void PersistNavigationState()

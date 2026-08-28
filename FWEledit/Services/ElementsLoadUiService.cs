@@ -58,6 +58,8 @@ namespace FWEledit
             }
 
             ClientCacheBuildProgressWindow loadProgressWindow = null;
+            bool ownerWasEnabled = true;
+            bool ownerEnabledChanged = false;
             try
             {
                 if (setCursor != null)
@@ -78,7 +80,11 @@ namespace FWEledit
                             "Reading elements.data and preparing the editor. Please wait.",
                             0,
                             true);
+                        ownerWasEnabled = owner.Enabled;
+                        owner.Enabled = false;
+                        ownerEnabledChanged = true;
                         loadProgressWindow.Update();
+                        loadProgressWindow.Activate();
                         Application.DoEvents();
                     }
                 }
@@ -286,7 +292,7 @@ namespace FWEledit
                     UpdateLoadProgressWindow(
                         loadProgressWindow,
                         "Restoring selection",
-                        "Opening the last list and item without blocking the remaining background warmup.",
+                        "Opening the last list and item and preparing the values view.",
                         96);
                     stageStopwatch.Restart();
                     WriteLiveStartupProfile(liveStartupProfilePath, "START Restore selection");
@@ -298,6 +304,7 @@ namespace FWEledit
                         persistNavigationState);
                     AppendStartupProfile(startupProfile, "Restore selection", stageStopwatch);
                     WriteLiveStartupProfile(liveStartupProfilePath, "END Restore selection: " + stageStopwatch.ElapsedMilliseconds.ToString() + " ms");
+                    Application.DoEvents();
                 }
 
                 SetProgress(progressBar, 99);
@@ -355,10 +362,20 @@ namespace FWEledit
                 SaveProgressService.SetVisible(progressBar, false);
                 try
                 {
+                    if (ownerEnabledChanged && owner != null && !owner.IsDisposed)
+                    {
+                        owner.Enabled = ownerWasEnabled;
+                    }
+
                     if (loadProgressWindow != null && !loadProgressWindow.IsDisposed)
                     {
                         loadProgressWindow.AllowCloseAndClose();
                         loadProgressWindow.Dispose();
+                    }
+
+                    if (ownerEnabledChanged && ownerWasEnabled && owner != null && !owner.IsDisposed)
+                    {
+                        owner.Activate();
                     }
                 }
                 catch

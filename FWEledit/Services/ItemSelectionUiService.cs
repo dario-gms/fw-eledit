@@ -54,6 +54,11 @@ namespace FWEledit
                 {
                     row.Cells[2].Style.ForeColor = Color.DeepSkyBlue;
                 }
+                else if (rowDisplay.ValueForeColor.HasValue)
+                {
+                    row.Cells[2].Style.ForeColor = rowDisplay.ValueForeColor.Value;
+                    row.Cells[2].Style.SelectionForeColor = rowDisplay.ValueForeColor.Value;
+                }
                 rows[i] = row;
             }
 

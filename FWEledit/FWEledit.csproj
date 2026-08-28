@@ -22,7 +22,7 @@
     <UpdateRequired>false</UpdateRequired>
     <MapFileExtensions>true</MapFileExtensions>
     <ApplicationRevision>0</ApplicationRevision>
-    <ApplicationVersion>0.9.5.24</ApplicationVersion>
+    <ApplicationVersion>0.9.5.25</ApplicationVersion>
     <IsWebBootstrapper>false</IsWebBootstrapper>
     <UseApplicationTrust>false</UseApplicationTrust>
     <BootstrapperEnabled>true</BootstrapperEnabled>
@@ -804,6 +804,7 @@
     <Compile Include="Services\ValueGridFieldNameService.cs" />
     <Compile Include="Services\ItemQualityColorService.cs" />
     <Compile Include="Services\ItemQualityRowStyleService.cs" />
+    <Compile Include="Services\FwTextColorService.cs" />
     <Compile Include="Services\ItemSelectionUiService.cs" />
     <Compile Include="Services\ItemSelectionCommandService.cs" />
     <Compile Include="Services\ItemSelectionContextService.cs" />

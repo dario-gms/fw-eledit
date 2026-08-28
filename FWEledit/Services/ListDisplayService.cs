@@ -152,7 +152,7 @@ namespace FWEledit
             string fallback = nameFieldIndex >= 0 ? listCollection.GetValue(listIndex, entryIndex, nameFieldIndex) : string.Empty;
             if (listIndex != 0)
             {
-                return fallback;
+                return FwTextColorService.StripLeadingColor(fallback);
             }
 
             string cached;
@@ -180,8 +180,9 @@ namespace FWEledit
             catch
             { }
 
-            list0DisplayNameCache[entryIndex] = fallback;
-            return fallback;
+            string strippedFallback = FwTextColorService.StripLeadingColor(fallback);
+            list0DisplayNameCache[entryIndex] = strippedFallback;
+            return strippedFallback;
         }
 
         private static bool ContainsUnresolvedSkillToken(List<object[]> rows)

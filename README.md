@@ -12,16 +12,15 @@ FWEledit is based on [sELedit++ by Wrechid](https://github.com/Wrechid/sELedit-)
 
 ---
 
-## What's New in v0.9.5.24
+## What's New in v0.9.5.25
 
-- Stabilized startup and session restore so the editor keeps the last selected list/item after background cache, icon, reference, and list refreshes complete.
-- Added first-open cache progress feedback and improved per-client map hydration so new clients do heavy indexing visibly, while repeat opens and list switching stay responsive.
-- Improved model-backed workflows for `Equipment`, `Aircraft`, `Vehicle`, `Monster`, `NPC`, and pet-related lists with embedded preview coverage, safer model field resolution, and corrected non-model preview fallbacks.
-- Hardened PCK Explorer and item package import/export so cross-package model, GFX, aircraft, vehicle, equipment, mount, handhold, weapon, texture, shader, and script dependencies preserve their source package mapping and report clearer audits.
-- Expanded item package support to `Aircraft Essence` and `Vehicle Essence`, while restoring reliable equipment package exports/imports for clients with resources spread across packages such as `models`, `models2`, `moxing`, `grasses`, `gfx`, and `shaders`.
-- Fixed Advanced Title loading for clients whose `script.pck` title data uses alternate layouts, and kept graphic-title display controls from affecting unrelated system messages.
-- Continued parser/reference/icon cleanup for aircraft colors, pet food, pet bedge stats, merge recipes, NPC services, random gift bags, and dialog/service selectors.
-- Project/app version metadata updated to `v0.9.5.24`.
+- Improved startup behavior so the editor keeps a centered loading window active while the selected list/item and `Values` grid are prepared, preventing early clicks from making the app appear frozen.
+- Continued per-client resource map optimization with safer background hydration for list icons, reference counts, and package-backed resources after the editor becomes usable.
+- Added an embedded model preview tab for model-heavy lists such as `Equipment`, `Aircraft`, `Vehicle`, `Monster`, `NPC`, and pet-related records, while keeping the standalone preview window available.
+- Expanded reference, parser, selector, inherited-icon, and color handling across service, recipe, mine, trade-page, pet, aircraft, and vehicle lists.
+- Improved item text color support so FW color tags render consistently in list rows, value parsers, and item/reference selectors, with color editing moved to an explicit button instead of double-clicking text.
+- Hardened item package export/import after regressions in cross-package assets, restoring correct model/icon asset capture for clients with resources split across `models`, `moxing`, `shaders`, and related PCKs.
+- Project/app version metadata updated to `v0.9.5.25`.
 
 Previous release notes were moved to [docs/WHATS_NEW.md](docs/WHATS_NEW.md).
 

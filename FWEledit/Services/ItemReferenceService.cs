@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Drawing;
 using eELedit;
 
 namespace FWEledit
@@ -263,6 +264,18 @@ namespace FWEledit
                 targetListIndex = ItemListsTargetIndex;
                 return true;
             }
+            else if (string.Equals(sourceListName, "MINE_ESSENCE", StringComparison.OrdinalIgnoreCase)
+                && IsMineToolItemReferenceField(name))
+            {
+                targetListIndex = ItemListsTargetIndex;
+                return true;
+            }
+            else if (string.Equals(sourceListName, "GM_GENERATOR_ESSENCE", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(name, "id_object", StringComparison.OrdinalIgnoreCase))
+            {
+                targetListIndex = ItemListsTargetIndex;
+                return true;
+            }
             else if (IsTaskReferenceField(sourceListName, name))
             {
                 targetListIndex = TasksTargetIndex;
@@ -288,6 +301,17 @@ namespace FWEledit
                 return true;
             }
             else if (string.Equals(sourceListName, "RECIPE_ESSENCE", StringComparison.OrdinalIgnoreCase)
+                && IsNumberedIdField(name, "materials_"))
+            {
+                targetListIndex = ItemListsTargetIndex;
+                return true;
+            }
+            else if (string.Equals(sourceListName, "RECIPE_ESSENCE", StringComparison.OrdinalIgnoreCase)
+                && IsNumberedIdField(name, "acquired_"))
+            {
+                targetListName = "PRODUCE_TYPE_ESSENCE";
+            }
+            else if (string.Equals(sourceListName, "RECIPE_ESSENCE", StringComparison.OrdinalIgnoreCase)
                 && string.Equals(name, "produce_type", StringComparison.OrdinalIgnoreCase))
             {
                 targetListName = "PRODUCE_TYPE_ESSENCE";
@@ -304,6 +328,12 @@ namespace FWEledit
             }
             else if (string.Equals(sourceListName, "NPC_SELL_SERVICE", StringComparison.OrdinalIgnoreCase)
                 && IsNpcSellGoodsField(name))
+            {
+                targetListIndex = ItemListsTargetIndex;
+                return true;
+            }
+            else if (string.Equals(sourceListName, "NPC_RESETPROP_SERVICE", StringComparison.OrdinalIgnoreCase)
+                && IsNpcResetpropRequiredItemField(name))
             {
                 targetListIndex = ItemListsTargetIndex;
                 return true;
@@ -700,9 +730,23 @@ namespace FWEledit
             Dictionary<int, ItemReferenceOption> produceTypeUsageMap = string.Equals(normalizedListName, "PRODUCE_TYPE_ESSENCE", StringComparison.OrdinalIgnoreCase)
                 ? BuildProduceTypeUsageMap(listCollection, database, iconResolutionService)
                 : null;
+            Dictionary<int, ItemReferenceOption> recipeUsageMap = string.Equals(normalizedListName, "RECIPE_ESSENCE", StringComparison.OrdinalIgnoreCase)
+                ? BuildRecipeUsageMap(listCollection, targetListIndex, database, iconResolutionService)
+                : null;
+            Dictionary<int, ItemReferenceOption> recipeTypeUsageMap =
+                string.Equals(normalizedListName, "RECIPE_MAJOR_TYPE", StringComparison.OrdinalIgnoreCase)
+                    ? BuildRecipeTypeUsageMap(listCollection, "id_major_type", database, iconResolutionService)
+                    : string.Equals(normalizedListName, "RECIPE_SUB_TYPE", StringComparison.OrdinalIgnoreCase)
+                        ? BuildRecipeTypeUsageMap(listCollection, "id_sub_type", database, iconResolutionService)
+                        : null;
+            Dictionary<int, ItemReferenceOption> npcResetpropUsageMap = string.Equals(normalizedListName, "NPC_RESETPROP_SERVICE", StringComparison.OrdinalIgnoreCase)
+                ? BuildNpcResetpropUsageMap(listCollection, targetListIndex, database, iconResolutionService)
+                : null;
             string inheritedTypeSourceListName;
             string inheritedTypeFieldName;
-            Dictionary<int, string> inheritedTypeIconKeyById = TryGetInheritedTypeIconSource(normalizedListName, out inheritedTypeSourceListName, out inheritedTypeFieldName)
+            Dictionary<int, string> inheritedTypeIconKeyById = !string.Equals(normalizedListName, "RECIPE_MAJOR_TYPE", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(normalizedListName, "RECIPE_SUB_TYPE", StringComparison.OrdinalIgnoreCase)
+                && TryGetInheritedTypeIconSource(normalizedListName, out inheritedTypeSourceListName, out inheritedTypeFieldName)
                 ? BuildInheritedTypeIconKeyMap(listCollection, database, iconResolutionService, inheritedTypeSourceListName, inheritedTypeFieldName)
                 : null;
             for (int i = 0; i < listCollection.Lists[targetListIndex].elementValues.Length; i++)
@@ -713,7 +757,9 @@ namespace FWEledit
                     continue;
                 }
 
-                string name = ResolveOptionName(listCollection, targetListIndex, i, nameIndex, normalizedListName);
+                string rawName = ResolveOptionName(listCollection, targetListIndex, i, nameIndex, normalizedListName);
+                Color? nameForeColor;
+                string name = NormalizeOptionDisplayName(rawName, out nameForeColor);
                 string iconKey = ResolveSourceElementIconKey(listCollection, database, iconResolutionService, targetListIndex, i, iconIndex);
                 if (string.IsNullOrWhiteSpace(iconKey)
                     && inheritedTypeIconKeyById != null
@@ -727,7 +773,8 @@ namespace FWEledit
                     string decodedName = DecodeEquipmentAddonName(listCollection, database, id);
                     if (!string.IsNullOrWhiteSpace(decodedName))
                     {
-                        name = decodedName;
+                        rawName = decodedName;
+                        name = NormalizeOptionDisplayName(rawName, out nameForeColor);
                     }
                 }
                 else if (string.Equals(normalizedListName, "ITEM_TRADE_ESSENCE", StringComparison.OrdinalIgnoreCase))
@@ -776,6 +823,46 @@ namespace FWEledit
                     if (npcLearnProducePortraitService.TryResolveLearnProducePortraitPath(listCollection, database, id, out learnProducePortraitPath))
                     {
                         iconKey = learnProducePortraitPath;
+                    }
+                }
+                else if (string.Equals(normalizedListName, "NPC_TASK_IN_SERVICE", StringComparison.OrdinalIgnoreCase))
+                {
+                    string taskInPortraitPath;
+                    if (TryResolveNpcServicePortraitPathByField(listCollection, database, id, out taskInPortraitPath, "id_task_in_service", "Task In"))
+                    {
+                        iconKey = taskInPortraitPath;
+                    }
+                }
+                else if (string.Equals(normalizedListName, "NPC_TASK_OUT_SERVICE", StringComparison.OrdinalIgnoreCase))
+                {
+                    string taskOutPortraitPath;
+                    if (TryResolveNpcServicePortraitPathByField(listCollection, database, id, out taskOutPortraitPath, "id_task_out_service", "Task Out"))
+                    {
+                        iconKey = taskOutPortraitPath;
+                    }
+                }
+                else if (string.Equals(normalizedListName, "NPC_TASK_MATTER_SERVICE", StringComparison.OrdinalIgnoreCase))
+                {
+                    string taskMatterPortraitPath;
+                    if (TryResolveNpcServicePortraitPathByField(listCollection, database, id, out taskMatterPortraitPath, "id_task_matter_service", "Task Matter"))
+                    {
+                        iconKey = taskMatterPortraitPath;
+                    }
+                }
+                else if (string.Equals(normalizedListName, "NPC_HEAL_SERVICE", StringComparison.OrdinalIgnoreCase))
+                {
+                    string healPortraitPath;
+                    if (TryResolveNpcServicePortraitPathByField(listCollection, database, id, out healPortraitPath, "id_heal_service", "Heal Service"))
+                    {
+                        iconKey = healPortraitPath;
+                    }
+                }
+                else if (string.Equals(normalizedListName, "NPC_STORAGE_SERVICE", StringComparison.OrdinalIgnoreCase))
+                {
+                    string storagePortraitPath;
+                    if (TryResolveNpcServicePortraitPathByField(listCollection, database, id, out storagePortraitPath, "id_storage_service", "Storage Service"))
+                    {
+                        iconKey = storagePortraitPath;
                     }
                 }
                 else if (string.Equals(normalizedListName, "DROPTABLE_ESSENCE", StringComparison.OrdinalIgnoreCase))
@@ -864,6 +951,55 @@ namespace FWEledit
                         }
                     }
                 }
+                else if (string.Equals(normalizedListName, "RECIPE_ESSENCE", StringComparison.OrdinalIgnoreCase))
+                {
+                    ItemReferenceOption sourceItemOption;
+                    if (recipeUsageMap != null && recipeUsageMap.TryGetValue(id, out sourceItemOption) && sourceItemOption != null)
+                    {
+                        if (!string.IsNullOrWhiteSpace(sourceItemOption.IconKey))
+                        {
+                            iconKey = sourceItemOption.IconKey;
+                        }
+
+                        if (sourceItemOption.Quality >= 0)
+                        {
+                            quality = sourceItemOption.Quality;
+                        }
+                    }
+                }
+                else if (string.Equals(normalizedListName, "RECIPE_MAJOR_TYPE", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(normalizedListName, "RECIPE_SUB_TYPE", StringComparison.OrdinalIgnoreCase))
+                {
+                    ItemReferenceOption sourceItemOption;
+                    if (recipeTypeUsageMap != null && recipeTypeUsageMap.TryGetValue(id, out sourceItemOption) && sourceItemOption != null)
+                    {
+                        if (!string.IsNullOrWhiteSpace(sourceItemOption.IconKey))
+                        {
+                            iconKey = sourceItemOption.IconKey;
+                        }
+
+                        if (sourceItemOption.Quality >= 0)
+                        {
+                            quality = sourceItemOption.Quality;
+                        }
+                    }
+                }
+                else if (string.Equals(normalizedListName, "NPC_RESETPROP_SERVICE", StringComparison.OrdinalIgnoreCase))
+                {
+                    ItemReferenceOption sourceItemOption;
+                    if (npcResetpropUsageMap != null && npcResetpropUsageMap.TryGetValue(id, out sourceItemOption) && sourceItemOption != null)
+                    {
+                        if (!string.IsNullOrWhiteSpace(sourceItemOption.IconKey))
+                        {
+                            iconKey = sourceItemOption.IconKey;
+                        }
+
+                        if (sourceItemOption.Quality >= 0)
+                        {
+                            quality = sourceItemOption.Quality;
+                        }
+                    }
+                }
 
                 string accentHex = string.Empty;
                 string secondaryText = string.Empty;
@@ -882,6 +1018,8 @@ namespace FWEledit
                     ElementIndex = i,
                     Id = id,
                     Name = name,
+                    RawName = rawName,
+                    NameForeColor = nameForeColor,
                     ListName = listName,
                     IconKey = iconKey,
                     Quality = quality,
@@ -946,6 +1084,20 @@ namespace FWEledit
                 return 255;
             }
             return value;
+        }
+
+        private static string NormalizeOptionDisplayName(string rawName, out Color? nameForeColor)
+        {
+            nameForeColor = null;
+            Color parsedColor;
+            string visibleName;
+            if (FwTextColorService.TryParseLeadingColor(rawName, out parsedColor, out visibleName))
+            {
+                nameForeColor = parsedColor;
+                return visibleName;
+            }
+
+            return rawName ?? string.Empty;
         }
 
         private static int FindFieldIndex(eListCollection listCollection, int listIndex, string fieldName)
@@ -1227,12 +1379,16 @@ namespace FWEledit
                             continue;
                         }
 
+                        Color? sourceNameForeColor;
+                        string sourceDisplayName = NormalizeOptionDisplayName(sourceName, out sourceNameForeColor);
                         map[packageId] = new ItemReferenceOption
                         {
                             ListIndex = listIndex,
                             ElementIndex = elementIndex,
                             Id = packageId,
-                            Name = sourceName,
+                            Name = sourceDisplayName,
+                            RawName = sourceName,
+                            NameForeColor = sourceNameForeColor,
                             ListName = sourceListName,
                             IconKey = sourceIconKey,
                             Quality = sourceQuality
@@ -1350,10 +1506,144 @@ namespace FWEledit
             return map;
         }
 
+        private Dictionary<int, ItemReferenceOption> BuildRecipeUsageMap(
+            eListCollection listCollection,
+            int recipeListIndex,
+            CacheSave database,
+            IconResolutionService iconResolutionService)
+        {
+            Dictionary<int, ItemReferenceOption> map = new Dictionary<int, ItemReferenceOption>();
+            if (listCollection == null
+                || recipeListIndex < 0
+                || recipeListIndex >= listCollection.Lists.Length
+                || listCollection.Lists[recipeListIndex] == null
+                || listCollection.Lists[recipeListIndex].elementFields == null
+                || listCollection.Lists[recipeListIndex].elementValues == null)
+            {
+                return map;
+            }
+
+            string[] fields = listCollection.Lists[recipeListIndex].elementFields;
+            List<int> productFieldIndexes = GetRecipeProducedItemFieldIndexes(fields);
+            if (productFieldIndexes.Count == 0)
+            {
+                return map;
+            }
+
+            for (int elementIndex = 0; elementIndex < listCollection.Lists[recipeListIndex].elementValues.Length; elementIndex++)
+            {
+                int recipeId;
+                if (!int.TryParse(listCollection.GetValue(recipeListIndex, elementIndex, 0), out recipeId)
+                    || recipeId <= 0
+                    || map.ContainsKey(recipeId))
+                {
+                    continue;
+                }
+
+                ItemReferenceOption itemOption;
+                if (TryResolveRecipeProductOption(
+                    listCollection,
+                    recipeListIndex,
+                    elementIndex,
+                    productFieldIndexes,
+                    database,
+                    iconResolutionService,
+                    out itemOption))
+                {
+                    map[recipeId] = itemOption;
+                }
+            }
+
+            return map;
+        }
+
+        private Dictionary<int, ItemReferenceOption> BuildRecipeTypeUsageMap(
+            eListCollection listCollection,
+            string typeFieldName,
+            CacheSave database,
+            IconResolutionService iconResolutionService)
+        {
+            Dictionary<int, ItemReferenceOption> map = new Dictionary<int, ItemReferenceOption>();
+            int recipeListIndex;
+            if (!TryFindListIndexByName(listCollection, "RECIPE_ESSENCE", out recipeListIndex)
+                || listCollection.Lists[recipeListIndex] == null
+                || listCollection.Lists[recipeListIndex].elementFields == null
+                || listCollection.Lists[recipeListIndex].elementValues == null)
+            {
+                return map;
+            }
+
+            string[] fields = listCollection.Lists[recipeListIndex].elementFields;
+            int typeFieldIndex = GetFieldIndex(fields, typeFieldName);
+            List<int> productFieldIndexes = GetRecipeProducedItemFieldIndexes(fields);
+            if (typeFieldIndex < 0 || productFieldIndexes.Count == 0)
+            {
+                return map;
+            }
+
+            for (int elementIndex = 0; elementIndex < listCollection.Lists[recipeListIndex].elementValues.Length; elementIndex++)
+            {
+                int typeId;
+                if (!int.TryParse(listCollection.GetValue(recipeListIndex, elementIndex, typeFieldIndex), out typeId)
+                    || typeId <= 0
+                    || map.ContainsKey(typeId))
+                {
+                    continue;
+                }
+
+                ItemReferenceOption itemOption;
+                if (TryResolveRecipeProductOption(
+                    listCollection,
+                    recipeListIndex,
+                    elementIndex,
+                    productFieldIndexes,
+                    database,
+                    iconResolutionService,
+                    out itemOption))
+                {
+                    map[typeId] = itemOption;
+                }
+            }
+
+            return map;
+        }
+
+        private bool TryResolveRecipeProductOption(
+            eListCollection listCollection,
+            int recipeListIndex,
+            int recipeElementIndex,
+            List<int> productFieldIndexes,
+            CacheSave database,
+            IconResolutionService iconResolutionService,
+            out ItemReferenceOption itemOption)
+        {
+            itemOption = null;
+            if (productFieldIndexes == null)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < productFieldIndexes.Count; i++)
+            {
+                int itemId;
+                if (!int.TryParse(listCollection.GetValue(recipeListIndex, recipeElementIndex, productFieldIndexes[i]), out itemId)
+                    || itemId <= 0)
+                {
+                    continue;
+                }
+
+                if (TryBuildItemOptionByIdUncached(listCollection, itemId, database, iconResolutionService, out itemOption))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         private static List<int> GetRecipeProducedItemFieldIndexes(string[] fields)
         {
             List<int> productFields = new List<int>();
-            List<int> acquiredFields = new List<int>();
             if (fields == null)
             {
                 return productFields;
@@ -1361,20 +1651,15 @@ namespace FWEledit
 
             for (int i = 0; i < fields.Length; i++)
             {
-                string field = fields[i] ?? string.Empty;
+                string field = NormalizeFieldKey(fields[i]);
                 if (field.IndexOf("products_", StringComparison.OrdinalIgnoreCase) >= 0
                     && field.EndsWith("_id_to_make", StringComparison.OrdinalIgnoreCase))
                 {
                     productFields.Add(i);
                 }
-                else if (field.IndexOf("acquired_", StringComparison.OrdinalIgnoreCase) >= 0
-                    && field.EndsWith("_id", StringComparison.OrdinalIgnoreCase))
-                {
-                    acquiredFields.Add(i);
-                }
             }
 
-            return productFields.Count > 0 ? productFields : acquiredFields;
+            return productFields;
         }
 
         private bool TryBuildItemOptionByIdUncached(
@@ -1411,12 +1696,17 @@ namespace FWEledit
                         continue;
                     }
 
+                    string rawName = nameIndex >= 0 ? listCollection.GetValue(listIndex, elementIndex, nameIndex) : string.Empty;
+                    Color? nameForeColor;
+                    string displayName = NormalizeOptionDisplayName(rawName, out nameForeColor);
                     option = new ItemReferenceOption
                     {
                         ListIndex = listIndex,
                         ElementIndex = elementIndex,
                         Id = id,
-                        Name = nameIndex >= 0 ? listCollection.GetValue(listIndex, elementIndex, nameIndex) : string.Empty,
+                        Name = displayName,
+                        RawName = rawName,
+                        NameForeColor = nameForeColor,
                         ListName = listCollection.Lists[listIndex].listName ?? string.Empty,
                         IconKey = ResolveSourceElementIconKey(listCollection, database, iconResolutionService, listIndex, elementIndex, iconIndex),
                         Quality = ResolveOptionQuality(listCollection, listIndex, elementIndex, qualityIndex)
@@ -1616,6 +1906,62 @@ namespace FWEledit
             }
 
             return false;
+        }
+
+        private Dictionary<int, ItemReferenceOption> BuildNpcResetpropUsageMap(
+            eListCollection listCollection,
+            int resetpropListIndex,
+            CacheSave database,
+            IconResolutionService iconResolutionService)
+        {
+            Dictionary<int, ItemReferenceOption> map = new Dictionary<int, ItemReferenceOption>();
+            if (listCollection == null
+                || resetpropListIndex < 0
+                || resetpropListIndex >= listCollection.Lists.Length
+                || listCollection.Lists[resetpropListIndex] == null
+                || listCollection.Lists[resetpropListIndex].elementFields == null
+                || listCollection.Lists[resetpropListIndex].elementValues == null)
+            {
+                return map;
+            }
+
+            string[] fields = listCollection.Lists[resetpropListIndex].elementFields;
+            List<int> requiredItemFieldIndexes = GetNpcResetpropRequiredItemFieldIndexes(fields);
+            if (requiredItemFieldIndexes.Count == 0)
+            {
+                return map;
+            }
+
+            for (int elementIndex = 0; elementIndex < listCollection.Lists[resetpropListIndex].elementValues.Length; elementIndex++)
+            {
+                int serviceId;
+                if (!int.TryParse(listCollection.GetValue(resetpropListIndex, elementIndex, 0), out serviceId)
+                    || serviceId <= 0
+                    || map.ContainsKey(serviceId))
+                {
+                    continue;
+                }
+
+                for (int i = 0; i < requiredItemFieldIndexes.Count; i++)
+                {
+                    int itemId;
+                    if (!int.TryParse(listCollection.GetValue(resetpropListIndex, elementIndex, requiredItemFieldIndexes[i]), out itemId)
+                        || itemId <= 0)
+                    {
+                        continue;
+                    }
+
+                    ItemReferenceOption itemOption;
+                    if (TryFindItemOptionByIdAcrossLists(listCollection, itemId, database, iconResolutionService, out itemOption)
+                        && itemOption != null)
+                    {
+                        map[serviceId] = itemOption;
+                        break;
+                    }
+                }
+            }
+
+            return map;
         }
 
         private int FindElementIndexById(eListCollection listCollection, int listIndex, int id)
@@ -2129,6 +2475,35 @@ namespace FWEledit
                 return true;
             }
 
+            if (string.Equals(sourceListName, "CHARRACTER_CLASS_CONFIG", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(fieldName, "player_status_point_id", StringComparison.OrdinalIgnoreCase))
+            {
+                targetListName = "PLAYER_STATUS_POINT_CONFIG";
+                return true;
+            }
+
+            if (string.Equals(sourceListName, "MINE_ESSENCE", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(fieldName, "id_type", StringComparison.OrdinalIgnoreCase))
+            {
+                targetListName = "MINE_TYPE";
+                return true;
+            }
+
+            if (string.Equals(sourceListName, "MINE_ESSENCE", StringComparison.OrdinalIgnoreCase)
+                && (string.Equals(fieldName, "id_relative_monster", StringComparison.OrdinalIgnoreCase)
+                    || fieldName.EndsWith("_id_monster", StringComparison.OrdinalIgnoreCase)))
+            {
+                targetListName = "MONSTER_ESSENCE";
+                return true;
+            }
+
+            if (string.Equals(sourceListName, "GM_GENERATOR_ESSENCE", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(fieldName, "id_type", StringComparison.OrdinalIgnoreCase))
+            {
+                targetListName = "GM_GENERATOR_TYPE";
+                return true;
+            }
+
             if (IsNpcSourceMonsterField(sourceListName, fieldName))
             {
                 targetListName = "MONSTER_ESSENCE";
@@ -2302,7 +2677,14 @@ namespace FWEledit
             }
 
             if (string.Equals(sourceListName, "RECIPE_ESSENCE", StringComparison.OrdinalIgnoreCase)
-                && (IsNumberedIdField(fieldName, "materials_") || IsNumberedIdField(fieldName, "acquired_")))
+                && IsNumberedIdField(fieldName, "acquired_"))
+            {
+                targetListName = "PRODUCE_TYPE_ESSENCE";
+                return true;
+            }
+
+            if (string.Equals(sourceListName, "RECIPE_ESSENCE", StringComparison.OrdinalIgnoreCase)
+                && IsNumberedIdField(fieldName, "materials_"))
             {
                 targetListName = null;
                 return false;
@@ -2547,7 +2929,7 @@ namespace FWEledit
             }
 
             if (string.Equals(sourceListName, "RECIPE_ESSENCE", StringComparison.OrdinalIgnoreCase)
-                && (IsNumberedIdField(fieldName, "materials_") || IsNumberedIdField(fieldName, "acquired_")))
+                && IsNumberedIdField(fieldName, "materials_"))
             {
                 return true;
             }
@@ -2587,6 +2969,39 @@ namespace FWEledit
             return !string.IsNullOrWhiteSpace(fieldName)
                 && fieldName.StartsWith("pages_", StringComparison.OrdinalIgnoreCase)
                 && fieldName.IndexOf("_id_goods_", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static bool IsNpcResetpropRequiredItemField(string fieldName)
+        {
+            return !string.IsNullOrWhiteSpace(fieldName)
+                && fieldName.StartsWith("prop_entry_", StringComparison.OrdinalIgnoreCase)
+                && fieldName.EndsWith("_id_object_need", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsMineToolItemReferenceField(string fieldName)
+        {
+            return !string.IsNullOrWhiteSpace(fieldName)
+                && fieldName.StartsWith("tools_", StringComparison.OrdinalIgnoreCase)
+                && fieldName.EndsWith("_tid", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static List<int> GetNpcResetpropRequiredItemFieldIndexes(string[] fields)
+        {
+            List<int> indexes = new List<int>();
+            if (fields == null)
+            {
+                return indexes;
+            }
+
+            for (int i = 0; i < fields.Length; i++)
+            {
+                if (IsNpcResetpropRequiredItemField(fields[i]))
+                {
+                    indexes.Add(i);
+                }
+            }
+
+            return indexes;
         }
 
         private static bool IsNpcTransmitTargetField(string fieldName)
@@ -2639,8 +3054,9 @@ namespace FWEledit
 
         private static bool IsNumberedIdField(string fieldName, string prefix)
         {
-            return fieldName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
-                && (fieldName.EndsWith("_id", StringComparison.OrdinalIgnoreCase) || fieldName.Contains("_id_"));
+            string normalizedFieldName = NormalizeFieldKey(fieldName);
+            return normalizedFieldName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+                && (normalizedFieldName.EndsWith("_id", StringComparison.OrdinalIgnoreCase) || normalizedFieldName.Contains("_id_"));
         }
 
         private static int GetNameFieldIndex(eListCollection listCollection, int listIndex)
@@ -2901,6 +3317,8 @@ namespace FWEledit
                 ElementIndex = option.ElementIndex,
                 Id = option.Id,
                 Name = option.Name,
+                RawName = option.RawName,
+                NameForeColor = option.NameForeColor,
                 ListName = option.ListName,
                 IconKey = iconKey,
                 Quality = option.Quality,
@@ -2956,6 +3374,66 @@ namespace FWEledit
             }
         }
 
+        private bool TryResolveNpcServicePortraitPathByField(
+            eListCollection listCollection,
+            CacheSave database,
+            int serviceId,
+            out string mappedPath,
+            params string[] serviceFieldNames)
+        {
+            mappedPath = string.Empty;
+            if (serviceId <= 0
+                || listCollection == null
+                || listCollection.Lists == null
+                || database == null
+                || serviceFieldNames == null
+                || serviceFieldNames.Length == 0)
+            {
+                return false;
+            }
+
+            for (int npcListIndex = 0; npcListIndex < listCollection.Lists.Length; npcListIndex++)
+            {
+                eList list = listCollection.Lists[npcListIndex];
+                if (list == null
+                    || list.elementFields == null
+                    || list.elementValues == null
+                    || !string.Equals(GetNormalizedListName(listCollection, npcListIndex), "NPC_ESSENCE", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                int serviceFieldIndex = GetFirstFieldIndex(list.elementFields, serviceFieldNames);
+                int iconFieldIndex = GetIconFieldIndex(listCollection, npcListIndex);
+                if (serviceFieldIndex < 0 || iconFieldIndex < 0)
+                {
+                    continue;
+                }
+
+                for (int rowIndex = 0; rowIndex < list.elementValues.Length; rowIndex++)
+                {
+                    int currentServiceId;
+                    if (!int.TryParse(listCollection.GetValue(npcListIndex, rowIndex, serviceFieldIndex), out currentServiceId)
+                        || currentServiceId != serviceId)
+                    {
+                        continue;
+                    }
+
+                    string rawIconValue = listCollection.GetValue(npcListIndex, rowIndex, iconFieldIndex);
+                    int pathId;
+                    if (!string.IsNullOrWhiteSpace(rawIconValue)
+                        && creaturePortraitIconService.TryResolvePortraitPath(database, rawIconValue, out pathId, out mappedPath)
+                        && !string.IsNullOrWhiteSpace(mappedPath))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            mappedPath = string.Empty;
+            return false;
+        }
+
         private Dictionary<int, string> BuildInheritedTypeIconKeyMap(
             eListCollection listCollection,
             CacheSave database,
@@ -2976,6 +3454,12 @@ namespace FWEledit
             {
                 return map;
             }
+
+            bool useSourceMaterialIcon = string.Equals(sourceListName, "MINE_ESSENCE", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(typeFieldName, "id_type", StringComparison.OrdinalIgnoreCase);
+            Dictionary<int, string> itemIconKeyById = useSourceMaterialIcon
+                ? BuildItemIconKeyMap(listCollection, database, iconResolutionService)
+                : null;
 
             for (int listIndex = 0; listIndex < listCollection.Lists.Length; listIndex++)
             {
@@ -2998,7 +3482,12 @@ namespace FWEledit
                 }
 
                 int iconFieldIndex = GetIconFieldIndex(listCollection, listIndex);
-                if (typeFieldIndex < 0 || iconFieldIndex < 0)
+                List<int> sourceItemFieldIndexes = useSourceMaterialIcon
+                    ? GetMineMaterialItemFieldIndexes(listCollection.Lists[listIndex].elementFields)
+                    : null;
+                if (typeFieldIndex < 0
+                    || (!useSourceMaterialIcon && iconFieldIndex < 0)
+                    || (useSourceMaterialIcon && (sourceItemFieldIndexes == null || sourceItemFieldIndexes.Count == 0)))
                 {
                     continue;
                 }
@@ -3013,7 +3502,9 @@ namespace FWEledit
                         continue;
                     }
 
-                    string iconKey = ResolveSourceElementIconKey(listCollection, database, iconResolutionService, listIndex, elementIndex, iconFieldIndex);
+                    string iconKey = useSourceMaterialIcon
+                        ? ResolveFirstItemFieldIconKey(listCollection, listIndex, elementIndex, sourceItemFieldIndexes, itemIconKeyById)
+                        : ResolveSourceElementIconKey(listCollection, database, iconResolutionService, listIndex, elementIndex, iconFieldIndex);
                     if (!string.IsNullOrWhiteSpace(iconKey))
                     {
                         map[typeId] = iconKey;
@@ -3022,6 +3513,94 @@ namespace FWEledit
             }
 
             return map;
+        }
+
+        private Dictionary<int, string> BuildItemIconKeyMap(
+            eListCollection listCollection,
+            CacheSave database,
+            IconResolutionService iconResolutionService)
+        {
+            Dictionary<int, string> map = new Dictionary<int, string>();
+            if (listCollection == null || listCollection.Lists == null || iconResolutionService == null)
+            {
+                return map;
+            }
+
+            for (int listIndex = 0; listIndex < listCollection.Lists.Length; listIndex++)
+            {
+                if (!HasPrimaryIdField(listCollection, listIndex)
+                    || !IsItemList(listCollection, listIndex)
+                    || listCollection.Lists[listIndex] == null
+                    || listCollection.Lists[listIndex].elementValues == null)
+                {
+                    continue;
+                }
+
+                int iconIndex = GetIconFieldIndex(listCollection, listIndex);
+                if (iconIndex < 0)
+                {
+                    continue;
+                }
+
+                for (int elementIndex = 0; elementIndex < listCollection.Lists[listIndex].elementValues.Length; elementIndex++)
+                {
+                    int itemId;
+                    if (!int.TryParse(listCollection.GetValue(listIndex, elementIndex, 0), out itemId)
+                        || itemId <= 0
+                        || map.ContainsKey(itemId))
+                    {
+                        continue;
+                    }
+
+                    string iconKey = ResolveSourceElementIconKey(
+                        listCollection,
+                        database,
+                        iconResolutionService,
+                        listIndex,
+                        elementIndex,
+                        iconIndex);
+                    if (!string.IsNullOrWhiteSpace(iconKey))
+                    {
+                        map[itemId] = iconKey;
+                    }
+                }
+            }
+
+            return map;
+        }
+
+        private string ResolveFirstItemFieldIconKey(
+            eListCollection listCollection,
+            int listIndex,
+            int elementIndex,
+            List<int> itemFieldIndexes,
+            Dictionary<int, string> itemIconKeyById)
+        {
+            if (listCollection == null
+                || itemFieldIndexes == null
+                || itemIconKeyById == null)
+            {
+                return string.Empty;
+            }
+
+            for (int i = 0; i < itemFieldIndexes.Count; i++)
+            {
+                int itemId;
+                if (!int.TryParse(listCollection.GetValue(listIndex, elementIndex, itemFieldIndexes[i]), out itemId)
+                    || itemId <= 0)
+                {
+                    continue;
+                }
+
+                string iconKey;
+                if (itemIconKeyById.TryGetValue(itemId, out iconKey)
+                    && !string.IsNullOrWhiteSpace(iconKey))
+                {
+                    return iconKey;
+                }
+            }
+
+            return string.Empty;
         }
 
         private string ResolveSourceElementIconKey(
@@ -3087,6 +3666,20 @@ namespace FWEledit
                 return true;
             }
 
+            if (string.Equals(normalizedListName, "MINE_TYPE", StringComparison.OrdinalIgnoreCase))
+            {
+                sourceListName = "MINE_ESSENCE";
+                typeFieldName = "id_type";
+                return true;
+            }
+
+            if (string.Equals(normalizedListName, "GM_GENERATOR_TYPE", StringComparison.OrdinalIgnoreCase))
+            {
+                sourceListName = "GM_GENERATOR_ESSENCE";
+                typeFieldName = "id_type";
+                return true;
+            }
+
             if (normalizedListName.EndsWith(majorSuffix, StringComparison.OrdinalIgnoreCase))
             {
                 sourceListName = normalizedListName.Substring(0, normalizedListName.Length - majorSuffix.Length) + "_ESSENCE";
@@ -3118,6 +3711,41 @@ namespace FWEledit
             return NormalizeListName(listCollection.Lists[listIndex].listName);
         }
 
+        private static List<int> GetMineMaterialItemFieldIndexes(string[] fields)
+        {
+            List<int> primaryIndexes = new List<int>();
+            List<int> fallbackIndexes = new List<int>();
+            if (fields == null)
+            {
+                return primaryIndexes;
+            }
+
+            for (int i = 0; i < fields.Length; i++)
+            {
+                string fieldName = fields[i] ?? string.Empty;
+                if (!fieldName.StartsWith("materials_", StringComparison.OrdinalIgnoreCase)
+                    || !(fieldName.EndsWith("_id", StringComparison.OrdinalIgnoreCase)
+                        || fieldName.IndexOf("_id_", StringComparison.OrdinalIgnoreCase) >= 0))
+                {
+                    continue;
+                }
+
+                if (fieldName.StartsWith("materials_1_1_", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(fieldName, "materials_0_id", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(fieldName, "materials_1_id", StringComparison.OrdinalIgnoreCase))
+                {
+                    primaryIndexes.Add(i);
+                }
+                else
+                {
+                    fallbackIndexes.Add(i);
+                }
+            }
+
+            primaryIndexes.AddRange(fallbackIndexes);
+            return primaryIndexes;
+        }
+
         private static int GetFieldIndex(string[] fields, string fieldName)
         {
             if (fields == null)
@@ -3130,6 +3758,25 @@ namespace FWEledit
                 if (string.Equals(fields[i], fieldName, StringComparison.OrdinalIgnoreCase))
                 {
                     return i;
+                }
+            }
+
+            return -1;
+        }
+
+        private static int GetFirstFieldIndex(string[] fields, params string[] fieldNames)
+        {
+            if (fields == null || fieldNames == null)
+            {
+                return -1;
+            }
+
+            for (int i = 0; i < fieldNames.Length; i++)
+            {
+                int fieldIndex = GetFieldIndex(fields, fieldNames[i]);
+                if (fieldIndex >= 0)
+                {
+                    return fieldIndex;
                 }
             }
 
@@ -3173,12 +3820,22 @@ namespace FWEledit
                     continue;
                 }
 
+                string rawName = !string.IsNullOrEmpty(option.RawName) ? option.RawName : option.Name;
+                Color? nameForeColor = option.NameForeColor;
+                string displayName = option.Name ?? string.Empty;
+                if (!nameForeColor.HasValue || FwTextColorService.HasLeadingColor(displayName))
+                {
+                    displayName = NormalizeOptionDisplayName(rawName, out nameForeColor);
+                }
+
                 clone.Add(new ItemReferenceOption
                 {
                     ListIndex = option.ListIndex,
                     ElementIndex = option.ElementIndex,
                     Id = option.Id,
-                    Name = option.Name,
+                    Name = displayName,
+                    RawName = rawName,
+                    NameForeColor = nameForeColor,
                     ListName = option.ListName,
                     IconKey = option.IconKey,
                     Quality = option.Quality,

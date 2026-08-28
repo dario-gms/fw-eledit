@@ -18,6 +18,11 @@ namespace FWEledit
                 || string.Equals(fieldName, "id_quality", StringComparison.OrdinalIgnoreCase);
         }
 
+        public bool IsTextColorFieldName(string fieldName)
+        {
+            return string.Equals(fieldName, "name", StringComparison.OrdinalIgnoreCase);
+        }
+
         public bool IsGenderTypeFieldName(string fieldName)
         {
             return GenderTypeCatalog.IsGenderTypeFieldName(fieldName);
@@ -143,6 +148,7 @@ namespace FWEledit
             ItemReferenceService itemReferenceService)
         {
             return IsIconFieldName(fieldName)
+                || IsTextColorFieldName(fieldName)
                 || IsAddonTypeField(listCollection, listIndex, fieldName)
                 || IsItemQualityFieldName(fieldName)
                 || IsGenderTypeFieldName(fieldName)

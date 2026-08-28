@@ -1,3 +1,5 @@
+using System.Drawing;
+
 namespace FWEledit
 {
     public sealed class ItemReferenceOption
@@ -6,6 +8,8 @@ namespace FWEledit
         public int ElementIndex { get; set; }
         public int Id { get; set; }
         public string Name { get; set; }
+        public string RawName { get; set; }
+        public Color? NameForeColor { get; set; }
         public string ListName { get; set; }
         public string IconKey { get; set; }
         public int Quality { get; set; }
