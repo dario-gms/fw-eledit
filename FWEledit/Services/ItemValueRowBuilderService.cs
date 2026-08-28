@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Drawing;
 
 namespace FWEledit
 {
@@ -166,6 +167,7 @@ namespace FWEledit
 
                 string rawValue = listCollection.GetValue(listIndex, elementIndex, f);
                 string fieldValue = rawValue;
+                Color? valueForeColor = null;
                 ItemReferenceOption resolvedReferenceOption = null;
                 if (listIndex == 0)
                 {
@@ -325,6 +327,10 @@ namespace FWEledit
                         fieldValue = string.IsNullOrWhiteSpace(resolvedReferenceOption.Name)
                             ? rawValue
                             : resolvedReferenceOption.Name;
+                        if (resolvedReferenceOption.NameForeColor.HasValue)
+                        {
+                            valueForeColor = resolvedReferenceOption.NameForeColor;
+                        }
                     }
                     else
                     {
@@ -340,6 +346,16 @@ namespace FWEledit
                 }
 
                 fieldValue = ValueDisplayFormatCatalog.FormatLargeNumber(fieldName, fieldValue);
+                if (string.Equals(fieldName, "name", System.StringComparison.OrdinalIgnoreCase))
+                {
+                    Color embeddedNameColor;
+                    string visibleName;
+                    if (FwTextColorService.TryParseLeadingColor(rawValue, out embeddedNameColor, out visibleName))
+                    {
+                        fieldValue = visibleName;
+                        valueForeColor = embeddedNameColor;
+                    }
+                }
                 string displayFieldName = ModelFieldLabelCatalog.GetDisplayFieldName(
                     listCollection,
                     listCollection.Lists[listIndex].listName,
@@ -356,6 +372,7 @@ namespace FWEledit
                     FieldType = listCollection.Lists[listIndex].elementTypes[f],
                     DisplayValue = fieldValue,
                     RawValue = rawValue,
+                    ValueForeColor = valueForeColor,
                     ResolvedReferenceOption = resolvedReferenceOption,
                     IsInvalid = isFieldInvalid != null && isFieldInvalid(listIndex, elementIndex, f),
                     IsDirty = isFieldDirty != null && isFieldDirty(listIndex, elementIndex, f)

@@ -48,6 +48,10 @@ namespace FWEledit
         {
             ValueChangeResult result = new ValueChangeResult();
             string valueToSet = NormalizeClearedValue(request != null ? request.FieldType : null, request != null ? request.NewValue : null);
+            if (request != null && string.Equals(request.FieldName, "name", StringComparison.OrdinalIgnoreCase))
+            {
+                valueToSet = FwTextColorService.PreserveLeadingColor(request.PreviousRawValue, valueToSet);
+            }
             valueToSet = ValueDisplayFormatCatalog.NormalizeLargeNumberInput(request != null ? request.FieldType : null, valueToSet);
             ItemReferenceOption resolvedReferenceOption = null;
             if (request.ListIndex < 0 || request.FieldIndex < 0)
@@ -275,6 +279,10 @@ namespace FWEledit
                 || string.Equals(request.FieldName, "id_quality", StringComparison.OrdinalIgnoreCase))
             {
                 result.DisplayValue = ItemQualityCatalog.FormatDisplay(valueToSet);
+            }
+            else if (string.Equals(request.FieldName, "name", StringComparison.OrdinalIgnoreCase))
+            {
+                result.DisplayValue = FwTextColorService.StripLeadingColor(valueToSet);
             }
             else if (GenderTypeCatalog.IsGenderTypeFieldName(request.FieldName))
             {
@@ -507,7 +515,9 @@ namespace FWEledit
                     update.Icon = icon;
                 }
 
-                update.UpdateQualityColor = string.Equals(request.FieldName, "item_quality", StringComparison.OrdinalIgnoreCase);
+                update.UpdateQualityColor = string.Equals(request.FieldName, "item_quality", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(request.FieldName, "id_quality", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(request.FieldName, "name", StringComparison.OrdinalIgnoreCase);
                 result.ListRowUpdates.Add(update);
             }
 

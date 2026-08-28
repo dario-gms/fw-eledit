@@ -132,6 +132,49 @@ namespace FWEledit
                 this);
         }
 
+        private void OpenTextColorPickerForValueRow(int rowIndex)
+        {
+            if (dataGridView_item == null || rowIndex < 0 || rowIndex >= dataGridView_item.Rows.Count)
+            {
+                return;
+            }
+
+            DataGridViewCell valueCell = dataGridView_item.Rows[rowIndex].Cells[2];
+            string rawValue = GetRawValueFromCell(valueCell);
+            Color currentColor;
+            string visibleText;
+            if (!FwTextColorService.TryParseLeadingColor(rawValue, out currentColor, out visibleText))
+            {
+                currentColor = dataGridView_item.Rows[rowIndex].Cells[2].Style.ForeColor;
+                if (currentColor.IsEmpty)
+                {
+                    currentColor = dataGridView_item.DefaultCellStyle.ForeColor;
+                }
+                visibleText = Convert.ToString(valueCell.Value) ?? string.Empty;
+            }
+
+            using (ColorDialog dialog = new ColorDialog())
+            {
+                dialog.FullOpen = true;
+                dialog.Color = currentColor;
+                if (dialog.ShowDialog(this) != DialogResult.OK)
+                {
+                    return;
+                }
+
+                string updatedRawValue = FwTextColorService.SetLeadingColor(rawValue, dialog.Color);
+                string updatedVisibleText = FwTextColorService.StripLeadingColor(updatedRawValue);
+
+                dataGridView_item.CurrentCell = valueCell;
+                valueCell.Tag = updatedRawValue;
+                valueCell.Value = updatedVisibleText;
+                valueCell.Style.ForeColor = dialog.Color;
+                valueCell.Style.SelectionForeColor = dialog.Color;
+
+                change_value(dataGridView_item, new DataGridViewCellEventArgs(valueCell.ColumnIndex, rowIndex));
+            }
+        }
+
         private void OpenGenderTypePickerForValueRow(int rowIndex)
         {
             mainWindowValuePickerCoordinatorService.OpenGenderTypePickerForValueRow(
@@ -1144,6 +1187,26 @@ namespace FWEledit
 
         private void dataGridView_item_CellPainting(object sender, DataGridViewCellPaintingEventArgs e)
         {
+            try
+            {
+                PaintValueCellSafely(sender, e);
+            }
+            catch (Exception ex)
+            {
+                if (errorLoggingService != null)
+                {
+                    errorLoggingService.Log("dataGridView_item_CellPainting", ex);
+                }
+
+                if (e != null)
+                {
+                    e.Handled = false;
+                }
+            }
+        }
+
+        private void PaintValueCellSafely(object sender, DataGridViewCellPaintingEventArgs e)
+        {
             if (e == null || e.RowIndex < 0 || e.ColumnIndex != 2 || dataGridView_item == null)
             {
                 return;
@@ -1193,9 +1256,15 @@ namespace FWEledit
 
         private void PaintReferenceValueCell(DataGridViewCellPaintingEventArgs e, ItemReferenceOption option)
         {
+            if (e == null || option == null)
+            {
+                return;
+            }
+
             bool selected = (e.State & DataGridViewElementStates.Selected) == DataGridViewElementStates.Selected;
-            Color backColor = selected ? e.CellStyle.SelectionBackColor : e.CellStyle.BackColor;
-            Color textColor = ResolveReferenceValueTextColor(option, selected, e.CellStyle.ForeColor);
+            Color backColor = ResolvePaintBackColor(e.CellStyle, selected);
+            Color textColor = ResolveReferenceValueTextColor(option, selected, ResolvePaintForeColor(e.CellStyle, selected));
+            Font font = e.CellStyle.Font ?? dataGridView_item.Font;
 
             using (SolidBrush brush = new SolidBrush(backColor))
             {
@@ -1218,7 +1287,7 @@ namespace FWEledit
             TextRenderer.DrawText(
                 e.Graphics,
                 text,
-                e.CellStyle.Font,
+                font,
                 textBounds,
                 textColor,
                 TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
@@ -1228,9 +1297,15 @@ namespace FWEledit
 
         private void PaintPortraitValueCell(DataGridViewCellPaintingEventArgs e, CreaturePortraitIconService portraitIconService, string rawValue)
         {
+            if (e == null || portraitIconService == null)
+            {
+                return;
+            }
+
             bool selected = (e.State & DataGridViewElementStates.Selected) == DataGridViewElementStates.Selected;
-            Color backColor = selected ? e.CellStyle.SelectionBackColor : e.CellStyle.BackColor;
-            Color textColor = selected ? Color.White : e.CellStyle.ForeColor;
+            Color backColor = ResolvePaintBackColor(e.CellStyle, selected);
+            Color textColor = ResolvePaintForeColor(e.CellStyle, selected);
+            Font font = e.CellStyle.Font ?? dataGridView_item.Font;
 
             using (SolidBrush brush = new SolidBrush(backColor))
             {
@@ -1268,7 +1343,7 @@ namespace FWEledit
             TextRenderer.DrawText(
                 e.Graphics,
                 text,
-                e.CellStyle.Font,
+                font,
                 textBounds,
                 textColor,
                 TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
@@ -1276,8 +1351,41 @@ namespace FWEledit
             e.Handled = true;
         }
 
+        private Color ResolvePaintBackColor(DataGridViewCellStyle style, bool selected)
+        {
+            Color color = selected && style != null ? style.SelectionBackColor : style != null ? style.BackColor : Color.Empty;
+            if (color.IsEmpty || color.A == 0)
+            {
+                color = selected ? dataGridView_item.DefaultCellStyle.SelectionBackColor : dataGridView_item.DefaultCellStyle.BackColor;
+            }
+            if (color.IsEmpty || color.A == 0)
+            {
+                color = fwDarkMode ? Color.FromArgb(18, 21, 26) : Color.White;
+            }
+            return color;
+        }
+
+        private Color ResolvePaintForeColor(DataGridViewCellStyle style, bool selected)
+        {
+            Color color = selected && style != null ? style.SelectionForeColor : style != null ? style.ForeColor : Color.Empty;
+            if (color.IsEmpty || color.A == 0)
+            {
+                color = selected ? dataGridView_item.DefaultCellStyle.SelectionForeColor : dataGridView_item.DefaultCellStyle.ForeColor;
+            }
+            if (color.IsEmpty || color.A == 0)
+            {
+                color = selected ? Color.White : (fwDarkMode ? Color.FromArgb(229, 234, 242) : Color.Black);
+            }
+            return color;
+        }
+
         private void DrawReferenceValueIcon(Graphics graphics, ItemReferenceOption option, Rectangle bounds)
         {
+            if (graphics == null || bounds.Width <= 0 || bounds.Height <= 0)
+            {
+                return;
+            }
+
             Color accentColor;
             if (IsColorPlanReference(option)
                 && TryParseReferenceAccentColor(option != null ? option.AccentHex : string.Empty, out accentColor))
@@ -1312,7 +1420,10 @@ namespace FWEledit
                 }
             }
 
-            graphics.DrawImage(icon, bounds);
+            if (icon != null)
+            {
+                graphics.DrawImage(icon, bounds);
+            }
         }
 
         private static bool IsColorPlanReference(ItemReferenceOption option)
@@ -1326,6 +1437,11 @@ namespace FWEledit
             if (IsColorPlanReference(option))
             {
                 return selected ? Color.White : fallback;
+            }
+
+            if (option != null && option.NameForeColor.HasValue)
+            {
+                return option.NameForeColor.Value;
             }
 
             Color accentColor;
@@ -2321,6 +2437,62 @@ namespace FWEledit
                 itemReferenceService,
                 ref fwInlinePickIconRowIndex,
                 viewModel.SuppressValuesUiRefresh);
+            UpdateNameColorButtonState();
+        }
+
+        private void UpdateNameColorButtonState()
+        {
+            int rowIndex;
+            bool enabled = TryGetCurrentTextColorValueRow(out rowIndex);
+
+            if (fwNameColorButton != null)
+            {
+                fwNameColorButton.Visible = true;
+                fwNameColorButton.Enabled = enabled;
+            }
+
+            if (enabled && fwInlinePickIconButton != null)
+            {
+                fwInlinePickIconButton.Visible = false;
+                fwInlinePickIconButton.Enabled = false;
+                fwInlinePickIconRowIndex = -1;
+            }
+        }
+
+        private bool TryGetCurrentTextColorValueRow(out int rowIndex)
+        {
+            rowIndex = -1;
+            if (dataGridView_item == null || dataGridView_item.CurrentCell == null || itemFieldClassifierService == null)
+            {
+                return false;
+            }
+
+            rowIndex = dataGridView_item.CurrentCell.RowIndex;
+            if (rowIndex < 0 || rowIndex >= dataGridView_item.Rows.Count)
+            {
+                rowIndex = -1;
+                return false;
+            }
+
+            string fieldName = ValueGridFieldNameService.GetFieldName(dataGridView_item, rowIndex);
+            if (!itemFieldClassifierService.IsTextColorFieldName(fieldName))
+            {
+                rowIndex = -1;
+                return false;
+            }
+
+            return true;
+        }
+
+        private void click_name_color(object sender, EventArgs e)
+        {
+            int rowIndex;
+            if (!TryGetCurrentTextColorValueRow(out rowIndex))
+            {
+                return;
+            }
+
+            OpenTextColorPickerForValueRow(rowIndex);
         }
 
         private void click_pick_icon(object sender, EventArgs e)
@@ -2338,7 +2510,11 @@ namespace FWEledit
             string fieldName = ValueGridFieldNameService.GetFieldName(dataGridView_item, targetRow);
             int listIndex = comboBox_lists != null ? comboBox_lists.SelectedIndex : -1;
 
-            if (itemFieldClassifierService.IsIconFieldName(fieldName))
+            if (itemFieldClassifierService.IsTextColorFieldName(fieldName))
+            {
+                OpenTextColorPickerForValueRow(targetRow);
+            }
+            else if (itemFieldClassifierService.IsIconFieldName(fieldName))
             {
                 OpenIconPickerForValueRow(targetRow);
             }

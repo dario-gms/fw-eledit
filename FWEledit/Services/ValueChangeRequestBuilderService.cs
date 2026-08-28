@@ -67,7 +67,10 @@ namespace FWEledit
                 fieldType = Convert.ToString(itemGrid.Rows[gridRow].Cells[1].Value);
             }
             DataGridViewCell valueCell = itemGrid.Rows[gridRow].Cells[2];
-            string taggedRawValue = Convert.ToString(valueCell.Tag);
+            ValueCellState valueCellState = valueCell.Tag as ValueCellState;
+            string taggedRawValue = valueCellState != null
+                ? valueCellState.RawValue
+                : Convert.ToString(valueCell.Tag);
             string cellValue = Convert.ToString(valueCell.Value);
             string valueToSet = !string.IsNullOrWhiteSpace(taggedRawValue)
                 && string.Equals(cellValue, taggedRawValue, StringComparison.Ordinal)
@@ -93,6 +96,7 @@ namespace FWEledit
                 FieldName = editedField,
                 FieldType = fieldType,
                 NewValue = valueToSet,
+                PreviousRawValue = taggedRawValue ?? string.Empty,
                 IsModelField = isModelField != null && isModelField(editedField),
                 IsIdEdit = string.Equals(editedField, "id", StringComparison.OrdinalIgnoreCase),
                 IsValueCompatible = isValueCompatible,

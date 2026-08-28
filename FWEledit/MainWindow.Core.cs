@@ -317,7 +317,7 @@ namespace FWEledit
                 assembly,
                 label_Version,
                 navigationStateService,
-                "0.9.5.21");
+                "0.9.5.25");
 
             MainWindowAssetSetupResult assetSetup = mainWindowAssetSetupService.Build(
                 addonTypeHintService,
@@ -374,6 +374,7 @@ namespace FWEledit
                 searchSuggestionList_MouseClick,
                 searchSuggestionList_KeyDown,
                 click_pick_icon,
+                click_name_color,
                 fw_description_changed,
                 click_save_description,
                 click_navigation_back,
@@ -397,6 +398,7 @@ namespace FWEledit
             fwDescriptionSaveButton = layout.DescriptionSaveButton;
             fwDescriptionStatusLabel = layout.DescriptionStatusLabel;
             fwInlinePickIconButton = layout.InlinePickIconButton;
+            fwNameColorButton = layout.NameColorButton;
             fwThemeToggleButton = layout.ThemeToggleButton;
             searchSuggestionList = layout.SearchSuggestionList;
             UpdateThemeToggleButton();

@@ -92,7 +92,8 @@ namespace FWEledit
 
         private void change_item(object sender, EventArgs ea)
 		{
-            if (viewModel != null && viewModel.IsRestoringSessionState)
+            bool isRestoringSessionState = viewModel != null && viewModel.IsRestoringSessionState;
+            if (isRestoringSessionState && dataGridView_item != null && dataGridView_item.Rows.Count > 0)
             {
                 return;
             }
@@ -137,7 +138,7 @@ namespace FWEledit
                 null,
                 UpdateDescriptionTabForSelection,
                 UpdatePickIconButtonState,
-                PersistNavigationState,
+                isRestoringSessionState ? null : (Action)PersistNavigationState,
                 value => viewModel.SuppressValuesUiRefresh = value);
 
             RestoreRememberedValueFieldSelection(currentListIndex);
@@ -155,7 +156,7 @@ namespace FWEledit
             {
                 pendingAutoSelectionHistoryListIndex = -1;
             }
-            else
+            else if (!isRestoringSessionState)
             {
                 RecordSelectionHistory();
             }

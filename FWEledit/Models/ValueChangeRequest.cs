@@ -15,6 +15,7 @@ namespace FWEledit
         public string FieldName { get; set; } = string.Empty;
         public string FieldType { get; set; } = string.Empty;
         public string NewValue { get; set; } = string.Empty;
+        public string PreviousRawValue { get; set; } = string.Empty;
         public bool IsModelField { get; set; }
         public bool IsIdEdit { get; set; }
         public Func<string, string, bool> IsValueCompatible { get; set; }

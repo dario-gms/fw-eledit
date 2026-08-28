@@ -2,6 +2,19 @@
 
 This file keeps the older release notes that used to live in the README. The README now shows only the newest release notes so it stays easier to scan.
 
+## What's New in v0.9.5.24
+
+- Stabilized startup and session restore so the editor keeps the last selected list/item after background cache, icon, reference, and list refreshes complete.
+- Added first-open cache progress feedback and improved per-client map hydration so new clients do heavy indexing visibly, while repeat opens and list switching stay responsive.
+- Improved model-backed workflows for `Equipment`, `Aircraft`, `Vehicle`, `Monster`, `NPC`, and pet-related lists with embedded preview coverage, safer model field resolution, and corrected non-model preview fallbacks.
+- Hardened PCK Explorer and item package import/export so cross-package model, GFX, aircraft, vehicle, equipment, mount, handhold, weapon, texture, shader, and script dependencies preserve their source package mapping and report clearer audits.
+- Expanded item package support to `Aircraft Essence` and `Vehicle Essence`, while restoring reliable equipment package exports/imports for clients with resources spread across packages such as `models`, `models2`, `moxing`, `grasses`, `gfx`, and `shaders`.
+- Fixed Advanced Title loading for clients whose `script.pck` title data uses alternate layouts, and kept graphic-title display controls from affecting unrelated system messages.
+- Continued parser/reference/icon cleanup for aircraft colors, pet food, pet bedge stats, merge recipes, NPC services, random gift bags, and dialog/service selectors.
+- Project/app version metadata updated to `v0.9.5.24`.
+
+---
+
 ## What's New in v0.9.5.23
 
 - Added per-client resource maps and warmer reference/list caches to make repeat opens, list switching, and package-backed description reads faster without relying on manually extracted files.

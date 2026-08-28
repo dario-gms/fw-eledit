@@ -23,6 +23,7 @@ namespace FWEledit
         private TabControl fwRightTabs;
         private TabPage fwValuesTab;
         private Button fwInlinePickIconButton;
+        private Button fwNameColorButton;
         private Button fwBackButton;
         private Button fwForwardButton;
         private Button fwThemeToggleButton;

@@ -526,6 +526,11 @@ namespace FWEledit
             }
 
             Color accentColor;
+            if (option != null && option.NameForeColor.HasValue)
+            {
+                return option.NameForeColor.Value;
+            }
+
             if (TryParseAccentColor(option != null ? option.AccentHex : string.Empty, out accentColor))
             {
                 return accentColor;

@@ -10,6 +10,7 @@ namespace FWEledit
         public string FieldType { get; set; } = string.Empty;
         public string DisplayValue { get; set; } = string.Empty;
         public string RawValue { get; set; } = string.Empty;
+        public Color? ValueForeColor { get; set; }
         public ItemReferenceOption ResolvedReferenceOption { get; set; }
         public bool IsDirty { get; set; }
         public bool IsInvalid { get; set; }

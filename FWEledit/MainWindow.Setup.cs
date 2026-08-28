@@ -91,7 +91,7 @@ namespace FWEledit
                 assembly,
                 label_Version,
                 navigationStateService,
-                "0.9.5.21");
+                "0.9.5.25");
 
             fwDarkMode = Properties.Settings.Default.UseDarkMode;
             cpb2.Value = 0;
@@ -130,6 +130,7 @@ namespace FWEledit
                 searchSuggestionList_MouseClick,
                 searchSuggestionList_KeyDown,
                 click_pick_icon,
+                click_name_color,
                 fw_description_changed,
                 click_save_description,
                 click_navigation_back,
@@ -169,6 +170,7 @@ namespace FWEledit
             fwModelPreviewStatusLabel = layout.ModelPreviewStatusLabel;
             fwModelPreviewOpenButton = layout.ModelPreviewOpenButton;
             fwInlinePickIconButton = layout.InlinePickIconButton;
+            fwNameColorButton = layout.NameColorButton;
             fwRawValueUpButton = layout.RawValueUpButton;
             fwRawValueDownButton = layout.RawValueDownButton;
             fwBackButton = layout.BackButton;

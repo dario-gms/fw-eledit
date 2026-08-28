@@ -22,10 +22,11 @@ namespace FWEledit
                 return;
             }
 
+            Color? embeddedNameColor = GetEmbeddedNameColor(listCollection, listIndex, entryIndex);
             Color? entityNameColor = getEntityNameColor != null ? getEntityNameColor(listIndex, entryIndex) : null;
             if (entityNameColor.HasValue)
             {
-                ApplyNameColor(row, elementGrid, entityNameColor.Value, darkenColor);
+                ApplyNameColor(row, elementGrid, embeddedNameColor.HasValue ? embeddedNameColor.Value : entityNameColor.Value, darkenColor);
                 return;
             }
 
@@ -33,6 +34,10 @@ namespace FWEledit
             if (qualityFieldIndex < 0)
             {
                 ResetRowColors(row, elementGrid);
+                if (embeddedNameColor.HasValue)
+                {
+                    ApplyNameColor(row, elementGrid, embeddedNameColor.Value, darkenColor);
+                }
                 return;
             }
 
@@ -41,18 +46,60 @@ namespace FWEledit
             if (!int.TryParse(raw, out quality))
             {
                 ResetRowColors(row, elementGrid);
+                if (embeddedNameColor.HasValue)
+                {
+                    ApplyNameColor(row, elementGrid, embeddedNameColor.Value, darkenColor);
+                }
                 return;
             }
 
             Color? color = getQualityColor != null ? getQualityColor(quality) : null;
             if (color.HasValue)
             {
-                ApplyNameColor(row, elementGrid, color.Value, darkenColor);
+                ApplyNameColor(row, elementGrid, embeddedNameColor.HasValue ? embeddedNameColor.Value : color.Value, darkenColor);
             }
             else
             {
                 ResetRowColors(row, elementGrid);
+                if (embeddedNameColor.HasValue)
+                {
+                    ApplyNameColor(row, elementGrid, embeddedNameColor.Value, darkenColor);
+                }
             }
+        }
+
+        private static Color? GetEmbeddedNameColor(eListCollection listCollection, int listIndex, int entryIndex)
+        {
+            if (listCollection == null
+                || listCollection.Lists == null
+                || listIndex < 0
+                || listIndex >= listCollection.Lists.Length
+                || listCollection.Lists[listIndex] == null
+                || listCollection.Lists[listIndex].elementFields == null)
+            {
+                return null;
+            }
+
+            int nameFieldIndex = -1;
+            for (int i = 0; i < listCollection.Lists[listIndex].elementFields.Length; i++)
+            {
+                if (string.Equals(listCollection.Lists[listIndex].elementFields[i], "name", StringComparison.OrdinalIgnoreCase))
+                {
+                    nameFieldIndex = i;
+                    break;
+                }
+            }
+
+            if (nameFieldIndex < 0)
+            {
+                return null;
+            }
+
+            Color color;
+            string ignored;
+            return FwTextColorService.TryParseLeadingColor(listCollection.GetValue(listIndex, entryIndex, nameFieldIndex), out color, out ignored)
+                ? (Color?)color
+                : null;
         }
 
         private static void ApplyNameColor(

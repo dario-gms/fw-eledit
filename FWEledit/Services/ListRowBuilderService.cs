@@ -131,18 +131,33 @@ namespace FWEledit
             bool isNpcTransmitServiceList = string.Equals(normalizedListName, "NPC_TRANSMIT_SERVICE", System.StringComparison.OrdinalIgnoreCase);
             bool isNpcHotelServiceList = string.Equals(normalizedListName, "NPC_HOTEL_SERVICE", System.StringComparison.OrdinalIgnoreCase);
             bool isNpcLearnProduceServiceList = string.Equals(normalizedListName, "NPC_LEARN_PRODUCE_SERVICE", System.StringComparison.OrdinalIgnoreCase);
+            bool isNpcTaskInServiceList = string.Equals(normalizedListName, "NPC_TASK_IN_SERVICE", System.StringComparison.OrdinalIgnoreCase);
+            bool isNpcTaskOutServiceList = string.Equals(normalizedListName, "NPC_TASK_OUT_SERVICE", System.StringComparison.OrdinalIgnoreCase);
+            bool isNpcTaskMatterServiceList = string.Equals(normalizedListName, "NPC_TASK_MATTER_SERVICE", System.StringComparison.OrdinalIgnoreCase);
+            bool isNpcHealServiceList = string.Equals(normalizedListName, "NPC_HEAL_SERVICE", System.StringComparison.OrdinalIgnoreCase);
+            bool isNpcStorageServiceList = string.Equals(normalizedListName, "NPC_STORAGE_SERVICE", System.StringComparison.OrdinalIgnoreCase);
+            bool isNpcResetpropServiceList = string.Equals(normalizedListName, "NPC_RESETPROP_SERVICE", System.StringComparison.OrdinalIgnoreCase);
             bool isAddonPackageList = string.Equals(normalizedListName, "ADDON_PACKAGE_CONFIG", System.StringComparison.OrdinalIgnoreCase);
+            bool isMineList = string.Equals(normalizedListName, "MINE_ESSENCE", System.StringComparison.OrdinalIgnoreCase);
             bool isSuiteList = string.Equals(normalizedListName, "SUITE_ESSENCE", System.StringComparison.OrdinalIgnoreCase);
             bool isMergeRecipeList = string.Equals(normalizedListName, "MERGE_RECIPE_ESSENCE", System.StringComparison.OrdinalIgnoreCase);
+            bool isRecipeList = string.Equals(normalizedListName, "RECIPE_ESSENCE", System.StringComparison.OrdinalIgnoreCase);
+            bool isRecipeMajorTypeList = string.Equals(normalizedListName, "RECIPE_MAJOR_TYPE", System.StringComparison.OrdinalIgnoreCase);
+            bool isRecipeSubTypeList = string.Equals(normalizedListName, "RECIPE_SUB_TYPE", System.StringComparison.OrdinalIgnoreCase);
             bool isProduceTypeList = string.Equals(normalizedListName, "PRODUCE_TYPE_ESSENCE", System.StringComparison.OrdinalIgnoreCase);
-            string inheritedTypeSourceListName;
-            string inheritedTypeFieldName;
-            bool isInheritedTypeList = TryGetInheritedTypeIconSource(normalizedListName, out inheritedTypeSourceListName, out inheritedTypeFieldName);
+            string inheritedTypeSourceListName = string.Empty;
+            string inheritedTypeFieldName = string.Empty;
+            bool isInheritedTypeList = !isRecipeMajorTypeList
+                && !isRecipeSubTypeList
+                && TryGetInheritedTypeIconSource(normalizedListName, out inheritedTypeSourceListName, out inheritedTypeFieldName);
             int isCategoryFieldIndex = isDropTableList ? GetFieldIndex(listCollection.Lists[listIndex].elementFields, "is_category") : -1;
             List<int> dropFieldIndexes = isDropTableList ? GetDropFieldIndexes(listCollection.Lists[listIndex].elementFields) : null;
             List<int> tradePageGoodsFieldIndexes = isItemTradePageList ? GetTradePageGoodsFieldIndexes(listCollection.Lists[listIndex].elementFields) : null;
             List<int> suiteEquipmentFieldIndexes = isSuiteList ? GetSuiteEquipmentFieldIndexes(listCollection.Lists[listIndex].elementFields) : null;
             List<int> mergeRecipeItemFieldIndexes = isMergeRecipeList ? GetMergeRecipeItemFieldIndexes(listCollection.Lists[listIndex].elementFields) : null;
+            List<int> recipeItemFieldIndexes = isRecipeList ? GetRecipeProductItemFieldIndexes(listCollection.Lists[listIndex].elementFields) : null;
+            List<int> npcResetpropItemFieldIndexes = isNpcResetpropServiceList ? GetNpcResetpropRequiredItemFieldIndexes(listCollection.Lists[listIndex].elementFields) : null;
+            List<int> mineMaterialFieldIndexes = isMineList ? GetMineMaterialItemFieldIndexes(listCollection.Lists[listIndex].elementFields) : null;
             Dictionary<int, ProduceTypeIconSource> produceTypeIconSourceById = includeIcons && isProduceTypeList
                 ? BuildProduceTypeIconSourceMap(listCollection)
                 : null;
@@ -155,9 +170,18 @@ namespace FWEledit
                     inheritedTypeSourceListName,
                     inheritedTypeFieldName)
                 : null;
-            bool requiresInheritedItemIcons = includeIcons && (isDropTableList || isItemTradePageList || isSuiteList || isMergeRecipeList || isProduceTypeList);
+            bool requiresRecipeTypeIcons = includeIcons && (isRecipeMajorTypeList || isRecipeSubTypeList);
+            bool requiresInheritedItemIcons = includeIcons && (isDropTableList || isItemTradePageList || isSuiteList || isMergeRecipeList || isRecipeList || isProduceTypeList || isNpcResetpropServiceList || isMineList || requiresRecipeTypeIcons);
             Dictionary<int, ItemIconSource> itemIconSourcesById = requiresInheritedItemIcons ? BuildItemIconSourceMap(listCollection) : null;
             Dictionary<int, Bitmap> itemIconById = requiresInheritedItemIcons ? new Dictionary<int, Bitmap>() : null;
+            Dictionary<int, Bitmap> recipeTypeIconById = requiresRecipeTypeIcons
+                ? BuildRecipeTypeIconMap(
+                    listCollection,
+                    database,
+                    isRecipeMajorTypeList ? "id_major_type" : "id_sub_type",
+                    itemIconSourcesById,
+                    itemIconById)
+                : null;
 
             for (int e = 0; e < listCollection.Lists[listIndex].elementValues.Length; e++)
             {
@@ -281,6 +305,116 @@ namespace FWEledit
                             }
                         }
                     }
+                    else if (includeIcons && isNpcTaskInServiceList)
+                    {
+                        if (int.TryParse(listCollection.GetValue(listIndex, e, 0), out int taskInServiceId))
+                        {
+                            Bitmap taskInIcon = ResolveNpcServicePortraitByField(
+                                listCollection,
+                                database,
+                                taskInServiceId,
+                                "id_task_in_service",
+                                "Task In");
+                            if (taskInIcon != null)
+                            {
+                                img = taskInIcon;
+                            }
+                        }
+                    }
+                    else if (includeIcons && isNpcTaskOutServiceList)
+                    {
+                        if (int.TryParse(listCollection.GetValue(listIndex, e, 0), out int taskOutServiceId))
+                        {
+                            Bitmap taskOutIcon = ResolveNpcServicePortraitByField(
+                                listCollection,
+                                database,
+                                taskOutServiceId,
+                                "id_task_out_service",
+                                "Task Out");
+                            if (taskOutIcon != null)
+                            {
+                                img = taskOutIcon;
+                            }
+                        }
+                    }
+                    else if (includeIcons && isNpcTaskMatterServiceList)
+                    {
+                        if (int.TryParse(listCollection.GetValue(listIndex, e, 0), out int taskMatterServiceId))
+                        {
+                            Bitmap taskMatterIcon = ResolveNpcServicePortraitByField(
+                                listCollection,
+                                database,
+                                taskMatterServiceId,
+                                "id_task_matter_service",
+                                "Task Matter");
+                            if (taskMatterIcon != null)
+                            {
+                                img = taskMatterIcon;
+                            }
+                        }
+                    }
+                    else if (includeIcons && isNpcHealServiceList)
+                    {
+                        if (int.TryParse(listCollection.GetValue(listIndex, e, 0), out int healServiceId))
+                        {
+                            Bitmap healIcon = ResolveNpcServicePortraitByField(
+                                listCollection,
+                                database,
+                                healServiceId,
+                                "id_heal_service",
+                                "Heal Service");
+                            if (healIcon != null)
+                            {
+                                img = healIcon;
+                            }
+                        }
+                    }
+                    else if (includeIcons && isNpcStorageServiceList)
+                    {
+                        if (int.TryParse(listCollection.GetValue(listIndex, e, 0), out int storageServiceId))
+                        {
+                            Bitmap storageIcon = ResolveNpcServicePortraitByField(
+                                listCollection,
+                                database,
+                                storageServiceId,
+                                "id_storage_service",
+                                "Storage Service");
+                            if (storageIcon != null)
+                            {
+                                img = storageIcon;
+                            }
+                        }
+                    }
+                    else if (includeIcons && isNpcResetpropServiceList)
+                    {
+                        Bitmap resetpropIcon = ResolveFirstItemFieldIcon(
+                            listCollection,
+                            database,
+                            listIndex,
+                            e,
+                            npcResetpropItemFieldIndexes,
+                            itemIconSourcesById,
+                            itemIconById);
+                        if (resetpropIcon != null)
+                        {
+                            img = resetpropIcon;
+                        }
+                    }
+                    else if (includeIcons && isMineList)
+                    {
+                        Bitmap mineMaterialIcon = ResolveFirstItemFieldIcon(
+                            listCollection,
+                            database,
+                            listIndex,
+                            e,
+                            mineMaterialFieldIndexes,
+                            itemIconSourcesById,
+                            itemIconById);
+                        if (mineMaterialIcon != null)
+                        {
+                            img = mineMaterialIcon;
+                        }
+                    }
                     else if (includeIcons && isAddonPackageList)
                     {
                         if (int.TryParse(listCollection.GetValue(listIndex, e, 0), out int addonPackageId)
@@ -319,6 +453,31 @@ namespace FWEledit
                         if (mergeRecipeIcon != null)
                         {
                             img = mergeRecipeIcon;
+                        }
+                    }
+                    else if (includeIcons && isRecipeList)
+                    {
+                        Bitmap recipeIcon = ResolveRecipeIcon(
+                            listCollection,
+                            database,
+                            listIndex,
+                            e,
+                            recipeItemFieldIndexes,
+                            itemIconSourcesById,
+                            itemIconById);
+                        if (recipeIcon != null)
+                        {
+                            img = recipeIcon;
+                        }
+                    }
+                    else if (includeIcons && (isRecipeMajorTypeList || isRecipeSubTypeList))
+                    {
+                        if (int.TryParse(listCollection.GetValue(listIndex, e, 0), out int recipeTypeId)
+                            && recipeTypeIconById != null
+                            && recipeTypeIconById.TryGetValue(recipeTypeId, out Bitmap recipeTypeIcon)
+                            && recipeTypeIcon != null)
+                        {
+                            img = recipeTypeIcon;
                         }
                     }
                     else if (includeIcons && isProduceTypeList)
@@ -397,7 +556,14 @@ namespace FWEledit
             bool isNpcTransmitServiceList = string.Equals(normalizedListName, "NPC_TRANSMIT_SERVICE", System.StringComparison.OrdinalIgnoreCase);
             bool isNpcHotelServiceList = string.Equals(normalizedListName, "NPC_HOTEL_SERVICE", System.StringComparison.OrdinalIgnoreCase);
             bool isNpcLearnProduceServiceList = string.Equals(normalizedListName, "NPC_LEARN_PRODUCE_SERVICE", System.StringComparison.OrdinalIgnoreCase);
+            bool isNpcTaskInServiceList = string.Equals(normalizedListName, "NPC_TASK_IN_SERVICE", System.StringComparison.OrdinalIgnoreCase);
+            bool isNpcTaskOutServiceList = string.Equals(normalizedListName, "NPC_TASK_OUT_SERVICE", System.StringComparison.OrdinalIgnoreCase);
+            bool isNpcTaskMatterServiceList = string.Equals(normalizedListName, "NPC_TASK_MATTER_SERVICE", System.StringComparison.OrdinalIgnoreCase);
+            bool isNpcHealServiceList = string.Equals(normalizedListName, "NPC_HEAL_SERVICE", System.StringComparison.OrdinalIgnoreCase);
+            bool isNpcStorageServiceList = string.Equals(normalizedListName, "NPC_STORAGE_SERVICE", System.StringComparison.OrdinalIgnoreCase);
+            bool isNpcResetpropServiceList = string.Equals(normalizedListName, "NPC_RESETPROP_SERVICE", System.StringComparison.OrdinalIgnoreCase);
             bool isAddonPackageList = string.Equals(normalizedListName, "ADDON_PACKAGE_CONFIG", System.StringComparison.OrdinalIgnoreCase);
+            bool isMineList = string.Equals(normalizedListName, "MINE_ESSENCE", System.StringComparison.OrdinalIgnoreCase);
 
             if (isDropTableList)
             {
@@ -518,6 +684,123 @@ namespace FWEledit
                 }
             }
 
+            if (isNpcTaskInServiceList)
+            {
+                if (int.TryParse(listCollection.GetValue(listIndex, elementIndex, 0), out int taskInServiceId))
+                {
+                    Bitmap taskInIcon = ResolveNpcServicePortraitByField(
+                        listCollection,
+                        database,
+                        taskInServiceId,
+                        "id_task_in_service",
+                        "Task In");
+                    if (taskInIcon != null)
+                    {
+                        return taskInIcon;
+                    }
+                }
+            }
+
+            if (isNpcTaskOutServiceList)
+            {
+                if (int.TryParse(listCollection.GetValue(listIndex, elementIndex, 0), out int taskOutServiceId))
+                {
+                    Bitmap taskOutIcon = ResolveNpcServicePortraitByField(
+                        listCollection,
+                        database,
+                        taskOutServiceId,
+                        "id_task_out_service",
+                        "Task Out");
+                    if (taskOutIcon != null)
+                    {
+                        return taskOutIcon;
+                    }
+                }
+            }
+
+            if (isNpcTaskMatterServiceList)
+            {
+                if (int.TryParse(listCollection.GetValue(listIndex, elementIndex, 0), out int taskMatterServiceId))
+                {
+                    Bitmap taskMatterIcon = ResolveNpcServicePortraitByField(
+                        listCollection,
+                        database,
+                        taskMatterServiceId,
+                        "id_task_matter_service",
+                        "Task Matter");
+                    if (taskMatterIcon != null)
+                    {
+                        return taskMatterIcon;
+                    }
+                }
+            }
+
+            if (isNpcHealServiceList)
+            {
+                if (int.TryParse(listCollection.GetValue(listIndex, elementIndex, 0), out int healServiceId))
+                {
+                    Bitmap healIcon = ResolveNpcServicePortraitByField(
+                        listCollection,
+                        database,
+                        healServiceId,
+                        "id_heal_service",
+                        "Heal Service");
+                    if (healIcon != null)
+                    {
+                        return healIcon;
+                    }
+                }
+            }
+
+            if (isNpcStorageServiceList)
+            {
+                if (int.TryParse(listCollection.GetValue(listIndex, elementIndex, 0), out int storageServiceId))
+                {
+                    Bitmap storageIcon = ResolveNpcServicePortraitByField(
+                        listCollection,
+                        database,
+                        storageServiceId,
+                        "id_storage_service",
+                        "Storage Service");
+                    if (storageIcon != null)
+                    {
+                        return storageIcon;
+                    }
+                }
+            }
+
+            if (isNpcResetpropServiceList)
+            {
+                Bitmap resetpropIcon = ResolveFirstItemFieldIcon(
+                    listCollection,
+                    database,
+                    listIndex,
+                    elementIndex,
+                    GetNpcResetpropRequiredItemFieldIndexes(listCollection.Lists[listIndex].elementFields),
+                    BuildItemIconSourceMap(listCollection),
+                    new Dictionary<int, Bitmap>());
+                if (resetpropIcon != null)
+                {
+                    return resetpropIcon;
+                }
+            }
+
+            if (isMineList)
+            {
+                Bitmap mineMaterialIcon = ResolveFirstItemFieldIcon(
+                    listCollection,
+                    database,
+                    listIndex,
+                    elementIndex,
+                    GetMineMaterialItemFieldIndexes(listCollection.Lists[listIndex].elementFields),
+                    BuildItemIconSourceMap(listCollection),
+                    new Dictionary<int, Bitmap>());
+                if (mineMaterialIcon != null)
+                {
+                    return mineMaterialIcon;
+                }
+            }
+
             if (isAddonPackageList)
             {
                 int addonPackageId;
@@ -563,6 +846,43 @@ namespace FWEledit
                 }
             }
 
+            if (string.Equals(normalizedListName, "RECIPE_ESSENCE", System.StringComparison.OrdinalIgnoreCase))
+            {
+                Dictionary<int, ItemIconSource> itemIconSourcesById = BuildItemIconSourceMap(listCollection);
+                Bitmap recipeIcon = ResolveRecipeIcon(
+                    listCollection,
+                    database,
+                    listIndex,
+                    elementIndex,
+                    GetRecipeProductItemFieldIndexes(listCollection.Lists[listIndex].elementFields),
+                    itemIconSourcesById,
+                    new Dictionary<int, Bitmap>());
+                if (recipeIcon != null)
+                {
+                    return recipeIcon;
+                }
+            }
+
+            if (string.Equals(normalizedListName, "RECIPE_MAJOR_TYPE", System.StringComparison.OrdinalIgnoreCase)
+                || string.Equals(normalizedListName, "RECIPE_SUB_TYPE", System.StringComparison.OrdinalIgnoreCase))
+            {
+                int recipeTypeId;
+                Dictionary<int, ItemIconSource> itemIconSourcesById = BuildItemIconSourceMap(listCollection);
+                Dictionary<int, Bitmap> recipeTypeIconById = BuildRecipeTypeIconMap(
+                    listCollection,
+                    database,
+                    string.Equals(normalizedListName, "RECIPE_MAJOR_TYPE", System.StringComparison.OrdinalIgnoreCase) ? "id_major_type" : "id_sub_type",
+                    itemIconSourcesById,
+                    new Dictionary<int, Bitmap>());
+                if (int.TryParse(listCollection.GetValue(listIndex, elementIndex, 0), out recipeTypeId)
+                    && recipeTypeIconById != null
+                    && recipeTypeIconById.TryGetValue(recipeTypeId, out Bitmap recipeTypeIcon)
+                    && recipeTypeIcon != null)
+                {
+                    return recipeTypeIcon;
+                }
+            }
+
             if (string.Equals(normalizedListName, "PRODUCE_TYPE_ESSENCE", System.StringComparison.OrdinalIgnoreCase))
             {
                 Bitmap produceTypeIcon = ResolveProduceTypeIcon(
@@ -599,6 +919,63 @@ namespace FWEledit
             }
 
             return ResolveRowIcon(listCollection, database, listIndex, elementIndex, iconFieldIndex);
+        }
+
+        private Bitmap ResolveNpcServicePortraitByField(
+            eListCollection listCollection,
+            CacheSave database,
+            int serviceId,
+            params string[] serviceFieldNames)
+        {
+            if (serviceId <= 0
+                || listCollection == null
+                || listCollection.Lists == null
+                || database == null
+                || serviceFieldNames == null
+                || serviceFieldNames.Length == 0)
+            {
+                return null;
+            }
+
+            for (int npcListIndex = 0; npcListIndex < listCollection.Lists.Length; npcListIndex++)
+            {
+                eList list = listCollection.Lists[npcListIndex];
+                if (list == null
+                    || list.elementFields == null
+                    || list.elementValues == null
+                    || !string.Equals(NormalizeListName(list.listName), "NPC_ESSENCE", System.StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                int serviceFieldIndex = GetFirstFieldIndex(list.elementFields, serviceFieldNames);
+                int iconFieldIndex = GetIconFieldIndex(list.elementFields);
+                if (serviceFieldIndex < 0 || iconFieldIndex < 0)
+                {
+                    continue;
+                }
+
+                for (int rowIndex = 0; rowIndex < list.elementValues.Length; rowIndex++)
+                {
+                    int currentServiceId;
+                    if (!int.TryParse(listCollection.GetValue(npcListIndex, rowIndex, serviceFieldIndex), out currentServiceId)
+                        || currentServiceId != serviceId)
+                    {
+                        continue;
+                    }
+
+                    string rawIconValue = listCollection.GetValue(npcListIndex, rowIndex, iconFieldIndex);
+                    Bitmap icon;
+                    if (!string.IsNullOrWhiteSpace(rawIconValue)
+                        && creaturePortraitIconService.TryResolvePortrait(database, listCollection, npcListIndex, rawIconValue, out icon)
+                        && icon != null)
+                    {
+                        return icon;
+                    }
+                }
+            }
+
+            return null;
         }
 
         private Bitmap ResolveDropTableIcon(
@@ -757,6 +1134,126 @@ namespace FWEledit
             }
 
             return null;
+        }
+
+        private Bitmap ResolveRecipeIcon(
+            eListCollection listCollection,
+            CacheSave database,
+            int listIndex,
+            int elementIndex,
+            List<int> productFieldIndexes,
+            Dictionary<int, ItemIconSource> itemIconSourcesById,
+            Dictionary<int, Bitmap> itemIconById)
+        {
+            if (listCollection == null || productFieldIndexes == null || productFieldIndexes.Count == 0)
+            {
+                return null;
+            }
+
+            for (int i = 0; i < productFieldIndexes.Count; i++)
+            {
+                int itemId;
+                if (!int.TryParse(listCollection.GetValue(listIndex, elementIndex, productFieldIndexes[i]), out itemId)
+                    || itemId <= 0)
+                {
+                    continue;
+                }
+
+                Bitmap icon;
+                if (TryResolveItemIconById(listCollection, database, itemId, itemIconSourcesById, itemIconById, out icon))
+                {
+                    return icon;
+                }
+            }
+
+            return null;
+        }
+
+        private Bitmap ResolveFirstItemFieldIcon(
+            eListCollection listCollection,
+            CacheSave database,
+            int listIndex,
+            int elementIndex,
+            List<int> itemFieldIndexes,
+            Dictionary<int, ItemIconSource> itemIconSourcesById,
+            Dictionary<int, Bitmap> itemIconById)
+        {
+            if (listCollection == null || itemFieldIndexes == null || itemFieldIndexes.Count == 0)
+            {
+                return null;
+            }
+
+            for (int i = 0; i < itemFieldIndexes.Count; i++)
+            {
+                int itemId;
+                if (!int.TryParse(listCollection.GetValue(listIndex, elementIndex, itemFieldIndexes[i]), out itemId)
+                    || itemId <= 0)
+                {
+                    continue;
+                }
+
+                Bitmap icon;
+                if (TryResolveItemIconById(listCollection, database, itemId, itemIconSourcesById, itemIconById, out icon))
+                {
+                    return icon;
+                }
+            }
+
+            return null;
+        }
+
+        private Dictionary<int, Bitmap> BuildRecipeTypeIconMap(
+            eListCollection listCollection,
+            CacheSave database,
+            string typeFieldName,
+            Dictionary<int, ItemIconSource> itemIconSourcesById,
+            Dictionary<int, Bitmap> itemIconById)
+        {
+            Dictionary<int, Bitmap> map = new Dictionary<int, Bitmap>();
+            int recipeListIndex = FindListIndexByNormalizedName(listCollection, "RECIPE_ESSENCE");
+            if (recipeListIndex < 0
+                || listCollection == null
+                || listCollection.Lists == null
+                || listCollection.Lists[recipeListIndex] == null
+                || listCollection.Lists[recipeListIndex].elementFields == null
+                || listCollection.Lists[recipeListIndex].elementValues == null)
+            {
+                return map;
+            }
+
+            string[] fields = listCollection.Lists[recipeListIndex].elementFields;
+            int typeFieldIndex = GetFieldIndex(fields, typeFieldName);
+            List<int> productFieldIndexes = GetRecipeProductItemFieldIndexes(fields);
+            if (typeFieldIndex < 0 || productFieldIndexes.Count == 0)
+            {
+                return map;
+            }
+
+            for (int elementIndex = 0; elementIndex < listCollection.Lists[recipeListIndex].elementValues.Length; elementIndex++)
+            {
+                int typeId;
+                if (!int.TryParse(listCollection.GetValue(recipeListIndex, elementIndex, typeFieldIndex), out typeId)
+                    || typeId <= 0
+                    || map.ContainsKey(typeId))
+                {
+                    continue;
+                }
+
+                Bitmap recipeIcon = ResolveRecipeIcon(
+                    listCollection,
+                    database,
+                    recipeListIndex,
+                    elementIndex,
+                    productFieldIndexes,
+                    itemIconSourcesById,
+                    itemIconById);
+                if (recipeIcon != null)
+                {
+                    map[typeId] = recipeIcon;
+                }
+            }
+
+            return map;
         }
 
         private Bitmap ResolveProduceTypeIcon(
@@ -1088,6 +1585,11 @@ namespace FWEledit
                 cachedInheritedTypeIconsByKey = new Dictionary<string, Dictionary<int, Bitmap>>(System.StringComparer.OrdinalIgnoreCase);
             }
 
+            bool useSourceMaterialIcon = string.Equals(sourceListName, "MINE_ESSENCE", System.StringComparison.OrdinalIgnoreCase)
+                && string.Equals(typeFieldName, "id_type", System.StringComparison.OrdinalIgnoreCase);
+            Dictionary<int, ItemIconSource> itemIconSourcesById = useSourceMaterialIcon ? BuildItemIconSourceMap(listCollection) : null;
+            Dictionary<int, Bitmap> itemIconById = useSourceMaterialIcon ? new Dictionary<int, Bitmap>() : null;
+
             for (int listIndex = 0; listIndex < listCollection.Lists.Length; listIndex++)
             {
                 eList list = listCollection.Lists[listIndex];
@@ -1110,7 +1612,12 @@ namespace FWEledit
                 }
 
                 int iconFieldIndex = GetIconFieldIndex(list.elementFields);
-                if (typeFieldIndex < 0 || iconFieldIndex < 0)
+                List<int> sourceItemFieldIndexes = useSourceMaterialIcon
+                    ? GetMineMaterialItemFieldIndexes(list.elementFields)
+                    : null;
+                if (typeFieldIndex < 0
+                    || (!useSourceMaterialIcon && iconFieldIndex < 0)
+                    || (useSourceMaterialIcon && (sourceItemFieldIndexes == null || sourceItemFieldIndexes.Count == 0)))
                 {
                     continue;
                 }
@@ -1125,7 +1632,16 @@ namespace FWEledit
                         continue;
                     }
 
-                    Bitmap sourceIcon = ResolveRowIcon(listCollection, database, listIndex, elementIndex, iconFieldIndex);
+                    Bitmap sourceIcon = useSourceMaterialIcon
+                        ? ResolveFirstItemFieldIcon(
+                            listCollection,
+                            database,
+                            listIndex,
+                            elementIndex,
+                            sourceItemFieldIndexes,
+                            itemIconSourcesById,
+                            itemIconById)
+                        : ResolveRowIcon(listCollection, database, listIndex, elementIndex, iconFieldIndex);
                     if (sourceIcon != null)
                     {
                         map[typeId] = sourceIcon;
@@ -1301,6 +1817,62 @@ namespace FWEledit
             return productIndexes;
         }
 
+        private static List<int> GetMineMaterialItemFieldIndexes(string[] fields)
+        {
+            List<int> primaryIndexes = new List<int>();
+            List<int> fallbackIndexes = new List<int>();
+            if (fields == null)
+            {
+                return primaryIndexes;
+            }
+
+            for (int i = 0; i < fields.Length; i++)
+            {
+                string fieldName = fields[i] ?? string.Empty;
+                if (!fieldName.StartsWith("materials_", System.StringComparison.OrdinalIgnoreCase)
+                    || !(fieldName.EndsWith("_id", System.StringComparison.OrdinalIgnoreCase)
+                        || fieldName.IndexOf("_id_", System.StringComparison.OrdinalIgnoreCase) >= 0))
+                {
+                    continue;
+                }
+
+                if (fieldName.StartsWith("materials_1_1_", System.StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(fieldName, "materials_0_id", System.StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(fieldName, "materials_1_id", System.StringComparison.OrdinalIgnoreCase))
+                {
+                    primaryIndexes.Add(i);
+                }
+                else
+                {
+                    fallbackIndexes.Add(i);
+                }
+            }
+
+            primaryIndexes.AddRange(fallbackIndexes);
+            return primaryIndexes;
+        }
+
+        private static List<int> GetNpcResetpropRequiredItemFieldIndexes(string[] fields)
+        {
+            List<int> indexes = new List<int>();
+            if (fields == null)
+            {
+                return indexes;
+            }
+
+            for (int i = 0; i < fields.Length; i++)
+            {
+                string fieldName = fields[i] ?? string.Empty;
+                if (fieldName.StartsWith("prop_entry_", System.StringComparison.OrdinalIgnoreCase)
+                    && fieldName.EndsWith("_id_object_need", System.StringComparison.OrdinalIgnoreCase))
+                {
+                    indexes.Add(i);
+                }
+            }
+
+            return indexes;
+        }
+
         private static bool HasPositiveValueInAnyField(eListCollection listCollection, int listIndex, int elementIndex, List<int> fieldIndexes)
         {
             for (int i = 0; i < fieldIndexes.Count; i++)
@@ -1327,6 +1899,25 @@ namespace FWEledit
                 if (string.Equals(fields[i], fieldName, System.StringComparison.OrdinalIgnoreCase))
                 {
                     return i;
+                }
+            }
+
+            return -1;
+        }
+
+        private static int GetFirstFieldIndex(string[] fields, params string[] fieldNames)
+        {
+            if (fields == null || fieldNames == null)
+            {
+                return -1;
+            }
+
+            for (int i = 0; i < fieldNames.Length; i++)
+            {
+                int fieldIndex = GetFieldIndex(fields, fieldNames[i]);
+                if (fieldIndex >= 0)
+                {
+                    return fieldIndex;
                 }
             }
 
@@ -1381,6 +1972,20 @@ namespace FWEledit
             {
                 sourceListName = "MONSTER_ESSENCE";
                 typeFieldName = "id_adjust_config";
+                return true;
+            }
+
+            if (string.Equals(normalizedListName, "MINE_TYPE", System.StringComparison.OrdinalIgnoreCase))
+            {
+                sourceListName = "MINE_ESSENCE";
+                typeFieldName = "id_type";
+                return true;
+            }
+
+            if (string.Equals(normalizedListName, "GM_GENERATOR_TYPE", System.StringComparison.OrdinalIgnoreCase))
+            {
+                sourceListName = "GM_GENERATOR_ESSENCE";
+                typeFieldName = "id_type";
                 return true;
             }
 

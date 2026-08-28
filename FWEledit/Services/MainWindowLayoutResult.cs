@@ -37,6 +37,7 @@ namespace FWEledit
         public Label ModelPreviewStatusLabel { get; set; }
         public Button ModelPreviewOpenButton { get; set; }
         public Button InlinePickIconButton { get; set; }
+        public Button NameColorButton { get; set; }
         public Button RawValueUpButton { get; set; }
         public Button RawValueDownButton { get; set; }
         public Button BackButton { get; set; }
