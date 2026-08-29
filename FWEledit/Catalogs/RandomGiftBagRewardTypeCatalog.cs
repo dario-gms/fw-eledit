@@ -207,7 +207,11 @@ namespace FWEledit
             }
 
             string listName = listCollection.Lists[listIndex].listName ?? string.Empty;
-            return listName.IndexOf("RANDOM_GIFT_BAG_ESSENCE", StringComparison.OrdinalIgnoreCase) >= 0;
+            string normalized = listName
+                .Replace(" ", string.Empty)
+                .Replace("_", string.Empty)
+                .Replace("-", string.Empty);
+            return normalized.IndexOf("RANDOMGIFTBAGESSENCE", StringComparison.OrdinalIgnoreCase) >= 0;
         }
     }
 }

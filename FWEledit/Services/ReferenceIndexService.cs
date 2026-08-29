@@ -145,6 +145,13 @@ namespace FWEledit
                     AddUniqueUsages(merged, usages);
                 }
 
+                int titleDefinitionId;
+                if (TryGetTitleDefinitionIdForTitlePropElement(listCollection, targetListIndex, targetId, out titleDefinitionId)
+                    && referencesByTarget.TryGetValue(BuildKey(TitleDefinitionCatalog.TargetListIndex, titleDefinitionId), out usages))
+                {
+                    AddUniqueTitleDefinitionUsagesForTitleProp(merged, usages, targetListIndex, targetId);
+                }
+
                 return merged;
             }
         }
@@ -370,6 +377,83 @@ namespace FWEledit
             }
         }
 
+        private static bool TryGetTitleDefinitionIdForTitlePropElement(
+            eListCollection listCollection,
+            int titlePropListIndex,
+            int titlePropId,
+            out int titleDefinitionId)
+        {
+            titleDefinitionId = 0;
+            if (listCollection == null
+                || listCollection.Lists == null
+                || titlePropListIndex < 0
+                || titlePropListIndex >= listCollection.Lists.Length
+                || titlePropId <= 0)
+            {
+                return false;
+            }
+
+            eList list = listCollection.Lists[titlePropListIndex];
+            if (list == null
+                || list.elementFields == null
+                || list.elementValues == null
+                || !NormalizeToken(list.listName).EndsWith("TITLEPROPCONFIG", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            int titleFieldIndex = -1;
+            for (int i = 0; i < list.elementFields.Length; i++)
+            {
+                if (string.Equals(NormalizeToken(list.elementFields[i]), "IDTITLE", StringComparison.OrdinalIgnoreCase))
+                {
+                    titleFieldIndex = i;
+                    break;
+                }
+            }
+
+            if (titleFieldIndex < 0)
+            {
+                return false;
+            }
+
+            for (int elementIndex = 0; elementIndex < list.elementValues.Length; elementIndex++)
+            {
+                int id;
+                if (!int.TryParse(listCollection.GetValue(titlePropListIndex, elementIndex, 0), out id)
+                    || id != titlePropId)
+                {
+                    continue;
+                }
+
+                return int.TryParse(listCollection.GetValue(titlePropListIndex, elementIndex, titleFieldIndex), out titleDefinitionId)
+                    && titleDefinitionId > 0;
+            }
+
+            return false;
+        }
+
+        private static string NormalizeToken(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return string.Empty;
+            }
+
+            char[] buffer = new char[value.Length];
+            int count = 0;
+            for (int i = 0; i < value.Length; i++)
+            {
+                char c = value[i];
+                if (char.IsLetterOrDigit(c))
+                {
+                    buffer[count++] = char.ToUpperInvariant(c);
+                }
+            }
+
+            return new string(buffer, 0, count);
+        }
+
         private void AddGameShopUsages(Dictionary<int, List<int>> itemListIndexesById)
         {
             if (itemListIndexesById == null || itemListIndexesById.Count == 0)
@@ -421,6 +505,39 @@ namespace FWEledit
 
                 target.Add(usage);
             }
+        }
+
+        private static void AddUniqueTitleDefinitionUsagesForTitleProp(
+            List<ReferenceUsage> target,
+            List<ReferenceUsage> source,
+            int titlePropListIndex,
+            int titlePropId)
+        {
+            if (target == null || source == null)
+            {
+                return;
+            }
+
+            for (int i = 0; i < source.Count; i++)
+            {
+                ReferenceUsage usage = source[i];
+                if (usage == null || IsSelfTitlePropDefinitionUsage(usage, titlePropListIndex, titlePropId) || ContainsUsage(target, usage))
+                {
+                    continue;
+                }
+
+                target.Add(usage);
+            }
+        }
+
+        private static bool IsSelfTitlePropDefinitionUsage(ReferenceUsage usage, int titlePropListIndex, int titlePropId)
+        {
+            int sourceId;
+            return usage != null
+                && usage.SourceListIndex == titlePropListIndex
+                && int.TryParse(usage.SourceItemId, out sourceId)
+                && sourceId == titlePropId
+                && string.Equals(NormalizeToken(usage.SourceFieldName), "IDTITLE", StringComparison.OrdinalIgnoreCase);
         }
 
         private static bool ContainsUsage(List<ReferenceUsage> usages, ReferenceUsage candidate)

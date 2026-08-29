@@ -11,7 +11,7 @@ namespace FWEledit
 {
     public partial class MainWindow : Form
     {
-        private const string ReferenceCacheSchemaVersion = "references-v21";
+        private const string ReferenceCacheSchemaVersion = "references-v26";
 
         private sealed class VisibleReferenceTarget
         {
@@ -58,6 +58,48 @@ namespace FWEledit
                 itemReferenceService,
                 listIndex,
                 id);
+        }
+
+        private Bitmap GetReferenceIconForElement(int listIndex, int elementIndex)
+        {
+            int id;
+            if (!TryGetElementId(listIndex, elementIndex, out id)
+                || sessionService == null
+                || sessionService.ListCollection == null
+                || listRowBuilderService == null)
+            {
+                return null;
+            }
+
+            List<ReferenceUsage> usages = referenceIndexService.GetReferences(
+                sessionService.ListCollection,
+                itemReferenceService,
+                listIndex,
+                id);
+
+            for (int i = 0; i < usages.Count; i++)
+            {
+                ReferenceUsage usage = usages[i];
+                if (usage == null
+                    || usage.SourceListIndex < 0
+                    || usage.SourceElementIndex < 0
+                    || usage.SourceListIndex == listIndex)
+                {
+                    continue;
+                }
+
+                Bitmap icon = listRowBuilderService.BuildRowIcon(
+                    sessionService.ListCollection,
+                    sessionService.Database,
+                    usage.SourceListIndex,
+                    usage.SourceElementIndex);
+                if (icon != null)
+                {
+                    return icon;
+                }
+            }
+
+            return null;
         }
 
         private void ResetReferenceCaches()

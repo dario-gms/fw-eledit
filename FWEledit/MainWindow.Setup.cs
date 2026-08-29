@@ -62,6 +62,7 @@ namespace FWEledit
             if (listRowBuilderService != null)
             {
                 listRowBuilderService.ReferenceCountResolver = GetReferenceCountForElement;
+                listRowBuilderService.ReferenceIconResolver = GetReferenceIconForElement;
             }
             navigationPersistTimer = bootstrap.NavigationPersistTimer
                 ?? mainWindowNavigationTimerService.CreateTimer(700, FlushNavigationStateToDisk);
@@ -91,7 +92,7 @@ namespace FWEledit
                 assembly,
                 label_Version,
                 navigationStateService,
-                "0.9.5.25");
+                "0.9.5.26");
 
             fwDarkMode = Properties.Settings.Default.UseDarkMode;
             cpb2.Value = 0;

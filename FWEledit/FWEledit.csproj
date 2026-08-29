@@ -22,7 +22,7 @@
     <UpdateRequired>false</UpdateRequired>
     <MapFileExtensions>true</MapFileExtensions>
     <ApplicationRevision>0</ApplicationRevision>
-    <ApplicationVersion>0.9.5.25</ApplicationVersion>
+    <ApplicationVersion>0.9.5.26</ApplicationVersion>
     <IsWebBootstrapper>false</IsWebBootstrapper>
     <UseApplicationTrust>false</UseApplicationTrust>
     <BootstrapperEnabled>true</BootstrapperEnabled>
@@ -487,6 +487,7 @@
     <Compile Include="Models\EquipmentValuesTab.cs" />
     <Compile Include="Models\ItemTransferPackageModels.cs" />
     <Compile Include="Models\NpcGenData.cs" />
+    <Compile Include="Models\NpcGenMapPreviewData.cs" />
     <Compile Include="ItemTransferImportModeWindow.cs" />
     <Compile Include="ItemTransferModelsOnlyResultWindow.cs" />
     <Compile Include="Models\ElementSearchRequest.cs" />
@@ -863,6 +864,7 @@
     <Compile Include="Services\NpcGenEntityLookupService.cs" />
     <Compile Include="Services\NpcGenFileService.cs" />
     <Compile Include="Services\NpcGenMapNameResolverService.cs" />
+    <Compile Include="Services\NpcGenMapPreviewService.cs" />
     <Compile Include="Services\NpcGenScriptReferenceService.cs" />
     <Compile Include="Services\GameShopDataService.cs" />
     <Compile Include="Services\GameShopIconService.cs" />
@@ -1069,6 +1071,9 @@
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="Views\NpcGenEditorWindow.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Views\NpcGenMapPreviewWindow.cs">
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="Views\NpcGenSpawnEditorWindow.cs">

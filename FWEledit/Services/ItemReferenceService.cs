@@ -2342,7 +2342,7 @@ namespace FWEledit
 
             for (int i = 0; i < fields.Length; i++)
             {
-                if (!string.Equals(fields[i], typeFieldName, StringComparison.OrdinalIgnoreCase))
+                if (!FieldNameEquals(fields[i], typeFieldName))
                 {
                     continue;
                 }

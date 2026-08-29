@@ -10,9 +10,13 @@ namespace FWEledit
 {
     public sealed class NpcGenEditorWindow : Form
     {
+        private static readonly bool NpcGenMapViewEnabled = false;
+
         private readonly NpcGenFileService fileService = new NpcGenFileService();
         private readonly NpcGenEntityLookupService entityLookupService = new NpcGenEntityLookupService();
         private readonly NpcGenMapNameResolverService mapNameResolverService = new NpcGenMapNameResolverService();
+        private readonly NpcGenMapPreviewService mapPreviewService = new NpcGenMapPreviewService();
+        private readonly GameFolderDialogService folderDialogService = new GameFolderDialogService();
         private readonly ISessionService sessionService;
         private NpcGenData currentData;
         private string currentMapDisplayName = string.Empty;
@@ -22,7 +26,9 @@ namespace FWEledit
         private TextBox pathTextBox;
         private Label mapNameLabel;
         private Button openButton;
+        private Button openFolderButton;
         private Button saveButton;
+        private Button mapViewButton;
         private TextBox searchTextBox;
         private Button searchButton;
         private TabControl tabs;
@@ -126,31 +132,35 @@ namespace FWEledit
             root.Dock = DockStyle.Fill;
             root.ColumnCount = 1;
             root.RowCount = 3;
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 64));
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 76));
             root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             root.RowStyles.Add(new RowStyle(SizeType.Absolute, 22));
             Controls.Add(root);
 
             TableLayoutPanel top = new TableLayoutPanel();
             top.Dock = DockStyle.Fill;
-            top.ColumnCount = 4;
+            top.ColumnCount = 5;
             top.RowCount = 2;
             top.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 86));
             top.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             top.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 92));
             top.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 92));
+            top.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 92));
+            top.RowStyles.Add(new RowStyle(SizeType.Absolute, 36));
             top.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
-            top.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             root.Controls.Add(top, 0, 0);
             top.Controls.Add(new Label { Text = "npcgen.data:", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft }, 0, 0);
             pathTextBox = new TextBox { Dock = DockStyle.Fill };
             top.Controls.Add(pathTextBox, 1, 0);
             openButton = new Button { Text = "Open", Dock = DockStyle.Fill };
+            openFolderButton = new Button { Text = "Folder", Dock = DockStyle.Fill };
             saveButton = new Button { Text = "Save", Dock = DockStyle.Fill };
             openButton.Click += openButton_Click;
+            openFolderButton.Click += openFolderButton_Click;
             saveButton.Click += saveButton_Click;
             top.Controls.Add(openButton, 2, 0);
-            top.Controls.Add(saveButton, 3, 0);
+            top.Controls.Add(openFolderButton, 3, 0);
+            top.Controls.Add(saveButton, 4, 0);
             mapNameLabel = new Label
             {
                 Text = "Map: (no file loaded)",
@@ -159,7 +169,11 @@ namespace FWEledit
                 TextAlign = ContentAlignment.MiddleLeft
             };
             top.Controls.Add(mapNameLabel, 0, 1);
-            top.SetColumnSpan(mapNameLabel, 4);
+            top.SetColumnSpan(mapNameLabel, 3);
+            mapViewButton = new Button { Text = "Map View", Dock = DockStyle.Fill, Enabled = false, Margin = new Padding(3, 4, 3, 4) };
+            mapViewButton.Click += mapViewButton_Click;
+            top.Controls.Add(mapViewButton, 3, 1);
+            top.SetColumnSpan(mapViewButton, 2);
 
             tabs = new TabControl { Dock = DockStyle.Fill };
             root.Controls.Add(tabs, 0, 1);
@@ -590,6 +604,10 @@ namespace FWEledit
         {
             PopulateAreas();
             PopulateControllers();
+            if (mapViewButton != null)
+            {
+                mapViewButton.Enabled = NpcGenMapViewEnabled && currentData != null;
+            }
             statusLabel.Text = currentData == null
                 ? string.Empty
                 : string.Format(CultureInfo.InvariantCulture, "Version {0} | NPC groups: {1:N0} | Resources: {2:N0} | Controllers: {3:N0}", currentData.Version, currentData.Areas.Count, currentData.ResourceAreas.Count, currentData.Controllers.Count);
@@ -929,12 +947,19 @@ namespace FWEledit
 
         private NpcGenArea GetSelectedArea()
         {
+            int index = GetSelectedAreaIndex();
+            return index >= 0 && index < currentData.Areas.Count ? currentData.Areas[index] : null;
+        }
+
+        private int GetSelectedAreaIndex()
+        {
             if (currentData == null || areaGrid.CurrentRow == null || areaGrid.CurrentRow.Tag == null)
             {
-                return null;
+                return -1;
             }
+
             int index = (int)areaGrid.CurrentRow.Tag;
-            return index >= 0 && index < currentData.Areas.Count ? currentData.Areas[index] : null;
+            return index >= 0 && index < currentData.Areas.Count ? index : -1;
         }
 
         private NpcGenEntry GetSelectedEntry()
@@ -1286,6 +1311,164 @@ namespace FWEledit
             }
         }
 
+        private void openFolderButton_Click(object sender, EventArgs e)
+        {
+            string currentPath = !string.IsNullOrWhiteSpace(pathTextBox.Text)
+                ? Path.GetDirectoryName(pathTextBox.Text)
+                : string.Empty;
+            string selectedPath = folderDialogService.PromptForGameFolder(
+                "Select the map folder that contains npcgen.data",
+                currentPath,
+                this);
+            if (string.IsNullOrWhiteSpace(selectedPath))
+            {
+                return;
+            }
+
+            string npcGenPath = Path.Combine(selectedPath, "npcgen.data");
+            if (!File.Exists(npcGenPath))
+            {
+                MessageBox.Show(this, "npcgen.data was not found in this folder.", "NPCGen Editor", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            OpenFile(npcGenPath);
+        }
+
+        private void mapViewButton_Click(object sender, EventArgs e)
+        {
+            if (!NpcGenMapViewEnabled)
+            {
+                return;
+            }
+
+            if (currentData == null)
+            {
+                return;
+            }
+
+            if (!EnsureMapPreviewClientRoot())
+            {
+                return;
+            }
+
+            SaveSelectedArea();
+            SaveSelectedEntry();
+            int initialAreaIndex = GetSelectedAreaIndex();
+            int initialEntryIndex = entryGrid.CurrentRow != null ? entryGrid.CurrentRow.Index : -1;
+            NpcGenMapPreviewData preview = mapPreviewService.BuildPreview(
+                currentData,
+                sessionService,
+                entityLookupService,
+                currentMapDisplayName,
+                initialAreaIndex,
+                initialEntryIndex);
+            NpcGenMapPreviewWindow window = new NpcGenMapPreviewWindow(preview, SelectNpcEntryByIndex);
+            window.Show();
+        }
+
+        private bool EnsureMapPreviewClientRoot()
+        {
+            string inferredRoot = TryInferClientRootFromNpcGenPath(currentData != null ? currentData.FilePath : string.Empty);
+            string currentRoot = AssetManager.GameRootPath ?? string.Empty;
+            if (IsUsableMapPreviewClientRoot(inferredRoot))
+            {
+                ApplyMapPreviewClientRoot(inferredRoot);
+                return true;
+            }
+
+            if (IsUsableMapPreviewClientRoot(currentRoot))
+            {
+                return true;
+            }
+
+            string selectedRoot = folderDialogService.PromptForGameFolder(
+                "Select the client root folder that contains resources\\script.pck and resources\\surfaces.pck",
+                !string.IsNullOrWhiteSpace(inferredRoot) ? inferredRoot : currentRoot,
+                this);
+            if (string.IsNullOrWhiteSpace(selectedRoot))
+            {
+                return false;
+            }
+
+            if (!IsUsableMapPreviewClientRoot(selectedRoot))
+            {
+                MessageBox.Show(
+                    this,
+                    "This folder does not look like a client root. Select the folder that contains resources\\script.pck and resources\\surfaces.pck.",
+                    "NPCGen Map View",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+                return false;
+            }
+
+            ApplyMapPreviewClientRoot(selectedRoot);
+            return true;
+        }
+
+        private void ApplyMapPreviewClientRoot(string root)
+        {
+            string normalized = Path.GetFullPath(root ?? string.Empty);
+            string currentRoot = AssetManager.GameRootPath ?? string.Empty;
+            if (!string.IsNullOrWhiteSpace(currentRoot)
+                && string.Equals(Path.GetFullPath(currentRoot), normalized, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            AssetManager.GameRootPath = normalized;
+            AssetManager.WorkspaceRootPath = string.Empty;
+            if (sessionService != null)
+            {
+                sessionService.AssetManager = new AssetManager(sessionService);
+            }
+        }
+
+        private static bool IsUsableMapPreviewClientRoot(string root)
+        {
+            if (string.IsNullOrWhiteSpace(root) || !Directory.Exists(root))
+            {
+                return false;
+            }
+
+            string resources = Path.Combine(root, "resources");
+            return File.Exists(Path.Combine(resources, "script.pck"))
+                && File.Exists(Path.Combine(resources, "surfaces.pck"));
+        }
+
+        private static string TryInferClientRootFromNpcGenPath(string npcGenPath)
+        {
+            if (string.IsNullOrWhiteSpace(npcGenPath))
+            {
+                return string.Empty;
+            }
+
+            try
+            {
+                DirectoryInfo directory = new DirectoryInfo(Path.GetDirectoryName(npcGenPath) ?? string.Empty);
+                while (directory != null)
+                {
+                    if (string.Equals(directory.Name, "maps", StringComparison.OrdinalIgnoreCase))
+                    {
+                        return directory.Parent != null ? directory.Parent.FullName : string.Empty;
+                    }
+
+                    if (Directory.Exists(Path.Combine(directory.FullName, "maps"))
+                        && Directory.Exists(Path.Combine(directory.FullName, "resources")))
+                    {
+                        return directory.FullName;
+                    }
+
+                    directory = directory.Parent;
+                }
+            }
+            catch
+            {
+            }
+
+            return string.Empty;
+        }
+
         private void saveButton_Click(object sender, EventArgs e)
         {
             if (currentData == null)
@@ -1362,6 +1545,39 @@ namespace FWEledit
             }
 
             SelectControllerByLinkId(area.ControllerId);
+        }
+
+        private void SelectNpcEntryByIndex(int areaIndex, int entryIndex)
+        {
+            if (currentData == null || areaIndex < 0 || areaIndex >= currentData.Areas.Count)
+            {
+                return;
+            }
+
+            tabs.SelectedIndex = 0;
+            foreach (DataGridViewRow row in areaGrid.Rows)
+            {
+                if (row.Tag is int && (int)row.Tag == areaIndex)
+                {
+                    row.Selected = true;
+                    areaGrid.CurrentCell = row.Cells[0];
+                    LoadSelectedArea();
+                    SelectEntryByIndex(entryIndex);
+                    return;
+                }
+            }
+        }
+
+        private void SelectEntryByIndex(int entryIndex)
+        {
+            if (entryIndex < 0 || entryIndex >= entryGrid.Rows.Count)
+            {
+                return;
+            }
+
+            entryGrid.Rows[entryIndex].Selected = true;
+            entryGrid.CurrentCell = entryGrid.Rows[entryIndex].Cells[0];
+            LoadSelectedEntry();
         }
 
         private void spawnEditorButton_Click(object sender, EventArgs e)

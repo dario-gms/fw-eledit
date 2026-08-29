@@ -36,7 +36,18 @@ namespace FWEledit
             {
                 Dictionary<string, string> namesByPath = LoadNamesByPath(roots[i]);
                 string realName;
-                if (namesByPath != null && namesByPath.TryGetValue(NormalizeMapPath(technicalMapName), out realName))
+                string exactPath = NormalizeMapPath(technicalMapName, true);
+                if (namesByPath != null
+                    && !string.IsNullOrWhiteSpace(exactPath)
+                    && namesByPath.TryGetValue(exactPath, out realName))
+                {
+                    return realName;
+                }
+
+                string normalizedPath = NormalizeMapPath(technicalMapName, false);
+                if (namesByPath != null
+                    && !string.IsNullOrWhiteSpace(normalizedPath)
+                    && namesByPath.TryGetValue(normalizedPath, out realName))
                 {
                     return realName;
                 }
@@ -243,7 +254,7 @@ namespace FWEledit
                     continue;
                 }
 
-                string normalizedPath = NormalizeMapPath(strings[i]);
+                string normalizedPath = NormalizeMapPath(strings[i], false);
                 string nameKey = "name_" + pathMatch.Groups["id"].Value;
                 string name;
                 if (!string.IsNullOrWhiteSpace(normalizedPath)
@@ -279,7 +290,7 @@ namespace FWEledit
                     continue;
                 }
 
-                string mapPath = NormalizeMapPath("s" + keyMatch.Groups["map"].Value);
+                string mapPath = NormalizeMapPath("s" + keyMatch.Groups["map"].Value, false);
                 if (string.Equals(mapPath, "s8", StringComparison.OrdinalIgnoreCase)
                     && string.Equals(name, "The Crucible", StringComparison.OrdinalIgnoreCase))
                 {
@@ -489,11 +500,7 @@ namespace FWEledit
                     continue;
                 }
 
-                string normalizedPath = NormalizeMapPath(path);
-                if (!string.IsNullOrWhiteSpace(normalizedPath) && !namesByPath.ContainsKey(normalizedPath))
-                {
-                    namesByPath[normalizedPath] = name.Trim();
-                }
+                AddMapName(namesByPath, path, name.Trim());
             }
         }
 
@@ -537,14 +544,47 @@ namespace FWEledit
                 AddNameById(namesByPath, stringValues, "d" + i, 215 + i);
             }
 
-            for (int i = 1; i <= 6; i++)
-            {
-                AddNameById(namesByPath, stringValues, "a" + i, 209 + i);
-            }
-
-            AddNameById(namesByPath, stringValues, "a7", 223);
+            AddSpecialInstanceNameMappings(namesByPath, stringValues);
             AddNameById(namesByPath, stringValues, "k0", 200);
             AddNameById(namesByPath, stringValues, "k3", 235);
+
+            for (int i = 1; i <= 6; i++)
+            {
+                AddNameById(namesByPath, stringValues, "r" + i, 249 + i);
+            }
+
+            AddMapName(namesByPath, "r2", LookupNameById(stringValues, 251, "Dysil's Crux"));
+            AddMapName(namesByPath, "r3", LookupNameById(stringValues, 252, "Dysil's Crux"));
+            AddMapName(namesByPath, "r5", LookupNameById(stringValues, 254, "Summit of Elements"));
+            AddMapName(namesByPath, "r6", LookupNameById(stringValues, 255, "Summit of Elements"));
+        }
+
+        private static void AddSpecialInstanceNameMappings(
+            Dictionary<string, string> namesByPath,
+            Dictionary<string, string> stringValues)
+        {
+            AddNameById(namesByPath, stringValues, "a1", 210);
+            AddNameById(namesByPath, stringValues, "a2", 211);
+            AddNameById(namesByPath, stringValues, "a3", 212);
+            AddNameById(namesByPath, stringValues, "a5", 214);
+            AddNameById(namesByPath, stringValues, "a6", 215);
+            AddNameById(namesByPath, stringValues, "a7", 222);
+            AddNameById(namesByPath, stringValues, "a8", 224);
+            AddNameById(namesByPath, stringValues, "a9", 225);
+            AddNameById(namesByPath, stringValues, "a10", 226);
+            AddNameById(namesByPath, stringValues, "a14", 231);
+            AddNameById(namesByPath, stringValues, "a19", 237);
+            AddNameById(namesByPath, stringValues, "a21", 242);
+        }
+
+        private static string LookupNameById(Dictionary<string, string> stringValues, int nameId, string fallback)
+        {
+            string name;
+            return stringValues != null
+                && stringValues.TryGetValue("name_" + nameId.ToString(), out name)
+                && !string.IsNullOrWhiteSpace(name)
+                ? name.Trim()
+                : fallback;
         }
 
         private static void AddNameById(
@@ -553,12 +593,32 @@ namespace FWEledit
             string path,
             int nameId)
         {
-            string normalizedPath = NormalizeMapPath(path);
+            string normalizedPath = NormalizeMapPath(path, false);
             string name;
             if (!string.IsNullOrWhiteSpace(normalizedPath)
                 && !namesByPath.ContainsKey(normalizedPath)
                 && stringValues.TryGetValue("name_" + nameId.ToString(), out name)
                 && !string.IsNullOrWhiteSpace(name))
+            {
+                namesByPath[normalizedPath] = name.Trim();
+            }
+        }
+
+        private static void AddMapName(Dictionary<string, string> namesByPath, string path, string name)
+        {
+            if (namesByPath == null || string.IsNullOrWhiteSpace(name))
+            {
+                return;
+            }
+
+            string exactPath = NormalizeMapPath(path, true);
+            if (!string.IsNullOrWhiteSpace(exactPath) && !namesByPath.ContainsKey(exactPath))
+            {
+                namesByPath[exactPath] = name.Trim();
+            }
+
+            string normalizedPath = NormalizeMapPath(path, false);
+            if (!string.IsNullOrWhiteSpace(normalizedPath) && !namesByPath.ContainsKey(normalizedPath))
             {
                 namesByPath[normalizedPath] = name.Trim();
             }
@@ -676,7 +736,7 @@ namespace FWEledit
             return Encoding.GetEncoding(936).GetString(payload);
         }
 
-        private static string NormalizeMapPath(string path)
+        private static string NormalizeMapPath(string path, bool preserveNumericPadding)
         {
             if (string.IsNullOrWhiteSpace(path))
             {
@@ -694,9 +754,15 @@ namespace FWEledit
             int separator = normalized.IndexOf('\\');
             normalized = separator >= 0 ? normalized.Substring(0, separator) : normalized;
 
-            Match match = Regex.Match(normalized, @"^(?<prefix>[A-Za-z]+)0*(?<number>\d+)$");
+            Match match = Regex.Match(normalized, @"^(?<prefix>[A-Za-z]+)(?<number>\d+)$");
             if (match.Success)
             {
+                if (preserveNumericPadding)
+                {
+                    return match.Groups["prefix"].Value.ToLowerInvariant()
+                        + match.Groups["number"].Value.ToLowerInvariant();
+                }
+
                 return match.Groups["prefix"].Value.ToLowerInvariant()
                     + int.Parse(match.Groups["number"].Value).ToString();
             }

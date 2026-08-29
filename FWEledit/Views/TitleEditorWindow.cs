@@ -53,6 +53,7 @@ namespace FWEledit
         private Button reloadButton;
         private bool loadingSelection;
         private bool dirty;
+        private bool javaRequirementWarningShown;
         private List<TitleGraphicIconOption> graphicIconOptions;
         private bool pendingSurfaceChanges;
         private readonly Dictionary<string, string> pendingSurfaceAssetFiles = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -473,16 +474,54 @@ namespace FWEledit
                 string loadStatus = TitleDefinitionCatalog.GetLoadStatus();
                 statusLabel.Text = "Loaded " + titles.Count.ToString(CultureInfo.InvariantCulture) + " titles from script.pck"
                     + (string.IsNullOrWhiteSpace(loadStatus) ? string.Empty : " - " + loadStatus);
+                ShowJavaRequirementWarningIfNeeded(loadStatus);
                 dirty = false;
             }
             catch (Exception ex)
             {
+                ShowJavaRequirementWarningIfNeeded(ex.Message);
                 MessageBox.Show(this, "Unable to load title_def_u.lua.\n\n" + ex.Message, "Advanced Title Editor");
             }
             finally
             {
                 Cursor.Current = previous;
             }
+        }
+
+        private void ShowJavaRequirementWarningIfNeeded(string details)
+        {
+            if (javaRequirementWarningShown || !LooksLikeJavaRequirementFailure(details))
+            {
+                return;
+            }
+
+            javaRequirementWarningShown = true;
+            MessageBox.Show(
+                this,
+                "The Advanced Title Editor needs Java 21 x64 to read compiled Lua files.\n\n"
+                + "Your current Java is missing or too old for the bundled unluac tool. Java 8 is not enough.\n\n"
+                + "Install one of these:\n"
+                + "Eclipse Temurin 21 x64 (recommended):\n"
+                + "https://adoptium.net/temurin/releases/?version=21\n\n"
+                + "Oracle Java 21:\n"
+                + "https://www.oracle.com/java/technologies/downloads/#java21\n\n"
+                + "After installing, reopen FWEledit or make sure `java -version` shows 21.x.",
+                "Java 21 required",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
+        }
+
+        private static bool LooksLikeJavaRequirementFailure(string details)
+        {
+            if (string.IsNullOrWhiteSpace(details))
+            {
+                return false;
+            }
+
+            return details.IndexOf("Unable to start java", StringComparison.OrdinalIgnoreCase) >= 0
+                || details.IndexOf("java.lang.UnsupportedClassVersionError", StringComparison.OrdinalIgnoreCase) >= 0
+                || details.IndexOf("class file version 65.0", StringComparison.OrdinalIgnoreCase) >= 0
+                || details.IndexOf("only recognizes class file versions up to", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private void RebuildGrid()
