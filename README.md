@@ -12,15 +12,13 @@ FWEledit is based on [sELedit++ by Wrechid](https://github.com/Wrechid/sELedit-)
 
 ---
 
-## What's New in v0.9.5.25
+## What's New in v0.9.5.26
 
-- Improved startup behavior so the editor keeps a centered loading window active while the selected list/item and `Values` grid are prepared, preventing early clicks from making the app appear frozen.
-- Continued per-client resource map optimization with safer background hydration for list icons, reference counts, and package-backed resources after the editor becomes usable.
-- Added an embedded model preview tab for model-heavy lists such as `Equipment`, `Aircraft`, `Vehicle`, `Monster`, `NPC`, and pet-related records, while keeping the standalone preview window available.
-- Expanded reference, parser, selector, inherited-icon, and color handling across service, recipe, mine, trade-page, pet, aircraft, and vehicle lists.
-- Improved item text color support so FW color tags render consistently in list rows, value parsers, and item/reference selectors, with color editing moved to an explicit button instead of double-clicking text.
-- Hardened item package export/import after regressions in cross-package assets, restoring correct model/icon asset capture for clients with resources split across `models`, `moxing`, `shaders`, and related PCKs.
-- Project/app version metadata updated to `v0.9.5.25`.
+- Added reverse references for `[81] Title Prop Config` by resolving title definition IDs used by reward fields, including references from `[149] Random Gift Bag Essence`.
+- Title rows now use the icon from the first external item that references the title, making title lists easier to scan visually.
+- Filtered out the internal `id_title` self-reference from title reference results so the References tab shows meaningful external usages.
+- Kept the experimental NPCGen map preview code in the project for future work, but disabled the Map View button and disabled client PCK/cache map loading from that feature.
+- Updated project/app version metadata to `v0.9.5.26`.
 
 Previous release notes were moved to [docs/WHATS_NEW.md](docs/WHATS_NEW.md).
 

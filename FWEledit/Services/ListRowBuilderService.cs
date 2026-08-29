@@ -52,6 +52,7 @@ namespace FWEledit
         }
 
         public System.Func<int, int, int> ReferenceCountResolver { get; set; }
+        public System.Func<int, int, Bitmap> ReferenceIconResolver { get; set; }
 
         public List<object[]> BuildRows(
             eListCollection listCollection,
@@ -505,6 +506,16 @@ namespace FWEledit
                             img = inheritedTypeIcon;
                         }
                     }
+
+                    if (includeIcons && string.Equals(normalizedListName, "TITLE_PROP_CONFIG", System.StringComparison.OrdinalIgnoreCase) && ReferenceIconResolver != null)
+                    {
+                        Bitmap referenceIcon = ReferenceIconResolver(listIndex, e);
+                        if (referenceIcon != null)
+                        {
+                            img = referenceIcon;
+                        }
+                    }
+
                     rows.Add(new object[] { listCollection.GetValue(listIndex, e, 0), img, composeDisplayName(listIndex, e, pos), string.Empty });
                 }
                 else

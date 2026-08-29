@@ -258,7 +258,7 @@ namespace FWEledit
                 npcGenEditorWindow.FormClosed += (s, args) => npcGenEditorWindow = null;
             }
 
-            npcGenEditorWindow.Show(this);
+            npcGenEditorWindow.Show();
             npcGenEditorWindow.BringToFront();
         }
 

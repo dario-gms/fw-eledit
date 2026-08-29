@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Globalization;
+using System.Linq;
 
 namespace FWEledit
 {
@@ -13,6 +15,8 @@ namespace FWEledit
         public Color? NameColor { get; set; }
         public int ListIndex { get; set; }
         public int ElementIndex { get; set; }
+        public long? ZoneMask { get; set; }
+        public int? AiScriptId { get; set; }
     }
 
     public sealed class NpcGenEntityLookupService
@@ -40,6 +44,20 @@ namespace FWEledit
                 ListIndex = -1,
                 ElementIndex = -1
             };
+        }
+
+        public List<NpcGenEntityInfo> FindByAiScript(eListCollection listCollection, CacheSave database, int aiScriptId)
+        {
+            EnsureIndex(listCollection, database);
+            if (entitiesById == null || aiScriptId <= 0)
+            {
+                return new List<NpcGenEntityInfo>();
+            }
+
+            return entitiesById.Values
+                .Where(info => info.AiScriptId.HasValue && info.AiScriptId.Value == aiScriptId)
+                .OrderBy(info => info.Id)
+                .ToList();
         }
 
         private void EnsureIndex(eListCollection listCollection, CacheSave database)
@@ -78,6 +96,8 @@ namespace FWEledit
                 int idIndex = GetFieldIndex(list.elementFields, "id");
                 int nameIndex = GetFieldIndex(list.elementFields, "name");
                 int iconIndex = GetIconFieldIndex(list.elementFields);
+                int zoneMaskIndex = GetFieldIndex(list.elementFields, "server_zone_mask");
+                int aiScriptIndex = GetAiScriptFieldIndex(list.elementFields, listName);
                 if (idIndex < 0)
                 {
                     continue;
@@ -128,10 +148,50 @@ namespace FWEledit
                         SourceList = listName,
                         NameColor = resolvedNameColor,
                         ListIndex = listIndex,
-                        ElementIndex = rowIndex
+                        ElementIndex = rowIndex,
+                        ZoneMask = zoneMaskIndex >= 0 ? TryParseZoneMask(listCollection.GetValue(listIndex, rowIndex, zoneMaskIndex)) : null,
+                        AiScriptId = aiScriptIndex >= 0 ? TryParseAiScriptId(listCollection.GetValue(listIndex, rowIndex, aiScriptIndex)) : null
                     };
                 }
             }
+        }
+
+        private static int? TryParseAiScriptId(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return null;
+            }
+
+            int parsed;
+            if (!int.TryParse(value.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out parsed) || parsed == 0)
+            {
+                return null;
+            }
+
+            return Math.Abs(parsed);
+        }
+
+        private static long? TryParseZoneMask(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return null;
+            }
+
+            long signedValue;
+            if (long.TryParse(value.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out signedValue))
+            {
+                return signedValue;
+            }
+
+            ulong unsignedValue;
+            if (ulong.TryParse(value.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out unsignedValue))
+            {
+                return unsignedValue > long.MaxValue ? -1L : (long)unsignedValue;
+            }
+
+            return null;
         }
 
         private static int GetIconFieldIndex(string[] fields)
@@ -140,20 +200,54 @@ namespace FWEledit
             return index >= 0 ? index : GetFieldIndex(fields, "file_icon1");
         }
 
+        private static int GetAiScriptFieldIndex(string[] fields, string listName)
+        {
+            int index = GetFieldIndex(fields, "id_ai_script");
+            if (index >= 0)
+            {
+                return index;
+            }
+
+            index = GetFieldIndex(fields, "ai_script");
+            if (index >= 0)
+            {
+                return index;
+            }
+
+            index = GetFieldIndex(fields, "id_strategy");
+            if (index >= 0)
+            {
+                return index;
+            }
+
+            return string.Equals(listName, "MONSTER_ESSENCE", StringComparison.OrdinalIgnoreCase)
+                ? GetFieldIndex(fields, "Strategy")
+                : -1;
+        }
+
         private static int GetFieldIndex(string[] fields, string name)
         {
             if (fields == null)
             {
                 return -1;
             }
+            string normalizedName = NormalizeFieldName(name);
             for (int i = 0; i < fields.Length; i++)
             {
-                if (string.Equals(fields[i], name, StringComparison.OrdinalIgnoreCase))
+                if (string.Equals(fields[i], name, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(NormalizeFieldName(fields[i]), normalizedName, StringComparison.OrdinalIgnoreCase))
                 {
                     return i;
                 }
             }
             return -1;
+        }
+
+        private static string NormalizeFieldName(string fieldName)
+        {
+            return string.IsNullOrWhiteSpace(fieldName)
+                ? string.Empty
+                : fieldName.Replace(" ", string.Empty).Replace("_", string.Empty).Trim();
         }
 
         private static string NormalizeListName(string listName)
