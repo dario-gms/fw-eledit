@@ -862,6 +862,8 @@
     <Compile Include="Services\ItemTransferPackageService.cs" />
     <Compile Include="Services\NpcGenEntityLookupService.cs" />
     <Compile Include="Services\NpcGenFileService.cs" />
+    <Compile Include="Services\NpcGenMapNameResolverService.cs" />
+    <Compile Include="Services\NpcGenScriptReferenceService.cs" />
     <Compile Include="Services\GameShopDataService.cs" />
     <Compile Include="Services\GameShopIconService.cs" />
     <Compile Include="Services\ReferenceIndexService.cs" />
@@ -1067,6 +1069,9 @@
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="Views\NpcGenEditorWindow.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Views\NpcGenSpawnEditorWindow.cs">
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="Views\EquipmentMaskPickerWindow.cs">
