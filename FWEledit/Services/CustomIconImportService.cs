@@ -80,7 +80,7 @@ namespace FWEledit
                 using (Bitmap source = LoadSourceBitmap(sourcePath))
                 using (Bitmap converted = BuildIconBitmap(source, width, height))
                 {
-                    WriteTga32(stagedFile, converted);
+                    WriteDdsDxt3(stagedFile, converted);
                 }
 
                 string importError;
@@ -262,7 +262,7 @@ namespace FWEledit
         {
             string safeName = MakeSafeAssetName(Path.GetFileNameWithoutExtension(sourcePath));
             string stamp = DateTime.Now.ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture);
-            return Path.Combine("icon", "custom", "fweledit_" + stamp + "_" + safeName + ".tga");
+            return Path.Combine("icon", "custom", "fweledit_" + stamp + "_" + safeName + ".dds");
         }
 
         private static string MakeSafeAssetName(string value)
@@ -300,34 +300,175 @@ namespace FWEledit
                 || string.Equals(extension, ".bmp", StringComparison.OrdinalIgnoreCase);
         }
 
-        private static void WriteTga32(string path, Bitmap bitmap)
+        private static void WriteDdsDxt3(string path, Bitmap bitmap)
         {
             using (FileStream stream = File.Create(path))
             using (BinaryWriter writer = new BinaryWriter(stream))
             {
-                writer.Write((byte)0);
-                writer.Write((byte)0);
-                writer.Write((byte)2);
-                writer.Write(new byte[5]);
-                writer.Write((short)0);
-                writer.Write((short)0);
-                writer.Write((ushort)bitmap.Width);
-                writer.Write((ushort)bitmap.Height);
-                writer.Write((byte)32);
-                writer.Write((byte)0x28);
+                int blockCountX = (bitmap.Width + 3) / 4;
+                int blockCountY = (bitmap.Height + 3) / 4;
+                int linearSize = blockCountX * blockCountY * 16;
 
-                for (int y = 0; y < bitmap.Height; y++)
+                writer.Write(new[] { (byte)'D', (byte)'D', (byte)'S', (byte)' ' });
+                writer.Write(124);
+                writer.Write(0x00081007);
+                writer.Write(bitmap.Height);
+                writer.Write(bitmap.Width);
+                writer.Write(linearSize);
+                writer.Write(0);
+                writer.Write(0);
+                for (int i = 0; i < 11; i++)
                 {
-                    for (int x = 0; x < bitmap.Width; x++)
+                    writer.Write(0);
+                }
+                writer.Write(32);
+                writer.Write(0x00000004);
+                writer.Write(new[] { (byte)'D', (byte)'X', (byte)'T', (byte)'3' });
+                writer.Write(0);
+                writer.Write(0);
+                writer.Write(0);
+                writer.Write(0);
+                writer.Write(0);
+                writer.Write(0x00001000);
+                writer.Write(0);
+                writer.Write(0);
+                writer.Write(0);
+                writer.Write(0);
+
+                for (int by = 0; by < blockCountY; by++)
+                {
+                    for (int bx = 0; bx < blockCountX; bx++)
                     {
-                        Color color = bitmap.GetPixel(x, y);
-                        writer.Write(color.B);
-                        writer.Write(color.G);
-                        writer.Write(color.R);
-                        writer.Write(color.A);
+                        WriteDxt3Block(writer, bitmap, bx * 4, by * 4);
                     }
                 }
             }
+        }
+
+        private static void WriteDxt3Block(BinaryWriter writer, Bitmap bitmap, int startX, int startY)
+        {
+            Color[] pixels = new Color[16];
+            for (int y = 0; y < 4; y++)
+            {
+                int sourceY = Math.Min(bitmap.Height - 1, startY + y);
+                for (int x = 0; x < 4; x++)
+                {
+                    int sourceX = Math.Min(bitmap.Width - 1, startX + x);
+                    pixels[y * 4 + x] = bitmap.GetPixel(sourceX, sourceY);
+                }
+            }
+
+            ulong alphaBits = 0;
+            for (int i = 0; i < pixels.Length; i++)
+            {
+                ulong alpha4 = (ulong)((pixels[i].A * 15 + 127) / 255);
+                alphaBits |= alpha4 << (i * 4);
+            }
+            writer.Write(alphaBits);
+
+            Color min;
+            Color max;
+            FindColorEndpoints(pixels, out min, out max);
+            ushort c0 = ToRgb565(max);
+            ushort c1 = ToRgb565(min);
+            if (c0 < c1)
+            {
+                ushort swap = c0;
+                c0 = c1;
+                c1 = swap;
+            }
+            if (c0 == c1)
+            {
+                c1 = c0 > 0 ? (ushort)(c0 - 1) : (ushort)0;
+            }
+
+            Color[] palette = BuildDxtPalette(c0, c1);
+            uint indices = 0;
+            for (int i = 0; i < pixels.Length; i++)
+            {
+                int best = FindNearestPaletteIndex(pixels[i], palette);
+                indices |= (uint)(best & 3) << (i * 2);
+            }
+
+            writer.Write(c0);
+            writer.Write(c1);
+            writer.Write(indices);
+        }
+
+        private static void FindColorEndpoints(Color[] pixels, out Color min, out Color max)
+        {
+            int minScore = int.MaxValue;
+            int maxScore = int.MinValue;
+            min = Color.Black;
+            max = Color.White;
+
+            for (int i = 0; i < pixels.Length; i++)
+            {
+                Color c = pixels[i];
+                int score = (c.R * 77) + (c.G * 150) + (c.B * 29);
+                if (score < minScore)
+                {
+                    minScore = score;
+                    min = c;
+                }
+                if (score > maxScore)
+                {
+                    maxScore = score;
+                    max = c;
+                }
+            }
+        }
+
+        private static ushort ToRgb565(Color color)
+        {
+            int r = (color.R * 31 + 127) / 255;
+            int g = (color.G * 63 + 127) / 255;
+            int b = (color.B * 31 + 127) / 255;
+            return (ushort)((r << 11) | (g << 5) | b);
+        }
+
+        private static Color FromRgb565(ushort value)
+        {
+            int r5 = (value >> 11) & 0x1F;
+            int g6 = (value >> 5) & 0x3F;
+            int b5 = value & 0x1F;
+            int r = (r5 << 3) | (r5 >> 2);
+            int g = (g6 << 2) | (g6 >> 4);
+            int b = (b5 << 3) | (b5 >> 2);
+            return Color.FromArgb(255, r, g, b);
+        }
+
+        private static Color[] BuildDxtPalette(ushort c0, ushort c1)
+        {
+            Color color0 = FromRgb565(c0);
+            Color color1 = FromRgb565(c1);
+            return new[]
+            {
+                color0,
+                color1,
+                Color.FromArgb(255, (2 * color0.R + color1.R) / 3, (2 * color0.G + color1.G) / 3, (2 * color0.B + color1.B) / 3),
+                Color.FromArgb(255, (color0.R + 2 * color1.R) / 3, (color0.G + 2 * color1.G) / 3, (color0.B + 2 * color1.B) / 3)
+            };
+        }
+
+        private static int FindNearestPaletteIndex(Color color, Color[] palette)
+        {
+            int best = 0;
+            int bestDistance = int.MaxValue;
+            for (int i = 0; i < palette.Length; i++)
+            {
+                int dr = color.R - palette[i].R;
+                int dg = color.G - palette[i].G;
+                int db = color.B - palette[i].B;
+                int distance = dr * dr + dg * dg + db * db;
+                if (distance < bestDistance)
+                {
+                    bestDistance = distance;
+                    best = i;
+                }
+            }
+
+            return best;
         }
     }
 }
