@@ -131,7 +131,7 @@ namespace FWEledit
 
         public bool IsItemBearingList(eListCollection listCollection, int listIndex)
         {
-            return IsItemList(listCollection, listIndex);
+            return ItemListCatalog.IsItemList(listCollection, listIndex);
         }
 
         public bool IsReferenceField(eListCollection listCollection, int listIndex, string fieldName)
@@ -1328,7 +1328,7 @@ namespace FWEledit
 
             for (int listIndex = 0; listIndex < listCollection.Lists.Length; listIndex++)
             {
-                if (!IsItemList(listCollection, listIndex))
+                if (!ItemListCatalog.IsItemList(listCollection, listIndex))
                 {
                     continue;
                 }
@@ -1677,7 +1677,7 @@ namespace FWEledit
 
             for (int listIndex = 0; listIndex < listCollection.Lists.Length; listIndex++)
             {
-                if (!IsItemList(listCollection, listIndex)
+                if (!ItemListCatalog.IsItemList(listCollection, listIndex)
                     || listCollection.Lists[listIndex] == null
                     || listCollection.Lists[listIndex].elementFields == null
                     || listCollection.Lists[listIndex].elementValues == null)
@@ -2078,7 +2078,7 @@ namespace FWEledit
             searchableItemOptions = new List<ItemReferenceOption>();
             for (int listIndex = 0; listIndex < listCollection.Lists.Length; listIndex++)
             {
-                if (!HasPrimaryIdField(listCollection, listIndex) || !IsItemList(listCollection, listIndex))
+                if (!HasPrimaryIdField(listCollection, listIndex) || !ItemListCatalog.IsItemList(listCollection, listIndex))
                 {
                     continue;
                 }
@@ -3241,36 +3241,6 @@ namespace FWEledit
                 || string.Equals(listCollection.Lists[listIndex].elementFields[0], "ID", StringComparison.OrdinalIgnoreCase);
         }
 
-        private static bool IsItemList(eListCollection listCollection, int listIndex)
-        {
-            if (listCollection == null || listIndex < 0 || listIndex >= listCollection.Lists.Length)
-            {
-                return false;
-            }
-
-            string listName = NormalizeListName(listCollection.Lists[listIndex].listName);
-            if (IsEquipmentEssenceAlias(listName))
-            {
-                return true;
-            }
-
-            string[] fields = listCollection.Lists[listIndex].elementFields;
-            if (fields == null)
-            {
-                return false;
-            }
-
-            for (int i = 0; i < fields.Length; i++)
-            {
-                if (string.Equals(fields[i], "item_quality", StringComparison.OrdinalIgnoreCase))
-                {
-                    return true;
-                }
-            }
-
-            return false;
-        }
-
         private static string ResolveOptionIconKey(eListCollection listCollection, CacheSave database, IconResolutionService iconResolutionService, int listIndex, int elementIndex, int iconIndex)
         {
             if (iconIndex < 0 || iconResolutionService == null)
@@ -3529,7 +3499,7 @@ namespace FWEledit
             for (int listIndex = 0; listIndex < listCollection.Lists.Length; listIndex++)
             {
                 if (!HasPrimaryIdField(listCollection, listIndex)
-                    || !IsItemList(listCollection, listIndex)
+                    || !ItemListCatalog.IsItemList(listCollection, listIndex)
                     || listCollection.Lists[listIndex] == null
                     || listCollection.Lists[listIndex].elementValues == null)
                 {

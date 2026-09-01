@@ -14,7 +14,8 @@ namespace FWEledit
             ElementImportExportWorkflowService workflowService,
             Action<int> markRowDirty,
             Action reloadList,
-            Action<int> selectRow)
+            Action<int> selectRow,
+            Action<int, int> remapDescriptionId = null)
         {
             if (importCommandService == null || elementGrid == null)
             {
@@ -36,7 +37,8 @@ namespace FWEledit
                     {
                         selectRow(rowIndex);
                     }
-                });
+                },
+                remapDescriptionId);
 
             return imported;
         }
@@ -51,7 +53,8 @@ namespace FWEledit
             Action<int> markRowDirty,
             Action reloadList,
             Action<int> selectRow,
-            MainWindowViewModel viewModel)
+            MainWindowViewModel viewModel,
+            Action<int, int> remapDescriptionId = null)
         {
             bool imported = ImportSingleAndSelect(
                 importCommandService,
@@ -62,7 +65,8 @@ namespace FWEledit
                 workflowService,
                 markRowDirty,
                 reloadList,
-                selectRow);
+                selectRow,
+                remapDescriptionId);
 
             if (imported && viewModel != null)
             {

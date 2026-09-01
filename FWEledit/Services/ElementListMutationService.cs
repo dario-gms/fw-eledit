@@ -71,7 +71,7 @@ namespace FWEledit
 
             int idFieldIndex = idGenerationService.GetIdFieldIndex(listCollection, listIndex);
             HashSet<int> usedIds = idFieldIndex > -1
-                ? idGenerationService.BuildUsedIdsAcrossLists(listCollection)
+                ? idGenerationService.BuildUsedIdsForElementNamespace(listCollection, listIndex, -1)
                 : new HashSet<int>();
 
             List<int> newRows = new List<int>();

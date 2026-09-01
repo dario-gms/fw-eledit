@@ -114,7 +114,8 @@ namespace FWEledit
             Action<int> markRowDirty,
             Action refreshList,
             Action<int> selectRow,
-            MainWindowViewModel viewModel)
+            MainWindowViewModel viewModel,
+            Action<int, int> remapDescriptionId = null)
         {
             if (actionsUiService == null || sessionService == null)
             {
@@ -132,7 +133,8 @@ namespace FWEledit
                 markRowDirty,
                 refreshList,
                 selectRow,
-                viewModel);
+                viewModel,
+                remapDescriptionId);
         }
 
         public void HandleAddMultiple(

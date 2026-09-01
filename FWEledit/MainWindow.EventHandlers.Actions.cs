@@ -136,8 +136,88 @@ namespace FWEledit
                         dataGridView_elems.Rows[rowIndex].Selected = true;
                     }
                 },
-                viewModel);
+                viewModel,
+                RemapDescriptionIdIfNeeded);
 		}
+
+
+        private void click_setUniqueId(object sender, EventArgs ea)
+        {
+            if (sessionService == null || sessionService.ListCollection == null || dataGridView_elems == null)
+            {
+                return;
+            }
+
+            int listIndex = comboBox_lists.SelectedIndex;
+            if (listIndex < 0 || listIndex >= sessionService.ListCollection.Lists.Length)
+            {
+                return;
+            }
+
+            if (listIndex == sessionService.ListCollection.ConversationListIndex)
+            {
+                MessageBox.Show("Operation not supported in List " + sessionService.ListCollection.ConversationListIndex.ToString());
+                return;
+            }
+
+            int rowIndex = dataGridView_elems.CurrentRow != null ? dataGridView_elems.CurrentRow.Index : -1;
+            int elementIndex = elementIndexResolverService.ResolveElementIndexFromGridRow(
+                sessionService.ListCollection,
+                listIndex,
+                rowIndex,
+                dataGridView_elems);
+            if (elementIndex < 0)
+            {
+                return;
+            }
+
+            int idFieldIndex = idGenerationService.GetIdFieldIndex(sessionService.ListCollection, listIndex);
+            if (idFieldIndex < 0)
+            {
+                MessageBox.Show("This list has no ID field.");
+                return;
+            }
+
+            int oldId;
+            int newId;
+            idGenerationService.EnsureElementIdUnique(
+                sessionService.ListCollection,
+                listIndex,
+                elementIndex,
+                true,
+                1,
+                out oldId,
+                out newId);
+            if (newId <= 0 || oldId == newId)
+            {
+                return;
+            }
+
+            RemapDescriptionIdIfNeeded(oldId, newId);
+            mainWindowDirtyTrackingService.MarkRowDirty(
+                dirtyStateTracker,
+                listDisplayService,
+                ref viewModel.HasUnsavedChanges,
+                listIndex,
+                elementIndex);
+            mainWindowDirtyTrackingService.MarkFieldDirty(
+                dirtyStateTracker,
+                ref viewModel.HasUnsavedChanges,
+                listIndex,
+                elementIndex,
+                idFieldIndex);
+
+            InvalidateItemReferenceOptionCaches();
+            UpdateReferenceIndexForEditedElement(listIndex, elementIndex);
+            change_list(null, null);
+            if (rowIndex >= 0 && rowIndex < dataGridView_elems.Rows.Count)
+            {
+                dataGridView_elems.ClearSelection();
+                dataGridView_elems.Rows[rowIndex].Selected = true;
+                dataGridView_elems.CurrentCell = dataGridView_elems.Rows[rowIndex].Cells[0];
+            }
+            change_item(null, null);
+        }
 
 
         private void click_addItems(object sender, EventArgs ea)

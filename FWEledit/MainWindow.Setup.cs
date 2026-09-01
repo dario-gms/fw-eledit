@@ -92,7 +92,7 @@ namespace FWEledit
                 assembly,
                 label_Version,
                 navigationStateService,
-                "0.9.5.26");
+                "0.9.5.27");
 
             fwDarkMode = Properties.Settings.Default.UseDarkMode;
             cpb2.Value = 0;
@@ -417,11 +417,21 @@ namespace FWEledit
                 contextMenuStrip_items.Items.Insert(insertIndex, referencesItem);
             }
 
+            if (!contextMenuStrip_items.Items.ContainsKey("setUniqueIdToolStripMenuItem"))
+            {
+                ToolStripMenuItem setUniqueIdItem = new ToolStripMenuItem();
+                setUniqueIdItem.Name = "setUniqueIdToolStripMenuItem";
+                setUniqueIdItem.Text = "Set unique ID";
+                setUniqueIdItem.Click += click_setUniqueId;
+                int insertIndex = contextMenuStrip_items.Items.ContainsKey("showReferencesToolStripMenuItem") ? 3 : 0;
+                contextMenuStrip_items.Items.Insert(insertIndex, setUniqueIdItem);
+            }
+
             if (!contextMenuStrip_items.Items.ContainsKey("elementContextSeparator"))
             {
                 ToolStripSeparator separator = new ToolStripSeparator();
                 separator.Name = "elementContextSeparator";
-                int insertIndex = contextMenuStrip_items.Items.ContainsKey("showReferencesToolStripMenuItem") ? 3 : 0;
+                int insertIndex = contextMenuStrip_items.Items.ContainsKey("setUniqueIdToolStripMenuItem") ? 4 : 0;
                 contextMenuStrip_items.Items.Insert(insertIndex, separator);
             }
 

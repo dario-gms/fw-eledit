@@ -515,6 +515,7 @@ namespace FWEledit
             ValueRowPickerUiService valueRowPickerUiService,
             eListCollection listCollection,
             CacheSave database,
+            AssetManager assetManager,
             DataGridView valuesGrid,
             int listIndex,
             int rowIndex,
@@ -533,6 +534,7 @@ namespace FWEledit
             valueRowPickerUiService.OpenIconPickerForValueRow(
                 listCollection,
                 database,
+                assetManager,
                 valuesGrid,
                 listIndex,
                 rowIndex,
@@ -541,6 +543,37 @@ namespace FWEledit
                 modelPickerService,
                 valueRowIndexService,
                 iconUsageLookupService,
+                owner);
+        }
+
+        public void OpenCustomIconPickerForValueRow(
+            ValueRowPickerUiService valueRowPickerUiService,
+            eListCollection listCollection,
+            CacheSave database,
+            AssetManager assetManager,
+            DataGridView valuesGrid,
+            int listIndex,
+            int rowIndex,
+            ItemFieldClassifierService fieldClassifierService,
+            PathIdResolutionService pathIdResolutionService,
+            ModelPickerService modelPickerService,
+            IWin32Window owner)
+        {
+            if (valueRowPickerUiService == null)
+            {
+                return;
+            }
+
+            valueRowPickerUiService.OpenCustomIconPickerForValueRow(
+                listCollection,
+                database,
+                assetManager,
+                valuesGrid,
+                listIndex,
+                rowIndex,
+                fieldClassifierService,
+                pathIdResolutionService,
+                modelPickerService,
                 owner);
         }
 

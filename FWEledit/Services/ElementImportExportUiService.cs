@@ -83,7 +83,7 @@ namespace FWEledit
             }
         }
 
-        public bool ImportSingleItem(
+        public ElementImportResult ImportSingleItem(
             ElementImportExportWorkflowService workflow,
             eListCollection listCollection,
             int listIndex,
@@ -91,7 +91,7 @@ namespace FWEledit
         {
             if (workflow == null || listCollection == null)
             {
-                return false;
+                return new ElementImportResult();
             }
 
             using (OpenFileDialog dialog = new OpenFileDialog())
@@ -99,7 +99,7 @@ namespace FWEledit
                 dialog.Filter = "All Files (*.*)|*.*";
                 if (dialog.ShowDialog() != DialogResult.OK || !File.Exists(dialog.FileName))
                 {
-                    return false;
+                    return new ElementImportResult();
                 }
 
                 Cursor.Current = Cursors.AppStarting;
@@ -111,11 +111,11 @@ namespace FWEledit
                     {
                         MessageBox.Show(result.ErrorMessage);
                     }
-                    return false;
+                    return result;
                 }
-            }
 
-            return true;
+                return result;
+            }
         }
 
         public ElementBatchAddResult ImportMultipleItems(

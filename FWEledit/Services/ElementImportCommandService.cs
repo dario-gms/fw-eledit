@@ -12,7 +12,8 @@ namespace FWEledit
             ElementImportExportWorkflowService workflowService,
             System.Action<int> markRowDirty,
             System.Action refreshListAction,
-            System.Action<int> selectRowAction)
+            System.Action<int> selectRowAction,
+            System.Action<int, int> remapDescriptionId = null)
         {
             if (listCollection == null || importExportUiService == null || workflowService == null)
             {
@@ -29,10 +30,15 @@ namespace FWEledit
                 return false;
             }
 
-            bool imported = importExportUiService.ImportSingleItem(workflowService, listCollection, listIndex, rowIndex);
-            if (!imported)
+            ElementImportResult result = importExportUiService.ImportSingleItem(workflowService, listCollection, listIndex, rowIndex);
+            if (result == null || !result.Success)
             {
                 return false;
+            }
+
+            if (result.IdChanged && result.OldId > 0 && result.NewId > 0 && remapDescriptionId != null)
+            {
+                remapDescriptionId(result.OldId, result.NewId);
             }
 
             if (markRowDirty != null)
