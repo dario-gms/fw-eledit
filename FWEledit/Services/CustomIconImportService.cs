@@ -5,6 +5,7 @@ using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using System.Globalization;
 using System.IO;
+using System.Text;
 using System.Text.RegularExpressions;
 
 namespace FWEledit
@@ -12,8 +13,8 @@ namespace FWEledit
     public sealed class CustomIconImportService
     {
         private const string CustomIconPrefix = "surfaces\\icon\\custom\\";
-        private const int GameIconWidth = 36;
-        private const int GameIconHeight = 36;
+        private const string IconsetTextPath = "iconset\\iconlist_ivtr0.txt";
+        private const string IconsetImagePath = "iconset\\iconlist_ivtr0.dds";
 
         public List<CustomIconEntry> BuildEntries(CacheSave database)
         {
@@ -73,14 +74,19 @@ namespace FWEledit
             {
                 string relativePath = BuildImportedIconPath(sourcePath);
                 string mappedPath = "surfaces\\" + relativePath;
+                string iconFileName = Path.GetFileName(relativePath);
                 string stagingRoot = Path.Combine(Path.GetTempPath(), "FWEledit", "pck-stage", "custom-icon-surfaces", Guid.NewGuid().ToString("N"));
                 string stagedFile = Path.Combine(stagingRoot, relativePath);
 
                 Directory.CreateDirectory(Path.GetDirectoryName(stagedFile));
                 using (Bitmap source = LoadSourceBitmap(sourcePath))
-                using (Bitmap converted = BuildIconBitmap(source, GameIconWidth, GameIconHeight))
+                using (Bitmap converted = BuildIconBitmap(source, GetAtlasIconWidth(database), GetAtlasIconHeight(database)))
                 {
                     WriteDdsDxt3(stagedFile, converted);
+                    if (!TryStageIconsetEntry(database, assetManager, stagingRoot, iconFileName, converted, out error))
+                    {
+                        return false;
+                    }
                 }
 
                 string importError;
@@ -105,6 +111,7 @@ namespace FWEledit
                     Name = Path.GetFileName(mappedPath),
                     Thumbnail = TryLoadThumbnail(database, mappedPath)
                 };
+                RegisterImportedIconInDatabase(database, iconFileName);
                 return true;
             }
             catch (Exception ex)
@@ -256,6 +263,238 @@ namespace FWEledit
             }
 
             return result;
+        }
+
+        private static bool TryStageIconsetEntry(
+            CacheSave database,
+            AssetManager assetManager,
+            string stagingRoot,
+            string iconFileName,
+            Bitmap icon,
+            out string error)
+        {
+            error = string.Empty;
+
+            byte[] textPayload;
+            if (!assetManager.TryReadPackageEntry("surfaces", IconsetTextPath, out textPayload, out error)
+                || textPayload == null
+                || textPayload.Length == 0)
+            {
+                error = string.IsNullOrWhiteSpace(error)
+                    ? "Failed to read iconset\\iconlist_ivtr0.txt."
+                    : error;
+                return false;
+            }
+
+            Encoding encoding = Encoding.GetEncoding("GBK");
+            string text = encoding.GetString(textPayload).Replace("\r\n", "\n").Replace('\r', '\n');
+            List<string> lines = new List<string>(text.Split('\n'));
+            while (lines.Count > 0 && string.IsNullOrEmpty(lines[lines.Count - 1]))
+            {
+                lines.RemoveAt(lines.Count - 1);
+            }
+
+            if (lines.Count < 4
+                || !int.TryParse(lines[0], out int iconWidth)
+                || !int.TryParse(lines[1], out int iconHeight)
+                || !int.TryParse(lines[2], out int rows)
+                || !int.TryParse(lines[3], out int cols)
+                || iconWidth <= 0
+                || iconHeight <= 0
+                || rows <= 0
+                || cols <= 0)
+            {
+                error = "Invalid iconset\\iconlist_ivtr0.txt header.";
+                return false;
+            }
+
+            int iconIndex = lines.Count - 4;
+            if (iconIndex >= rows * cols)
+            {
+                error = "iconlist_ivtr0 atlas is full.";
+                return false;
+            }
+
+            if (!lines.Exists(line => string.Equals((line ?? string.Empty).Trim(), iconFileName, StringComparison.OrdinalIgnoreCase)))
+            {
+                lines.Add(iconFileName);
+            }
+
+            byte[] imagePayload;
+            if (!assetManager.TryReadPackageEntry("surfaces", IconsetImagePath, out imagePayload, out error)
+                || imagePayload == null
+                || imagePayload.Length == 0)
+            {
+                error = string.IsNullOrWhiteSpace(error)
+                    ? "Failed to read iconset\\iconlist_ivtr0.dds."
+                    : error;
+                return false;
+            }
+
+            int x = (iconIndex % cols) * iconWidth;
+            int y = (iconIndex / cols) * iconHeight;
+            if (!TryPatchDdsDxt3IconSlot(imagePayload, x, y, iconWidth, iconHeight, icon, out byte[] patchedAtlas, out error))
+            {
+                return false;
+            }
+            PatchDatabaseAtlas(database, x, y, iconWidth, iconHeight, icon);
+
+            string stagedText = Path.Combine(stagingRoot, IconsetTextPath);
+            string stagedAtlas = Path.Combine(stagingRoot, IconsetImagePath);
+            Directory.CreateDirectory(Path.GetDirectoryName(stagedText));
+            File.WriteAllText(stagedText, string.Join("\r\n", lines) + "\r\n", encoding);
+            File.WriteAllBytes(stagedAtlas, patchedAtlas);
+            return true;
+        }
+
+        private static int GetAtlasIconWidth(CacheSave database)
+        {
+            return database != null && database.iconWidth > 0 ? database.iconWidth : 40;
+        }
+
+        private static int GetAtlasIconHeight(CacheSave database)
+        {
+            return database != null && database.iconHeight > 0 ? database.iconHeight : 40;
+        }
+
+        private static void RegisterImportedIconInDatabase(CacheSave database, string iconFileName)
+        {
+            if (database == null || string.IsNullOrWhiteSpace(iconFileName))
+            {
+                return;
+            }
+
+            int iconWidth = GetAtlasIconWidth(database);
+            int iconHeight = GetAtlasIconHeight(database);
+            int cols = database.cols > 0 ? database.cols : 102;
+            if (database.imagesx == null)
+            {
+                database.imagesx = new SortedList<int, string>();
+            }
+            if (database.imageposition == null)
+            {
+                database.imageposition = new SortedList<string, Point>();
+            }
+
+            string key = Path.GetFileName(iconFileName);
+            int index = database.imagesx.Count;
+            if (!database.imagesx.ContainsValue(key))
+            {
+                database.imagesx[index] = key;
+                int y = index / cols;
+                int x = index - y * cols;
+                if (!database.imageposition.ContainsKey(key))
+                {
+                    database.imageposition[key] = new Point(x * iconWidth, y * iconHeight);
+                }
+            }
+        }
+
+        private static bool TryPatchDdsDxt3IconSlot(
+            byte[] dds,
+            int slotX,
+            int slotY,
+            int slotWidth,
+            int slotHeight,
+            Bitmap icon,
+            out byte[] patched,
+            out string error)
+        {
+            patched = null;
+            error = string.Empty;
+
+            if (dds == null || dds.Length < 128 || icon == null)
+            {
+                error = "Invalid iconlist_ivtr0.dds payload.";
+                return false;
+            }
+            if (dds[0] != (byte)'D' || dds[1] != (byte)'D' || dds[2] != (byte)'S' || dds[3] != (byte)' ')
+            {
+                error = "iconlist_ivtr0.dds is not a DDS file.";
+                return false;
+            }
+
+            int atlasHeight = BitConverter.ToInt32(dds, 12);
+            int atlasWidth = BitConverter.ToInt32(dds, 16);
+            string fourCc = Encoding.ASCII.GetString(dds, 84, 4);
+            if (!string.Equals(fourCc, "DXT3", StringComparison.OrdinalIgnoreCase))
+            {
+                error = "iconlist_ivtr0.dds is not DXT3.";
+                return false;
+            }
+            if (slotWidth <= 0 || slotHeight <= 0 || slotWidth % 4 != 0 || slotHeight % 4 != 0)
+            {
+                error = "Icon slot size must be a positive multiple of 4 for DXT3.";
+                return false;
+            }
+            if (slotX < 0 || slotY < 0 || slotX + slotWidth > atlasWidth || slotY + slotHeight > atlasHeight)
+            {
+                error = "Next icon slot is outside iconlist_ivtr0.dds bounds.";
+                return false;
+            }
+
+            int atlasBlocksX = (atlasWidth + 3) / 4;
+            int dataOffset = 128;
+            patched = new byte[dds.Length];
+            Buffer.BlockCopy(dds, 0, patched, 0, dds.Length);
+
+            using (Bitmap atlasIcon = BuildIconBitmap(icon, slotWidth, slotHeight))
+            {
+                for (int localBlockY = 0; localBlockY < slotHeight / 4; localBlockY++)
+                {
+                    for (int localBlockX = 0; localBlockX < slotWidth / 4; localBlockX++)
+                    {
+                        int atlasBlockX = (slotX / 4) + localBlockX;
+                        int atlasBlockY = (slotY / 4) + localBlockY;
+                        int writeOffset = dataOffset + ((atlasBlockY * atlasBlocksX + atlasBlockX) * 16);
+                        if (writeOffset < dataOffset || writeOffset + 16 > patched.Length)
+                        {
+                            error = "Computed icon slot block is outside iconlist_ivtr0.dds payload.";
+                            patched = null;
+                            return false;
+                        }
+
+                        byte[] block = EncodeDxt3Block(atlasIcon, localBlockX * 4, localBlockY * 4);
+                        Buffer.BlockCopy(block, 0, patched, writeOffset, block.Length);
+                    }
+                }
+            }
+
+            return true;
+        }
+
+        private static byte[] EncodeDxt3Block(Bitmap bitmap, int startX, int startY)
+        {
+            using (MemoryStream stream = new MemoryStream(16))
+            using (BinaryWriter writer = new BinaryWriter(stream))
+            {
+                WriteDxt3Block(writer, bitmap, startX, startY);
+                return stream.ToArray();
+            }
+        }
+
+        private static void PatchDatabaseAtlas(CacheSave database, int x, int y, int width, int height, Bitmap icon)
+        {
+            if (database == null
+                || database.sourceBitmap == null
+                || icon == null
+                || x < 0
+                || y < 0
+                || x + width > database.sourceBitmap.Width
+                || y + height > database.sourceBitmap.Height)
+            {
+                return;
+            }
+
+            using (Graphics graphics = Graphics.FromImage(database.sourceBitmap))
+            {
+                graphics.CompositingMode = CompositingMode.SourceCopy;
+                graphics.CompositingQuality = CompositingQuality.HighQuality;
+                graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                graphics.SmoothingMode = SmoothingMode.HighQuality;
+                graphics.DrawImage(icon, new Rectangle(x, y, width, height));
+            }
         }
 
         private static string BuildImportedIconPath(string sourcePath)
