@@ -431,6 +431,7 @@ namespace FWEledit
                 mainWindowValueRowPickerUiService,
                 valueRowPickerUiService,
                 sessionService,
+                sessionService.AssetManager,
                 dataGridView_item,
                 comboBox_lists.SelectedIndex,
                 rowIndex,

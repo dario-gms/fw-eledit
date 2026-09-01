@@ -12,7 +12,7 @@ namespace FWEledit
         {
             return new MainWindowWorkflowSetupResult
             {
-                ElementImportExportWorkflowService = new ElementImportExportWorkflowService(elementsImportExportService),
+                ElementImportExportWorkflowService = new ElementImportExportWorkflowService(elementsImportExportService, idGenerationService),
                 ElementsRulesExportWorkflowService = new ElementsRulesExportWorkflowService(elementsImportExportService),
                 ElementListMutationService = new ElementListMutationService(idGenerationService),
                 ElementsLoadWorkflowService = new ElementsLoadWorkflowService(

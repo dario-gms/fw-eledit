@@ -13,9 +13,14 @@ namespace FWEledit
                 return issues;
             }
 
+            Dictionary<int, Tuple<int, int>> firstItemLocationById = new Dictionary<int, Tuple<int, int>>();
             for (int l = 0; l < listCollection.Lists.Length; l++)
             {
                 if (l == listCollection.ConversationListIndex)
+                {
+                    continue;
+                }
+                if (!ItemListCatalog.IsItemList(listCollection, l))
                 {
                     continue;
                 }
@@ -26,7 +31,6 @@ namespace FWEledit
                     continue;
                 }
 
-                Dictionary<int, int> firstRowById = new Dictionary<int, int>();
                 for (int r = 0; r < listCollection.Lists[l].elementValues.Length; r++)
                 {
                     int id;
@@ -41,10 +45,10 @@ namespace FWEledit
                         continue;
                     }
 
-                    int firstRow;
-                    if (firstRowById.TryGetValue(id, out firstRow))
+                    Tuple<int, int> firstLocation;
+                    if (firstItemLocationById.TryGetValue(id, out firstLocation))
                     {
-                        issues.Add("List [" + l + "] duplicate ID " + id + " at rows " + (firstRow + 1) + " and " + (r + 1));
+                        issues.Add("Duplicate item ID " + id + " at List [" + firstLocation.Item1 + "] row " + (firstLocation.Item2 + 1) + " and List [" + l + "] row " + (r + 1));
                         if (issues.Count >= 30)
                         {
                             break;
@@ -52,7 +56,7 @@ namespace FWEledit
                     }
                     else
                     {
-                        firstRowById[id] = r;
+                        firstItemLocationById[id] = Tuple.Create(l, r);
                     }
                 }
 

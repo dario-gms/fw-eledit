@@ -145,6 +145,7 @@
     </Compile>
     <Compile Include="AssetManager.cs" />
     <Compile Include="Catalogs\ItemQualityCatalog.cs" />
+    <Compile Include="Catalogs\ItemListCatalog.cs" />
     <Compile Include="Catalogs\EntityTypeColorCatalog.cs" />
     <Compile Include="Catalogs\BooleanFlagCatalog.cs" />
     <Compile Include="Catalogs\CombinedServicesCatalog.cs" />
@@ -855,6 +856,7 @@
     <Compile Include="Services\IconPickerService.cs" />
     <Compile Include="Services\IDialogService.cs" />
     <Compile Include="Services\IdGenerationService.cs" />
+    <Compile Include="Services\CustomPortraitImportService.cs" />
     <Compile Include="Services\ItemDescriptionFileService.cs" />
     <Compile Include="Services\ItemDescriptionCodec.cs" />
     <Compile Include="Services\ItemFieldClassifierService.cs" />

@@ -2659,13 +2659,88 @@ namespace FWEledit
             newId = 0;
             if (idFieldIndex >= 0)
             {
-                HashSet<int> used = idGenerationService.BuildUsedIds(listCollection, targetListIndex, idFieldIndex);
+                HashSet<int> used = idGenerationService.BuildUsedIdsForElementNamespace(listCollection, targetListIndex, newIndex);
                 int startCandidate = GetSequentialImportIdCandidate(list, newIndex, idFieldIndex);
                 newId = idGenerationService.GetNextUniqueId(used, startCandidate);
                 list.SetValue(newIndex, idFieldIndex, newId.ToString(CultureInfo.InvariantCulture));
             }
 
             return newIndex;
+        }
+
+        private static int FindListIndexByName(eListCollection listCollection, string listName)
+        {
+            if (listCollection == null || listCollection.Lists == null || string.IsNullOrWhiteSpace(listName))
+            {
+                return -1;
+            }
+
+            string normalizedTarget = NormalizeListName(listName);
+            for (int i = 0; i < listCollection.Lists.Length; i++)
+            {
+                eList list = listCollection.Lists[i];
+                if (list == null)
+                {
+                    continue;
+                }
+
+                string candidate = list.listName ?? string.Empty;
+                if (string.Equals(candidate, listName, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(NormalizeListName(candidate), normalizedTarget, StringComparison.OrdinalIgnoreCase))
+                {
+                    return i;
+                }
+            }
+
+            return -1;
+        }
+
+        private static int FindElementIndexById(eListCollection listCollection, int listIndex, int id)
+        {
+            if (listCollection == null
+                || listCollection.Lists == null
+                || listIndex < 0
+                || listIndex >= listCollection.Lists.Length
+                || listCollection.Lists[listIndex] == null
+                || id <= 0)
+            {
+                return -1;
+            }
+
+            return FindElementIndexById(listCollection.Lists[listIndex], id);
+        }
+
+        private static int FindElementIndexById(eList list, int id)
+        {
+            if (list == null || list.elementValues == null || list.elementFields == null || id <= 0)
+            {
+                return -1;
+            }
+
+            int idFieldIndex = -1;
+            for (int i = 0; i < list.elementFields.Length; i++)
+            {
+                if (string.Equals(list.elementFields[i], "id", StringComparison.OrdinalIgnoreCase))
+                {
+                    idFieldIndex = i;
+                    break;
+                }
+            }
+
+            if (idFieldIndex < 0)
+            {
+                return -1;
+            }
+
+            for (int row = 0; row < list.elementValues.Length; row++)
+            {
+                if (TryParseInt(list.GetValue(row, idFieldIndex)) == id)
+                {
+                    return row;
+                }
+            }
+
+            return -1;
         }
 
         private static List<ItemTransferImportedPath> BuildImportedModelPathSummary(

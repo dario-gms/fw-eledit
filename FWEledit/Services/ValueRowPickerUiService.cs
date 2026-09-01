@@ -1691,6 +1691,7 @@ namespace FWEledit
         public void OpenIconPickerForValueRow(
             eListCollection listCollection,
             CacheSave database,
+            AssetManager assetManager,
             DataGridView itemGrid,
             int listIndex,
             int rowIndex,
@@ -1732,7 +1733,7 @@ namespace FWEledit
             if (portraitIconService.IsCreaturePortraitField(listCollection, listIndex, fieldName))
             {
                 List<TgaPortraitEntry> entries = portraitIconService.BuildPortraitEntries(database, 96);
-                if (entries.Count == 0)
+                if (entries.Count == 0 && assetManager == null)
                 {
                     MessageBox.Show(
                         "No TGA portrait entries were found in path.data.",
@@ -1742,7 +1743,10 @@ namespace FWEledit
                     return;
                 }
 
-                using (TgaPortraitPickerWindow picker = new TgaPortraitPickerWindow(entries, currentPathId))
+                using (TgaPortraitPickerWindow picker = new TgaPortraitPickerWindow(
+                    entries,
+                    currentPathId,
+                    ownerWindow => ImportCustomPortrait(database, assetManager, portraitIconService, ownerWindow)))
                 {
                     if (picker.ShowDialog(owner) != DialogResult.OK)
                     {
@@ -1796,6 +1800,66 @@ namespace FWEledit
                 SetValueCellRawValue(itemGrid, rowIndex, selectedPathId.ToString());
                 IconResolutionService iconResolutionService = new IconResolutionService();
                 itemGrid.Rows[rowIndex].Cells[2].Value = iconResolutionService.FormatIconPathIdDisplay(database, listCollection, listIndex, selectedPathId.ToString());
+            }
+        }
+
+        private static TgaPortraitEntry ImportCustomPortrait(
+            CacheSave database,
+            AssetManager assetManager,
+            CreaturePortraitIconService portraitIconService,
+            IWin32Window owner)
+        {
+            if (assetManager == null)
+            {
+                MessageBox.Show(owner, "Asset manager unavailable.", "TGA Portrait", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return null;
+            }
+
+            using (OpenFileDialog dialog = new OpenFileDialog())
+            {
+                dialog.Title = "Import custom head portrait";
+                dialog.Filter = "PNG image (*.png)|*.png|Image files (*.png;*.jpg;*.jpeg;*.bmp)|*.png;*.jpg;*.jpeg;*.bmp|All files (*.*)|*.*";
+                dialog.Multiselect = false;
+                if (dialog.ShowDialog(owner) != DialogResult.OK)
+                {
+                    return null;
+                }
+
+                Cursor previous = Cursor.Current;
+                try
+                {
+                    Cursor.Current = Cursors.WaitCursor;
+                    CustomPortraitImportService importService = new CustomPortraitImportService();
+                    TgaPortraitEntry entry;
+                    string error;
+                    if (!importService.TryImportFromImage(dialog.FileName, database, assetManager, out entry, out error))
+                    {
+                        MessageBox.Show(
+                            owner,
+                            string.IsNullOrWhiteSpace(error) ? "Failed to import custom portrait." : error,
+                            "TGA Portrait",
+                            MessageBoxButtons.OK,
+                            MessageBoxIcon.Warning);
+                        return null;
+                    }
+
+                    if (entry != null && entry.Thumbnail == null && portraitIconService != null)
+                    {
+                        entry.Thumbnail = portraitIconService.TryLoadPortraitThumbnail(entry.Path, 96);
+                    }
+
+                    MessageBox.Show(
+                        owner,
+                        "Imported custom portrait PathID " + entry.PathId.ToString(CultureInfo.InvariantCulture) + ".",
+                        "TGA Portrait",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Information);
+                    return entry;
+                }
+                finally
+                {
+                    Cursor.Current = previous;
+                }
             }
         }
 

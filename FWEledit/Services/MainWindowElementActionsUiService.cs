@@ -177,7 +177,8 @@ namespace FWEledit
             Action<int> markRowDirty,
             Action refreshList,
             Action<int> selectRow,
-            ref bool hasUnsavedChanges)
+            ref bool hasUnsavedChanges,
+            Action<int, int> remapDescriptionId = null)
         {
             if (importUiService == null)
             {
@@ -193,7 +194,8 @@ namespace FWEledit
                 workflowService,
                 markRowDirty,
                 refreshList,
-                selectRow);
+                selectRow,
+                remapDescriptionId);
 
             if (imported)
             {
@@ -212,7 +214,8 @@ namespace FWEledit
             Action<int> markRowDirty,
             Action refreshList,
             Action<int> selectRow,
-            MainWindowViewModel viewModel)
+            MainWindowViewModel viewModel,
+            Action<int, int> remapDescriptionId = null)
         {
             if (importUiService == null)
             {
@@ -229,7 +232,8 @@ namespace FWEledit
                 markRowDirty,
                 refreshList,
                 selectRow,
-                viewModel);
+                viewModel,
+                remapDescriptionId);
         }
 
         public void AddMultiple(

@@ -6,5 +6,6 @@ namespace FWEledit
         public bool IsConversationList { get; set; }
         public string ErrorMessage { get; set; } = string.Empty;
         public int[] NewIndices { get; set; } = new int[0];
+        public int[] NewIds { get; set; } = new int[0];
     }
 }

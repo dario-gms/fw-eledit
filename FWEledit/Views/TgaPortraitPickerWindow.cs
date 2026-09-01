@@ -13,13 +13,20 @@ namespace FWEledit
         private readonly ImageList imageList;
         private readonly PictureBox previewBox;
         private readonly Label detailLabel;
+        private readonly Func<IWin32Window, TgaPortraitEntry> importPortrait;
 
         public int SelectedPathId { get; private set; }
 
         public TgaPortraitPickerWindow(List<TgaPortraitEntry> entries, int currentPathId)
+            : this(entries, currentPathId, null)
+        {
+        }
+
+        public TgaPortraitPickerWindow(List<TgaPortraitEntry> entries, int currentPathId, Func<IWin32Window, TgaPortraitEntry> importPortrait)
         {
             allEntries = entries ?? new List<TgaPortraitEntry>();
             SelectedPathId = currentPathId;
+            this.importPortrait = importPortrait;
 
             Text = "Choose TGA portrait...";
             StartPosition = FormStartPosition.CenterParent;
@@ -109,6 +116,12 @@ namespace FWEledit
             okButton.Dock = DockStyle.Right;
             okButton.Click += (s, e) => ConfirmSelection();
 
+            Button importButton = BuildButton("Import PNG");
+            importButton.Dock = DockStyle.Left;
+            importButton.Enabled = importPortrait != null;
+            importButton.Click += (s, e) => ImportPortrait();
+
+            bottom.Controls.Add(importButton);
             bottom.Controls.Add(cancelButton);
             bottom.Controls.Add(okButton);
 
@@ -219,6 +232,48 @@ namespace FWEledit
             return entry.PathId.ToString().Contains(term)
                 || ((entry.Name ?? string.Empty).ToLowerInvariant().Contains(term))
                 || ((entry.Path ?? string.Empty).ToLowerInvariant().Contains(term));
+        }
+
+        private void ImportPortrait()
+        {
+            if (importPortrait == null)
+            {
+                return;
+            }
+
+            TgaPortraitEntry imported = importPortrait(this);
+            if (imported == null || imported.PathId <= 0)
+            {
+                return;
+            }
+
+            bool replaced = false;
+            for (int i = 0; i < allEntries.Count; i++)
+            {
+                if (allEntries[i] != null && allEntries[i].PathId == imported.PathId)
+                {
+                    allEntries[i] = imported;
+                    replaced = true;
+                    break;
+                }
+            }
+
+            if (!replaced)
+            {
+                allEntries.Add(imported);
+            }
+
+            SelectedPathId = imported.PathId;
+            string currentTerm = (searchBox.Text ?? string.Empty).Trim().ToLowerInvariant();
+            if (!Matches(imported, currentTerm))
+            {
+                searchBox.Text = string.Empty;
+            }
+            else
+            {
+                ApplyFilter();
+            }
+            SelectPathId(imported.PathId);
         }
 
         private void SelectPathId(int pathId)
