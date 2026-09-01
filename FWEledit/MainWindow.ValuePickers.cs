@@ -442,6 +442,23 @@ namespace FWEledit
                 iconUsageLookupService,
                 this);
         }
+
+        private void OpenCustomIconPickerForValueRow(int rowIndex)
+        {
+            mainWindowValueRowPickerUiService.OpenCustomIconPickerForValueRow(
+                valueRowPickerUiService,
+                sessionService != null ? sessionService.ListCollection : null,
+                sessionService != null ? sessionService.Database : null,
+                sessionService != null ? sessionService.AssetManager : null,
+                dataGridView_item,
+                comboBox_lists.SelectedIndex,
+                rowIndex,
+                itemFieldClassifierService,
+                pathIdResolutionService,
+                modelPickerService,
+                this);
+        }
+
         private void OpenModelPreviewForValueRow(int rowIndex)
         {
             if (ShouldRedirectEquipmentModelPreviewRowToCurrentItem(rowIndex))
@@ -2868,6 +2885,10 @@ namespace FWEledit
                     menu.Items.Add(new ToolStripSeparator());
                 }
                 menu.Items.Add(isPortraitIconField ? "Choose TGA Portrait..." : "Choose Icon...", null, (menuSender, args) => OpenIconPickerForValueRow(rowIndex));
+                if (!isPortraitIconField)
+                {
+                    menu.Items.Add("Custom Icons...", null, (menuSender, args) => OpenCustomIconPickerForValueRow(rowIndex));
+                }
             }
 
             if (isAddonTypeField)

@@ -443,6 +443,7 @@
     <Compile Include="Models\ElementsFileInfo.cs" />
     <Compile Include="Models\ElementsJoinOptions.cs" />
     <Compile Include="Models\ElementsJoinResult.cs" />
+    <Compile Include="Models\CustomIconEntry.cs" />
     <Compile Include="Models\IconEntryModel.cs" />
     <Compile Include="Models\IconPickerData.cs" />
     <Compile Include="Models\ItemReferenceOption.cs" />
@@ -856,6 +857,7 @@
     <Compile Include="Services\IconPickerService.cs" />
     <Compile Include="Services\IDialogService.cs" />
     <Compile Include="Services\IdGenerationService.cs" />
+    <Compile Include="Services\CustomIconImportService.cs" />
     <Compile Include="Services\CustomPortraitImportService.cs" />
     <Compile Include="Services\ItemDescriptionFileService.cs" />
     <Compile Include="Services\ItemDescriptionCodec.cs" />
@@ -1133,6 +1135,9 @@
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="Views\RaceMaskPickerWindow.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Views\CustomIconPickerWindow.cs">
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="Views\TgaPortraitPickerWindow.cs">

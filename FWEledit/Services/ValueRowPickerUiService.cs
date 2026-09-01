@@ -1803,6 +1803,117 @@ namespace FWEledit
             }
         }
 
+        public void OpenCustomIconPickerForValueRow(
+            eListCollection listCollection,
+            CacheSave database,
+            AssetManager assetManager,
+            DataGridView itemGrid,
+            int listIndex,
+            int rowIndex,
+            ItemFieldClassifierService fieldClassifier,
+            PathIdResolutionService pathIdResolutionService,
+            ModelPickerService modelPickerService,
+            IWin32Window owner)
+        {
+            if (listCollection == null || database == null || itemGrid == null || listIndex < 0)
+            {
+                return;
+            }
+            if (rowIndex < 0 || rowIndex >= itemGrid.Rows.Count)
+            {
+                return;
+            }
+
+            string fieldName = ValueGridFieldNameService.GetFieldName(itemGrid, rowIndex);
+            if (fieldClassifier == null || !fieldClassifier.IsIconFieldName(fieldName))
+            {
+                return;
+            }
+
+            int currentPathId = TryGetCurrentPathId(itemGrid, rowIndex, modelPickerService, pathIdResolutionService);
+            CustomIconImportService customIconService = new CustomIconImportService();
+            List<CustomIconEntry> entries = customIconService.BuildEntries(database);
+            using (CustomIconPickerWindow picker = new CustomIconPickerWindow(
+                entries,
+                currentPathId,
+                ownerWindow => ImportCustomIcon(database, assetManager, customIconService, ownerWindow)))
+            {
+                if (picker.ShowDialog(owner) != DialogResult.OK)
+                {
+                    return;
+                }
+
+                int selectedPathId = picker.SelectedPathId;
+                if (selectedPathId <= 0 || selectedPathId == currentPathId)
+                {
+                    return;
+                }
+
+                if (itemGrid.CurrentCell == null || itemGrid.CurrentCell.RowIndex != rowIndex)
+                {
+                    itemGrid.CurrentCell = itemGrid.Rows[rowIndex].Cells[2];
+                }
+
+                SetValueCellRawValue(itemGrid, rowIndex, selectedPathId.ToString());
+                IconResolutionService iconResolutionService = new IconResolutionService();
+                itemGrid.Rows[rowIndex].Cells[2].Value = iconResolutionService.FormatIconPathIdDisplay(database, listCollection, listIndex, selectedPathId.ToString());
+            }
+        }
+
+        private static CustomIconEntry ImportCustomIcon(
+            CacheSave database,
+            AssetManager assetManager,
+            CustomIconImportService customIconService,
+            IWin32Window owner)
+        {
+            if (assetManager == null)
+            {
+                MessageBox.Show(owner, "Asset manager unavailable.", "Custom Icons", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return null;
+            }
+
+            using (OpenFileDialog dialog = new OpenFileDialog())
+            {
+                dialog.Title = "Import custom icon";
+                dialog.Filter = "PNG image (*.png)|*.png|Image files (*.png;*.jpg;*.jpeg;*.bmp)|*.png;*.jpg;*.jpeg;*.bmp|All files (*.*)|*.*";
+                dialog.Multiselect = false;
+                if (dialog.ShowDialog(owner) != DialogResult.OK)
+                {
+                    return null;
+                }
+
+                Cursor previous = Cursor.Current;
+                try
+                {
+                    Cursor.Current = Cursors.WaitCursor;
+                    CustomIconEntry entry;
+                    string error;
+                    if (!customIconService.TryImportFromImage(dialog.FileName, database, assetManager, out entry, out error))
+                    {
+                        MessageBox.Show(
+                            owner,
+                            string.IsNullOrWhiteSpace(error) ? "Failed to import custom icon." : error,
+                            "Custom Icons",
+                            MessageBoxButtons.OK,
+                            MessageBoxIcon.Warning);
+                        return null;
+                    }
+
+                    MessageBox.Show(
+                        owner,
+                        "Imported custom icon PathID " + entry.PathId.ToString(CultureInfo.InvariantCulture) + ".",
+                        "Custom Icons",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Information);
+                    return entry;
+                }
+                finally
+                {
+                    Cursor.Current = previous;
+                }
+            }
+        }
+
         private static TgaPortraitEntry ImportCustomPortrait(
             CacheSave database,
             AssetManager assetManager,

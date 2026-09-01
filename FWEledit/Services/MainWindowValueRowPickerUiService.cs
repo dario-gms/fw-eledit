@@ -546,6 +546,37 @@ namespace FWEledit
                 owner);
         }
 
+        public void OpenCustomIconPickerForValueRow(
+            ValueRowPickerUiService valueRowPickerUiService,
+            eListCollection listCollection,
+            CacheSave database,
+            AssetManager assetManager,
+            DataGridView valuesGrid,
+            int listIndex,
+            int rowIndex,
+            ItemFieldClassifierService fieldClassifierService,
+            PathIdResolutionService pathIdResolutionService,
+            ModelPickerService modelPickerService,
+            IWin32Window owner)
+        {
+            if (valueRowPickerUiService == null)
+            {
+                return;
+            }
+
+            valueRowPickerUiService.OpenCustomIconPickerForValueRow(
+                listCollection,
+                database,
+                assetManager,
+                valuesGrid,
+                listIndex,
+                rowIndex,
+                fieldClassifierService,
+                pathIdResolutionService,
+                modelPickerService,
+                owner);
+        }
+
         public void OpenModelPreviewForValueRow(
             ValueRowPickerUiService valueRowPickerUiService,
             AssetManager assetManager,
