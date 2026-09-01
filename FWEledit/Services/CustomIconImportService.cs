@@ -308,6 +308,32 @@ namespace FWEledit
                 return false;
             }
 
+            byte[] imagePayload;
+            if (!assetManager.TryReadPackageEntry("surfaces", IconsetImagePath, out imagePayload, out error)
+                || imagePayload == null
+                || imagePayload.Length == 0)
+            {
+                error = string.IsNullOrWhiteSpace(error)
+                    ? "Failed to read iconset\\iconlist_ivtr0.dds."
+                    : error;
+                return false;
+            }
+
+            if (!TryResolveAtlasCapacity(imagePayload, iconWidth, iconHeight, cols, out int maxRows, out error))
+            {
+                return false;
+            }
+            if (rows > maxRows)
+            {
+                error = "iconlist_ivtr0.txt declares more rows than the DDS can hold.";
+                return false;
+            }
+            if (rows < maxRows)
+            {
+                rows = maxRows;
+                lines[2] = rows.ToString(CultureInfo.InvariantCulture);
+            }
+
             int iconIndex = lines.Count - 4;
             if (iconIndex >= rows * cols)
             {
@@ -318,17 +344,6 @@ namespace FWEledit
             if (!lines.Exists(line => string.Equals((line ?? string.Empty).Trim(), iconFileName, StringComparison.OrdinalIgnoreCase)))
             {
                 lines.Add(iconFileName);
-            }
-
-            byte[] imagePayload;
-            if (!assetManager.TryReadPackageEntry("surfaces", IconsetImagePath, out imagePayload, out error)
-                || imagePayload == null
-                || imagePayload.Length == 0)
-            {
-                error = string.IsNullOrWhiteSpace(error)
-                    ? "Failed to read iconset\\iconlist_ivtr0.dds."
-                    : error;
-                return false;
             }
 
             int x = (iconIndex % cols) * iconWidth;
@@ -495,6 +510,56 @@ namespace FWEledit
                 graphics.SmoothingMode = SmoothingMode.HighQuality;
                 graphics.DrawImage(icon, new Rectangle(x, y, width, height));
             }
+        }
+
+        private static bool TryResolveAtlasCapacity(
+            byte[] dds,
+            int iconWidth,
+            int iconHeight,
+            int cols,
+            out int maxRows,
+            out string error)
+        {
+            maxRows = 0;
+            error = string.Empty;
+
+            if (dds == null || dds.Length < 128)
+            {
+                error = "Invalid iconlist_ivtr0.dds payload.";
+                return false;
+            }
+            if (dds[0] != (byte)'D' || dds[1] != (byte)'D' || dds[2] != (byte)'S' || dds[3] != (byte)' ')
+            {
+                error = "iconlist_ivtr0.dds is not a DDS file.";
+                return false;
+            }
+
+            int atlasHeight = BitConverter.ToInt32(dds, 12);
+            int atlasWidth = BitConverter.ToInt32(dds, 16);
+            string fourCc = Encoding.ASCII.GetString(dds, 84, 4);
+            if (!string.Equals(fourCc, "DXT3", StringComparison.OrdinalIgnoreCase))
+            {
+                error = "iconlist_ivtr0.dds is not DXT3.";
+                return false;
+            }
+            if (iconWidth <= 0 || iconHeight <= 0 || cols <= 0)
+            {
+                error = "Invalid iconlist_ivtr0 dimensions.";
+                return false;
+            }
+            if (cols * iconWidth > atlasWidth)
+            {
+                error = "iconlist_ivtr0.txt declares more columns than the DDS can hold.";
+                return false;
+            }
+
+            maxRows = atlasHeight / iconHeight;
+            if (maxRows <= 0)
+            {
+                error = "iconlist_ivtr0.dds cannot hold any icon rows.";
+                return false;
+            }
+            return true;
         }
 
         private static string BuildImportedIconPath(string sourcePath)
