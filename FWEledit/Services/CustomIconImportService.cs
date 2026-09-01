@@ -12,6 +12,8 @@ namespace FWEledit
     public sealed class CustomIconImportService
     {
         private const string CustomIconPrefix = "surfaces\\icon\\custom\\";
+        private const int GameIconWidth = 36;
+        private const int GameIconHeight = 36;
 
         public List<CustomIconEntry> BuildEntries(CacheSave database)
         {
@@ -69,8 +71,6 @@ namespace FWEledit
 
             try
             {
-                int width = database.iconWidth > 0 ? database.iconWidth : 32;
-                int height = database.iconHeight > 0 ? database.iconHeight : 32;
                 string relativePath = BuildImportedIconPath(sourcePath);
                 string mappedPath = "surfaces\\" + relativePath;
                 string stagingRoot = Path.Combine(Path.GetTempPath(), "FWEledit", "pck-stage", "custom-icon-surfaces", Guid.NewGuid().ToString("N"));
@@ -78,7 +78,7 @@ namespace FWEledit
 
                 Directory.CreateDirectory(Path.GetDirectoryName(stagedFile));
                 using (Bitmap source = LoadSourceBitmap(sourcePath))
-                using (Bitmap converted = BuildIconBitmap(source, width, height))
+                using (Bitmap converted = BuildIconBitmap(source, GameIconWidth, GameIconHeight))
                 {
                     WriteDdsDxt3(stagedFile, converted);
                 }

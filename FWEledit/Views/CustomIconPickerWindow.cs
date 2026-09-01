@@ -87,7 +87,7 @@ namespace FWEledit
             previewBox.Dock = DockStyle.Fill;
             previewBox.BackColor = Color.Black;
             previewBox.BorderStyle = BorderStyle.FixedSingle;
-            previewBox.SizeMode = PictureBoxSizeMode.CenterImage;
+            previewBox.SizeMode = PictureBoxSizeMode.Zoom;
 
             detailLabel = new Label();
             detailLabel.Dock = DockStyle.Top;
