@@ -1836,7 +1836,10 @@ namespace FWEledit
             using (CustomIconPickerWindow picker = new CustomIconPickerWindow(
                 entries,
                 currentPathId,
-                ownerWindow => ImportCustomIcon(database, assetManager, customIconService, ownerWindow)))
+                ownerWindow => ImportCustomIcon(database, assetManager, customIconService, ownerWindow),
+                () => GetCustomIconCapacity(assetManager, customIconService),
+                ownerWindow => ExpandCustomIconCapacity(database, assetManager, customIconService, ownerWindow),
+                (ownerWindow, entry) => RemoveCustomIcon(database, assetManager, customIconService, ownerWindow, entry)))
             {
                 if (picker.ShowDialog(owner) != DialogResult.OK)
                 {
@@ -1857,6 +1860,184 @@ namespace FWEledit
                 SetValueCellRawValue(itemGrid, rowIndex, selectedPathId.ToString());
                 IconResolutionService iconResolutionService = new IconResolutionService();
                 itemGrid.Rows[rowIndex].Cells[2].Value = iconResolutionService.FormatIconPathIdDisplay(database, listCollection, listIndex, selectedPathId.ToString());
+            }
+        }
+
+        private static CustomIconCapacityInfo GetCustomIconCapacity(
+            AssetManager assetManager,
+            CustomIconImportService customIconService)
+        {
+            if (assetManager == null || customIconService == null)
+            {
+                return null;
+            }
+
+            CustomIconCapacityInfo info;
+            string error;
+            return customIconService.TryGetCapacity(assetManager, out info, out error) ? info : null;
+        }
+
+        private static CustomIconCapacityInfo ExpandCustomIconCapacity(
+            CacheSave database,
+            AssetManager assetManager,
+            CustomIconImportService customIconService,
+            IWin32Window owner)
+        {
+            if (assetManager == null || customIconService == null)
+            {
+                MessageBox.Show(owner, "Asset manager unavailable.", "Custom Icons", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return null;
+            }
+
+            Cursor previous = Cursor.Current;
+            try
+            {
+                Cursor.Current = Cursors.WaitCursor;
+                CustomIconCapacityInfo before;
+                string capacityError;
+                customIconService.TryGetCapacity(assetManager, out before, out capacityError);
+
+                if (before == null)
+                {
+                    MessageBox.Show(
+                        owner,
+                        string.IsNullOrWhiteSpace(capacityError) ? "Unable to read current icon capacity." : capacityError,
+                        "Custom Icons",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Warning);
+                    return null;
+                }
+
+                if (!before.CanExpand)
+                {
+                    MessageBox.Show(
+                        owner,
+                        "Custom icon capacity is already at the maximum.",
+                        "Custom Icons",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Information);
+                    return before;
+                }
+
+                DialogResult confirm = MessageBox.Show(
+                    owner,
+                    "Expand icon capacity from "
+                    + before.Capacity.ToString(CultureInfo.InvariantCulture)
+                    + " to "
+                    + before.MaxCapacity.ToString(CultureInfo.InvariantCulture)
+                    + " slots?\n\nThis updates iconset\\iconlist_ivtr0.txt in surfaces.pck.",
+                    "Expand Custom Icon Capacity",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Question,
+                    MessageBoxDefaultButton.Button2);
+                if (confirm != DialogResult.Yes)
+                {
+                    return before;
+                }
+
+                CustomIconCapacityInfo info;
+                string error;
+                if (!customIconService.TryExpandCapacity(database, assetManager, out info, out error))
+                {
+                    MessageBox.Show(
+                        owner,
+                        string.IsNullOrWhiteSpace(error) ? "Failed to expand custom icon capacity." : error,
+                        "Custom Icons",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Warning);
+                    return before;
+                }
+
+                if (info != null && before != null && info.Capacity > before.Capacity)
+                {
+                    MessageBox.Show(
+                        owner,
+                        "Expanded custom icon capacity from "
+                        + before.Capacity.ToString(CultureInfo.InvariantCulture)
+                        + " to "
+                        + info.Capacity.ToString(CultureInfo.InvariantCulture)
+                        + " slots.",
+                        "Custom Icons",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Information);
+                }
+                else
+                {
+                    MessageBox.Show(
+                        owner,
+                        "Custom icon capacity is already at the maximum.",
+                        "Custom Icons",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Information);
+                }
+
+                return info;
+            }
+            finally
+            {
+                Cursor.Current = previous;
+            }
+        }
+
+        private static bool RemoveCustomIcon(
+            CacheSave database,
+            AssetManager assetManager,
+            CustomIconImportService customIconService,
+            IWin32Window owner,
+            CustomIconEntry entry)
+        {
+            if (assetManager == null || customIconService == null)
+            {
+                MessageBox.Show(owner, "Asset manager unavailable.", "Custom Icons", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return false;
+            }
+            if (entry == null)
+            {
+                return false;
+            }
+
+            DialogResult confirm = MessageBox.Show(
+                owner,
+                "Remove custom icon PathID "
+                + entry.PathId.ToString(CultureInfo.InvariantCulture)
+                + "?\n\nThis removes the icon from iconlist_ivtr0, deletes the custom DDS from surfaces.pck, and frees the PathID from path.data.",
+                "Remove Custom Icon",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Warning,
+                MessageBoxDefaultButton.Button2);
+            if (confirm != DialogResult.Yes)
+            {
+                return false;
+            }
+
+            Cursor previous = Cursor.Current;
+            try
+            {
+                Cursor.Current = Cursors.WaitCursor;
+                CustomIconCapacityInfo info;
+                string error;
+                if (!customIconService.TryRemoveCustomIcon(database, assetManager, entry, out info, out error))
+                {
+                    MessageBox.Show(
+                        owner,
+                        string.IsNullOrWhiteSpace(error) ? "Failed to remove custom icon." : error,
+                        "Custom Icons",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Warning);
+                    return false;
+                }
+
+                MessageBox.Show(
+                    owner,
+                    "Removed custom icon PathID " + entry.PathId.ToString(CultureInfo.InvariantCulture) + ".",
+                    "Custom Icons",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+                return true;
+            }
+            finally
+            {
+                Cursor.Current = previous;
             }
         }
 

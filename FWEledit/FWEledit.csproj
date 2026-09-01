@@ -444,6 +444,7 @@
     <Compile Include="Models\ElementsJoinOptions.cs" />
     <Compile Include="Models\ElementsJoinResult.cs" />
     <Compile Include="Models\CustomIconEntry.cs" />
+    <Compile Include="Models\CustomIconCapacityInfo.cs" />
     <Compile Include="Models\IconEntryModel.cs" />
     <Compile Include="Models\IconPickerData.cs" />
     <Compile Include="Models\ItemReferenceOption.cs" />

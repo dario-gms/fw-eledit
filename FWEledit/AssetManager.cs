@@ -1253,6 +1253,116 @@ namespace FWEledit
             }
         }
 
+        public bool TryRemovePackageEntryByRebuild(string packageName, string relativePath, out string error)
+        {
+            error = string.Empty;
+            try
+            {
+                if (string.IsNullOrWhiteSpace(packageName))
+                {
+                    error = "Package name not set.";
+                    return false;
+                }
+                if (string.IsNullOrWhiteSpace(relativePath))
+                {
+                    error = "Package entry path not set.";
+                    return false;
+                }
+                if (string.IsNullOrWhiteSpace(GameRootPath) || !Directory.Exists(GameRootPath))
+                {
+                    error = "Game folder not set.";
+                    return false;
+                }
+
+                string package = packageName.Trim();
+                string normalizedRelative = NormalizePackageEntryKey(relativePath);
+                string gameResources = Path.Combine(GameRootPath, "resources");
+                string gamePck = Path.Combine(gameResources, package + ".pck");
+                string gamePkx = Path.Combine(gameResources, package + ".pkx");
+                if (!File.Exists(gamePck))
+                {
+                    error = "Target package does not exist: " + package + ".pck";
+                    return false;
+                }
+
+                string tempRoot = Path.Combine(Path.GetTempPath(), "FWEledit", "pck-remove", package + "-" + Guid.NewGuid().ToString("N"));
+                Directory.CreateDirectory(tempRoot);
+                try
+                {
+                    if (!PckIndexReader.TryExtractEntries(package, gamePck, File.Exists(gamePkx) ? gamePkx : string.Empty, tempRoot, out error))
+                    {
+                        return false;
+                    }
+
+                    string target = Path.Combine(tempRoot, normalizedRelative);
+                    string fullTempRoot = Path.GetFullPath(tempRoot).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+                    string fullTarget = Path.GetFullPath(target);
+                    if (!fullTarget.StartsWith(fullTempRoot, StringComparison.OrdinalIgnoreCase))
+                    {
+                        error = "Invalid package entry path.";
+                        return false;
+                    }
+
+                    if (File.Exists(fullTarget))
+                    {
+                        File.Delete(fullTarget);
+                    }
+
+                    string backupPck = gamePck + ".bak";
+                    string backupPkx = gamePkx + ".bak";
+                    bool hadPkx = File.Exists(gamePkx);
+
+                    if (string.Equals(package, "surfaces", StringComparison.OrdinalIgnoreCase))
+                    {
+                        string backupDir = Path.Combine(GameRootPath, "backup_surfaces");
+                        CreateTimestampedZipBackup(gamePck, backupDir, "surfaces");
+                    }
+                    File.Copy(gamePck, backupPck, true);
+                    if (hadPkx)
+                    {
+                        File.Copy(gamePkx, backupPkx, true);
+                    }
+
+                    int timeoutMs = GetPckOperationTimeoutMs(gamePck, true);
+                    string helperError;
+                    if (!RunWinPckHelper("rebuild", tempRoot, gamePck, 1, timeoutMs, out helperError, FwPckVersionId))
+                    {
+                        RestorePackageFiles(gamePck, gamePkx, backupPck, backupPkx, true, hadPkx);
+                        error = "Failed to rebuild " + package + ".pck";
+                        if (!string.IsNullOrWhiteSpace(helperError))
+                        {
+                            error += Environment.NewLine + helperError;
+                        }
+                        return false;
+                    }
+
+                    PckEntryReaderService.InvalidatePackageGlobally(package);
+                    ClearDirectImageFallbackCache();
+                    string validationError;
+                    if (!pckEntryReaderService.TryWarmPackageIndex(package, out validationError))
+                    {
+                        RestorePackageFiles(gamePck, gamePkx, backupPck, backupPkx, true, hadPkx);
+                        PckEntryReaderService.InvalidatePackageGlobally(package);
+                        ClearDirectImageFallbackCache();
+                        error = "Rebuilt " + package + ".pck could not be read back, so the previous backup was restored. " + validationError;
+                        return false;
+                    }
+
+                    MarkWorkspacePackageDirty(package);
+                    return true;
+                }
+                finally
+                {
+                    TryDeleteDirectory(tempRoot);
+                }
+            }
+            catch (Exception ex)
+            {
+                error = ex.Message;
+                return false;
+            }
+        }
+
         private static string NormalizePackageEntryKey(string value)
         {
             return (value ?? string.Empty)

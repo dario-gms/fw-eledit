@@ -13,15 +13,30 @@ namespace FWEledit
         private readonly ImageList imageList;
         private readonly PictureBox previewBox;
         private readonly Label detailLabel;
+        private readonly Label capacityLabel;
+        private readonly Button expandButton;
+        private readonly Button removeButton;
         private readonly Func<IWin32Window, CustomIconEntry> importIcon;
+        private readonly Func<CustomIconCapacityInfo> getCapacity;
+        private readonly Func<IWin32Window, CustomIconCapacityInfo> expandCapacity;
+        private readonly Func<IWin32Window, CustomIconEntry, bool> removeIcon;
 
         public int SelectedPathId { get; private set; }
 
-        public CustomIconPickerWindow(List<CustomIconEntry> entries, int currentPathId, Func<IWin32Window, CustomIconEntry> importIcon)
+        public CustomIconPickerWindow(
+            List<CustomIconEntry> entries,
+            int currentPathId,
+            Func<IWin32Window, CustomIconEntry> importIcon,
+            Func<CustomIconCapacityInfo> getCapacity,
+            Func<IWin32Window, CustomIconCapacityInfo> expandCapacity,
+            Func<IWin32Window, CustomIconEntry, bool> removeIcon)
         {
             allEntries = entries ?? new List<CustomIconEntry>();
             SelectedPathId = currentPathId;
             this.importIcon = importIcon;
+            this.getCapacity = getCapacity;
+            this.expandCapacity = expandCapacity;
+            this.removeIcon = removeIcon;
 
             Text = "Custom Icons...";
             StartPosition = FormStartPosition.CenterParent;
@@ -97,6 +112,14 @@ namespace FWEledit
             detailLabel.Padding = new Padding(10);
             detailLabel.TextAlign = ContentAlignment.MiddleLeft;
 
+            capacityLabel = new Label();
+            capacityLabel.Dock = DockStyle.Top;
+            capacityLabel.Height = 48;
+            capacityLabel.ForeColor = Color.FromArgb(205, 217, 236);
+            capacityLabel.BackColor = Color.FromArgb(24, 28, 34);
+            capacityLabel.Padding = new Padding(10, 6, 10, 6);
+            capacityLabel.TextAlign = ContentAlignment.MiddleLeft;
+
             Panel bottom = new Panel();
             bottom.Dock = DockStyle.Bottom;
             bottom.Height = 44;
@@ -104,24 +127,42 @@ namespace FWEledit
             bottom.Padding = new Padding(0, 8, 0, 0);
 
             Button cancelButton = BuildButton("Cancel [ESC]");
+            cancelButton.Width = 105;
             cancelButton.Dock = DockStyle.Right;
             cancelButton.Click += (s, e) => { DialogResult = DialogResult.Cancel; Close(); };
 
             Button okButton = BuildButton("OK [Enter]");
+            okButton.Width = 95;
             okButton.Dock = DockStyle.Right;
             okButton.Click += (s, e) => ConfirmSelection();
 
-            Button importButton = BuildButton("Import PNG");
+            Button importButton = BuildButton("Import");
+            importButton.Width = 85;
             importButton.Dock = DockStyle.Left;
             importButton.Enabled = importIcon != null;
             importButton.Click += (s, e) => ImportIcon();
 
+            expandButton = BuildButton("Expand");
+            expandButton.Width = 90;
+            expandButton.Dock = DockStyle.Left;
+            expandButton.Enabled = expandCapacity != null;
+            expandButton.Click += (s, e) => ExpandCapacity();
+
+            removeButton = BuildButton("Remove");
+            removeButton.Width = 85;
+            removeButton.Dock = DockStyle.Left;
+            removeButton.Enabled = false;
+            removeButton.Click += (s, e) => RemoveIcon();
+
             bottom.Controls.Add(importButton);
+            bottom.Controls.Add(expandButton);
+            bottom.Controls.Add(removeButton);
             bottom.Controls.Add(cancelButton);
             bottom.Controls.Add(okButton);
 
             right.Controls.Add(previewBox);
             right.Controls.Add(bottom);
+            right.Controls.Add(capacityLabel);
             right.Controls.Add(detailLabel);
 
             root.Controls.Add(left, 0, 0);
@@ -132,6 +173,7 @@ namespace FWEledit
             CancelButton = cancelButton;
 
             ApplyFilter();
+            RefreshCapacity();
             Shown += (s, e) =>
             {
                 SelectPathId(currentPathId);
@@ -269,6 +311,45 @@ namespace FWEledit
                 ApplyFilter();
             }
             SelectPathId(imported.PathId);
+            RefreshCapacity();
+        }
+
+        private void ExpandCapacity()
+        {
+            if (expandCapacity == null)
+            {
+                return;
+            }
+
+            CustomIconCapacityInfo info = expandCapacity(this);
+            RefreshCapacity(info);
+        }
+
+        private void RefreshCapacity()
+        {
+            CustomIconCapacityInfo info = null;
+            if (getCapacity != null)
+            {
+                info = getCapacity();
+            }
+            RefreshCapacity(info);
+        }
+
+        private void RefreshCapacity(CustomIconCapacityInfo info)
+        {
+            if (info == null)
+            {
+                capacityLabel.Text = "Iconlist capacity unavailable.";
+                expandButton.Enabled = false;
+                return;
+            }
+
+            capacityLabel.Text =
+                "Iconlist: " + info.UsedSlots + "/" + info.Capacity + " used, "
+                + Math.Max(0, info.FreeSlots) + " free"
+                + Environment.NewLine
+                + "Maximum: " + info.MaxCapacity + " slots";
+            expandButton.Enabled = expandCapacity != null && info.CanExpand;
         }
 
         private void SelectPathId(int pathId)
@@ -299,11 +380,56 @@ namespace FWEledit
             {
                 previewBox.Image = null;
                 detailLabel.Text = string.Empty;
+                removeButton.Enabled = false;
                 return;
             }
 
             previewBox.Image = entry.Thumbnail;
             detailLabel.Text = "ID: " + entry.PathId + Environment.NewLine + (entry.Path ?? string.Empty);
+            removeButton.Enabled = removeIcon != null;
+        }
+
+        private void RemoveIcon()
+        {
+            if (removeIcon == null)
+            {
+                return;
+            }
+
+            CustomIconEntry entry = GetSelectedEntry();
+            if (entry == null)
+            {
+                return;
+            }
+
+            int selectedIndex = listView.SelectedIndices.Count > 0 ? listView.SelectedIndices[0] : -1;
+            if (!removeIcon(this, entry))
+            {
+                return;
+            }
+
+            for (int i = allEntries.Count - 1; i >= 0; i--)
+            {
+                if (allEntries[i] != null && allEntries[i].PathId == entry.PathId)
+                {
+                    allEntries.RemoveAt(i);
+                }
+            }
+
+            if (SelectedPathId == entry.PathId)
+            {
+                SelectedPathId = 0;
+            }
+
+            ApplyFilter();
+            if (listView.Items.Count > 0)
+            {
+                int nextIndex = Math.Max(0, Math.Min(selectedIndex, listView.Items.Count - 1));
+                listView.Items[nextIndex].Selected = true;
+                listView.Items[nextIndex].Focused = true;
+                listView.EnsureVisible(nextIndex);
+            }
+            RefreshCapacity();
         }
 
         private CustomIconEntry GetSelectedEntry()

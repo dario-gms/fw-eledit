@@ -12,13 +12,15 @@ FWEledit is based on [sELedit++ by Wrechid](https://github.com/Wrechid/sELedit-)
 
 ---
 
-## What's New in v0.9.5.26
+## What's New in v0.9.5.27
 
 - Added reverse references for `[81] Title Prop Config` by resolving title definition IDs used by reward fields, including references from `[149] Random Gift Bag Essence`.
 - Title rows now use the icon from the first external item that references the title, making title lists easier to scan visually.
-- Filtered out the internal `id_title` self-reference from title reference results so the References tab shows meaningful external usages.
+- Added custom portrait import from PNG with automatic conversion to game-ready TGA assets and `path.data` registration.
+- Added safer item import ID handling, including cross-list item ID collision checks and a right-click **Set unique ID** action.
+- Added a **Custom Icons...** manager for icon fields with PNG import, DDS/icon atlas registration, optional capacity expansion with confirmation, and custom icon removal.
 - Kept the experimental NPCGen map preview code in the project for future work, but disabled the Map View button and disabled client PCK/cache map loading from that feature.
-- Updated project/app version metadata to `v0.9.5.26`.
+- Updated project/app version metadata to `v0.9.5.27`.
 
 Previous release notes were moved to [docs/WHATS_NEW.md](docs/WHATS_NEW.md).
 
