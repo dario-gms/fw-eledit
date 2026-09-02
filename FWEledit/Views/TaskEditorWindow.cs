@@ -27,6 +27,7 @@ namespace FWEledit
         private Label summaryLabel;
         private SplitContainer mainSplit;
         private DataGridView generalGrid;
+        private DataGridView fieldGrid;
         private DataGridView textGrid;
         private DataGridView rawGrid;
         private TextBox hexBox;
@@ -141,9 +142,20 @@ namespace FWEledit
             generalTab.Controls.Add(generalGrid);
             tabs.TabPages.Add(generalTab);
 
+            TabPage fieldsTab = new TabPage("Fields");
+            fieldGrid = CreateGrid();
+            fieldGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Section", Width = 110 });
+            fieldGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Offset", Width = 82 });
+            fieldGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Field", Width = 190 });
+            fieldGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Type", Width = 82 });
+            fieldGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Value", AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill });
+            fieldsTab.Controls.Add(fieldGrid);
+            tabs.TabPages.Add(fieldsTab);
+
             TabPage textTab = new TabPage("Texts");
             textGrid = CreateGrid();
             textGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Offset", Width = 82 });
+            textGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Kind", Width = 130 });
             textGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Text", AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill });
             textTab.Controls.Add(textGrid);
             tabs.TabPages.Add(textTab);
@@ -347,6 +359,7 @@ namespace FWEledit
             }
 
             List<TaskEditorTextValue> texts = TaskEditorFileService.ExtractUnicodeTexts(entry.Bytes);
+            List<TaskEditorFieldValue> knownFields = TaskEditorFileService.BuildKnownFields(entry.Bytes);
             List<TaskEditorRawValue> rawValues = TaskEditorFileService.BuildRawValues(entry.Bytes);
 
             summaryLabel.Text = string.Format(
@@ -361,6 +374,11 @@ namespace FWEledit
 
             AddGeneral("ID", entry.Id.ToString(CultureInfo.InvariantCulture));
             AddGeneral("Name", entry.Name);
+            AddGeneral("Type", GetKnownFieldValue(knownFields, "m_ulType"));
+            AddGeneral("Delivery NPC", GetKnownFieldValue(knownFields, "m_ulDelvNPC"));
+            AddGeneral("Award NPC", GetKnownFieldValue(knownFields, "m_ulAwardNPC"));
+            AddGeneral("Cooldown", GetKnownFieldValue(knownFields, "m_lTimeInterval"));
+            AddGeneral("Avail Frequency", GetKnownFieldValue(knownFields, "m_lAvailFrequency"));
             AddGeneral("Shard", entry.ShardName);
             AddGeneral("Shard index", entry.ShardIndex.ToString(CultureInfo.InvariantCulture));
             AddGeneral("Chunk index", entry.ChunkIndex.ToString(CultureInfo.InvariantCulture));
@@ -370,9 +388,14 @@ namespace FWEledit
             AddGeneral("Size", entry.Size.ToString(CultureInfo.InvariantCulture));
             AddGeneral("Detected text blocks", texts.Count.ToString(CultureInfo.InvariantCulture));
 
+            foreach (TaskEditorFieldValue field in knownFields)
+            {
+                fieldGrid.Rows.Add(field.Section, field.HexOffset, field.Field, field.Type, field.Value);
+            }
+
             foreach (TaskEditorTextValue text in texts)
             {
-                textGrid.Rows.Add("0x" + text.Offset.ToString("X4", CultureInfo.InvariantCulture), text.Text);
+                textGrid.Rows.Add("0x" + text.Offset.ToString("X4", CultureInfo.InvariantCulture), ClassifyText(text), text.Text);
             }
 
             foreach (TaskEditorRawValue value in rawValues)
@@ -388,10 +411,45 @@ namespace FWEledit
             generalGrid.Rows.Add(name ?? string.Empty, value ?? string.Empty);
         }
 
+        private string GetKnownFieldValue(List<TaskEditorFieldValue> fields, string fieldName)
+        {
+            if (fields == null)
+            {
+                return string.Empty;
+            }
+
+            TaskEditorFieldValue field = fields.FirstOrDefault(value => string.Equals(value.Field, fieldName, StringComparison.Ordinal));
+            return field != null ? field.Value : string.Empty;
+        }
+
+        private string ClassifyText(TaskEditorTextValue text)
+        {
+            if (text == null)
+            {
+                return string.Empty;
+            }
+
+            if (text.Offset == 0x0004)
+            {
+                return "Name";
+            }
+            if (text.Text != null && text.Text.Length > 80)
+            {
+                return "Description";
+            }
+            if (string.Equals(text.Text, "RootNode", StringComparison.OrdinalIgnoreCase))
+            {
+                return "Talk node";
+            }
+
+            return "Text";
+        }
+
         private void ClearDetails()
         {
             summaryLabel.Text = string.Empty;
             generalGrid.Rows.Clear();
+            fieldGrid.Rows.Clear();
             textGrid.Rows.Clear();
             rawGrid.Rows.Clear();
             hexBox.Text = string.Empty;

@@ -369,6 +369,177 @@ namespace FWEledit
             return values;
         }
 
+        public static List<TaskEditorFieldValue> BuildKnownFields(byte[] bytes)
+        {
+            List<TaskEditorFieldValue> values = new List<TaskEditorFieldValue>();
+            if (bytes == null)
+            {
+                return values;
+            }
+
+            FieldSpec[] specs =
+            {
+                new FieldSpec("General", "m_ID", 0x0000, "uint"),
+                new FieldSpec("General", "m_szName", 0x0004, "wstring:30"),
+                new FieldSpec("General", "m_bHidden", 0x0040, "bool"),
+                new FieldSpec("General", "m_bOffLineIsFail", 0x0041, "bool"),
+                new FieldSpec("General", "m_bHasSign", 0x0042, "bool"),
+                new FieldSpec("General", "m_ulType", 0x004B, "uint"),
+                new FieldSpec("General", "m_ulTimeLimit", 0x004F, "uint"),
+                new FieldSpec("General", "m_bAbsTime", 0x0053, "bool"),
+                new FieldSpec("General", "m_ulTimetable", 0x0054, "uint"),
+                new FieldSpec("General", "m_lAvailFrequency", 0x0074, "int"),
+                new FieldSpec("General", "m_lTimeInterval", 0x0078, "int"),
+                new FieldSpec("Flags", "m_bBirthday", 0x007C, "bool"),
+                new FieldSpec("Flags", "m_bBuild", 0x007D, "bool"),
+                new FieldSpec("Flags", "m_bNoExpMakeUp", 0x007E, "bool"),
+                new FieldSpec("Flags", "m_bChooseOne", 0x007F, "bool"),
+                new FieldSpec("Flags", "m_bRandOne", 0x0080, "bool"),
+                new FieldSpec("Flags", "m_bExeChildInOrder", 0x0081, "bool"),
+                new FieldSpec("Flags", "m_bParentAlsoFail", 0x0082, "bool"),
+                new FieldSpec("Flags", "m_bParentAlsoSucc", 0x0083, "bool"),
+                new FieldSpec("Flags", "m_bCanGiveUp", 0x0084, "bool"),
+                new FieldSpec("Flags", "m_bCanRedo", 0x0085, "bool"),
+                new FieldSpec("Flags", "m_bCanRedoAfterFailure", 0x0086, "bool"),
+                new FieldSpec("Flags", "m_bClearAsGiveUp", 0x0087, "bool"),
+                new FieldSpec("Flags", "m_bUIButtonTask", 0x0088, "bool"),
+                new FieldSpec("Flags", "m_bNeedRecord", 0x0089, "bool"),
+                new FieldSpec("Flags", "m_bFailAsPlayerDie", 0x008A, "bool"),
+                new FieldSpec("Delivery", "m_ulMaxReceiver", 0x008B, "uint"),
+                new FieldSpec("Delivery", "m_bDelvInZone", 0x008F, "bool"),
+                new FieldSpec("Delivery", "m_ulDelvWorld", 0x0090, "uint"),
+                new FieldSpec("Delivery", "m_DelvMinVert", 0x0094, "zone"),
+                new FieldSpec("Delivery", "m_DelvMaxVert", 0x00A0, "zone"),
+                new FieldSpec("Delivery", "m_bOutZoneFail", 0x00AC, "bool"),
+                new FieldSpec("Delivery", "m_ulOutZoneWorldID", 0x00AD, "uint"),
+                new FieldSpec("Delivery", "m_OutZoneMinVert", 0x00B1, "zone"),
+                new FieldSpec("Delivery", "m_OutZoneMaxVert", 0x00BD, "zone"),
+                new FieldSpec("Transport", "m_bTransTo", 0x00C9, "bool"),
+                new FieldSpec("Transport", "m_ulTransWldId", 0x00CA, "uint"),
+                new FieldSpec("Transport", "m_TransPt", 0x00CE, "zone"),
+                new FieldSpec("Flow", "m_bAutoDeliver", 0x00DA, "bool"),
+                new FieldSpec("Flow", "m_bDeathTrig", 0x00DB, "bool"),
+                new FieldSpec("Flow", "m_bClearAcquired", 0x00DC, "bool"),
+                new FieldSpec("Flow", "m_ulSuitableLevel", 0x00DD, "uint"),
+                new FieldSpec("Flow", "m_bSuitLevelEx", 0x00E1, "bool"),
+                new FieldSpec("Flow", "m_bShowPrompt", 0x00E2, "bool"),
+                new FieldSpec("Flow", "m_bKeyTask", 0x00E3, "bool"),
+                new FieldSpec("Flow", "m_bLuaTask", 0x00E4, "bool"),
+                new FieldSpec("NPC", "m_ulDelvNPC", 0x00E5, "uint"),
+                new FieldSpec("NPC", "m_ulAwardNPC", 0x00E9, "uint"),
+                new FieldSpec("Flow", "m_bSkillTask", 0x00ED, "bool"),
+                new FieldSpec("Flow", "m_bCanSeekOut", 0x00EE, "bool"),
+                new FieldSpec("Flow", "m_bShowDirection", 0x00EF, "bool"),
+                new FieldSpec("General", "m_fStorageWeight", 0x00F0, "float"),
+                new FieldSpec("General", "m_ulRank", 0x00F4, "uint"),
+                new FieldSpec("Flags", "m_bMarriage", 0x00F8, "bool"),
+                new FieldSpec("Flags", "m_bSharedByFamily", 0x00F9, "bool"),
+                new FieldSpec("Finish Count", "m_bRecFinishCount", 0x00FA, "bool"),
+                new FieldSpec("Finish Count", "m_bRecFinishCountGlobal", 0x00FB, "bool"),
+                new FieldSpec("Finish Count", "m_ulMaxFinishCount", 0x00FC, "uint"),
+                new FieldSpec("Finish Count", "m_FinishClearTime", 0x0100, "task_tm"),
+                new FieldSpec("Finish Count", "m_nFinishTimeType", 0x0118, "int"),
+                new FieldSpec("Trade", "m_bPursueTradeTask", 0x011C, "bool"),
+                new FieldSpec("Trade", "m_ulPursueTradeTemplID", 0x011D, "uint"),
+                new FieldSpec("General", "m_nTopic", 0x0121, "int"),
+                new FieldSpec("General", "m_ulCameraMove", 0x0125, "uint"),
+                new FieldSpec("Message", "m_bSendMsg", 0x0129, "bool"),
+                new FieldSpec("Message", "m_nMsgChannel", 0x012A, "int"),
+                new FieldSpec("Terminate", "m_ulTerminateCount", 0x012E, "uint")
+            };
+
+            foreach (FieldSpec spec in specs)
+            {
+                string value;
+                if (!TryReadField(bytes, spec, out value))
+                {
+                    continue;
+                }
+
+                values.Add(new TaskEditorFieldValue
+                {
+                    Section = spec.Section,
+                    Field = spec.Name,
+                    Offset = spec.Offset,
+                    HexOffset = "0x" + spec.Offset.ToString("X4", CultureInfo.InvariantCulture),
+                    Type = spec.Kind,
+                    Value = value
+                });
+            }
+
+            return values;
+        }
+
+        private static bool TryReadField(byte[] bytes, FieldSpec spec, out string value)
+        {
+            value = string.Empty;
+            if (bytes == null || spec == null || spec.Offset < 0 || spec.Offset >= bytes.Length)
+            {
+                return false;
+            }
+
+            if (spec.Kind == "bool")
+            {
+                value = bytes[spec.Offset] == 0 ? "No" : "Yes";
+                return true;
+            }
+            if (spec.Kind == "uint")
+            {
+                if (spec.Offset + 4 > bytes.Length) return false;
+                value = BitConverter.ToUInt32(bytes, spec.Offset).ToString(CultureInfo.InvariantCulture);
+                return true;
+            }
+            if (spec.Kind == "int")
+            {
+                if (spec.Offset + 4 > bytes.Length) return false;
+                value = BitConverter.ToInt32(bytes, spec.Offset).ToString(CultureInfo.InvariantCulture);
+                return true;
+            }
+            if (spec.Kind == "float")
+            {
+                if (spec.Offset + 4 > bytes.Length) return false;
+                value = BitConverter.ToSingle(bytes, spec.Offset).ToString("R", CultureInfo.InvariantCulture);
+                return true;
+            }
+            if (spec.Kind == "zone")
+            {
+                if (spec.Offset + 12 > bytes.Length) return false;
+                value = string.Format(
+                    CultureInfo.InvariantCulture,
+                    "X {0:R}, Y {1:R}, Z {2:R}",
+                    BitConverter.ToSingle(bytes, spec.Offset),
+                    BitConverter.ToSingle(bytes, spec.Offset + 4),
+                    BitConverter.ToSingle(bytes, spec.Offset + 8));
+                return true;
+            }
+            if (spec.Kind == "task_tm")
+            {
+                if (spec.Offset + 24 > bytes.Length) return false;
+                value = string.Format(
+                    CultureInfo.InvariantCulture,
+                    "Y {0}, M {1}, D {2}, H {3}, M {4}, W {5}",
+                    BitConverter.ToInt32(bytes, spec.Offset),
+                    BitConverter.ToInt32(bytes, spec.Offset + 4),
+                    BitConverter.ToInt32(bytes, spec.Offset + 8),
+                    BitConverter.ToInt32(bytes, spec.Offset + 12),
+                    BitConverter.ToInt32(bytes, spec.Offset + 16),
+                    BitConverter.ToInt32(bytes, spec.Offset + 20));
+                return true;
+            }
+            if (spec.Kind.StartsWith("wstring:", StringComparison.Ordinal))
+            {
+                int charCount;
+                if (!int.TryParse(spec.Kind.Substring("wstring:".Length), out charCount))
+                {
+                    return false;
+                }
+                value = ReadTaskName(bytes, spec.Offset, charCount);
+                return true;
+            }
+
+            return false;
+        }
+
         private static string GetFieldHint(int offset)
         {
             if (offset == 0)
@@ -480,6 +651,22 @@ namespace FWEledit
             public int Start { get; set; }
             public int Id { get; set; }
             public string Name { get; set; }
+        }
+
+        private sealed class FieldSpec
+        {
+            public FieldSpec(string section, string name, int offset, string kind)
+            {
+                Section = section;
+                Name = name;
+                Offset = offset;
+                Kind = kind;
+            }
+
+            public string Section { get; private set; }
+            public string Name { get; private set; }
+            public int Offset { get; private set; }
+            public string Kind { get; private set; }
         }
     }
 }

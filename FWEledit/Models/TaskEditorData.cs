@@ -54,6 +54,16 @@ namespace FWEledit
         public string Text { get; set; }
     }
 
+    public sealed class TaskEditorFieldValue
+    {
+        public string Section { get; set; }
+        public string Field { get; set; }
+        public int Offset { get; set; }
+        public string HexOffset { get; set; }
+        public string Type { get; set; }
+        public string Value { get; set; }
+    }
+
     public sealed class TaskEditorRawValue
     {
         public int Offset { get; set; }
