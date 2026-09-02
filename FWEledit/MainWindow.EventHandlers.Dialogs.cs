@@ -262,6 +262,19 @@ namespace FWEledit
             npcGenEditorWindow.BringToFront();
         }
 
+        private void click_taskEditor(object sender, EventArgs e)
+        {
+            if (taskEditorWindow == null || taskEditorWindow.IsDisposed)
+            {
+                taskEditorWindow = new TaskEditorWindow(sessionService);
+                taskEditorWindow.FormClosed += (s, args) => taskEditorWindow = null;
+            }
+
+            taskEditorWindow.Show(this);
+            taskEditorWindow.BringToFront();
+            taskEditorWindow.OpenDefaultGameRoot();
+        }
+
         private void click_advancedTitleEditor(object sender, EventArgs e)
         {
             if (titleEditorWindow == null || titleEditorWindow.IsDisposed)

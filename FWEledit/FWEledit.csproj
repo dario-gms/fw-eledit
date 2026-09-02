@@ -491,6 +491,7 @@
     <Compile Include="Models\ItemTransferPackageModels.cs" />
     <Compile Include="Models\NpcGenData.cs" />
     <Compile Include="Models\NpcGenMapPreviewData.cs" />
+    <Compile Include="Models\TaskEditorData.cs" />
     <Compile Include="ItemTransferImportModeWindow.cs" />
     <Compile Include="ItemTransferModelsOnlyResultWindow.cs" />
     <Compile Include="Models\ElementSearchRequest.cs" />
@@ -871,6 +872,7 @@
     <Compile Include="Services\NpcGenMapNameResolverService.cs" />
     <Compile Include="Services\NpcGenMapPreviewService.cs" />
     <Compile Include="Services\NpcGenScriptReferenceService.cs" />
+    <Compile Include="Services\TaskEditorFileService.cs" />
     <Compile Include="Services\GameShopDataService.cs" />
     <Compile Include="Services\GameShopIconService.cs" />
     <Compile Include="Services\ReferenceIndexService.cs" />
@@ -1082,6 +1084,9 @@
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="Views\NpcGenSpawnEditorWindow.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Views\TaskEditorWindow.cs">
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="Views\EquipmentMaskPickerWindow.cs">
