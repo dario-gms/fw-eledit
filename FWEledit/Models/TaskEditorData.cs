@@ -58,6 +58,8 @@ namespace FWEledit
     {
         public string Section { get; set; }
         public string Field { get; set; }
+        public string DisplayName { get; set; }
+        public string Meaning { get; set; }
         public int Offset { get; set; }
         public string HexOffset { get; set; }
         public string Type { get; set; }

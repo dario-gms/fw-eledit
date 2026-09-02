@@ -460,6 +460,8 @@ namespace FWEledit
                 {
                     Section = spec.Section,
                     Field = spec.Name,
+                    DisplayName = GetFieldDisplayName(spec.Name),
+                    Meaning = GetFieldMeaning(spec.Name),
                     Offset = spec.Offset,
                     HexOffset = "0x" + spec.Offset.ToString("X4", CultureInfo.InvariantCulture),
                     Type = spec.Kind,
@@ -538,6 +540,149 @@ namespace FWEledit
             }
 
             return false;
+        }
+
+        private static string GetFieldDisplayName(string fieldName)
+        {
+            switch (fieldName)
+            {
+                case "m_ID": return "Task ID";
+                case "m_szName": return "Task name";
+                case "m_bHidden": return "Hidden";
+                case "m_bOffLineIsFail": return "Fails on logout";
+                case "m_bHasSign": return "Has signature";
+                case "m_ulType": return "Task type";
+                case "m_ulTimeLimit": return "Time limit";
+                case "m_bAbsTime": return "Absolute time";
+                case "m_ulTimetable": return "Timetable";
+                case "m_lAvailFrequency": return "Available times";
+                case "m_lTimeInterval": return "Cooldown";
+                case "m_bBirthday": return "Birthday only";
+                case "m_bBuild": return "Build task";
+                case "m_bNoExpMakeUp": return "No EXP makeup";
+                case "m_bChooseOne": return "Choose one child";
+                case "m_bRandOne": return "Random child";
+                case "m_bExeChildInOrder": return "Children in order";
+                case "m_bParentAlsoFail": return "Parent fails with child";
+                case "m_bParentAlsoSucc": return "Parent succeeds with child";
+                case "m_bCanGiveUp": return "Can give up";
+                case "m_bCanRedo": return "Repeatable";
+                case "m_bCanRedoAfterFailure": return "Repeat after failure";
+                case "m_bClearAsGiveUp": return "Clear as give up";
+                case "m_bUIButtonTask": return "UI button task";
+                case "m_bNeedRecord": return "Requires record";
+                case "m_bFailAsPlayerDie": return "Fails on death";
+                case "m_ulMaxReceiver": return "Receiver limit";
+                case "m_bDelvInZone": return "Start in zone";
+                case "m_ulDelvWorld": return "Start world";
+                case "m_DelvMinVert": return "Start zone min";
+                case "m_DelvMaxVert": return "Start zone max";
+                case "m_bOutZoneFail": return "Fail outside zone";
+                case "m_ulOutZoneWorldID": return "Outside-zone world";
+                case "m_OutZoneMinVert": return "Outside-zone min";
+                case "m_OutZoneMaxVert": return "Outside-zone max";
+                case "m_bTransTo": return "Teleport on delivery";
+                case "m_ulTransWldId": return "Teleport world";
+                case "m_TransPt": return "Teleport point";
+                case "m_bAutoDeliver": return "Auto deliver";
+                case "m_bDeathTrig": return "Death trigger";
+                case "m_bClearAcquired": return "Clear acquired items";
+                case "m_ulSuitableLevel": return "Recommended level";
+                case "m_bSuitLevelEx": return "Exact level gate";
+                case "m_bShowPrompt": return "Show prompt";
+                case "m_bKeyTask": return "Key task";
+                case "m_bLuaTask": return "Lua task";
+                case "m_ulDelvNPC": return "Start NPC";
+                case "m_ulAwardNPC": return "Finish NPC";
+                case "m_bSkillTask": return "Living skill task";
+                case "m_bCanSeekOut": return "Can track/search";
+                case "m_bShowDirection": return "Show direction";
+                case "m_fStorageWeight": return "Storage weight";
+                case "m_ulRank": return "Rank";
+                case "m_bMarriage": return "Marriage task";
+                case "m_bSharedByFamily": return "Shared by family";
+                case "m_bRecFinishCount": return "Records finish count";
+                case "m_bRecFinishCountGlobal": return "Global finish count";
+                case "m_ulMaxFinishCount": return "Max finishes";
+                case "m_FinishClearTime": return "Finish counter reset";
+                case "m_nFinishTimeType": return "Finish reset type";
+                case "m_bPursueTradeTask": return "Trade route task";
+                case "m_ulPursueTradeTemplID": return "Trade route template";
+                case "m_nTopic": return "Topic";
+                case "m_ulCameraMove": return "Camera move";
+                case "m_bSendMsg": return "Sends message";
+                case "m_nMsgChannel": return "Message channel";
+                case "m_ulTerminateCount": return "Terminate count";
+                default: return MakeDisplayName(fieldName);
+            }
+        }
+
+        private static string GetFieldMeaning(string fieldName)
+        {
+            switch (fieldName)
+            {
+                case "m_ID": return "Unique identifier used by task references and scripts.";
+                case "m_szName": return "Name shown by editors and usually mirrored in task text.";
+                case "m_bHidden": return "Keeps the task out of normal visible lists until something exposes it.";
+                case "m_bOffLineIsFail": return "The task fails if the player logs out while it is active.";
+                case "m_bHasSign": return "Marks the task as carrying a signature/special marker.";
+                case "m_ulType": return "High-level task category used by the game logic.";
+                case "m_ulTimeLimit": return "Countdown in seconds; zero means no countdown from this field.";
+                case "m_bAbsTime": return "Uses calendar/absolute time instead of a relative countdown.";
+                case "m_ulTimetable": return "Number of timetable entries stored after the fixed header.";
+                case "m_lAvailFrequency": return "How many times the task can be taken in its availability window.";
+                case "m_lTimeInterval": return "Delay in seconds before the task can be taken again.";
+                case "m_bCanGiveUp": return "Player is allowed to abandon the task.";
+                case "m_bCanRedo": return "Player can repeat the task after completing it.";
+                case "m_bCanRedoAfterFailure": return "Player can try again after failing it.";
+                case "m_bClearAsGiveUp": return "Completion cleanup behaves like giving up the task.";
+                case "m_bFailAsPlayerDie": return "The task fails when the character dies.";
+                case "m_ulMaxReceiver": return "Maximum number of players that can receive this task, when enforced.";
+                case "m_bDelvInZone": return "Task can only be received inside the configured delivery area.";
+                case "m_ulDelvWorld": return "World/map where the receive-area check happens.";
+                case "m_DelvMinVert": return "Minimum corner of the receive-area bounding box.";
+                case "m_DelvMaxVert": return "Maximum corner of the receive-area bounding box.";
+                case "m_bOutZoneFail": return "Task fails when the player leaves the configured area.";
+                case "m_bTransTo": return "Teleports the player when the task is delivered.";
+                case "m_TransPt": return "Destination coordinate for delivery teleport.";
+                case "m_bAutoDeliver": return "Task is automatically delivered when conditions are met.";
+                case "m_bDeathTrig": return "Death can trigger progress or completion logic.";
+                case "m_bClearAcquired": return "Acquired task items are removed during cleanup.";
+                case "m_ulSuitableLevel": return "Level displayed/used as the recommended level.";
+                case "m_bSuitLevelEx": return "Treats the recommended level as a strict level gate.";
+                case "m_bShowPrompt": return "Shows task prompts to guide the player.";
+                case "m_bKeyTask": return "Marks the task as important/mainline content.";
+                case "m_bLuaTask": return "Task behavior depends on Lua-side logic.";
+                case "m_ulDelvNPC": return "NPC that gives or starts the task.";
+                case "m_ulAwardNPC": return "NPC that receives or finishes the task.";
+                case "m_bCanSeekOut": return "Allows the client to show tracking/search help.";
+                case "m_bShowDirection": return "Allows directional guidance in the client.";
+                case "m_bRecFinishCount": return "Stores per-player completion count for limits or display.";
+                case "m_ulMaxFinishCount": return "Maximum completion count when finish-count tracking is active.";
+                case "m_bPursueTradeTask": return "Connects the task to trade-route gameplay.";
+                case "m_bSendMsg": return "Sends a configured message when the task logic fires.";
+                case "m_ulTerminateCount": return "Number of termination records stored after the fixed header.";
+                default: return string.Empty;
+            }
+        }
+
+        private static string MakeDisplayName(string fieldName)
+        {
+            string clean = (fieldName ?? string.Empty)
+                .Replace("m_ul", string.Empty)
+                .Replace("m_b", string.Empty)
+                .Replace("m_l", string.Empty)
+                .Replace("m_n", string.Empty)
+                .Replace("m_f", string.Empty)
+                .Replace("m_sz", string.Empty)
+                .Replace("m_", string.Empty);
+
+            if (string.IsNullOrWhiteSpace(clean))
+            {
+                return fieldName ?? string.Empty;
+            }
+
+            return Regex.Replace(clean, "([a-z])([A-Z])", "$1 $2");
         }
 
         private static string GetFieldHint(int offset)

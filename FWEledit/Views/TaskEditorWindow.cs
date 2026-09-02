@@ -4,6 +4,7 @@ using System.Drawing;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
@@ -12,6 +13,7 @@ namespace FWEledit
     public sealed class TaskEditorWindow : Form
     {
         private readonly TaskEditorFileService fileService = new TaskEditorFileService();
+        private readonly NpcGenEntityLookupService entityLookupService = new NpcGenEntityLookupService();
         private readonly ISessionService sessionService;
         private TaskEditorData currentData;
         private List<TaskEditorEntry> filteredEntries = new List<TaskEditorEntry>();
@@ -26,6 +28,7 @@ namespace FWEledit
         private Label statusLabel;
         private Label summaryLabel;
         private SplitContainer mainSplit;
+        private RichTextBox overviewBox;
         private DataGridView generalGrid;
         private DataGridView fieldGrid;
         private DataGridView textGrid;
@@ -135,6 +138,16 @@ namespace FWEledit
             tabs.Dock = DockStyle.Fill;
             right.Controls.Add(tabs, 0, 1);
 
+            TabPage overviewTab = new TabPage("Overview");
+            overviewBox = new RichTextBox();
+            overviewBox.Dock = DockStyle.Fill;
+            overviewBox.ReadOnly = true;
+            overviewBox.BorderStyle = BorderStyle.None;
+            overviewBox.Font = new Font("Segoe UI", 10F, FontStyle.Regular, GraphicsUnit.Point, 0);
+            overviewBox.DetectUrls = false;
+            overviewTab.Controls.Add(overviewBox);
+            tabs.TabPages.Add(overviewTab);
+
             TabPage generalTab = new TabPage("General");
             generalGrid = CreateGrid();
             generalGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Field", Width = 190 });
@@ -142,13 +155,14 @@ namespace FWEledit
             generalTab.Controls.Add(generalGrid);
             tabs.TabPages.Add(generalTab);
 
-            TabPage fieldsTab = new TabPage("Fields");
+            TabPage fieldsTab = new TabPage("Decoded Fields");
             fieldGrid = CreateGrid();
-            fieldGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Section", Width = 110 });
+            fieldGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Group", Width = 112 });
+            fieldGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Field", Width = 180 });
+            fieldGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Value", Width = 190 });
+            fieldGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Meaning", AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill });
+            fieldGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Source", Width = 150 });
             fieldGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Offset", Width = 82 });
-            fieldGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Field", Width = 190 });
-            fieldGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Type", Width = 82 });
-            fieldGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Value", AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill });
             fieldsTab.Controls.Add(fieldGrid);
             tabs.TabPages.Add(fieldsTab);
 
@@ -160,7 +174,7 @@ namespace FWEledit
             textTab.Controls.Add(textGrid);
             tabs.TabPages.Add(textTab);
 
-            TabPage rawTab = new TabPage("All Values");
+            TabPage rawTab = new TabPage("Technical Values");
             rawGrid = CreateGrid();
             rawGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Offset", Width = 78 });
             rawGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Hint", Width = 110 });
@@ -171,7 +185,7 @@ namespace FWEledit
             rawTab.Controls.Add(rawGrid);
             tabs.TabPages.Add(rawTab);
 
-            TabPage hexTab = new TabPage("Hex Preview");
+            TabPage hexTab = new TabPage("Hex");
             hexBox = new TextBox();
             hexBox.Dock = DockStyle.Fill;
             hexBox.Multiline = true;
@@ -375,8 +389,8 @@ namespace FWEledit
             AddGeneral("ID", entry.Id.ToString(CultureInfo.InvariantCulture));
             AddGeneral("Name", entry.Name);
             AddGeneral("Type", GetKnownFieldValue(knownFields, "m_ulType"));
-            AddGeneral("Delivery NPC", GetKnownFieldValue(knownFields, "m_ulDelvNPC"));
-            AddGeneral("Award NPC", GetKnownFieldValue(knownFields, "m_ulAwardNPC"));
+            AddGeneral("Delivery NPC", FormatNpc(GetKnownFieldValue(knownFields, "m_ulDelvNPC")));
+            AddGeneral("Award NPC", FormatNpc(GetKnownFieldValue(knownFields, "m_ulAwardNPC")));
             AddGeneral("Cooldown", GetKnownFieldValue(knownFields, "m_lTimeInterval"));
             AddGeneral("Avail Frequency", GetKnownFieldValue(knownFields, "m_lAvailFrequency"));
             AddGeneral("Shard", entry.ShardName);
@@ -388,9 +402,12 @@ namespace FWEledit
             AddGeneral("Size", entry.Size.ToString(CultureInfo.InvariantCulture));
             AddGeneral("Detected text blocks", texts.Count.ToString(CultureInfo.InvariantCulture));
 
+            SetOverviewText(BuildOverview(entry, knownFields, texts));
+
             foreach (TaskEditorFieldValue field in knownFields)
             {
-                fieldGrid.Rows.Add(field.Section, field.HexOffset, field.Field, field.Type, field.Value);
+                int rowIndex = fieldGrid.Rows.Add(field.Section, field.DisplayName, field.Value, field.Meaning, field.Field, field.HexOffset);
+                StyleFieldRow(fieldGrid.Rows[rowIndex], field.Section);
             }
 
             foreach (TaskEditorTextValue text in texts)
@@ -422,6 +439,273 @@ namespace FWEledit
             return field != null ? field.Value : string.Empty;
         }
 
+        private string BuildOverview(TaskEditorEntry entry, List<TaskEditorFieldValue> fields, List<TaskEditorTextValue> texts)
+        {
+            StringBuilder builder = new StringBuilder();
+            builder.AppendLine(entry.Id.ToString(CultureInfo.InvariantCulture) + " - " + (entry.Name ?? string.Empty));
+            builder.AppendLine();
+
+            AppendSection(builder, "Player-facing summary");
+            AppendItem(builder, "Task type", DescribeTaskType(GetKnownFieldValue(fields, "m_ulType")));
+            AppendItem(builder, "Recommended level", ZeroAsNone(GetKnownFieldValue(fields, "m_ulSuitableLevel")));
+            AppendItem(builder, "Start NPC", FormatNpc(GetKnownFieldValue(fields, "m_ulDelvNPC")));
+            AppendItem(builder, "Finish NPC", FormatNpc(GetKnownFieldValue(fields, "m_ulAwardNPC")));
+            AppendItem(builder, "Visibility", IsYes(fields, "m_bHidden") ? "Hidden until unlocked or triggered" : "Visible when conditions allow it");
+            AppendItem(builder, "Tracking", BuildTrackingSummary(fields));
+            AppendItem(builder, "Importance", IsYes(fields, "m_bKeyTask") ? "Marked as a key task" : "Normal task");
+
+            builder.AppendLine();
+            AppendSection(builder, "Availability and repeat rules");
+            AppendItem(builder, "Can give up", YesNoMeaning(fields, "m_bCanGiveUp"));
+            AppendItem(builder, "Repeatable", YesNoMeaning(fields, "m_bCanRedo"));
+            AppendItem(builder, "Retry after failure", YesNoMeaning(fields, "m_bCanRedoAfterFailure"));
+            AppendItem(builder, "Available times", ZeroAsNone(GetKnownFieldValue(fields, "m_lAvailFrequency")));
+            AppendItem(builder, "Cooldown", FormatSeconds(GetKnownFieldValue(fields, "m_lTimeInterval")));
+            AppendItem(builder, "Time limit", FormatSeconds(GetKnownFieldValue(fields, "m_ulTimeLimit")));
+
+            builder.AppendLine();
+            AppendSection(builder, "Game flow");
+            AppendItem(builder, "Auto delivery", YesNoMeaning(fields, "m_bAutoDeliver"));
+            AppendItem(builder, "Death behavior", IsYes(fields, "m_bFailAsPlayerDie") ? "Fails when the player dies" : "Does not fail from death flag");
+            AppendItem(builder, "Cleanup", IsYes(fields, "m_bClearAcquired") ? "Removes acquired task items during cleanup" : "No acquired-item cleanup flag");
+            AppendItem(builder, "Lua logic", IsYes(fields, "m_bLuaTask") ? "Uses Lua-side behavior" : "No Lua task flag");
+
+            string description = GetDescriptionText(texts, entry.Name);
+            if (!string.IsNullOrWhiteSpace(description))
+            {
+                builder.AppendLine();
+                AppendSection(builder, "Description");
+                builder.AppendLine(WrapLongText(description));
+            }
+
+            List<string> dialogLines = GetDialogPreview(texts, entry.Name, description);
+            if (dialogLines.Count > 0)
+            {
+                builder.AppendLine();
+                AppendSection(builder, "Dialog preview");
+                foreach (string line in dialogLines)
+                {
+                    builder.AppendLine("- " + line);
+                }
+            }
+
+            builder.AppendLine();
+            AppendSection(builder, "Technical source");
+            AppendItem(builder, "Shard", entry.ShardName + " / chunk " + entry.ChunkIndex.ToString(CultureInfo.InvariantCulture));
+            AppendItem(builder, "Offset", "0x" + entry.AbsoluteOffset.ToString("X", CultureInfo.InvariantCulture));
+            AppendItem(builder, "Size", entry.Size.ToString("N0", CultureInfo.InvariantCulture) + " bytes");
+            return builder.ToString();
+        }
+
+        private void SetOverviewText(string text)
+        {
+            overviewBox.Clear();
+            overviewBox.Text = text ?? string.Empty;
+
+            if (string.IsNullOrEmpty(overviewBox.Text))
+            {
+                return;
+            }
+
+            overviewBox.SelectAll();
+            overviewBox.SelectionFont = new Font("Segoe UI", 10F, FontStyle.Regular, GraphicsUnit.Point, 0);
+            overviewBox.SelectionColor = Color.FromArgb(223, 230, 238);
+
+            int firstLineEnd = overviewBox.Text.IndexOf(Environment.NewLine, StringComparison.Ordinal);
+            if (firstLineEnd > 0)
+            {
+                overviewBox.Select(0, firstLineEnd);
+                overviewBox.SelectionFont = new Font("Segoe UI Semibold", 13F, FontStyle.Bold, GraphicsUnit.Point, 0);
+                overviewBox.SelectionColor = Color.FromArgb(255, 235, 170);
+            }
+
+            string[] sectionTitles =
+            {
+                "PLAYER-FACING SUMMARY",
+                "AVAILABILITY AND REPEAT RULES",
+                "GAME FLOW",
+                "DESCRIPTION",
+                "DIALOG PREVIEW",
+                "TECHNICAL SOURCE"
+            };
+
+            foreach (string sectionTitle in sectionTitles)
+            {
+                int index = overviewBox.Text.IndexOf(sectionTitle, StringComparison.Ordinal);
+                if (index < 0)
+                {
+                    continue;
+                }
+
+                overviewBox.Select(index, sectionTitle.Length);
+                overviewBox.SelectionFont = new Font("Segoe UI Semibold", 9.5F, FontStyle.Bold, GraphicsUnit.Point, 0);
+                overviewBox.SelectionColor = GetOverviewSectionColor(sectionTitle);
+            }
+
+            overviewBox.Select(0, 0);
+        }
+
+        private static Color GetOverviewSectionColor(string sectionTitle)
+        {
+            switch (sectionTitle)
+            {
+                case "PLAYER-FACING SUMMARY": return Color.FromArgb(111, 202, 255);
+                case "AVAILABILITY AND REPEAT RULES": return Color.FromArgb(125, 214, 157);
+                case "GAME FLOW": return Color.FromArgb(255, 196, 116);
+                case "DESCRIPTION": return Color.FromArgb(218, 188, 255);
+                case "DIALOG PREVIEW": return Color.FromArgb(255, 145, 165);
+                case "TECHNICAL SOURCE": return Color.FromArgb(160, 169, 181);
+                default: return Color.FromArgb(223, 230, 238);
+            }
+        }
+
+        private static void AppendSection(StringBuilder builder, string title)
+        {
+            builder.AppendLine(title.ToUpperInvariant());
+        }
+
+        private static void AppendItem(StringBuilder builder, string label, string value)
+        {
+            builder.AppendLine(label + ": " + (string.IsNullOrWhiteSpace(value) ? "-" : value));
+        }
+
+        private string BuildTrackingSummary(List<TaskEditorFieldValue> fields)
+        {
+            bool seek = IsYes(fields, "m_bCanSeekOut");
+            bool direction = IsYes(fields, "m_bShowDirection");
+            bool prompt = IsYes(fields, "m_bShowPrompt");
+            List<string> parts = new List<string>();
+            if (seek) parts.Add("searchable");
+            if (direction) parts.Add("direction marker");
+            if (prompt) parts.Add("client prompt");
+            return parts.Count == 0 ? "No tracking flags enabled" : string.Join(", ", parts);
+        }
+
+        private string DescribeTaskType(string value)
+        {
+            int type;
+            if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out type))
+            {
+                return value;
+            }
+
+            switch (type)
+            {
+                case 0: return "0 - Basic/normal";
+                case 4: return "4 - Daily style";
+                case 9: return "9 - NPC/story task";
+                default: return type.ToString(CultureInfo.InvariantCulture);
+            }
+        }
+
+        private string FormatNpc(string value)
+        {
+            uint id;
+            if (!uint.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out id) || id == 0)
+            {
+                return "None";
+            }
+
+            if (id > int.MaxValue || sessionService == null)
+            {
+                return value;
+            }
+
+            NpcGenEntityInfo info = entityLookupService.Resolve(sessionService.ListCollection, sessionService.Database, (int)id);
+            if (info != null && !string.IsNullOrWhiteSpace(info.Name))
+            {
+                return value + " - " + info.Name;
+            }
+
+            return value;
+        }
+
+        private static string ZeroAsNone(string value)
+        {
+            int number;
+            if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out number) && number == 0)
+            {
+                return "None / not limited";
+            }
+
+            return value;
+        }
+
+        private static string FormatSeconds(string value)
+        {
+            int seconds;
+            if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out seconds) || seconds <= 0)
+            {
+                return "None";
+            }
+
+            if (seconds % 3600 == 0)
+            {
+                return seconds.ToString(CultureInfo.InvariantCulture) + " sec (" + (seconds / 3600).ToString(CultureInfo.InvariantCulture) + " h)";
+            }
+            if (seconds % 60 == 0)
+            {
+                return seconds.ToString(CultureInfo.InvariantCulture) + " sec (" + (seconds / 60).ToString(CultureInfo.InvariantCulture) + " min)";
+            }
+
+            return seconds.ToString(CultureInfo.InvariantCulture) + " sec";
+        }
+
+        private bool IsYes(List<TaskEditorFieldValue> fields, string fieldName)
+        {
+            return string.Equals(GetKnownFieldValue(fields, fieldName), "Yes", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private string YesNoMeaning(List<TaskEditorFieldValue> fields, string fieldName)
+        {
+            return IsYes(fields, fieldName) ? "Yes" : "No";
+        }
+
+        private string GetDescriptionText(List<TaskEditorTextValue> texts, string taskName)
+        {
+            if (texts == null)
+            {
+                return string.Empty;
+            }
+
+            return texts
+                .Where(text => text != null && !string.IsNullOrWhiteSpace(text.Text))
+                .Where(text => !string.Equals(text.Text, taskName, StringComparison.OrdinalIgnoreCase))
+                .Where(text => !string.Equals(text.Text, "RootNode", StringComparison.OrdinalIgnoreCase))
+                .Where(text => text.Text.Length >= 70)
+                .OrderByDescending(text => text.Text.Length)
+                .Select(text => text.Text)
+                .FirstOrDefault() ?? string.Empty;
+        }
+
+        private List<string> GetDialogPreview(List<TaskEditorTextValue> texts, string taskName, string description)
+        {
+            if (texts == null)
+            {
+                return new List<string>();
+            }
+
+            return texts
+                .Where(text => text != null && !string.IsNullOrWhiteSpace(text.Text))
+                .Select(text => text.Text.Trim())
+                .Where(text => !string.Equals(text, taskName, StringComparison.OrdinalIgnoreCase))
+                .Where(text => !string.Equals(text, "RootNode", StringComparison.OrdinalIgnoreCase))
+                .Where(text => !string.Equals(text, description, StringComparison.Ordinal))
+                .Where(text => text.Length >= 8)
+                .Take(6)
+                .ToList();
+        }
+
+        private static string WrapLongText(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text) || text.Length <= 360)
+            {
+                return text ?? string.Empty;
+            }
+
+            return text.Substring(0, 360) + "...";
+        }
+
         private string ClassifyText(TaskEditorTextValue text)
         {
             if (text == null)
@@ -448,6 +732,7 @@ namespace FWEledit
         private void ClearDetails()
         {
             summaryLabel.Text = string.Empty;
+            overviewBox.Text = string.Empty;
             generalGrid.Rows.Clear();
             fieldGrid.Rows.Clear();
             textGrid.Rows.Clear();
@@ -481,6 +766,31 @@ namespace FWEledit
             }
 
             return builder.ToString();
+        }
+
+        private void StyleFieldRow(DataGridViewRow row, string section)
+        {
+            if (row == null)
+            {
+                return;
+            }
+
+            Color color;
+            switch (section ?? string.Empty)
+            {
+                case "General": color = Color.FromArgb(21, 27, 35); break;
+                case "Flags": color = Color.FromArgb(18, 33, 29); break;
+                case "Delivery": color = Color.FromArgb(20, 31, 37); break;
+                case "Transport": color = Color.FromArgb(34, 28, 42); break;
+                case "Flow": color = Color.FromArgb(31, 29, 23); break;
+                case "NPC": color = Color.FromArgb(39, 29, 22); break;
+                case "Finish Count": color = Color.FromArgb(29, 25, 38); break;
+                case "Trade": color = Color.FromArgb(24, 34, 31); break;
+                case "Message": color = Color.FromArgb(35, 26, 30); break;
+                default: color = Color.FromArgb(18, 21, 26); break;
+            }
+
+            row.DefaultCellStyle.BackColor = color;
         }
 
         private void openFolderButton_Click(object sender, EventArgs e)
@@ -598,6 +908,14 @@ namespace FWEledit
                 textBox.BackColor = panel;
                 textBox.ForeColor = text;
                 textBox.BorderStyle = BorderStyle.FixedSingle;
+            }
+
+            RichTextBox richTextBox = root as RichTextBox;
+            if (richTextBox != null)
+            {
+                richTextBox.BackColor = Color.FromArgb(18, 21, 26);
+                richTextBox.ForeColor = text;
+                richTextBox.BorderStyle = BorderStyle.None;
             }
 
             Button button = root as Button;
