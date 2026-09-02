@@ -51,6 +51,7 @@ namespace FWEledit
         public int LifeTime { get; set; }
         public int MaxNum { get; set; }
         public int ExportId { get; set; }
+        public int RawAttachCount { get; set; }
         public int BufferRegionId { get; set; }
         public List<NpcGenEntry> Entries { get; private set; }
         public List<int> AttachIds { get; private set; }
@@ -125,6 +126,7 @@ namespace FWEledit
         public int ControllerId { get; set; }
         public int MaxNum { get; set; }
         public int ExportId { get; set; }
+        public int RawAttachCount { get; set; }
         public int Type { get; set; }
         public float ExtY { get; set; }
         public float Radius { get; set; }

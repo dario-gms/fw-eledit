@@ -185,6 +185,7 @@ namespace FWEledit
             {
                 area.ExportId = reader.ReadInt32();
                 attachCount = reader.ReadInt32();
+                area.RawAttachCount = attachCount;
             }
             if (version >= 13)
             {
@@ -252,6 +253,7 @@ namespace FWEledit
             {
                 area.ExportId = reader.ReadInt32();
                 attachCount = reader.ReadInt32();
+                area.RawAttachCount = attachCount;
             }
             if (version >= 17)
             {
@@ -366,7 +368,7 @@ namespace FWEledit
             if (version >= 12)
             {
                 writer.Write(area.ExportId);
-                writer.Write(area.AttachIds.Count);
+                writer.Write(GetAttachCountForWrite(area.RawAttachCount, area.AttachIds.Count));
             }
             if (version >= 13)
             {
@@ -427,7 +429,7 @@ namespace FWEledit
             if (version >= 12)
             {
                 writer.Write(area.ExportId);
-                writer.Write(area.AttachIds.Count);
+                writer.Write(GetAttachCountForWrite(area.RawAttachCount, area.AttachIds.Count));
             }
             if (version >= 17)
             {
@@ -447,6 +449,16 @@ namespace FWEledit
             {
                 writer.Write(attachId);
             }
+        }
+
+        private static int GetAttachCountForWrite(int rawAttachCount, int actualCount)
+        {
+            if (actualCount > 0)
+            {
+                return actualCount;
+            }
+
+            return rawAttachCount < 0 ? rawAttachCount : 0;
         }
 
         private void WriteDynamicObject(BinaryWriter writer, int version, NpcGenDynamicObject dynObj)

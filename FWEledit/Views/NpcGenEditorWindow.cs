@@ -879,9 +879,9 @@ namespace FWEledit
             {
                 return;
             }
-            area.Position = new PointF3((float)posX.Value, (float)posY.Value, (float)posZ.Value);
-            area.Direction = new PointF3((float)dirX.Value, (float)dirY.Value, (float)dirZ.Value);
-            area.Extents = new PointF3((float)extX.Value, (float)extY.Value, (float)extZ.Value);
+            area.Position = new PointF3(ReadFloatBox(posX), ReadFloatBox(posY), ReadFloatBox(posZ));
+            area.Direction = new PointF3(ReadFloatBox(dirX), ReadFloatBox(dirY), ReadFloatBox(dirZ));
+            area.Extents = new PointF3(ReadFloatBox(extX), ReadFloatBox(extY), ReadFloatBox(extZ));
             area.AreaType = groupTypeCombo.SelectedIndex == 1 ? 1 : 0;
             area.GroupType = Math.Max(0, groupBehaviorCombo.SelectedIndex);
             area.NpcType = (int)groupRawType.Value;
@@ -915,8 +915,8 @@ namespace FWEledit
             entry.Refresh = (int)entryRefresh.Value;
             entry.DiedTimes = (int)entryDiedTimes.Value;
             entry.Aggressive = (int)entryAggressive.Value;
-            entry.OffsetWater = (float)entryOffsetWater.Value;
-            entry.OffsetTerrain = (float)entryOffsetTerrain.Value;
+            entry.OffsetWater = ReadFloatBox(entryOffsetWater);
+            entry.OffsetTerrain = ReadFloatBox(entryOffsetTerrain);
             entry.PathId = (int)entryPathId.Value;
             entry.LoopType = (int)entryLoopType.Value;
             entry.SpeedFlag = (int)entrySpeedFlag.Value;
@@ -1835,6 +1835,7 @@ namespace FWEledit
             NumericUpDown box = CreateIntBox();
             box.DecimalPlaces = 6;
             box.Increment = 0.1M;
+            box.ThousandsSeparator = false;
             return box;
         }
 
@@ -1936,6 +1937,26 @@ namespace FWEledit
                 decimalValue = box.Maximum;
             }
             box.Value = decimalValue;
+        }
+
+        private static float ReadFloatBox(NumericUpDown box)
+        {
+            string text = (box.Text ?? string.Empty).Trim();
+            float parsed;
+            if (text.IndexOf('.') >= 0
+                && float.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out parsed))
+            {
+                return parsed;
+            }
+            if (float.TryParse(text, NumberStyles.Float, CultureInfo.CurrentCulture, out parsed))
+            {
+                return parsed;
+            }
+            if (float.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out parsed))
+            {
+                return parsed;
+            }
+            return (float)box.Value;
         }
 
         private void ApplyDarkTheme(Control root)
