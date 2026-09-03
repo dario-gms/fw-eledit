@@ -891,12 +891,13 @@ namespace FWEledit
             Panel card = CreateOverviewCard(Color.FromArgb(255, 235, 170));
             Label title = new Label();
             title.AutoSize = false;
-            title.Dock = DockStyle.Top;
-            title.Height = 30;
+            title.Location = new Point(16, 10);
+            title.Size = new Size(Math.Max(260, card.Width - 32), 30);
             title.Font = new Font("Segoe UI Semibold", 13F, FontStyle.Bold, GraphicsUnit.Point, 0);
             title.ForeColor = Color.FromArgb(255, 235, 170);
             title.Text = entry == null ? string.Empty : entry.Id.ToString(CultureInfo.InvariantCulture) + " - " + (entry.Name ?? string.Empty);
             card.Controls.Add(title);
+            SetOverviewCardHeight(card, title.Bottom + 10);
             overviewPanel.Controls.Add(card);
         }
 
@@ -910,26 +911,27 @@ namespace FWEledit
             Panel card = CreateOverviewCard(accent);
             Label titleLabel = new Label();
             titleLabel.AutoSize = false;
-            titleLabel.Dock = DockStyle.Top;
-            titleLabel.Height = 24;
+            titleLabel.Location = new Point(16, 10);
+            titleLabel.Size = new Size(Math.Max(260, card.Width - 32), 22);
             titleLabel.Font = new Font("Segoe UI Semibold", 9.5F, FontStyle.Bold, GraphicsUnit.Point, 0);
             titleLabel.ForeColor = accent;
             titleLabel.Text = title ?? string.Empty;
             card.Controls.Add(titleLabel);
 
             TableLayoutPanel table = new TableLayoutPanel();
-            table.Dock = DockStyle.Top;
             table.AutoSize = true;
+            table.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            table.Location = new Point(16, titleLabel.Bottom + 8);
+            table.Width = Math.Max(260, card.Width - 32);
             table.ColumnCount = 2;
-            table.Padding = new Padding(0, 8, 0, 0);
             table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 150));
-            table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, Math.Max(120, table.Width - 150)));
             card.Controls.Add(table);
-            table.BringToFront();
 
             int rowIndex = 0;
             foreach (OverviewRow row in rows ?? Enumerable.Empty<OverviewRow>())
             {
+                table.RowCount = rowIndex + 1;
                 table.RowStyles.Add(new RowStyle(SizeType.AutoSize));
                 Label label = CreateOverviewLabel(row.Label, Color.FromArgb(146, 158, 174), FontStyle.Regular);
                 table.Controls.Add(label, 0, rowIndex);
@@ -938,6 +940,7 @@ namespace FWEledit
                 rowIndex++;
             }
 
+            ResizeOverviewCardContent(card);
             overviewPanel.Controls.Add(card);
         }
 
@@ -945,15 +948,17 @@ namespace FWEledit
         {
             Panel card = new Panel();
             card.Tag = "overview-card";
-            card.AutoSize = true;
+            card.AutoSize = false;
+            card.Width = GetOverviewCardWidth();
             card.Margin = new Padding(0, 0, 0, 10);
-            card.Padding = new Padding(12, 10, 12, 12);
             card.BackColor = Color.FromArgb(22, 27, 34);
 
             Panel stripe = new Panel();
-            stripe.Dock = DockStyle.Left;
+            stripe.Location = new Point(0, 0);
             stripe.Width = 3;
+            stripe.Height = 1;
             stripe.BackColor = accent;
+            stripe.Tag = "overview-stripe";
             card.Controls.Add(stripe);
 
             return card;
@@ -995,6 +1000,65 @@ namespace FWEledit
             return label;
         }
 
+        private int GetOverviewCardWidth()
+        {
+            if (overviewPanel == null)
+            {
+                return 640;
+            }
+
+            return Math.Max(320, overviewPanel.ClientSize.Width - overviewPanel.Padding.Horizontal - SystemInformation.VerticalScrollBarWidth - 6);
+        }
+
+        private void ResizeOverviewCardContent(Panel card)
+        {
+            if (card == null)
+            {
+                return;
+            }
+
+            int contentWidth = Math.Max(260, card.Width - 32);
+            int bottom = 10;
+            foreach (Control control in card.Controls)
+            {
+                if (string.Equals(control.Tag as string, "overview-stripe", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                control.Width = contentWidth;
+                TableLayoutPanel table = control as TableLayoutPanel;
+                if (table != null)
+                {
+                    table.Width = contentWidth;
+                    table.ColumnStyles[1].Width = Math.Max(120, contentWidth - 150);
+                    foreach (Control child in table.Controls)
+                    {
+                        int column = table.GetColumn(child);
+                        int maxWidth = column == 0 ? 145 : Math.Max(120, contentWidth - 150);
+                        child.MaximumSize = new Size(maxWidth, 0);
+                    }
+                    table.PerformLayout();
+                }
+
+                bottom = Math.Max(bottom, control.Bottom);
+            }
+
+            SetOverviewCardHeight(card, bottom + 12);
+        }
+
+        private static void SetOverviewCardHeight(Panel card, int height)
+        {
+            card.Height = Math.Max(44, height);
+            foreach (Control control in card.Controls)
+            {
+                if (string.Equals(control.Tag as string, "overview-stripe", StringComparison.Ordinal))
+                {
+                    control.Height = card.Height;
+                }
+            }
+        }
+
         private void AdjustOverviewCardWidths()
         {
             if (overviewPanel == null)
@@ -1002,12 +1066,13 @@ namespace FWEledit
                 return;
             }
 
-            int width = Math.Max(320, overviewPanel.ClientSize.Width - overviewPanel.Padding.Horizontal - SystemInformation.VerticalScrollBarWidth - 6);
+            int width = GetOverviewCardWidth();
             foreach (Control control in overviewPanel.Controls)
             {
                 if (control != null && string.Equals(control.Tag as string, "overview-card", StringComparison.Ordinal))
                 {
                     control.Width = width;
+                    ResizeOverviewCardContent(control as Panel);
                 }
             }
         }
