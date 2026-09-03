@@ -522,7 +522,6 @@ namespace FWEledit
                 new AwardFieldSpec("m_ulPetIncubatorInvSize", "Pet incubator slots", 0x031A, "uint", "Pet incubator slots awarded."),
                 new AwardFieldSpec("m_ulBusinessInvSize", "Business bag slots", 0x031E, "uint", "Business inventory slots awarded."),
                 new AwardFieldSpec("m_ulFuryULimit", "Fury limit", 0x0322, "uint", "Fury limit increase awarded."),
-                new AwardFieldSpec("m_ulNewProfession", "Unlocks profession", 0x03AB, "uint", "Profession unlocked by this reward."),
                 new AwardFieldSpec("m_lBuffId", "Buff ID", 0x03D4, "int", "Buff applied by this reward."),
                 new AwardFieldSpec("m_lBuffLev", "Buff level", 0x03D8, "int", "Level of the buff applied by this reward."),
                 new AwardFieldSpec("m_ulCandItems", "Item reward groups", 0x04AD, "uint", "Number of item reward groups stored after AWARD_DATA."),
@@ -568,12 +567,13 @@ namespace FWEledit
                     continue;
                 }
 
+                string pointName = GetReleasePointRewardName(i);
                 values.Add(new TaskEditorFieldValue
                 {
                     Section = section,
                     Field = sourcePrefix + ".m_iSideOccupExp[" + i.ToString(CultureInfo.InvariantCulture) + "]",
-                    DisplayName = "Sub-profession " + i.ToString(CultureInfo.InvariantCulture) + " EXP",
-                    Meaning = "Adds sub-profession EXP when this reward is delivered. The UI resolves the profession name from PLAYER_SUB_PROF_LEVEL_EXP_CONFIG when elements.data is loaded.",
+                    DisplayName = pointName + " points",
+                    Meaning = "Adds " + pointName + " points when this reward is delivered.",
                     Offset = offset,
                     HexOffset = "0x" + offset.ToString("X4", CultureInfo.InvariantCulture),
                     Type = "int",
@@ -644,6 +644,55 @@ namespace FWEledit
         {
             long number;
             return long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out number) && number == 0;
+        }
+
+        private static string GetReleasePointRewardName(int index)
+        {
+            string[] names =
+            {
+                "Slayer",
+                "Triumph",
+                "Call of Dawn",
+                "Bounty",
+                "Champion",
+                "Arena",
+                "Arena Dedication",
+                "3v3",
+                "6v6",
+                "Arena Reputation",
+                "Luck",
+                "Mentor",
+                "Contribution",
+                "Cruelty",
+                "Bounty Glory",
+                "Kindness",
+                "Courage",
+                "Master",
+                "FF",
+                "FF BF",
+                "Lionheart Champion",
+                "FF Total",
+                "Sanguine Circle",
+                "Union of Woods",
+                "Mercury Union",
+                "Hell Acclaim",
+                "Rose",
+                "Season 1 3v3",
+                "Season 1 6v6",
+                "Companion",
+                "Blessing of Antus",
+                "Empty",
+                "Promoter",
+                "Valor",
+                "Warlord",
+                "Hell",
+                "Fealty",
+                "Touch"
+            };
+
+            return index >= 0 && index < names.Length
+                ? names[index]
+                : "Release slot " + index.ToString(CultureInfo.InvariantCulture);
         }
 
         private static bool TryReadField(byte[] bytes, FieldSpec spec, out string value)
