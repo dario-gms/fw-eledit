@@ -1159,7 +1159,7 @@ namespace FWEledit
             specs.Add(new FieldSpec("Premise", "m_bPremSpecialCounterCond", 0x05E5, "bool"));
             specs.Add(new FieldSpec("Premise", "m_ulPremise_Task_Count", 0x05E6, "uint"));
             specs.Add(new FieldSpec("Premise", "m_ulPremise_Tasks", 0x05EA, "uint-array:32"));
-            specs.Add(new FieldSpec("Premise", "m_bShowByTask", 0x066A, "bool"));
+            specs.Add(new FieldSpec("Premise", "m_bShowByPreTask", 0x066A, "bool"));
             specs.Add(new FieldSpec("Premise", "m_ulPremFinishTaskCount", 0x066B, "uint"));
             specs.Add(new FieldSpec("Premise", "m_PremFinishTasks", 0x066F, "finish-task-count-array:32"));
             specs.Add(new FieldSpec("Premise", "m_ulPremGlobalCount", 0x072F, "uint"));
@@ -1189,7 +1189,7 @@ namespace FWEledit
             specs.Add(new FieldSpec("Premise", "m_lSkillLev", 0x0913, "int-array:32"));
             specs.Add(new FieldSpec("Premise", "m_lSkillPro", 0x0993, "int-array:32"));
             specs.Add(new FieldSpec("Premise", "m_DynTaskType", 0x0A13, "byte"));
-            specs.Add(new FieldSpec("Premise", "m_SpecialAward", 0x0A14, "uint"));
+            specs.Add(new FieldSpec("Premise", "m_ulSpecialAward", 0x0A14, "uint"));
             specs.Add(new FieldSpec("Premise", "m_lPKValueMin", 0x0A18, "int"));
             specs.Add(new FieldSpec("Premise", "m_lPKValueMax", 0x0A1C, "int"));
             specs.Add(new FieldSpec("Flags", "m_bPremise_GM", 0x0A20, "bool"));
@@ -1230,8 +1230,8 @@ namespace FWEledit
             specs.Add(new FieldSpec("Family", "m_nFamilyMonRecordMax", 0x0A7B, "int"));
             specs.Add(new FieldSpec("Family", "m_nFamilyValueIndex", 0x0A7F, "int"));
             specs.Add(new FieldSpec("Family", "m_bDepositFamilyValue", 0x0A83, "bool"));
-            specs.Add(new FieldSpec("Family", "m_iFamilyValueMin", 0x0A84, "int"));
-            specs.Add(new FieldSpec("Family", "m_iFamilyValueMax", 0x0A88, "int"));
+            specs.Add(new FieldSpec("Family", "m_nFamilyValueMin", 0x0A84, "int"));
+            specs.Add(new FieldSpec("Family", "m_nFamilyValueMax", 0x0A88, "int"));
             specs.Add(new FieldSpec("Premise", "m_PremKeyValue", 0x0A8C, "compare-key-value"));
             specs.Add(new FieldSpec("Premise", "m_ulPremSkillCnt", 0x0AA1, "uint"));
             specs.Add(new FieldSpec("Premise", "m_PremSkill", 0x0AA5, "prem-skill-array:8"));
@@ -1301,8 +1301,8 @@ namespace FWEledit
             specs.Add(new FieldSpec("Completion", "m_ulItemTypeFalse", 0x0EC1, "uint"));
             specs.Add(new FieldSpec("Completion", "m_ulItemCountFalse", 0x0EC5, "uint"));
             specs.Add(new FieldSpec("Completion", "m_ulWelcomeWords", 0x0EC9, "uint"));
-            specs.Add(new FieldSpec("Completion", "m_ulFinBuffCount", 0x0ED5, "uint"));
-            specs.Add(new FieldSpec("Completion", "m_FinBuffs", 0x0ED9, "prem-skill-array:8"));
+            specs.Add(new FieldSpec("Completion", "m_ulFinBuffCnt", 0x0ED5, "uint"));
+            specs.Add(new FieldSpec("Completion", "m_FinBuff", 0x0ED9, "prem-skill-array:8"));
             specs.Add(new FieldSpec("Completion", "m_bFinBuffCond", 0x0F21, "bool"));
             specs.Add(new FieldSpec("Completion", "m_FinKeyValue", 0x0F22, "compare-key-value"));
             specs.Add(new FieldSpec("Completion", "m_iFinServerType", 0x0F37, "int"));
@@ -1341,10 +1341,17 @@ namespace FWEledit
             AwardFieldSpec[] specs =
             {
                 new AwardFieldSpec("m_ulGoldNum", "Gold", 0x0000, "uint", "Coins awarded when the task is completed."),
+                new AwardFieldSpec("m_bGoldRevise", "m_bGoldRevise", 0x0004, "bool", ""),
+                new AwardFieldSpec("m_lGoldReviseLev", "m_lGoldReviseLev", 0x0005, "int", ""),
                 new AwardFieldSpec("m_ulExp", "Experience", 0x0009, "uint", "Character experience awarded on completion."),
+                new AwardFieldSpec("m_bExpRevise", "m_bExpRevise", 0x000D, "bool", ""),
+                new AwardFieldSpec("m_lExpReviseLev", "m_lExpReviseLev", 0x000E, "int", ""),
+                new AwardFieldSpec("m_bExpFix", "m_bExpFix", 0x0012, "bool", ""),
                 new AwardFieldSpec("m_ulPetExp", "Pet experience", 0x0013, "uint", "Pet experience awarded on completion."),
                 new AwardFieldSpec("m_ulSecOccpExp", "Secondary occupation EXP", 0x0017, "uint", "Secondary occupation experience awarded on completion."),
                 new AwardFieldSpec("m_ulNewTask", "Starts task", 0x001B, "uint", "Task ID started by this reward."),
+                new AwardFieldSpec("m_ulTerminateTaskCnt", "m_ulTerminateTaskCnt", 0x001F, "uint", ""),
+                new AwardFieldSpec("m_ulTerminateTask", "m_ulTerminateTask", 0x0023, "uint-array:8", ""),
                 new AwardFieldSpec("m_ulSP", "Soul power", 0x0043, "uint", "SP/soul-power style reward."),
                 new AwardFieldSpec("m_ulReputation", "Reputation", 0x0047, "uint", "Reputation awarded by the task."),
                 new AwardFieldSpec("m_lContribution", "Faction contribution", 0x004B, "uint", "Faction contribution awarded by the task."),
@@ -1356,11 +1363,24 @@ namespace FWEledit
                 new AwardFieldSpec("m_ulFactionBelief", "Faction belief resource", 0x0063, "uint", "Faction belief resource awarded."),
                 new AwardFieldSpec("m_ulFactionCredit", "Faction credit", 0x0067, "uint", "Faction credit awarded."),
                 new AwardFieldSpec("m_ulFactionVitality", "Faction vitality", 0x006B, "uint", "Faction vitality awarded."),
+                new AwardFieldSpec("m_iFactionResElse", "m_iFactionResElse", 0x006F, "int-array:10", ""),
+                new AwardFieldSpec("m_iFactionReserveFund", "m_iFactionReserveFund", 0x0097, "int", ""),
+                new AwardFieldSpec("m_ulMastery", "m_ulMastery", 0x009B, "uint-array:8", ""),
+                new AwardFieldSpec("m_ulResistance", "m_ulResistance", 0x00BB, "uint-array:8", ""),
+                new AwardFieldSpec("m_ulMasteryExp", "m_ulMasteryExp", 0x00DB, "uint-array:8", ""),
+                new AwardFieldSpec("m_ulResistanceExp", "m_ulResistanceExp", 0x00FB, "uint-array:8", ""),
                 new AwardFieldSpec("m_nFamContrib", "Family contribution", 0x011B, "int", "Family contribution awarded."),
                 new AwardFieldSpec("m_ulProsperity", "Prosperity", 0x011F, "uint", "Prosperity awarded."),
+                new AwardFieldSpec("m_ulTitleCnt", "m_ulTitleCnt", 0x0123, "uint", ""),
+                new AwardFieldSpec("m_Title", "m_Title", 0x0127, "award-title-array:8", ""),
+                new AwardFieldSpec("m_bRandomTitle", "m_bRandomTitle", 0x0167, "bool", ""),
                 new AwardFieldSpec("m_lPKValue", "PK value", 0x0168, "int", "PK value adjustment awarded by the task."),
                 new AwardFieldSpec("m_ulVitality", "Vitality", 0x016C, "uint", "Vitality awarded."),
                 new AwardFieldSpec("m_ulVigour", "Vigour", 0x0170, "uint", "Vigour awarded."),
+                new AwardFieldSpec("m_bResetPKValue", "m_bResetPKValue", 0x0174, "bool", ""),
+                new AwardFieldSpec("m_bDivorce", "m_bDivorce", 0x0175, "bool", ""),
+                new AwardFieldSpec("m_aFriendships", "m_aFriendships", 0x0176, "int-array:64", ""),
+                new AwardFieldSpec("m_aSpecialCounter", "m_aSpecialCounter", 0x0276, "int-array:32", ""),
                 new AwardFieldSpec("m_ulNewPeriod", "Unlocks period", 0x02F6, "uint", "New period unlocked by this reward."),
                 new AwardFieldSpec("m_ulNewRelayStation", "Unlocks relay station", 0x02FA, "uint", "Relay station unlocked by this reward."),
                 new AwardFieldSpec("m_ulStorehouseSize", "Storage slots", 0x02FE, "uint", "Personal storage slots awarded."),
@@ -1373,24 +1393,109 @@ namespace FWEledit
                 new AwardFieldSpec("m_ulPetIncubatorInvSize", "Pet incubator slots", 0x031A, "uint", "Pet incubator slots awarded."),
                 new AwardFieldSpec("m_ulBusinessInvSize", "Business bag slots", 0x031E, "uint", "Business inventory slots awarded."),
                 new AwardFieldSpec("m_ulFuryULimit", "Fury limit", 0x0322, "uint", "Fury limit increase awarded."),
+                new AwardFieldSpec("m_bSetProduceSkill", "m_bSetProduceSkill", 0x0326, "bool", ""),
+                new AwardFieldSpec("m_nSkillType", "m_nSkillType", 0x0327, "int", ""),
+                new AwardFieldSpec("m_ulProduceSkillExp", "m_ulProduceSkillExp", 0x032B, "uint-array:32", ""),
+                new AwardFieldSpec("m_ulNewProfession", "m_ulNewProfession", 0x03AB, "uint", ""),
+                new AwardFieldSpec("m_ulTransWldId", "m_ulTransWldId", 0x03AF, "uint", ""),
+                new AwardFieldSpec("m_TransPt", "m_TransPt", 0x03B3, "zone", ""),
+                new AwardFieldSpec("m_ulTransBackWldId", "m_ulTransBackWldId", 0x03BF, "uint", ""),
+                new AwardFieldSpec("m_TransBackPt", "m_TransBackPt", 0x03C3, "zone", ""),
+                new AwardFieldSpec("m_lMonsCtrl", "m_lMonsCtrl", 0x03CF, "int", ""),
+                new AwardFieldSpec("m_bTrigCtrl", "m_bTrigCtrl", 0x03D3, "bool", ""),
                 new AwardFieldSpec("m_lBuffId", "Buff ID", 0x03D4, "int", "Buff applied by this reward."),
                 new AwardFieldSpec("m_lBuffLev", "Buff level", 0x03D8, "int", "Level of the buff applied by this reward."),
+                new AwardFieldSpec("m_nFamilySkillProficiency", "m_nFamilySkillProficiency", 0x03DC, "int", ""),
+                new AwardFieldSpec("m_nFamilySkillLevel", "m_nFamilySkillLevel", 0x03E0, "int", ""),
+                new AwardFieldSpec("m_nFamilySkillIndex", "m_nFamilySkillIndex", 0x03E4, "int", ""),
+                new AwardFieldSpec("m_nFamilyMonRecordIndex", "m_nFamilyMonRecordIndex", 0x03E8, "int", ""),
+                new AwardFieldSpec("m_nFamilyValueIndex", "m_nFamilyValueIndex", 0x03EC, "int", ""),
+                new AwardFieldSpec("m_nFamilyValue", "m_nFamilyValue", 0x03F0, "int", ""),
+                new AwardFieldSpec("m_bSendMsg", "m_bSendMsg", 0x03F4, "bool", ""),
+                new AwardFieldSpec("m_nMsgChannel", "m_nMsgChannel", 0x03F5, "int", ""),
+                new AwardFieldSpec("m_ulClearCountTaskCnt", "m_ulClearCountTaskCnt", 0x03F9, "uint", ""),
+                new AwardFieldSpec("m_ulClearCountTask", "m_ulClearCountTask", 0x03FD, "uint-array:8", ""),
+                new AwardFieldSpec("m_ulClearTaskRecCnt", "m_ulClearTaskRecCnt", 0x041D, "uint", ""),
+                new AwardFieldSpec("m_ulClearTaskRec", "m_ulClearTaskRec", 0x0421, "uint-array:8", ""),
+                new AwardFieldSpec("m_ulDoubleExpTime", "m_ulDoubleExpTime", 0x0441, "uint", ""),
+                new AwardFieldSpec("m_iModifyCountTaskCnt", "m_iModifyCountTaskCnt", 0x0445, "int", ""),
+                new AwardFieldSpec("m_ulModifyCountTask", "m_ulModifyCountTask", 0x0449, "uint-array:8", ""),
+                new AwardFieldSpec("m_iModifyCount", "m_iModifyCount", 0x0469, "int-array:8", ""),
+                new AwardFieldSpec("m_ulClearDeliverTimeTaskCnt", "m_ulClearDeliverTimeTaskCnt", 0x0489, "uint", ""),
+                new AwardFieldSpec("m_ulClearDeliverTimeTask", "m_ulClearDeliverTimeTask", 0x048D, "uint-array:8", ""),
                 new AwardFieldSpec("m_ulCandItems", "Item reward groups", 0x04AD, "uint", "Number of item reward groups stored after AWARD_DATA."),
+                new AwardFieldSpec("m_CandItems", "m_CandItems", 0x04B5, "collection:AWARD_ITEMS_CAND", ""),
+                new AwardFieldSpec("m_ulChangeKeyCnt", "m_ulChangeKeyCnt", 0x04B9, "uint", ""),
+                new AwardFieldSpec("m_plChangeKey", "m_plChangeKey", 0x04C1, "collection:int", ""),
+                new AwardFieldSpec("m_plChangeKeyValue", "m_plChangeKeyValue", 0x04C9, "collection:int", ""),
+                new AwardFieldSpec("m_pbChangeType", "m_pbChangeType", 0x04D1, "collection:bool", ""),
+                new AwardFieldSpec("m_ulDisplayKeyCnt", "m_ulDisplayKeyCnt", 0x04D5, "uint", ""),
+                new AwardFieldSpec("m_plDisplayKey", "m_plDisplayKey", 0x04DD, "collection:int", ""),
+                new AwardFieldSpec("m_bMulti", "m_bMulti", 0x04E1, "bool", ""),
+                new AwardFieldSpec("m_nNumType", "m_nNumType", 0x04E2, "int", ""),
+                new AwardFieldSpec("m_lNum", "m_lNum", 0x04E6, "int", ""),
+                new AwardFieldSpec("m_lSkillID", "m_lSkillID", 0x04EA, "int", ""),
+                new AwardFieldSpec("m_lSkillLev", "m_lSkillLev", 0x04EE, "int", ""),
+                new AwardFieldSpec("m_lDelSkillID", "m_lDelSkillID", 0x04F2, "int", ""),
+                new AwardFieldSpec("m_ulMonCtrlCnt", "m_ulMonCtrlCnt", 0x04F6, "uint", ""),
+                new AwardFieldSpec("m_MonCtrl", "m_MonCtrl", 0x04FA, "monctrl-array:8", ""),
+                new AwardFieldSpec("m_bRanMonCtrl", "m_bRanMonCtrl", 0x0542, "bool", ""),
+                new AwardFieldSpec("m_ulProSkillSel", "m_ulProSkillSel", 0x0543, "uint", ""),
+                new AwardFieldSpec("m_bAwardSpecifyRole", "m_bAwardSpecifyRole", 0x0547, "bool", ""),
+                new AwardFieldSpec("m_ulRoleSelected", "m_ulRoleSelected", 0x0548, "uint", ""),
+                new AwardFieldSpec("m_fAwardSpecifyRoleDis", "m_fAwardSpecifyRoleDis", 0x054C, "float", ""),
+                new AwardFieldSpec("m_ulExpAlgo", "m_ulExpAlgo", 0x0550, "int", ""),
+                new AwardFieldSpec("m_ulFriendshipAlgo", "m_ulFriendshipAlgo", 0x0554, "int", ""),
+                new AwardFieldSpec("m_ulBindMoneyAlgo", "m_ulBindMoneyAlgo", 0x0558, "int", ""),
+                new AwardFieldSpec("m_bCheckIP", "m_bCheckIP", 0x055C, "bool", ""),
+                new AwardFieldSpec("m_pAwardSpecifyRole", "m_pAwardSpecifyRole", 0x0561, "collection:AWARD_DATA", ""),
+                new AwardFieldSpec("m_bTeamMulti", "m_bTeamMulti", 0x0565, "bool", ""),
+                new AwardFieldSpec("m_ulTeamMultiCnt", "m_ulTeamMultiCnt", 0x0566, "uint", ""),
+                new AwardFieldSpec("m_TeamMulti", "m_TeamMulti", 0x056A, "team-multi-array:6", ""),
+                new AwardFieldSpec("m_ulTeamMultiAwardSel", "m_ulTeamMultiAwardSel", 0x059A, "uint", ""),
+                new AwardFieldSpec("m_ulCameraMove", "m_ulCameraMove", 0x059E, "uint", ""),
+                new AwardFieldSpec("m_ulFollowTask", "m_ulFollowTask", 0x05A2, "uint", ""),
                 new AwardFieldSpec("m_iBindMoney", "Bound money", 0x05A6, "int", "Bound money awarded."),
+                new AwardFieldSpec("m_64MaskLearnSideOccup", "m_64MaskLearnSideOccup", 0x05AA, "int64", ""),
+                new AwardFieldSpec("m_iSideOccupExp", "m_iSideOccupExp", 0x05B2, "int-array:64", ""),
+                new AwardFieldSpec("m_iSideOccupPoints", "m_iSideOccupPoints", 0x06B2, "int", ""),
+                new AwardFieldSpec("m_bDiscoverMap", "m_bDiscoverMap", 0x06B6, "bool", ""),
+                new AwardFieldSpec("m_lDiscoverMapId", "m_lDiscoverMapId", 0x06B7, "int", ""),
+                new AwardFieldSpec("m_iMineType", "m_iMineType", 0x06BB, "int", ""),
+                new AwardFieldSpec("m_bMineShow", "m_bMineShow", 0x06BF, "bool", ""),
+                new AwardFieldSpec("m_iLearnEmotion", "m_iLearnEmotion", 0x06C0, "int", ""),
+                new AwardFieldSpec("m_nIntimacy", "m_nIntimacy", 0x06C4, "int", ""),
+                new AwardFieldSpec("m_nSectCap", "m_nSectCap", 0x06C8, "int", ""),
+                new AwardFieldSpec("m_bIsGrad", "m_bIsGrad", 0x06CC, "bool", ""),
+                new AwardFieldSpec("m_nImpression", "m_nImpression", 0x06CD, "int", ""),
+                new AwardFieldSpec("m_AIMsg", "m_AIMsg", 0x06D1, "ai-msg", ""),
+                new AwardFieldSpec("m_bMineProtect", "m_bMineProtect", 0x06DD, "bool", ""),
+                new AwardFieldSpec("m_bMineDestroy", "m_bMineDestroy", 0x06DE, "bool", ""),
+                new AwardFieldSpec("m_bUpFlyLevel", "m_bUpFlyLevel", 0x06DF, "bool", ""),
+                new AwardFieldSpec("m_iBelief", "m_iBelief", 0x06E0, "int", ""),
+                new AwardFieldSpec("m_bIgnoreBeliefLimit", "m_bIgnoreBeliefLimit", 0x06E4, "bool", ""),
                 new AwardFieldSpec("m_ulBindCash", "Bound cash", 0x06E5, "uint", "Bound cash awarded."),
                 new AwardFieldSpec("m_cAwardVipLevel", "VIP level", 0x06E9, "byte", "VIP level awarded or changed."),
                 new AwardFieldSpec("m_ulVipBonusTemplid", "VIP bonus template", 0x06EA, "uint", "VIP bonus template applied by this reward."),
                 new AwardFieldSpec("m_uiMasteryPoint", "Mastery point", 0x06EE, "uint", "Mastery points awarded."),
                 new AwardFieldSpec("m_uiResistancePoint", "Resistance point", 0x06F2, "uint", "Resistance points awarded."),
+                new AwardFieldSpec("m_bChangeDS", "m_bChangeDS", 0x06F6, "bool", ""),
                 new AwardFieldSpec("m_i64GoldenValue", "Golden value", 0x06F7, "int64", "Golden-value reward."),
                 new AwardFieldSpec("m_i64GoldenValueToKingdom", "Kingdom golden value", 0x06FF, "int64", "Golden value delivered to kingdom/guild context."),
+                new AwardFieldSpec("m_iChariotID", "m_iChariotID", 0x0707, "int", ""),
+                new AwardFieldSpec("m_bLeaveChariot", "m_bLeaveChariot", 0x070B, "bool", ""),
                 new AwardFieldSpec("m_iRandomGift", "Random gift", 0x070C, "int", "Random gift template awarded.")
             };
 
             foreach (AwardFieldSpec spec in specs)
             {
+                if (!includeEmptyAwardFields && (spec.Name == "m_iSideOccupExp" || spec.Name == "m_iSideOccupPoints"))
+                {
+                    continue;
+                }
+
                 string value;
-                if (!TryReadAwardField(bytes, awardStartOffset, spec, out value) || (!includeEmptyAwardFields && IsZeroAwardValue(value)))
+                if (!TryReadAwardField(bytes, awardStartOffset, spec, includeEmptyAwardFields, out value) || (!includeEmptyAwardFields && IsZeroAwardValue(value)))
                 {
                     continue;
                 }
@@ -1407,6 +1512,11 @@ namespace FWEledit
                     Type = spec.Kind,
                     Value = value
                 });
+            }
+
+            if (includeEmptyAwardFields)
+            {
+                return;
             }
 
             for (int i = 0; i < AwardSideOccupationExpCount; i++)
@@ -1450,7 +1560,7 @@ namespace FWEledit
             }
         }
 
-        private static bool TryReadAwardField(byte[] bytes, int awardStartOffset, AwardFieldSpec spec, out string value)
+        private static bool TryReadAwardField(byte[] bytes, int awardStartOffset, AwardFieldSpec spec, bool includeEmptyArraySlots, out string value)
         {
             value = string.Empty;
             if (bytes == null || spec == null)
@@ -1464,35 +1574,44 @@ namespace FWEledit
                 return false;
             }
 
-            if (spec.Kind == "uint")
+            if (spec.Kind.StartsWith("collection:", StringComparison.Ordinal))
             {
-                if (offset + 4 > bytes.Length) return false;
-                value = BitConverter.ToUInt32(bytes, offset).ToString(CultureInfo.InvariantCulture);
+                value = "(Collection)";
                 return true;
             }
-            if (spec.Kind == "int")
+            if (spec.Kind.StartsWith("award-title-array:", StringComparison.Ordinal))
             {
-                if (offset + 4 > bytes.Length) return false;
-                value = BitConverter.ToInt32(bytes, offset).ToString(CultureInfo.InvariantCulture);
-                return true;
+                return TryReadAwardTitleArray(bytes, offset, spec.Kind, includeEmptyArraySlots, out value);
             }
-            if (spec.Kind == "int64")
+            if (spec.Kind.StartsWith("team-multi-array:", StringComparison.Ordinal))
             {
-                if (offset + 8 > bytes.Length) return false;
-                value = BitConverter.ToInt64(bytes, offset).ToString(CultureInfo.InvariantCulture);
-                return true;
-            }
-            if (spec.Kind == "byte")
-            {
-                value = bytes[offset].ToString(CultureInfo.InvariantCulture);
-                return true;
+                return TryReadTeamMultiArray(bytes, offset, spec.Kind, includeEmptyArraySlots, out value);
             }
 
-            return false;
+            FieldSpec fieldSpec = new FieldSpec(string.Empty, spec.Name, offset, spec.Kind);
+            return TryReadField(bytes, fieldSpec, includeEmptyArraySlots, out value);
         }
 
         private static bool IsZeroAwardValue(string value)
         {
+            if (string.IsNullOrWhiteSpace(value)
+                || string.Equals(value, "No", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(value, "None", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(value, "(Collection)", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            if (value.StartsWith("Object 0, Param1 0, Param2 0", StringComparison.Ordinal))
+            {
+                return true;
+            }
+
+            if (value.StartsWith("X 0, Y 0, Z 0", StringComparison.Ordinal))
+            {
+                return true;
+            }
+
             long number;
             return long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out number) && number == 0;
         }
@@ -1876,6 +1995,56 @@ namespace FWEledit
                 if (includeEmptySlots || id != 0 || probability != 0F || open)
                 {
                     parts.Add("[" + i.ToString(CultureInfo.InvariantCulture) + "] ID " + id.ToString(CultureInfo.InvariantCulture) + ", prob " + probability.ToString("R", CultureInfo.InvariantCulture) + ", " + (open ? "open" : "closed"));
+                }
+            }
+
+            value = parts.Count > 0 ? string.Join(", ", parts.ToArray()) : "None";
+            return true;
+        }
+
+        private static bool TryReadAwardTitleArray(byte[] bytes, int offset, string kind, bool includeEmptySlots, out string value)
+        {
+            value = string.Empty;
+            int count;
+            if (!TryParseArrayCount(kind, "award-title-array:", out count) || bytes == null || offset < 0 || offset + count * 8 > bytes.Length)
+            {
+                return false;
+            }
+
+            List<string> parts = new List<string>();
+            for (int i = 0; i < count; i++)
+            {
+                int itemOffset = offset + i * 8;
+                int titleId = BitConverter.ToInt32(bytes, itemOffset);
+                float probability = BitConverter.ToSingle(bytes, itemOffset + 4);
+                if (includeEmptySlots || titleId != 0 || probability != 0F)
+                {
+                    parts.Add("[" + i.ToString(CultureInfo.InvariantCulture) + "] Title " + titleId.ToString(CultureInfo.InvariantCulture) + ", prob " + probability.ToString("R", CultureInfo.InvariantCulture));
+                }
+            }
+
+            value = parts.Count > 0 ? string.Join(", ", parts.ToArray()) : "None";
+            return true;
+        }
+
+        private static bool TryReadTeamMultiArray(byte[] bytes, int offset, string kind, bool includeEmptySlots, out string value)
+        {
+            value = string.Empty;
+            int count;
+            if (!TryParseArrayCount(kind, "team-multi-array:", out count) || bytes == null || offset < 0 || offset + count * 8 > bytes.Length)
+            {
+                return false;
+            }
+
+            List<string> parts = new List<string>();
+            for (int i = 0; i < count; i++)
+            {
+                int itemOffset = offset + i * 8;
+                uint memberCount = BitConverter.ToUInt32(bytes, itemOffset);
+                float probability = BitConverter.ToSingle(bytes, itemOffset + 4);
+                if (includeEmptySlots || memberCount != 0 || probability != 0F)
+                {
+                    parts.Add("[" + i.ToString(CultureInfo.InvariantCulture) + "] Members " + memberCount.ToString(CultureInfo.InvariantCulture) + ", prob " + probability.ToString("R", CultureInfo.InvariantCulture));
                 }
             }
 
