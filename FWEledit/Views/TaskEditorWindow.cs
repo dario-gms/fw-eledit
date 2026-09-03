@@ -16,6 +16,7 @@ namespace FWEledit
         private readonly NpcGenEntityLookupService entityLookupService = new NpcGenEntityLookupService();
         private readonly ItemReferenceService itemReferenceService = new ItemReferenceService();
         private readonly IconResolutionService iconResolutionService = new IconResolutionService();
+        private readonly ToolTip previewToolTip = new ToolTip();
         private const int MaxDisplayedTasks = 20000;
         private readonly ISessionService sessionService;
         private TaskEditorData currentData;
@@ -34,6 +35,7 @@ namespace FWEledit
         private Label summaryLabel;
         private SplitContainer mainSplit;
         private FlowLayoutPanel overviewPanel;
+        private FlowLayoutPanel questPreviewPanel;
         private DataGridView itemGrid;
         private DataGridView generalGrid;
         private DataGridView fieldGrid;
@@ -158,6 +160,19 @@ namespace FWEledit
             overviewPanel.Resize += (s, e) => AdjustOverviewCardWidths();
             overviewTab.Controls.Add(overviewPanel);
             tabs.TabPages.Add(overviewTab);
+
+            TabPage questPreviewTab = new TabPage("Quest Preview");
+            questPreviewPanel = new FlowLayoutPanel();
+            questPreviewPanel.Tag = "quest-preview";
+            questPreviewPanel.Dock = DockStyle.Fill;
+            questPreviewPanel.AutoScroll = true;
+            questPreviewPanel.FlowDirection = FlowDirection.TopDown;
+            questPreviewPanel.WrapContents = false;
+            questPreviewPanel.Padding = new Padding(14);
+            questPreviewPanel.BackColor = Color.FromArgb(17, 21, 26);
+            questPreviewPanel.Resize += (s, e) => AdjustQuestPreviewWidth();
+            questPreviewTab.Controls.Add(questPreviewPanel);
+            tabs.TabPages.Add(questPreviewTab);
 
             TabPage itemTab = new TabPage("Items");
             itemGrid = CreateGrid();
@@ -635,6 +650,7 @@ namespace FWEledit
             AddGeneral("Detected task items", itemValues.Count.ToString(CultureInfo.InvariantCulture));
 
             SetOverviewCards(entry, knownFields, texts, itemValues);
+            SetQuestPreview(entry, knownFields, texts, itemValues);
 
             foreach (TaskEditorFieldValue field in knownFields)
             {
@@ -1094,6 +1110,321 @@ namespace FWEledit
             public string Label { get; private set; }
             public string Value { get; private set; }
             public TaskEditorItemValue Item { get; private set; }
+        }
+
+        private void SetQuestPreview(TaskEditorEntry entry, List<TaskEditorFieldValue> fields, List<TaskEditorTextValue> texts, List<TaskEditorItemValue> itemValues)
+        {
+            if (questPreviewPanel == null)
+            {
+                return;
+            }
+
+            questPreviewPanel.SuspendLayout();
+            questPreviewPanel.Controls.Clear();
+
+            QuestPreviewCard card = new QuestPreviewCard();
+            card.Tag = "quest-preview";
+            card.Width = GetQuestPreviewCardWidth();
+            card.Margin = new Padding(0, 0, 0, 14);
+            card.Padding = new Padding(16, 12, 16, 16);
+
+            int y = 14;
+            Label title = CreateQuestPreviewLabel(entry != null ? entry.Name : string.Empty, 10F, FontStyle.Regular, Color.FromArgb(72, 40, 20), ContentAlignment.MiddleCenter);
+            title.Location = new Point(18, y);
+            title.Size = new Size(card.Width - 36, 22);
+            card.Controls.Add(title);
+            y = title.Bottom + 4;
+
+            string objective = BuildQuestPreviewObjective(entry, fields, texts);
+            if (!string.IsNullOrWhiteSpace(objective))
+            {
+                Label objectiveLabel = CreateQuestPreviewLabel(objective, 9F, FontStyle.Regular, Color.FromArgb(60, 34, 20), ContentAlignment.TopLeft);
+                objectiveLabel.Location = new Point(18, y);
+                objectiveLabel.MaximumSize = new Size(card.Width - 36, 0);
+                objectiveLabel.AutoSize = true;
+                card.Controls.Add(objectiveLabel);
+                y = objectiveLabel.Bottom + 10;
+            }
+
+            List<TaskEditorFieldValue> rewards = GetRewardFields(fields);
+            List<TaskEditorItemValue> rewardItems = GetItemsByKind(itemValues, "Success reward item", "Given item");
+            if (rewards.Count > 0 || rewardItems.Count > 0)
+            {
+                Label rewardText = CreateQuestPreviewLabel(BuildQuestPreviewRewardText(rewards), 9F, FontStyle.Regular, Color.FromArgb(30, 73, 66), ContentAlignment.TopLeft);
+                rewardText.Location = new Point(18, y);
+                rewardText.MaximumSize = new Size(card.Width - 36, 0);
+                rewardText.AutoSize = true;
+                card.Controls.Add(rewardText);
+                y = rewardText.Bottom + 6;
+
+                if (rewardItems.Count > 0)
+                {
+                    FlowLayoutPanel rewardsPanel = CreateQuestPreviewItemStrip(rewardItems);
+                    rewardsPanel.Location = new Point(18, y);
+                    card.Controls.Add(rewardsPanel);
+                    y = rewardsPanel.Bottom + 8;
+                }
+            }
+
+            List<TaskEditorItemValue> requiredItems = GetItemsByKind(itemValues, "Required item", "Completion item", "Submit item");
+            if (requiredItems.Count > 0)
+            {
+                FlowLayoutPanel requiredPanel = CreateQuestPreviewItemStrip(requiredItems);
+                requiredPanel.Location = new Point(18, y);
+                card.Controls.Add(requiredPanel);
+                y = requiredPanel.Bottom + 8;
+            }
+
+            string description = GetDescriptionText(texts, entry != null ? entry.Name : string.Empty);
+            if (!string.IsNullOrWhiteSpace(description))
+            {
+                Label body = CreateQuestPreviewLabel(description, 9F, FontStyle.Regular, Color.FromArgb(62, 38, 24), ContentAlignment.TopLeft);
+                body.Location = new Point(18, y);
+                body.MaximumSize = new Size(card.Width - 36, 0);
+                body.AutoSize = true;
+                card.Controls.Add(body);
+                y = body.Bottom + 8;
+            }
+
+            string hint = BuildQuestPreviewHint(fields);
+            if (!string.IsNullOrWhiteSpace(hint))
+            {
+                Label hintLabel = CreateQuestPreviewLabel(hint, 9F, FontStyle.Bold, Color.FromArgb(0, 138, 204), ContentAlignment.TopLeft);
+                hintLabel.Location = new Point(18, y);
+                hintLabel.MaximumSize = new Size(card.Width - 36, 0);
+                hintLabel.AutoSize = true;
+                card.Controls.Add(hintLabel);
+                y = hintLabel.Bottom + 8;
+            }
+
+            card.Height = Math.Max(210, y + 16);
+            questPreviewPanel.Controls.Add(card);
+            questPreviewPanel.ResumeLayout();
+            AdjustQuestPreviewWidth();
+        }
+
+        private string BuildQuestPreviewObjective(TaskEditorEntry entry, List<TaskEditorFieldValue> fields, List<TaskEditorTextValue> texts)
+        {
+            string taskName = entry != null ? entry.Name : string.Empty;
+            string description = GetDescriptionText(texts, taskName);
+            string firstSentence = GetFirstQuestPreviewSentence(description);
+            if (!string.IsNullOrWhiteSpace(firstSentence))
+            {
+                return firstSentence;
+            }
+
+            string finishNpc = FormatNpc(GetKnownFieldValue(fields, "m_ulAwardNPC"));
+            if (!string.Equals(finishNpc, "None", StringComparison.OrdinalIgnoreCase))
+            {
+                return "Complete quest: " + taskName + Environment.NewLine + GetNpcDisplayName(finishNpc);
+            }
+
+            return taskName;
+        }
+
+        private static string GetFirstQuestPreviewSentence(string text)
+        {
+            text = CleanTaskText(text);
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                return string.Empty;
+            }
+
+            int breakIndex = text.IndexOfAny(new[] { '.', '!', '?' });
+            if (breakIndex > 12 && breakIndex + 1 < text.Length)
+            {
+                return text.Substring(0, breakIndex + 1).Trim();
+            }
+
+            return text.Length > 120 ? text.Substring(0, 120).Trim() : text;
+        }
+
+        private static string GetNpcDisplayName(string formattedNpc)
+        {
+            if (string.IsNullOrWhiteSpace(formattedNpc))
+            {
+                return string.Empty;
+            }
+
+            int separator = formattedNpc.IndexOf(" - ", StringComparison.Ordinal);
+            return separator >= 0 ? formattedNpc.Substring(separator + 3) : formattedNpc;
+        }
+
+        private string BuildQuestPreviewRewardText(List<TaskEditorFieldValue> rewards)
+        {
+            List<string> lines = new List<string>();
+            foreach (TaskEditorFieldValue reward in rewards ?? new List<TaskEditorFieldValue>())
+            {
+                if (reward == null || string.IsNullOrWhiteSpace(reward.Value) || string.Equals(reward.Value, "0", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                if (reward.DisplayName.IndexOf("EXP", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    lines.Add("Exp: " + reward.Value);
+                }
+                else if (reward.DisplayName.IndexOf("Gold", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    lines.Add("Gold: " + reward.Value);
+                }
+                else if (reward.DisplayName.IndexOf("points", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    lines.Add(reward.DisplayName + ": " + reward.Value);
+                }
+            }
+
+            return lines.Count == 0 ? string.Empty : string.Join(Environment.NewLine, lines.ToArray());
+        }
+
+        private string BuildQuestPreviewHint(List<TaskEditorFieldValue> fields)
+        {
+            if (IsYes(fields, "m_bCanRedo") && !string.Equals(GetKnownFieldValue(fields, "m_lAvailFrequency"), "0", StringComparison.Ordinal))
+            {
+                return "Only can complete this task once per availability cycle.";
+            }
+
+            if (IsYes(fields, "m_bShowPrompt"))
+            {
+                return "Tips: the quest can be tracked in the quest list.";
+            }
+
+            return string.Empty;
+        }
+
+        private FlowLayoutPanel CreateQuestPreviewItemStrip(List<TaskEditorItemValue> items)
+        {
+            FlowLayoutPanel panel = new FlowLayoutPanel();
+            panel.Tag = "quest-preview";
+            panel.AutoSize = true;
+            panel.WrapContents = true;
+            panel.MaximumSize = new Size(GetQuestPreviewCardWidth() - 36, 0);
+            panel.Padding = new Padding(0);
+            panel.Margin = new Padding(0);
+
+            foreach (TaskEditorItemValue item in items ?? new List<TaskEditorItemValue>())
+            {
+                Panel slot = new Panel();
+                slot.Tag = "quest-preview";
+                slot.Size = new Size(42, 42);
+                slot.Margin = new Padding(0, 0, 6, 6);
+                slot.BackColor = Color.FromArgb(20, 27, 20);
+                previewToolTip.SetToolTip(slot, FormatTaskItemValue(item));
+
+                PictureBox icon = new PictureBox();
+                icon.Tag = "quest-preview";
+                icon.Image = ResolveTaskItemIcon(item);
+                icon.SizeMode = PictureBoxSizeMode.Zoom;
+                icon.Location = new Point(4, 4);
+                icon.Size = new Size(34, 34);
+                slot.Controls.Add(icon);
+                previewToolTip.SetToolTip(icon, FormatTaskItemValue(item));
+
+                if (item.Count > 1)
+                {
+                    Label count = CreateQuestPreviewLabel(item.Count.ToString(CultureInfo.InvariantCulture), 7F, FontStyle.Bold, Color.White, ContentAlignment.BottomLeft);
+                    count.Tag = "quest-preview";
+                    count.BackColor = Color.Transparent;
+                    count.Location = new Point(3, 24);
+                    count.Size = new Size(34, 14);
+                    slot.Controls.Add(count);
+                    count.BringToFront();
+                }
+
+                panel.Controls.Add(slot);
+            }
+
+            return panel;
+        }
+
+        private Label CreateQuestPreviewLabel(string text, float size, FontStyle style, Color color, ContentAlignment alignment)
+        {
+            Label label = new Label();
+            label.Tag = "quest-preview";
+            label.AutoSize = false;
+            label.BackColor = Color.Transparent;
+            label.Font = new Font("Segoe UI", size, style, GraphicsUnit.Point, 0);
+            label.ForeColor = color;
+            label.TextAlign = alignment;
+            label.Text = text ?? string.Empty;
+            return label;
+        }
+
+        private int GetQuestPreviewCardWidth()
+        {
+            if (questPreviewPanel == null)
+            {
+                return 320;
+            }
+
+            return Math.Min(360, Math.Max(280, questPreviewPanel.ClientSize.Width - questPreviewPanel.Padding.Horizontal - SystemInformation.VerticalScrollBarWidth - 8));
+        }
+
+        private void AdjustQuestPreviewWidth()
+        {
+            if (questPreviewPanel == null)
+            {
+                return;
+            }
+
+            int width = GetQuestPreviewCardWidth();
+            foreach (Control control in questPreviewPanel.Controls)
+            {
+                QuestPreviewCard card = control as QuestPreviewCard;
+                if (card == null)
+                {
+                    continue;
+                }
+
+                card.Width = width;
+                foreach (Control child in card.Controls)
+                {
+                    if (child is Label)
+                    {
+                        child.Width = width - 36;
+                        child.MaximumSize = new Size(width - 36, 0);
+                    }
+                    FlowLayoutPanel strip = child as FlowLayoutPanel;
+                    if (strip != null)
+                    {
+                        strip.MaximumSize = new Size(width - 36, 0);
+                    }
+                }
+            }
+        }
+
+        private sealed class QuestPreviewCard : Panel
+        {
+            protected override void OnPaint(PaintEventArgs e)
+            {
+                base.OnPaint(e);
+                Rectangle bounds = new Rectangle(0, 0, Width - 1, Height - 1);
+                using (SolidBrush brush = new SolidBrush(Color.FromArgb(224, 213, 148)))
+                {
+                    e.Graphics.FillRectangle(brush, bounds);
+                }
+
+                using (SolidBrush center = new SolidBrush(Color.FromArgb(235, 226, 166)))
+                {
+                    e.Graphics.FillRectangle(center, new Rectangle(6, 6, Math.Max(1, Width - 13), Math.Max(1, Height - 13)));
+                }
+
+                using (Pen border = new Pen(Color.FromArgb(94, 71, 42), 2F))
+                {
+                    e.Graphics.DrawRectangle(border, bounds);
+                }
+
+                using (Pen inner = new Pen(Color.FromArgb(190, 174, 107), 1F))
+                {
+                    e.Graphics.DrawRectangle(inner, new Rectangle(5, 5, Math.Max(1, Width - 11), Math.Max(1, Height - 11)));
+                }
+
+                using (Font font = new Font("Segoe UI", 13F, FontStyle.Bold, GraphicsUnit.Point, 0))
+                using (SolidBrush closeBrush = new SolidBrush(Color.FromArgb(104, 95, 67)))
+                {
+                    e.Graphics.DrawString("x", font, closeBrush, Width - 28, 7);
+                }
+            }
         }
 
         private static Color GetOverviewSectionColor(string sectionTitle)
@@ -1599,6 +1930,10 @@ namespace FWEledit
             {
                 overviewPanel.Controls.Clear();
             }
+            if (questPreviewPanel != null)
+            {
+                questPreviewPanel.Controls.Clear();
+            }
             itemGrid.Rows.Clear();
             generalGrid.Rows.Clear();
             fieldGrid.Rows.Clear();
@@ -1990,6 +2325,18 @@ namespace FWEledit
 
         private void ApplyTheme(Control root)
         {
+            if (string.Equals(root.Tag as string, "quest-preview", StringComparison.Ordinal))
+            {
+                foreach (Control child in root.Controls)
+                {
+                    if (!string.Equals(child.Tag as string, "quest-preview", StringComparison.Ordinal))
+                    {
+                        ApplyTheme(child);
+                    }
+                }
+                return;
+            }
+
             Color back = Color.FromArgb(17, 21, 26);
             Color panel = Color.FromArgb(24, 28, 34);
             Color text = Color.FromArgb(229, 234, 242);
