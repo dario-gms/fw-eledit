@@ -10,6 +10,12 @@ namespace FWEledit
 {
     public sealed class TaskEditorFileService
     {
+        private const int FixedTaskDataSize = 0x0BCB;
+        private const int AwardDataSize = 0x0710;
+        private const int AwardSideOccupationExpOffset = 0x05B2;
+        private const int AwardSideOccupationExpCount = 64;
+        private const int AwardSideOccupationPointsOffset = 0x06B2;
+
         public TaskEditorData LoadFromGameRoot(string gameRootPath)
         {
             TaskEditorData data = new TaskEditorData();
@@ -469,7 +475,106 @@ namespace FWEledit
                 });
             }
 
+            AddAwardPointFields(bytes, values, "Success reward", FixedTaskDataSize, "m_Award_S");
+
             return values;
+        }
+
+        private static void AddAwardPointFields(byte[] bytes, List<TaskEditorFieldValue> values, string section, int awardStartOffset, string sourcePrefix)
+        {
+            if (bytes == null || values == null || awardStartOffset < 0 || awardStartOffset + AwardDataSize > bytes.Length)
+            {
+                return;
+            }
+
+            for (int i = 0; i < AwardSideOccupationExpCount; i++)
+            {
+                int offset = awardStartOffset + AwardSideOccupationExpOffset + i * 4;
+                int points = BitConverter.ToInt32(bytes, offset);
+                if (points == 0)
+                {
+                    continue;
+                }
+
+                string pointName = GetSideOccupationPointName(i);
+                values.Add(new TaskEditorFieldValue
+                {
+                    Section = section,
+                    Field = sourcePrefix + ".m_iSideOccupExp[" + i.ToString(CultureInfo.InvariantCulture) + "]",
+                    DisplayName = pointName + " points",
+                    Meaning = "Adds side-occupation/release points when this reward is delivered.",
+                    Offset = offset,
+                    HexOffset = "0x" + offset.ToString("X4", CultureInfo.InvariantCulture),
+                    Type = "int",
+                    Value = points.ToString(CultureInfo.InvariantCulture)
+                });
+            }
+
+            int sideOccupationPoints = BitConverter.ToInt32(bytes, awardStartOffset + AwardSideOccupationPointsOffset);
+            if (sideOccupationPoints != 0)
+            {
+                int offset = awardStartOffset + AwardSideOccupationPointsOffset;
+                values.Add(new TaskEditorFieldValue
+                {
+                    Section = section,
+                    Field = sourcePrefix + ".m_iSideOccupPoints",
+                    DisplayName = "Side occupation points",
+                    Meaning = "Adds generic side-occupation points when this reward is delivered.",
+                    Offset = offset,
+                    HexOffset = "0x" + offset.ToString("X4", CultureInfo.InvariantCulture),
+                    Type = "int",
+                    Value = sideOccupationPoints.ToString(CultureInfo.InvariantCulture)
+                });
+            }
+        }
+
+        private static string GetSideOccupationPointName(int index)
+        {
+            string[] names =
+            {
+                "Slayer",
+                "Triumph",
+                "Call of Dawn",
+                "Bounty",
+                "Champion",
+                "Arena",
+                "Arena Dedication",
+                "3v3",
+                "6v6",
+                "Arena Reputation",
+                "Luck",
+                "Mentor",
+                "Contribution",
+                "Cruelty",
+                "Bounty Glory",
+                "Kindness",
+                "Courage",
+                "Master",
+                "FF",
+                "FF BF",
+                "Lionheart Champion",
+                "FF Total",
+                "Sanguine Circle",
+                "Union of Woods",
+                "Mercury Union",
+                "Hell Acclaim",
+                "Rose",
+                "Season 1 3v3",
+                "Season 1 6v6",
+                "Companion",
+                "Blessing of Antus",
+                "Empty",
+                "Promoter",
+                "Valor",
+                "Warlord",
+                "Hell",
+                "Fealty",
+                "Touch"
+            };
+
+            return index >= 0 && index < names.Length
+                ? names[index]
+                : "Side occupation " + index.ToString(CultureInfo.InvariantCulture);
         }
 
         private static bool TryReadField(byte[] bytes, FieldSpec spec, out string value)

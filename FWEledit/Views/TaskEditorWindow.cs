@@ -470,6 +470,17 @@ namespace FWEledit
             AppendItem(builder, "Cleanup", IsYes(fields, "m_bClearAcquired") ? "Removes acquired task items during cleanup" : "No acquired-item cleanup flag");
             AppendItem(builder, "Lua logic", IsYes(fields, "m_bLuaTask") ? "Uses Lua-side behavior" : "No Lua task flag");
 
+            List<TaskEditorFieldValue> releasePointRewards = GetReleasePointRewardFields(fields);
+            if (releasePointRewards.Count > 0)
+            {
+                builder.AppendLine();
+                AppendSection(builder, "Rewards");
+                foreach (TaskEditorFieldValue reward in releasePointRewards)
+                {
+                    AppendItem(builder, reward.DisplayName, reward.Value);
+                }
+            }
+
             string description = GetDescriptionText(texts, entry.Name);
             if (!string.IsNullOrWhiteSpace(description))
             {
@@ -524,6 +535,7 @@ namespace FWEledit
                 "PLAYER-FACING SUMMARY",
                 "AVAILABILITY AND REPEAT RULES",
                 "GAME FLOW",
+                "REWARDS",
                 "DESCRIPTION",
                 "DIALOG PREVIEW",
                 "TECHNICAL SOURCE"
@@ -552,6 +564,7 @@ namespace FWEledit
                 case "PLAYER-FACING SUMMARY": return Color.FromArgb(111, 202, 255);
                 case "AVAILABILITY AND REPEAT RULES": return Color.FromArgb(125, 214, 157);
                 case "GAME FLOW": return Color.FromArgb(255, 196, 116);
+                case "REWARDS": return Color.FromArgb(255, 213, 105);
                 case "DESCRIPTION": return Color.FromArgb(218, 188, 255);
                 case "DIALOG PREVIEW": return Color.FromArgb(255, 145, 165);
                 case "TECHNICAL SOURCE": return Color.FromArgb(160, 169, 181);
@@ -579,6 +592,20 @@ namespace FWEledit
             if (direction) parts.Add("direction marker");
             if (prompt) parts.Add("client prompt");
             return parts.Count == 0 ? "No tracking flags enabled" : string.Join(", ", parts);
+        }
+
+        private List<TaskEditorFieldValue> GetReleasePointRewardFields(List<TaskEditorFieldValue> fields)
+        {
+            if (fields == null)
+            {
+                return new List<TaskEditorFieldValue>();
+            }
+
+            return fields
+                .Where(field => field != null)
+                .Where(field => string.Equals(field.Section, "Success reward", StringComparison.Ordinal))
+                .Where(field => field.Field != null && field.Field.IndexOf("m_iSideOccup", StringComparison.Ordinal) >= 0)
+                .ToList();
         }
 
         private string DescribeTaskType(string value)
@@ -784,6 +811,7 @@ namespace FWEledit
                 case "Transport": color = Color.FromArgb(34, 28, 42); break;
                 case "Flow": color = Color.FromArgb(31, 29, 23); break;
                 case "NPC": color = Color.FromArgb(39, 29, 22); break;
+                case "Success reward": color = Color.FromArgb(42, 34, 19); break;
                 case "Finish Count": color = Color.FromArgb(29, 25, 38); break;
                 case "Trade": color = Color.FromArgb(24, 34, 31); break;
                 case "Message": color = Color.FromArgb(35, 26, 30); break;
