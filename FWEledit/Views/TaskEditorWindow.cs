@@ -690,6 +690,8 @@ namespace FWEledit
 
             AppendSection(builder, "Player-facing summary");
             AppendItem(builder, "Task type", DescribeTaskType(GetKnownFieldValue(fields, "m_ulType")));
+            AppendItem(builder, "Completion method", DescribeCompletionMethod(GetKnownFieldValue(fields, "m_enumMethod")));
+            AppendItem(builder, "Finish handoff", DescribeFinishType(GetKnownFieldValue(fields, "m_enumFinishType")));
             AppendItem(builder, "Recommended level", ZeroAsNone(GetKnownFieldValue(fields, "m_ulSuitableLevel")));
             AppendItem(builder, "Start NPC", FormatNpc(GetKnownFieldValue(fields, "m_ulDelvNPC")));
             AppendItem(builder, "Finish NPC", FormatNpc(GetKnownFieldValue(fields, "m_ulAwardNPC")));
@@ -731,6 +733,8 @@ namespace FWEledit
             {
                 builder.AppendLine();
                 AppendSection(builder, "Rewards");
+                AppendItem(builder, "Success reward mode", DescribeAwardType(GetKnownFieldValue(fields, "m_enumAwardType_S")));
+                AppendItem(builder, "Failure reward mode", DescribeAwardType(GetKnownFieldValue(fields, "m_enumAwardType_F")));
                 foreach (TaskEditorItemValue item in rewardItems)
                 {
                     AppendItem(builder, item.Kind, FormatTaskItemValue(item));
@@ -1125,6 +1129,77 @@ namespace FWEledit
                 case 4: return "4 - Daily style";
                 case 9: return "9 - NPC/story task";
                 default: return type.ToString(CultureInfo.InvariantCulture);
+            }
+        }
+
+        private string DescribeCompletionMethod(string value)
+        {
+            int method;
+            if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out method))
+            {
+                return string.IsNullOrWhiteSpace(value) ? "Unknown" : value;
+            }
+
+            switch (method)
+            {
+                case 0: return "0 - None / script-driven";
+                case 1: return "1 - Kill monsters";
+                case 2: return "2 - Collect required items";
+                case 3: return "3 - Talk to NPC";
+                case 4: return "4 - Reach location";
+                case 5: return "5 - Wait timer";
+                case 6: return "6 - Answer question";
+                case 7: return "7 - Mini game";
+                case 8: return "8 - Protect NPC";
+                case 9: return "9 - Escort NPC to location";
+                case 10: return "10 - Own title";
+                case 11: return "11 - Finish task count";
+                case 12: return "12 - Mining count";
+                case 13: return "13 - Use item count";
+                case 14: return "14 - Kill players";
+                case 15: return "15 - Achievement count";
+                case 16: return "16 - Perform emotion";
+                case 17: return "17 - Submit items";
+                case 18: return "18 - PVP wins";
+                case 19: return "19 - PVP failures";
+                case 20: return "20 - PVP completions";
+                default: return method.ToString(CultureInfo.InvariantCulture);
+            }
+        }
+
+        private string DescribeFinishType(string value)
+        {
+            int finishType;
+            if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out finishType))
+            {
+                return string.IsNullOrWhiteSpace(value) ? "Unknown" : value;
+            }
+
+            switch (finishType)
+            {
+                case 0: return "0 - Direct completion";
+                case 1: return "1 - Return to finish NPC";
+                default: return finishType.ToString(CultureInfo.InvariantCulture);
+            }
+        }
+
+        private string DescribeAwardType(string value)
+        {
+            int awardType;
+            if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out awardType))
+            {
+                return string.IsNullOrWhiteSpace(value) ? "Unknown" : value;
+            }
+
+            switch (awardType)
+            {
+                case 0: return "0 - Normal reward";
+                case 1: return "1 - Per-condition reward";
+                case 2: return "2 - Ratio reward";
+                case 3: return "3 - Item-count reward";
+                case 4: return "4 - Finish-count reward";
+                case 5: return "5 - Submit-item reward";
+                default: return awardType.ToString(CultureInfo.InvariantCulture);
             }
         }
 

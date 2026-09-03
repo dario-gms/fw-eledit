@@ -627,7 +627,7 @@ namespace FWEledit
                 return values;
             }
 
-            FieldSpec[] specs =
+            List<FieldSpec> specs = new List<FieldSpec>
             {
                 new FieldSpec("General", "m_ID", 0x0000, "uint"),
                 new FieldSpec("General", "m_szName", 0x0004, "wstring:30"),
@@ -701,6 +701,7 @@ namespace FWEledit
                 new FieldSpec("Hierarchy", "m_ulNextSibling", NextSiblingTaskIdOffset, "uint"),
                 new FieldSpec("Hierarchy", "m_ulFirstChild", FirstChildTaskIdOffset, "uint")
             };
+            AddExtendedFixedFieldSpecs(specs);
 
             foreach (FieldSpec spec in specs)
             {
@@ -960,10 +961,267 @@ namespace FWEledit
                 ItemId = itemId,
                 Count = count,
                 CommonItem = bytes[offset + 4] != 0,
-                Bind = bytes[offset + 19] != 0,
+                Bind = bytes[offset + 18] != 0,
                 Quality = -1
             };
             return true;
+        }
+
+        private static void AddExtendedFixedFieldSpecs(List<FieldSpec> specs)
+        {
+            if (specs == null)
+            {
+                return;
+            }
+
+            specs.Add(new FieldSpec("Terminate", "m_TerminateTask", 0x0132, "uint-array:8"));
+            specs.Add(new FieldSpec("Flow", "m_bFinishTask", 0x0152, "bool"));
+            specs.Add(new FieldSpec("Monster Control", "m_ulMonCtrlCnt", 0x0153, "uint"));
+            specs.Add(new FieldSpec("Monster Control", "m_MonCtrl", 0x0157, "monctrl-array:8"));
+            specs.Add(new FieldSpec("Monster Control", "m_bRanMonCtrl", 0x019F, "bool"));
+            specs.Add(new FieldSpec("Dungeon", "m_bCreateDungeon", 0x01A0, "bool"));
+            specs.Add(new FieldSpec("Dungeon", "m_bEnterDungeon", 0x01A1, "bool"));
+            specs.Add(new FieldSpec("Dungeon", "m_iDungeonTemplateID", 0x01A2, "int"));
+            specs.Add(new FieldSpec("Emotion", "m_bEmotionTrig", 0x01A6, "bool"));
+            specs.Add(new FieldSpec("Emotion", "m_iEmotionTrigID", 0x01A7, "int"));
+            specs.Add(new FieldSpec("Message", "m_AIMsg", 0x01AB, "ai-msg"));
+            specs.Add(new FieldSpec("Flow", "m_iRetrieveIdx", 0x01B7, "int"));
+            specs.Add(new FieldSpec("Premise", "m_ulPremise_Lev_Min", 0x01BB, "uint"));
+            specs.Add(new FieldSpec("Premise", "m_ulPremise_Lev_Max", 0x01BF, "uint"));
+            specs.Add(new FieldSpec("Premise", "m_bShowByLev", 0x01C3, "bool"));
+            specs.Add(new FieldSpec("Premise", "m_i64RegionMask", 0x01C4, "int64"));
+            specs.Add(new FieldSpec("Premise", "m_nTalismanValueMin", 0x01CC, "int"));
+            specs.Add(new FieldSpec("Premise", "m_nTalismanValueMax", 0x01D0, "int"));
+            specs.Add(new FieldSpec("Premise", "m_nIntimacyMin", 0x01D4, "int"));
+            specs.Add(new FieldSpec("Premise", "m_nIntimacyMax", 0x01D8, "int"));
+            specs.Add(new FieldSpec("Premise", "m_ulPremItems", 0x01DC, "uint"));
+            specs.Add(new FieldSpec("Premise", "m_bShowByItems", 0x01E8, "bool"));
+            specs.Add(new FieldSpec("Given Items", "m_ulGivenItems", 0x01E9, "uint"));
+            specs.Add(new FieldSpec("Given Items", "m_ulGivenCmnCount", 0x01ED, "uint"));
+            specs.Add(new FieldSpec("Given Items", "m_ulGivenTskCount", 0x01F1, "uint"));
+            specs.Add(new FieldSpec("Premise", "m_ulPremTitleCount", 0x0205, "uint"));
+            specs.Add(new FieldSpec("Premise", "m_bPremTitleCond", 0x0209, "bool"));
+            specs.Add(new FieldSpec("Premise", "m_ulPremise_Deposit", 0x020A, "uint"));
+            specs.Add(new FieldSpec("Premise", "m_bShowByDeposit", 0x020E, "bool"));
+            specs.Add(new FieldSpec("Premise", "m_lPremise_Reputation", 0x020F, "int"));
+            specs.Add(new FieldSpec("Premise", "m_bRepuDeposit", 0x0213, "bool"));
+            specs.Add(new FieldSpec("Premise", "m_bShowByRepu", 0x0214, "bool"));
+            specs.Add(new FieldSpec("Premise", "m_nPremise_Vigour", 0x0215, "int"));
+            specs.Add(new FieldSpec("Premise", "m_bVigourDeposit", 0x0219, "bool"));
+            specs.Add(new FieldSpec("Premise", "m_nPremise_Vitality", 0x021A, "int"));
+            specs.Add(new FieldSpec("Premise", "m_bVitalityDeposit", 0x021E, "bool"));
+            specs.Add(new FieldSpec("Premise", "m_nPremise_InteractionPoints", 0x021F, "int"));
+            specs.Add(new FieldSpec("Premise", "m_bInteractionPointsDeposit", 0x0223, "bool"));
+            specs.Add(new FieldSpec("Premise", "m_lPremise_Contribution", 0x0224, "int"));
+            specs.Add(new FieldSpec("Premise", "m_bDepositContribution", 0x0228, "bool"));
+            specs.Add(new FieldSpec("Premise", "m_nPremise_FamContrib", 0x0229, "int"));
+            specs.Add(new FieldSpec("Premise", "m_nPremFamContribMax", 0x022D, "int"));
+            specs.Add(new FieldSpec("Premise", "m_bDepositFamContrib", 0x0231, "bool"));
+            specs.Add(new FieldSpec("Premise", "m_ulPremise_FactionMoney", 0x0232, "uint"));
+            specs.Add(new FieldSpec("Premise", "m_bFactionMoneyDeposit", 0x0236, "bool"));
+            specs.Add(new FieldSpec("Premise", "m_ulPremise_FacMelee", 0x0237, "uint"));
+            specs.Add(new FieldSpec("Premise", "m_bFacMeleeDeposit", 0x023B, "bool"));
+            specs.Add(new FieldSpec("Premise", "m_ulPremise_FacMagic", 0x023C, "uint"));
+            specs.Add(new FieldSpec("Premise", "m_bFacMagicDeposit", 0x0240, "bool"));
+            specs.Add(new FieldSpec("Premise", "m_ulPremise_FacEnconomy", 0x0241, "uint"));
+            specs.Add(new FieldSpec("Premise", "m_bFacEnconomyDeposit", 0x0245, "bool"));
+            specs.Add(new FieldSpec("Premise", "m_ulPremise_FacCulture", 0x0246, "uint"));
+            specs.Add(new FieldSpec("Premise", "m_bFacCultureDeposit", 0x024A, "bool"));
+            specs.Add(new FieldSpec("Premise", "m_ulPremise_FacBelief", 0x024B, "uint"));
+            specs.Add(new FieldSpec("Premise", "m_bFacBeliefDeposit", 0x024F, "bool"));
+            specs.Add(new FieldSpec("Premise", "m_iPremise_FacResElse", 0x0250, "int-array:10"));
+            specs.Add(new FieldSpec("Premise", "m_bPremise_FacResElseDeposit", 0x0278, "bool-array:10"));
+            specs.Add(new FieldSpec("Premise", "m_ulPremise_FacCredit", 0x0282, "uint"));
+            specs.Add(new FieldSpec("Premise", "m_bFacCreditDeposit", 0x0286, "bool"));
+            specs.Add(new FieldSpec("Premise", "m_bShowByFaction", 0x0287, "bool"));
+            specs.Add(new FieldSpec("Premise", "m_ulPremise_Golden", 0x0288, "int64"));
+            specs.Add(new FieldSpec("Premise", "m_ulPremise_AchievementCount", 0x0290, "uint"));
+            specs.Add(new FieldSpec("Premise", "m_ulPremise_AchievementPoint", 0x0294, "uint"));
+            specs.Add(new FieldSpec("Premise", "m_bPremAchievementDeposit", 0x0298, "bool"));
+            specs.Add(new FieldSpec("Premise", "m_iPremBattleScoreMin", 0x0299, "int"));
+            specs.Add(new FieldSpec("Premise", "m_iPremBattleScoreMax", 0x029D, "int"));
+            specs.Add(new FieldSpec("Premise", "m_bPremBattleScoreDeposit", 0x02A1, "bool"));
+            specs.Add(new FieldSpec("Premise", "m_Premise_FriendshipMin", 0x02A2, "int-array:64"));
+            specs.Add(new FieldSpec("Premise", "m_Premise_FriendshipMax", 0x03A2, "int-array:64"));
+            specs.Add(new FieldSpec("Premise", "m_bPremise_FriendshipCond", 0x04A2, "bool"));
+            specs.Add(new FieldSpec("Premise", "m_bPremise_FriendshipDeposit", 0x04A3, "bool"));
+            specs.Add(new FieldSpec("Premise", "m_Premise_Mastery", 0x04A4, "uint-array:8"));
+            specs.Add(new FieldSpec("Premise", "m_Premise_Resistance", 0x04C4, "uint-array:8"));
+            specs.Add(new FieldSpec("Premise", "m_bShowByMR", 0x04E4, "bool"));
+            specs.Add(new FieldSpec("Premise", "m_Premise_SpecialCounterMin", 0x04E5, "int-array:32"));
+            specs.Add(new FieldSpec("Premise", "m_Premise_SpecialCounterMax", 0x0565, "int-array:32"));
+            specs.Add(new FieldSpec("Premise", "m_bPremise_SpecialCounterCond", 0x05E5, "bool"));
+            specs.Add(new FieldSpec("Premise", "m_ulPremise_Task_Count", 0x05E6, "uint"));
+            specs.Add(new FieldSpec("Premise", "m_ulPremise_Tasks", 0x05EA, "uint-array:32"));
+            specs.Add(new FieldSpec("Premise", "m_bShowByTask", 0x066A, "bool"));
+            specs.Add(new FieldSpec("Premise", "m_ulPremise_FinishTask_Count", 0x066B, "uint"));
+            specs.Add(new FieldSpec("Premise", "m_PremFinishTasks", 0x066F, "finish-task-count-array:32"));
+            specs.Add(new FieldSpec("Premise", "m_ulPremise_GlobalTaskCount", 0x072F, "uint"));
+            specs.Add(new FieldSpec("Premise", "m_ulPremise_GlobalTask", 0x0733, "uint"));
+            specs.Add(new FieldSpec("Premise", "m_ulPremise_Period", 0x0737, "uint"));
+            specs.Add(new FieldSpec("Premise", "m_bShowByPeriod", 0x073B, "bool"));
+            specs.Add(new FieldSpec("Premise", "m_ulPremise_Faction", 0x073C, "uint"));
+            specs.Add(new FieldSpec("Premise", "m_iPremise_FactionRole", 0x0740, "int"));
+            specs.Add(new FieldSpec("Premise", "m_bShowByFactionRole", 0x0744, "bool"));
+            specs.Add(new FieldSpec("Premise", "m_bPremise_Master", 0x0745, "bool"));
+            specs.Add(new FieldSpec("Premise", "m_ulGender", 0x0746, "uint"));
+            specs.Add(new FieldSpec("Premise", "m_bShowByGender", 0x074A, "bool"));
+            specs.Add(new FieldSpec("Premise", "m_ulOccupations", 0x074B, "uint"));
+            specs.Add(new FieldSpec("Premise", "m_Occupations", 0x074F, "uint-array:32"));
+            specs.Add(new FieldSpec("Premise", "m_bShowByOccup", 0x07CF, "bool"));
+            specs.Add(new FieldSpec("Premise", "m_ulRaces", 0x07D0, "uint"));
+            specs.Add(new FieldSpec("Premise", "m_Races", 0x07D4, "uint-array:8"));
+            specs.Add(new FieldSpec("Premise", "m_bPremise_Spouse", 0x07F4, "bool"));
+            specs.Add(new FieldSpec("Premise", "m_bShowBySpouse", 0x07F5, "bool"));
+            specs.Add(new FieldSpec("Premise", "m_ulPremise_Cotask_Count", 0x07F6, "uint"));
+            specs.Add(new FieldSpec("Premise", "m_ulPremise_Cotasks", 0x07FA, "uint-array:4"));
+            specs.Add(new FieldSpec("Premise", "m_bCotaskCond", 0x080A, "bool"));
+            specs.Add(new FieldSpec("Premise", "m_bShowByCotask", 0x080E, "bool"));
+            specs.Add(new FieldSpec("Premise", "m_ulMutexTaskCount", 0x080F, "uint"));
+            specs.Add(new FieldSpec("Premise", "m_ulMutexTasks", 0x0813, "uint-array:32"));
+            specs.Add(new FieldSpec("Premise", "m_nMutexType", 0x0893, "int-array:32"));
+            specs.Add(new FieldSpec("Premise", "m_lSkillLev", 0x0913, "int-array:32"));
+            specs.Add(new FieldSpec("Premise", "m_lSkillPro", 0x0993, "int-array:32"));
+            specs.Add(new FieldSpec("Premise", "m_DynTaskType", 0x0A13, "byte"));
+            specs.Add(new FieldSpec("Premise", "m_SpecialAward", 0x0A14, "uint"));
+            specs.Add(new FieldSpec("Premise", "m_iPremise_PkValueMin", 0x0A18, "int"));
+            specs.Add(new FieldSpec("Premise", "m_iPremise_PkValueMax", 0x0A1C, "int"));
+            specs.Add(new FieldSpec("Flags", "m_bGM", 0x0A20, "bool"));
+            specs.Add(new FieldSpec("Flags", "m_bShieldUser", 0x0A21, "bool"));
+            specs.Add(new FieldSpec("Premise", "m_ulPremise_FactionRole2", 0x0A22, "uint"));
+            specs.Add(new FieldSpec("Premise", "m_ulPremise_FactionRole2Max", 0x0A26, "uint"));
+            specs.Add(new FieldSpec("Capture", "m_ulCapTaskId", 0x0A2A, "uint"));
+            specs.Add(new FieldSpec("Capture", "m_ulCapTaskTemplAddr", 0x0A2E, "uint"));
+            specs.Add(new FieldSpec("Team", "m_bTeamwork", 0x0A32, "bool"));
+            specs.Add(new FieldSpec("Team", "m_bRcvByTeam", 0x0A34, "bool"));
+            specs.Add(new FieldSpec("Team", "m_bSharedTask", 0x0A35, "bool"));
+            specs.Add(new FieldSpec("Team", "m_bSharedAchieved", 0x0A36, "bool"));
+            specs.Add(new FieldSpec("Team", "m_bCheckTeammate", 0x0A37, "bool"));
+            specs.Add(new FieldSpec("Team", "m_fTeammateDist", 0x0A38, "float"));
+            specs.Add(new FieldSpec("Team", "m_bAllFail", 0x0A3C, "bool"));
+            specs.Add(new FieldSpec("Team", "m_bCapFail", 0x0A3D, "bool"));
+            specs.Add(new FieldSpec("Team", "m_bCapSucc", 0x0A3E, "bool"));
+            specs.Add(new FieldSpec("Team", "m_fSuccDist", 0x0A3F, "float"));
+            specs.Add(new FieldSpec("Team", "m_bDismAsSelfFail", 0x0A43, "bool"));
+            specs.Add(new FieldSpec("Team", "m_bRcvChckMem", 0x0A44, "bool"));
+            specs.Add(new FieldSpec("Team", "m_fRcvMemDist", 0x0A45, "float"));
+            specs.Add(new FieldSpec("Team", "m_bCntByMemPos", 0x0A49, "bool"));
+            specs.Add(new FieldSpec("Team", "m_fCntByMemDist", 0x0A4A, "float"));
+            specs.Add(new FieldSpec("Team", "m_ulTeamMemsWanted", 0x0A4E, "uint"));
+            specs.Add(new FieldSpec("Team", "m_bShowByTeam", 0x0A5A, "bool"));
+            specs.Add(new FieldSpec("Team", "m_bDeadShared", 0x0A5B, "bool"));
+            specs.Add(new FieldSpec("Team", "m_bIsMaster", 0x0A5C, "bool"));
+            specs.Add(new FieldSpec("Family", "m_bInFamily", 0x0A5D, "bool"));
+            specs.Add(new FieldSpec("Family", "m_bClanLeader", 0x0A5E, "bool"));
+            specs.Add(new FieldSpec("Family", "m_ulFamilySkillLevelMin", 0x0A5F, "uint"));
+            specs.Add(new FieldSpec("Family", "m_ulFamilySkillLevelMax", 0x0A63, "uint"));
+            specs.Add(new FieldSpec("Family", "m_ulFamilySkillProficiencyMin", 0x0A67, "uint"));
+            specs.Add(new FieldSpec("Family", "m_ulFamilySkillProficiencyMax", 0x0A6B, "uint"));
+            specs.Add(new FieldSpec("Family", "m_ulClanSkillID", 0x0A6F, "uint"));
+            specs.Add(new FieldSpec("Family", "m_ulClanMapID", 0x0A73, "uint"));
+            specs.Add(new FieldSpec("Family", "m_ulFamilyMonsterRecordMin", 0x0A77, "uint"));
+            specs.Add(new FieldSpec("Family", "m_ulFamilyMonsterRecordMax", 0x0A7B, "uint"));
+            specs.Add(new FieldSpec("Family", "m_ulFamilyValueIndex", 0x0A7F, "uint"));
+            specs.Add(new FieldSpec("Family", "m_bDepositFamilyValue", 0x0A83, "bool"));
+            specs.Add(new FieldSpec("Family", "m_iFamilyValueMin", 0x0A84, "int"));
+            specs.Add(new FieldSpec("Family", "m_iFamilyValueMax", 0x0A88, "int"));
+            specs.Add(new FieldSpec("Premise", "m_PremKeyValue", 0x0A8C, "compare-key-value"));
+            specs.Add(new FieldSpec("Premise", "m_ulPremSkillCount", 0x0AA1, "uint"));
+            specs.Add(new FieldSpec("Premise", "m_PremSkills", 0x0AA5, "prem-skill-array:8"));
+            specs.Add(new FieldSpec("Premise", "m_bShowBySkill", 0x0AED, "bool"));
+            specs.Add(new FieldSpec("Premise", "m_ulPremBuffCount", 0x0AEE, "uint"));
+            specs.Add(new FieldSpec("Premise", "m_PremBuffs", 0x0AF2, "prem-skill-array:8"));
+            specs.Add(new FieldSpec("Premise", "m_bShowByBuff", 0x0B3A, "bool"));
+            specs.Add(new FieldSpec("Premise", "m_bPremise_SpecKnow", 0x0B3B, "bool"));
+            specs.Add(new FieldSpec("Premise", "m_ulPremise_InventorySlotCount", 0x0B3F, "uint"));
+            specs.Add(new FieldSpec("Premise", "m_ulPremise_InventorySlotIDs", 0x0B43, "uint-array:8"));
+            specs.Add(new FieldSpec("Premise", "m_bShowByInventorySlot", 0x0B63, "bool"));
+            specs.Add(new FieldSpec("Premise", "m_iPremise_BindMoney", 0x0B64, "int"));
+            specs.Add(new FieldSpec("Premise", "m_bShowByBindMoney", 0x0B68, "bool"));
+            specs.Add(new FieldSpec("Premise", "m_arrSideOccupation", 0x0B69, "int-array:64"));
+            specs.Add(new FieldSpec("Premise", "m_arrSideOccupMax", 0x0C69, "int-array:64"));
+            specs.Add(new FieldSpec("Premise", "m_arrSideOccupActive", 0x0D69, "bool-array:64"));
+            specs.Add(new FieldSpec("Premise", "m_bDiscoverMap", 0x0DA9, "bool"));
+            specs.Add(new FieldSpec("Premise", "m_ulDiscoverMapID", 0x0DAA, "uint"));
+            specs.Add(new FieldSpec("Premise", "m_iPremise_Impression", 0x0DAE, "int"));
+            specs.Add(new FieldSpec("Premise", "m_iPremise_PrayValue", 0x0DB2, "int"));
+            specs.Add(new FieldSpec("Premise", "m_iPremise_FlyLevel", 0x0DB6, "int"));
+            specs.Add(new FieldSpec("Premise", "m_bPremise_FlyTimeFull", 0x0DBA, "bool"));
+            specs.Add(new FieldSpec("Premise", "m_iPremise_Belief", 0x0DBB, "int"));
+            specs.Add(new FieldSpec("Premise", "m_bPremise_BeliefDeposit", 0x0DBF, "bool"));
+            specs.Add(new FieldSpec("Premise", "m_iPremise_MinGodEvilValue", 0x0DC0, "int"));
+            specs.Add(new FieldSpec("Premise", "m_iPremise_MaxGodEvilValue", 0x0DC4, "int"));
+            specs.Add(new FieldSpec("Premise", "m_iPremise_MinTreasuryValue", 0x0DC8, "int"));
+            specs.Add(new FieldSpec("Premise", "m_iPremise_MaxTreasuryValue", 0x0DCC, "int"));
+            specs.Add(new FieldSpec("Premise", "m_bShowByGodEvil", 0x0DD0, "bool"));
+            specs.Add(new FieldSpec("Premise", "m_iPremise_CompleteUserAccountFlag", 0x0DD1, "int"));
+            specs.Add(new FieldSpec("Premise", "m_ucPremise_VipLevel", 0x0DD5, "byte"));
+            specs.Add(new FieldSpec("Premise", "m_iPremise_ConsumeScore", 0x0DD6, "int"));
+            specs.Add(new FieldSpec("Premise", "m_iPremise_ServerType", 0x0DDA, "int"));
+            specs.Add(new FieldSpec("Premise", "m_iPremise_Marriage", 0x0DDE, "int"));
+            specs.Add(new FieldSpec("Completion", "m_enumMethod", 0x0DE2, "int"));
+            specs.Add(new FieldSpec("Completion", "m_enumFinishType", 0x0DE6, "int"));
+            specs.Add(new FieldSpec("Completion", "m_ulMonsterWanted", 0x0DEA, "uint"));
+            specs.Add(new FieldSpec("Completion", "m_bHasGatherMonster", 0x0DFE, "bool"));
+            specs.Add(new FieldSpec("Completion", "m_ulGatherMonsterNum", 0x0DFF, "uint"));
+            specs.Add(new FieldSpec("Completion", "m_bFinNeedComp", 0x0E03, "bool"));
+            specs.Add(new FieldSpec("Completion", "m_ulGatherItemNum", 0x0E04, "uint"));
+            specs.Add(new FieldSpec("Completion", "m_bKillMonsterPack", 0x0E08, "bool"));
+            specs.Add(new FieldSpec("Completion", "m_ulKillMonsterPackID", 0x0E09, "uint"));
+            specs.Add(new FieldSpec("Completion", "m_ulKillMonsterPackNum", 0x0E0D, "uint"));
+            specs.Add(new FieldSpec("Completion", "m_ulItemsWanted", 0x0E11, "uint"));
+            specs.Add(new FieldSpec("Completion", "m_ulGoldWanted", 0x0E1D, "uint"));
+            specs.Add(new FieldSpec("Completion", "m_bNotGiveMine", 0x0E21, "bool"));
+            specs.Add(new FieldSpec("Completion", "m_bNotClearCommonItem", 0x0E22, "bool"));
+            specs.Add(new FieldSpec("Completion", "m_ulNPCToProtect", 0x0E23, "uint"));
+            specs.Add(new FieldSpec("Completion", "m_ulProtectTimeLen", 0x0E27, "uint"));
+            specs.Add(new FieldSpec("Completion", "m_ulNPCMoving", 0x0E2B, "uint"));
+            specs.Add(new FieldSpec("Completion", "m_ulNPCDestSite", 0x0E2F, "uint"));
+            specs.Add(new FieldSpec("Completion", "m_ReachSiteMin", 0x0E33, "zone"));
+            specs.Add(new FieldSpec("Completion", "m_ReachSiteMax", 0x0E3F, "zone"));
+            specs.Add(new FieldSpec("Completion", "m_ulReachSiteId", 0x0E4B, "uint"));
+            specs.Add(new FieldSpec("Completion", "m_ulWaitTime", 0x0E4F, "uint"));
+            specs.Add(new FieldSpec("Completion", "m_ulTitleNumRequired", 0x0E53, "uint"));
+            specs.Add(new FieldSpec("Completion", "m_TitleWanted", 0x0E57, "uint16-array:32"));
+            specs.Add(new FieldSpec("Completion", "m_ulFinishTaskID", 0x0E97, "uint"));
+            specs.Add(new FieldSpec("Completion", "m_ulFinishTaskCount", 0x0E9B, "uint"));
+            specs.Add(new FieldSpec("Completion", "m_bHasFinishTaskCount", 0x0E9F, "bool"));
+            specs.Add(new FieldSpec("Completion", "m_ulFinishLev", 0x0EA8, "uint"));
+            specs.Add(new FieldSpec("Completion", "m_bShowByFinLev", 0x0EAC, "bool"));
+            specs.Add(new FieldSpec("Completion", "m_ulFinChangedRace", 0x0EAD, "uint"));
+            specs.Add(new FieldSpec("Completion", "m_ulFinChangedVisualize", 0x0EB1, "uint"));
+            specs.Add(new FieldSpec("Completion", "m_ulItemsSubmitWanted", 0x0EB5, "uint"));
+            specs.Add(new FieldSpec("Completion", "m_ulItemTypeFalse", 0x0EC1, "uint"));
+            specs.Add(new FieldSpec("Completion", "m_ulItemCountFalse", 0x0EC5, "uint"));
+            specs.Add(new FieldSpec("Completion", "m_ulWelcomeWords", 0x0EC9, "uint"));
+            specs.Add(new FieldSpec("Completion", "m_ulFinBuffCount", 0x0ED5, "uint"));
+            specs.Add(new FieldSpec("Completion", "m_FinBuffs", 0x0ED9, "prem-skill-array:8"));
+            specs.Add(new FieldSpec("Completion", "m_bFinBuffCond", 0x0F21, "bool"));
+            specs.Add(new FieldSpec("Completion", "m_FinKeyValue", 0x0F22, "compare-key-value"));
+            specs.Add(new FieldSpec("Completion", "m_iFinServerType", 0x0F37, "int"));
+            specs.Add(new FieldSpec("Completion", "m_ulTMMineID", 0x0F3B, "uint"));
+            specs.Add(new FieldSpec("Completion", "m_ulTMMiningTimes", 0x0F3F, "uint"));
+            specs.Add(new FieldSpec("Completion", "m_fTMMiningProb", 0x0F43, "float"));
+            specs.Add(new FieldSpec("Completion", "m_ulTMUseItemID", 0x0F47, "uint"));
+            specs.Add(new FieldSpec("Completion", "m_ulTMUseItemTimes", 0x0F4B, "uint"));
+            specs.Add(new FieldSpec("Completion", "m_fTMUseItemProb", 0x0F4F, "float"));
+            specs.Add(new FieldSpec("Completion", "m_ulTMDungeonID", 0x0F53, "uint"));
+            specs.Add(new FieldSpec("Completion", "m_TPKillSiteMin", 0x0F57, "zone"));
+            specs.Add(new FieldSpec("Completion", "m_TPKillSiteMax", 0x0F63, "zone"));
+            specs.Add(new FieldSpec("Completion", "m_ulTPKillSiteID", 0x0F6F, "uint"));
+            specs.Add(new FieldSpec("Completion", "m_ulTMKillPlayerTimes", 0x0F73, "uint"));
+            specs.Add(new FieldSpec("Completion", "m_fTMKillPlayerProb", 0x0F77, "float"));
+            specs.Add(new FieldSpec("Completion", "m_ulTMAchievementID", 0x0F7B, "uint"));
+            specs.Add(new FieldSpec("Completion", "m_ulTMAchievementTimes", 0x0F7F, "uint"));
+            specs.Add(new FieldSpec("Completion", "m_fTMAchievementProb", 0x0F83, "float"));
+            specs.Add(new FieldSpec("Completion", "m_ulTMDoEmotionID", 0x0F87, "uint"));
+            specs.Add(new FieldSpec("Completion", "m_ulTMDoEmotionTimes", 0x0F8B, "uint"));
+            specs.Add(new FieldSpec("Completion", "m_fTMDoEmotionProb", 0x0F8F, "float"));
+            specs.Add(new FieldSpec("Completion", "m_ulPVPWinTimes", 0x0F93, "uint"));
+            specs.Add(new FieldSpec("Completion", "m_ulPVPFailTimes", 0x0F97, "uint"));
+            specs.Add(new FieldSpec("Completion", "m_ulPVPFinTimes", 0x0F9B, "uint"));
+            specs.Add(new FieldSpec("Rewards", "m_enumAwardType_S", 0x0F9F, "int"));
+            specs.Add(new FieldSpec("Rewards", "m_enumAwardType_F", 0x0FA3, "int"));
         }
 
         private static void AddAwardFields(byte[] bytes, List<TaskEditorFieldValue> values, string section, int awardStartOffset, string sourcePrefix)
@@ -1207,6 +1465,23 @@ namespace FWEledit
                 value = BitConverter.ToInt32(bytes, spec.Offset).ToString(CultureInfo.InvariantCulture);
                 return true;
             }
+            if (spec.Kind == "int64")
+            {
+                if (spec.Offset + 8 > bytes.Length) return false;
+                value = BitConverter.ToInt64(bytes, spec.Offset).ToString(CultureInfo.InvariantCulture);
+                return true;
+            }
+            if (spec.Kind == "byte")
+            {
+                value = bytes[spec.Offset].ToString(CultureInfo.InvariantCulture);
+                return true;
+            }
+            if (spec.Kind == "uint16")
+            {
+                if (spec.Offset + 2 > bytes.Length) return false;
+                value = BitConverter.ToUInt16(bytes, spec.Offset).ToString(CultureInfo.InvariantCulture);
+                return true;
+            }
             if (spec.Kind == "float")
             {
                 if (spec.Offset + 4 > bytes.Length) return false;
@@ -1248,8 +1523,242 @@ namespace FWEledit
                 value = ReadTaskName(bytes, spec.Offset, charCount);
                 return true;
             }
+            if (spec.Kind.StartsWith("uint-array:", StringComparison.Ordinal))
+            {
+                return TryReadUInt32Array(bytes, spec.Offset, spec.Kind, "uint-array:", out value);
+            }
+            if (spec.Kind.StartsWith("int-array:", StringComparison.Ordinal))
+            {
+                return TryReadInt32Array(bytes, spec.Offset, spec.Kind, "int-array:", out value);
+            }
+            if (spec.Kind.StartsWith("uint16-array:", StringComparison.Ordinal))
+            {
+                return TryReadUInt16Array(bytes, spec.Offset, spec.Kind, "uint16-array:", out value);
+            }
+            if (spec.Kind.StartsWith("bool-array:", StringComparison.Ordinal))
+            {
+                return TryReadBoolArray(bytes, spec.Offset, spec.Kind, "bool-array:", out value);
+            }
+            if (spec.Kind.StartsWith("finish-task-count-array:", StringComparison.Ordinal))
+            {
+                return TryReadFinishTaskCountArray(bytes, spec.Offset, spec.Kind, out value);
+            }
+            if (spec.Kind.StartsWith("prem-skill-array:", StringComparison.Ordinal))
+            {
+                return TryReadIdLevelFlagArray(bytes, spec.Offset, spec.Kind, "prem-skill-array:", out value);
+            }
+            if (spec.Kind.StartsWith("monctrl-array:", StringComparison.Ordinal))
+            {
+                return TryReadMonsterControlArray(bytes, spec.Offset, spec.Kind, out value);
+            }
+            if (spec.Kind == "ai-msg")
+            {
+                if (spec.Offset + 12 > bytes.Length) return false;
+                value = string.Format(
+                    CultureInfo.InvariantCulture,
+                    "Object {0}, Param1 {1}, Param2 {2}",
+                    BitConverter.ToInt32(bytes, spec.Offset),
+                    BitConverter.ToInt32(bytes, spec.Offset + 4),
+                    BitConverter.ToInt32(bytes, spec.Offset + 8));
+                return true;
+            }
+            if (spec.Kind == "compare-key-value")
+            {
+                if (spec.Offset + 21 > bytes.Length) return false;
+                value = string.Format(
+                    CultureInfo.InvariantCulture,
+                    "{0}; Left type {1} value {2}; Operator {3}; Right type {4} value {5}",
+                    bytes[spec.Offset] == 0 ? "Disabled" : "Enabled",
+                    BitConverter.ToInt32(bytes, spec.Offset + 1),
+                    BitConverter.ToInt32(bytes, spec.Offset + 5),
+                    BitConverter.ToInt32(bytes, spec.Offset + 9),
+                    BitConverter.ToInt32(bytes, spec.Offset + 13),
+                    BitConverter.ToInt32(bytes, spec.Offset + 17));
+                return true;
+            }
 
             return false;
+        }
+
+        private static bool TryReadUInt32Array(byte[] bytes, int offset, string kind, string prefix, out string value)
+        {
+            value = string.Empty;
+            int count;
+            if (!TryParseArrayCount(kind, prefix, out count) || bytes == null || offset < 0 || offset + count * 4 > bytes.Length)
+            {
+                return false;
+            }
+
+            List<string> parts = new List<string>();
+            for (int i = 0; i < count; i++)
+            {
+                uint item = BitConverter.ToUInt32(bytes, offset + i * 4);
+                if (item != 0)
+                {
+                    parts.Add("[" + i.ToString(CultureInfo.InvariantCulture) + "] " + item.ToString(CultureInfo.InvariantCulture));
+                }
+            }
+
+            value = parts.Count > 0 ? string.Join(", ", parts.ToArray()) : "None";
+            return true;
+        }
+
+        private static bool TryReadInt32Array(byte[] bytes, int offset, string kind, string prefix, out string value)
+        {
+            value = string.Empty;
+            int count;
+            if (!TryParseArrayCount(kind, prefix, out count) || bytes == null || offset < 0 || offset + count * 4 > bytes.Length)
+            {
+                return false;
+            }
+
+            List<string> parts = new List<string>();
+            for (int i = 0; i < count; i++)
+            {
+                int item = BitConverter.ToInt32(bytes, offset + i * 4);
+                if (item != 0)
+                {
+                    parts.Add("[" + i.ToString(CultureInfo.InvariantCulture) + "] " + item.ToString(CultureInfo.InvariantCulture));
+                }
+            }
+
+            value = parts.Count > 0 ? string.Join(", ", parts.ToArray()) : "None";
+            return true;
+        }
+
+        private static bool TryReadUInt16Array(byte[] bytes, int offset, string kind, string prefix, out string value)
+        {
+            value = string.Empty;
+            int count;
+            if (!TryParseArrayCount(kind, prefix, out count) || bytes == null || offset < 0 || offset + count * 2 > bytes.Length)
+            {
+                return false;
+            }
+
+            List<string> parts = new List<string>();
+            for (int i = 0; i < count; i++)
+            {
+                ushort item = BitConverter.ToUInt16(bytes, offset + i * 2);
+                if (item != 0)
+                {
+                    parts.Add("[" + i.ToString(CultureInfo.InvariantCulture) + "] " + item.ToString(CultureInfo.InvariantCulture));
+                }
+            }
+
+            value = parts.Count > 0 ? string.Join(", ", parts.ToArray()) : "None";
+            return true;
+        }
+
+        private static bool TryReadBoolArray(byte[] bytes, int offset, string kind, string prefix, out string value)
+        {
+            value = string.Empty;
+            int count;
+            if (!TryParseArrayCount(kind, prefix, out count) || bytes == null || offset < 0 || offset + count > bytes.Length)
+            {
+                return false;
+            }
+
+            List<string> parts = new List<string>();
+            for (int i = 0; i < count; i++)
+            {
+                if (bytes[offset + i] != 0)
+                {
+                    parts.Add("[" + i.ToString(CultureInfo.InvariantCulture) + "] Yes");
+                }
+            }
+
+            value = parts.Count > 0 ? string.Join(", ", parts.ToArray()) : "None";
+            return true;
+        }
+
+        private static bool TryReadFinishTaskCountArray(byte[] bytes, int offset, string kind, out string value)
+        {
+            value = string.Empty;
+            int count;
+            if (!TryParseArrayCount(kind, "finish-task-count-array:", out count) || bytes == null || offset < 0 || offset + count * 6 > bytes.Length)
+            {
+                return false;
+            }
+
+            List<string> parts = new List<string>();
+            for (int i = 0; i < count; i++)
+            {
+                int itemOffset = offset + i * 6;
+                uint taskId = BitConverter.ToUInt32(bytes, itemOffset);
+                ushort finishCount = BitConverter.ToUInt16(bytes, itemOffset + 4);
+                if (taskId != 0 || finishCount != 0)
+                {
+                    parts.Add("[" + i.ToString(CultureInfo.InvariantCulture) + "] Task " + taskId.ToString(CultureInfo.InvariantCulture) + " x" + finishCount.ToString(CultureInfo.InvariantCulture));
+                }
+            }
+
+            value = parts.Count > 0 ? string.Join(", ", parts.ToArray()) : "None";
+            return true;
+        }
+
+        private static bool TryReadIdLevelFlagArray(byte[] bytes, int offset, string kind, string prefix, out string value)
+        {
+            value = string.Empty;
+            int count;
+            if (!TryParseArrayCount(kind, prefix, out count) || bytes == null || offset < 0 || offset + count * 9 > bytes.Length)
+            {
+                return false;
+            }
+
+            List<string> parts = new List<string>();
+            for (int i = 0; i < count; i++)
+            {
+                int itemOffset = offset + i * 9;
+                int id = BitConverter.ToInt32(bytes, itemOffset);
+                int level = BitConverter.ToInt32(bytes, itemOffset + 4);
+                bool enabled = bytes[itemOffset + 8] != 0;
+                if (id != 0 || level != 0 || enabled)
+                {
+                    parts.Add("[" + i.ToString(CultureInfo.InvariantCulture) + "] ID " + id.ToString(CultureInfo.InvariantCulture) + ", level " + level.ToString(CultureInfo.InvariantCulture) + ", " + (enabled ? "enabled" : "disabled"));
+                }
+            }
+
+            value = parts.Count > 0 ? string.Join(", ", parts.ToArray()) : "None";
+            return true;
+        }
+
+        private static bool TryReadMonsterControlArray(byte[] bytes, int offset, string kind, out string value)
+        {
+            value = string.Empty;
+            int count;
+            if (!TryParseArrayCount(kind, "monctrl-array:", out count) || bytes == null || offset < 0 || offset + count * 9 > bytes.Length)
+            {
+                return false;
+            }
+
+            List<string> parts = new List<string>();
+            for (int i = 0; i < count; i++)
+            {
+                int itemOffset = offset + i * 9;
+                int id = BitConverter.ToInt32(bytes, itemOffset);
+                float probability = BitConverter.ToSingle(bytes, itemOffset + 4);
+                bool open = bytes[itemOffset + 8] != 0;
+                if (id != 0 || probability != 0F || open)
+                {
+                    parts.Add("[" + i.ToString(CultureInfo.InvariantCulture) + "] ID " + id.ToString(CultureInfo.InvariantCulture) + ", prob " + probability.ToString("R", CultureInfo.InvariantCulture) + ", " + (open ? "open" : "closed"));
+                }
+            }
+
+            value = parts.Count > 0 ? string.Join(", ", parts.ToArray()) : "None";
+            return true;
+        }
+
+        private static bool TryParseArrayCount(string kind, string prefix, out int count)
+        {
+            count = 0;
+            if (string.IsNullOrWhiteSpace(kind) || !kind.StartsWith(prefix, StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            return int.TryParse(kind.Substring(prefix.Length), NumberStyles.Integer, CultureInfo.InvariantCulture, out count)
+                && count >= 0
+                && count < 1024;
         }
 
         private static string GetFieldDisplayName(string fieldName)
@@ -1323,6 +1832,247 @@ namespace FWEledit
                 case "m_bSendMsg": return "Sends message";
                 case "m_nMsgChannel": return "Message channel";
                 case "m_ulTerminateCount": return "Terminate count";
+                case "m_TerminateTask": return "Tasks terminated by this task";
+                case "m_bFinishTask": return "Finish task flag";
+                case "m_ulMonCtrlCnt": return "Monster controller count";
+                case "m_MonCtrl": return "Monster controllers";
+                case "m_bRanMonCtrl": return "Random monster controller";
+                case "m_bCreateDungeon": return "Creates dungeon";
+                case "m_bEnterDungeon": return "Enters dungeon";
+                case "m_iDungeonTemplateID": return "Dungeon template";
+                case "m_bEmotionTrig": return "Emotion trigger";
+                case "m_iEmotionTrigID": return "Emotion trigger ID";
+                case "m_AIMsg": return "AI message";
+                case "m_iRetrieveIdx": return "Retrieve index";
+                case "m_ulPremise_Lev_Min": return "Required level min";
+                case "m_ulPremise_Lev_Max": return "Required level max";
+                case "m_bShowByLev": return "Show by level";
+                case "m_i64RegionMask": return "Region mask";
+                case "m_nTalismanValueMin": return "Talisman value min";
+                case "m_nTalismanValueMax": return "Talisman value max";
+                case "m_nIntimacyMin": return "Intimacy min";
+                case "m_nIntimacyMax": return "Intimacy max";
+                case "m_ulPremItems": return "Required item count";
+                case "m_bShowByItems": return "Show by items";
+                case "m_ulGivenItems": return "Given item count";
+                case "m_ulGivenCmnCount": return "Given common items";
+                case "m_ulGivenTskCount": return "Given task items";
+                case "m_ulPremTitleCount": return "Required title count";
+                case "m_bPremTitleCond": return "Title condition";
+                case "m_ulPremise_Deposit": return "Required deposited money";
+                case "m_bShowByDeposit": return "Show by deposit";
+                case "m_lPremise_Reputation": return "Required reputation";
+                case "m_bRepuDeposit": return "Deposit reputation";
+                case "m_bShowByRepu": return "Show by reputation";
+                case "m_nPremise_Vigour": return "Required vigor";
+                case "m_bVigourDeposit": return "Deposit vigor";
+                case "m_nPremise_Vitality": return "Required vitality";
+                case "m_bVitalityDeposit": return "Deposit vitality";
+                case "m_nPremise_InteractionPoints": return "Required interaction points";
+                case "m_bInteractionPointsDeposit": return "Deposit interaction points";
+                case "m_lPremise_Contribution": return "Required contribution";
+                case "m_bDepositContribution": return "Deposit contribution";
+                case "m_nPremise_FamContrib": return "Family contribution min";
+                case "m_nPremFamContribMax": return "Family contribution max";
+                case "m_bDepositFamContrib": return "Deposit family contribution";
+                case "m_ulPremise_FactionMoney": return "Required faction money";
+                case "m_bFactionMoneyDeposit": return "Deposit faction money";
+                case "m_ulPremise_FacMelee": return "Required faction melee";
+                case "m_bFacMeleeDeposit": return "Deposit faction melee";
+                case "m_ulPremise_FacMagic": return "Required faction magic";
+                case "m_bFacMagicDeposit": return "Deposit faction magic";
+                case "m_ulPremise_FacEnconomy": return "Required faction economy";
+                case "m_bFacEnconomyDeposit": return "Deposit faction economy";
+                case "m_ulPremise_FacCulture": return "Required faction culture";
+                case "m_bFacCultureDeposit": return "Deposit faction culture";
+                case "m_ulPremise_FacBelief": return "Required faction belief";
+                case "m_bFacBeliefDeposit": return "Deposit faction belief";
+                case "m_iPremise_FacResElse": return "Faction resource requirements";
+                case "m_bPremise_FacResElseDeposit": return "Deposit faction resources";
+                case "m_ulPremise_FacCredit": return "Required faction credit";
+                case "m_bFacCreditDeposit": return "Deposit faction credit";
+                case "m_bShowByFaction": return "Show by faction";
+                case "m_ulPremise_Golden": return "Required golden value";
+                case "m_ulPremise_AchievementCount": return "Required achievement count";
+                case "m_ulPremise_AchievementPoint": return "Required achievement points";
+                case "m_bPremAchievementDeposit": return "Deposit achievement points";
+                case "m_iPremBattleScoreMin": return "Battle score min";
+                case "m_iPremBattleScoreMax": return "Battle score max";
+                case "m_bPremBattleScoreDeposit": return "Deposit battle score";
+                case "m_Premise_FriendshipMin": return "Friendship minimums";
+                case "m_Premise_FriendshipMax": return "Friendship maximums";
+                case "m_bPremise_FriendshipCond": return "Friendship condition";
+                case "m_bPremise_FriendshipDeposit": return "Deposit friendship";
+                case "m_Premise_Mastery": return "Required mastery";
+                case "m_Premise_Resistance": return "Required resistance";
+                case "m_bShowByMR": return "Show by mastery/resistance";
+                case "m_Premise_SpecialCounterMin": return "Special counter min";
+                case "m_Premise_SpecialCounterMax": return "Special counter max";
+                case "m_bPremise_SpecialCounterCond": return "Special counter condition";
+                case "m_ulPremise_Task_Count": return "Prerequisite task count";
+                case "m_ulPremise_Tasks": return "Prerequisite task IDs";
+                case "m_bShowByTask": return "Show by prerequisite tasks";
+                case "m_ulPremise_FinishTask_Count": return "Finish-count prerequisite count";
+                case "m_PremFinishTasks": return "Finish-count prerequisites";
+                case "m_ulPremise_GlobalTaskCount": return "Global task count";
+                case "m_ulPremise_GlobalTask": return "Global task ID";
+                case "m_ulPremise_Period": return "Required period";
+                case "m_bShowByPeriod": return "Show by period";
+                case "m_ulPremise_Faction": return "Required faction";
+                case "m_iPremise_FactionRole": return "Required faction role";
+                case "m_bShowByFactionRole": return "Show by faction role";
+                case "m_bPremise_Master": return "Must be master";
+                case "m_ulGender": return "Required gender";
+                case "m_bShowByGender": return "Show by gender";
+                case "m_ulOccupations": return "Required occupation count";
+                case "m_Occupations": return "Required occupations";
+                case "m_bShowByOccup": return "Show by occupation";
+                case "m_ulRaces": return "Required race count";
+                case "m_Races": return "Required races";
+                case "m_bPremise_Spouse": return "Requires spouse";
+                case "m_bShowBySpouse": return "Show by spouse";
+                case "m_ulPremise_Cotask_Count": return "Co-task count";
+                case "m_ulPremise_Cotasks": return "Co-task IDs";
+                case "m_bCotaskCond": return "Co-task condition";
+                case "m_bShowByCotask": return "Show by co-task";
+                case "m_ulMutexTaskCount": return "Mutex task count";
+                case "m_ulMutexTasks": return "Mutex task IDs";
+                case "m_nMutexType": return "Mutex task types";
+                case "m_lSkillLev": return "Required living skill levels";
+                case "m_lSkillPro": return "Required living skill proficiency";
+                case "m_DynTaskType": return "Dynamic task type";
+                case "m_SpecialAward": return "Special award";
+                case "m_iPremise_PkValueMin": return "PK value min";
+                case "m_iPremise_PkValueMax": return "PK value max";
+                case "m_bGM": return "GM only";
+                case "m_bShieldUser": return "Shield user";
+                case "m_ulCapTaskId": return "Capture task ID";
+                case "m_ulCapTaskTemplAddr": return "Capture task template address";
+                case "m_bTeamwork": return "Teamwork";
+                case "m_bRcvByTeam": return "Receive by team";
+                case "m_bSharedTask": return "Shared task";
+                case "m_bSharedAchieved": return "Shared achievement";
+                case "m_bCheckTeammate": return "Check teammate";
+                case "m_fTeammateDist": return "Teammate distance";
+                case "m_bAllFail": return "All fail";
+                case "m_bCapFail": return "Captain fail";
+                case "m_bCapSucc": return "Captain success";
+                case "m_fSuccDist": return "Success distance";
+                case "m_bDismAsSelfFail": return "Dismiss counts as self fail";
+                case "m_bRcvChckMem": return "Check receiving member";
+                case "m_fRcvMemDist": return "Receiving member distance";
+                case "m_bCntByMemPos": return "Count by member position";
+                case "m_fCntByMemDist": return "Member count distance";
+                case "m_ulTeamMemsWanted": return "Required team members";
+                case "m_bShowByTeam": return "Show by team";
+                case "m_bDeadShared": return "Death shared";
+                case "m_bIsMaster": return "Must be leader";
+                case "m_bInFamily": return "Must be in family";
+                case "m_bClanLeader": return "Must be clan leader";
+                case "m_ulFamilySkillLevelMin": return "Clan skill level min";
+                case "m_ulFamilySkillLevelMax": return "Clan skill level max";
+                case "m_ulFamilySkillProficiencyMin": return "Clan skill proficiency min";
+                case "m_ulFamilySkillProficiencyMax": return "Clan skill proficiency max";
+                case "m_ulClanSkillID": return "Clan skill ID";
+                case "m_ulClanMapID": return "Clan map ID";
+                case "m_ulFamilyMonsterRecordMin": return "Family monster record min";
+                case "m_ulFamilyMonsterRecordMax": return "Family monster record max";
+                case "m_ulFamilyValueIndex": return "Family value index";
+                case "m_bDepositFamilyValue": return "Deposit family value";
+                case "m_iFamilyValueMin": return "Family value min";
+                case "m_iFamilyValueMax": return "Family value max";
+                case "m_PremKeyValue": return "Required key/value";
+                case "m_ulPremSkillCount": return "Required skill count";
+                case "m_PremSkills": return "Required skills";
+                case "m_bShowBySkill": return "Show by skill";
+                case "m_ulPremBuffCount": return "Required buff count";
+                case "m_PremBuffs": return "Required buffs";
+                case "m_bShowByBuff": return "Show by buff";
+                case "m_bPremise_SpecKnow": return "Requires special knowledge";
+                case "m_iPremise_BindMoney": return "Required bound money";
+                case "m_bShowByBindMoney": return "Show by bound money";
+                case "m_arrSideOccupation": return "Side occupation min";
+                case "m_arrSideOccupMax": return "Side occupation max";
+                case "m_arrSideOccupActive": return "Side occupation active";
+                case "m_bDiscoverMap": return "Requires discovered map";
+                case "m_ulDiscoverMapID": return "Discover map ID";
+                case "m_iPremise_Impression": return "Required impression";
+                case "m_iPremise_PrayValue": return "Required pray value";
+                case "m_iPremise_FlyLevel": return "Required fly level";
+                case "m_bPremise_FlyTimeFull": return "Requires full fly time";
+                case "m_iPremise_Belief": return "Required belief";
+                case "m_bPremise_BeliefDeposit": return "Deposit belief";
+                case "m_iPremise_MinGodEvilValue": return "God/evil value min";
+                case "m_iPremise_MaxGodEvilValue": return "God/evil value max";
+                case "m_bShowByGodEvil": return "Show by god/evil";
+                case "m_iPremise_CompleteUserAccountFlag": return "Account completion flag";
+                case "m_ucPremise_VipLevel": return "Required VIP level";
+                case "m_iPremise_ConsumeScore": return "Required consume score";
+                case "m_iPremise_ServerType": return "Required server type";
+                case "m_iPremise_Marriage": return "Required marriage state";
+                case "m_enumMethod": return "Completion method";
+                case "m_enumFinishType": return "Finish type";
+                case "m_ulMonsterWanted": return "Wanted monster count";
+                case "m_bHasGatherMonster": return "Has gathered monster";
+                case "m_ulGatherMonsterNum": return "Gather monster count";
+                case "m_bFinNeedComp": return "Finish comparison enabled";
+                case "m_ulGatherItemNum": return "Gather item count";
+                case "m_bKillMonsterPack": return "Kill monster pack";
+                case "m_ulKillMonsterPackID": return "Monster pack ID";
+                case "m_ulKillMonsterPackNum": return "Monster pack count";
+                case "m_ulItemsWanted": return "Required completion items";
+                case "m_ulGoldWanted": return "Required gold";
+                case "m_bNotGiveMine": return "Do not give mine";
+                case "m_bNotClearCommonItem": return "Do not clear common item";
+                case "m_ulNPCToProtect": return "NPC to protect";
+                case "m_ulProtectTimeLen": return "Protection time";
+                case "m_ulNPCMoving": return "Moving NPC";
+                case "m_ulNPCDestSite": return "NPC destination site";
+                case "m_ReachSiteMin": return "Reach site min";
+                case "m_ReachSiteMax": return "Reach site max";
+                case "m_ulReachSiteId": return "Reach site ID";
+                case "m_ulWaitTime": return "Wait time";
+                case "m_ulTitleNumRequired": return "Required title count";
+                case "m_TitleWanted": return "Required title IDs";
+                case "m_ulFinishTaskID": return "Task to finish";
+                case "m_ulFinishTaskCount": return "Required finish count";
+                case "m_bHasFinishTaskCount": return "Has finish-count requirement";
+                case "m_ulFinishLev": return "Required finish level";
+                case "m_bShowByFinLev": return "Show by finish level";
+                case "m_ulFinChangedRace": return "Finish changed race";
+                case "m_ulFinChangedVisualize": return "Finish changed visual";
+                case "m_ulItemsSubmitWanted": return "Submit item count";
+                case "m_ulItemTypeFalse": return "Wrong item type behavior";
+                case "m_ulItemCountFalse": return "Wrong item count behavior";
+                case "m_ulWelcomeWords": return "Welcome words count";
+                case "m_ulFinBuffCount": return "Finish buff count";
+                case "m_FinBuffs": return "Finish buffs";
+                case "m_bFinBuffCond": return "Finish buff condition";
+                case "m_FinKeyValue": return "Finish key/value";
+                case "m_iFinServerType": return "Finish server type";
+                case "m_ulTMMineID": return "Timed mine ID";
+                case "m_ulTMMiningTimes": return "Timed mining count";
+                case "m_fTMMiningProb": return "Timed mining probability";
+                case "m_ulTMUseItemID": return "Timed item ID";
+                case "m_ulTMUseItemTimes": return "Timed item uses";
+                case "m_fTMUseItemProb": return "Timed item probability";
+                case "m_ulTMDungeonID": return "Timed dungeon ID";
+                case "m_TPKillSiteMin": return "Player-kill site min";
+                case "m_TPKillSiteMax": return "Player-kill site max";
+                case "m_ulTPKillSiteID": return "Player-kill site ID";
+                case "m_ulTMKillPlayerTimes": return "Kill-player count";
+                case "m_fTMKillPlayerProb": return "Kill-player probability";
+                case "m_ulTMAchievementID": return "Achievement ID";
+                case "m_ulTMAchievementTimes": return "Achievement count";
+                case "m_fTMAchievementProb": return "Achievement probability";
+                case "m_ulTMDoEmotionID": return "Emotion ID";
+                case "m_ulTMDoEmotionTimes": return "Emotion count";
+                case "m_fTMDoEmotionProb": return "Emotion probability";
+                case "m_ulPVPWinTimes": return "PVP wins";
+                case "m_ulPVPFailTimes": return "PVP failures";
+                case "m_ulPVPFinTimes": return "PVP finishes";
+                case "m_enumAwardType_S": return "Success reward mode";
+                case "m_enumAwardType_F": return "Failure reward mode";
                 case "m_ulParent": return "Parent task";
                 case "m_ulPrevSibling": return "Previous sibling";
                 case "m_ulNextSibling": return "Next sibling";
