@@ -374,6 +374,7 @@ namespace FWEledit
 
             List<TaskEditorTextValue> texts = TaskEditorFileService.ExtractUnicodeTexts(entry.Bytes);
             List<TaskEditorFieldValue> knownFields = TaskEditorFileService.BuildKnownFields(entry.Bytes);
+            ResolveSubProfessionRewardNames(knownFields);
             List<TaskEditorRawValue> rawValues = TaskEditorFileService.BuildRawValues(entry.Bytes);
 
             summaryLabel.Text = string.Format(
@@ -470,14 +471,14 @@ namespace FWEledit
             AppendItem(builder, "Cleanup", IsYes(fields, "m_bClearAcquired") ? "Removes acquired task items during cleanup" : "No acquired-item cleanup flag");
             AppendItem(builder, "Lua logic", IsYes(fields, "m_bLuaTask") ? "Uses Lua-side behavior" : "No Lua task flag");
 
-            List<TaskEditorFieldValue> releasePointRewards = GetReleasePointRewardFields(fields);
-            if (releasePointRewards.Count > 0)
+            List<TaskEditorFieldValue> rewards = GetRewardFields(fields);
+            if (rewards.Count > 0)
             {
                 builder.AppendLine();
                 AppendSection(builder, "Rewards");
-                foreach (TaskEditorFieldValue reward in releasePointRewards)
+                foreach (TaskEditorFieldValue reward in rewards)
                 {
-                    AppendItem(builder, reward.DisplayName, reward.Value);
+                    AppendItem(builder, reward.DisplayName, FormatRewardValue(reward));
                 }
             }
 
@@ -594,7 +595,7 @@ namespace FWEledit
             return parts.Count == 0 ? "No tracking flags enabled" : string.Join(", ", parts);
         }
 
-        private List<TaskEditorFieldValue> GetReleasePointRewardFields(List<TaskEditorFieldValue> fields)
+        private List<TaskEditorFieldValue> GetRewardFields(List<TaskEditorFieldValue> fields)
         {
             if (fields == null)
             {
@@ -604,8 +605,199 @@ namespace FWEledit
             return fields
                 .Where(field => field != null)
                 .Where(field => string.Equals(field.Section, "Success reward", StringComparison.Ordinal))
-                .Where(field => field.Field != null && field.Field.IndexOf("m_iSideOccup", StringComparison.Ordinal) >= 0)
                 .ToList();
+        }
+
+        private void ResolveSubProfessionRewardNames(List<TaskEditorFieldValue> fields)
+        {
+            if (fields == null)
+            {
+                return;
+            }
+
+            foreach (TaskEditorFieldValue field in fields)
+            {
+                int subProfessionId;
+                if (field == null
+                    || !TryGetSideOccupationExpIndex(field.Field, out subProfessionId))
+                {
+                    continue;
+                }
+
+                string subProfessionName = ResolveSubProfessionName(subProfessionId);
+                if (string.IsNullOrWhiteSpace(subProfessionName))
+                {
+                    field.DisplayName = "Sub-profession " + subProfessionId.ToString(CultureInfo.InvariantCulture) + " EXP";
+                    field.Meaning = "Adds sub-profession EXP/points for slot " + subProfessionId.ToString(CultureInfo.InvariantCulture) + " when this reward is delivered.";
+                    continue;
+                }
+
+                field.DisplayName = subProfessionName + " points";
+                field.Meaning = "Adds " + subProfessionName + " sub-profession EXP/points when this reward is delivered.";
+            }
+        }
+
+        private static bool TryGetSideOccupationExpIndex(string fieldName, out int index)
+        {
+            index = -1;
+            if (string.IsNullOrWhiteSpace(fieldName))
+            {
+                return false;
+            }
+
+            const string prefix = ".m_iSideOccupExp[";
+            int start = fieldName.IndexOf(prefix, StringComparison.Ordinal);
+            if (start < 0)
+            {
+                return false;
+            }
+
+            start += prefix.Length;
+            int end = fieldName.IndexOf(']', start);
+            if (end <= start)
+            {
+                return false;
+            }
+
+            return int.TryParse(fieldName.Substring(start, end - start), NumberStyles.Integer, CultureInfo.InvariantCulture, out index);
+        }
+
+        private string ResolveSubProfessionName(int subProfessionId)
+        {
+            eListCollection listCollection = sessionService != null ? sessionService.ListCollection : null;
+            if (listCollection == null || listCollection.Lists == null)
+            {
+                return string.Empty;
+            }
+
+            int listIndex = FindElementListIndex(listCollection, "PLAYER_SUB_PROF_LEVEL_EXP_CONFIG");
+            if (listIndex < 0)
+            {
+                return string.Empty;
+            }
+
+            eList list = listCollection.Lists[listIndex];
+            if (list == null || list.elementFields == null || list.elementValues == null)
+            {
+                return string.Empty;
+            }
+
+            int idFieldIndex = FindFieldIndex(list.elementFields, "id");
+            int nameFieldIndex = FindFieldIndex(list.elementFields, "name");
+            int subProfessionFieldIndex = FindFieldIndex(list.elementFields, "id_sub_prof");
+            if (nameFieldIndex < 0)
+            {
+                return string.Empty;
+            }
+
+            string name = FindSubProfessionNameByField(listCollection, listIndex, subProfessionFieldIndex, nameFieldIndex, subProfessionId);
+            if (!string.IsNullOrWhiteSpace(name))
+            {
+                return name;
+            }
+
+            name = FindSubProfessionNameByField(listCollection, listIndex, idFieldIndex, nameFieldIndex, subProfessionId);
+            if (!string.IsNullOrWhiteSpace(name))
+            {
+                return name;
+            }
+
+            if (subProfessionId >= 0 && subProfessionId < list.elementValues.Length)
+            {
+                return CleanElementText(listCollection.GetValue(listIndex, subProfessionId, nameFieldIndex));
+            }
+
+            return string.Empty;
+        }
+
+        private static string FindSubProfessionNameByField(eListCollection listCollection, int listIndex, int idFieldIndex, int nameFieldIndex, int subProfessionId)
+        {
+            if (idFieldIndex < 0)
+            {
+                return string.Empty;
+            }
+
+            eList list = listCollection.Lists[listIndex];
+            for (int row = 0; row < list.elementValues.Length; row++)
+            {
+                int candidateId;
+                if (int.TryParse(listCollection.GetValue(listIndex, row, idFieldIndex), NumberStyles.Integer, CultureInfo.InvariantCulture, out candidateId)
+                    && candidateId == subProfessionId)
+                {
+                    return CleanElementText(listCollection.GetValue(listIndex, row, nameFieldIndex));
+                }
+            }
+
+            return string.Empty;
+        }
+
+        private static int FindElementListIndex(eListCollection listCollection, string listName)
+        {
+            for (int i = 0; i < listCollection.Lists.Length; i++)
+            {
+                eList list = listCollection.Lists[i];
+                if (list != null && string.Equals(NormalizeElementListName(list.listName), listName, StringComparison.OrdinalIgnoreCase))
+                {
+                    return i;
+                }
+            }
+
+            return -1;
+        }
+
+        private static string NormalizeElementListName(string listName)
+        {
+            if (string.IsNullOrWhiteSpace(listName))
+            {
+                return string.Empty;
+            }
+
+            string[] pieces = listName.Split(new string[] { " - " }, StringSplitOptions.None);
+            return pieces.Length > 1 ? pieces[1].Trim() : listName.Trim();
+        }
+
+        private static int FindFieldIndex(string[] fields, string fieldName)
+        {
+            if (fields == null)
+            {
+                return -1;
+            }
+
+            for (int i = 0; i < fields.Length; i++)
+            {
+                if (string.Equals(fields[i], fieldName, StringComparison.OrdinalIgnoreCase))
+                {
+                    return i;
+                }
+            }
+
+            return -1;
+        }
+
+        private static string CleanElementText(string value)
+        {
+            return (value ?? string.Empty).Trim('\0', ' ', '\t', '\r', '\n');
+        }
+
+        private string FormatRewardValue(TaskEditorFieldValue reward)
+        {
+            if (reward == null)
+            {
+                return string.Empty;
+            }
+
+            if (string.Equals(reward.DisplayName, "Item reward groups", StringComparison.OrdinalIgnoreCase))
+            {
+                return reward.Value + " group(s)";
+            }
+
+            if (reward.DisplayName != null
+                && reward.DisplayName.IndexOf("points", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return reward.Value + " point(s)";
+            }
+
+            return reward.Value;
         }
 
         private string DescribeTaskType(string value)

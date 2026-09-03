@@ -475,16 +475,88 @@ namespace FWEledit
                 });
             }
 
-            AddAwardPointFields(bytes, values, "Success reward", FixedTaskDataSize, "m_Award_S");
+            AddAwardFields(bytes, values, "Success reward", FixedTaskDataSize, "m_Award_S");
 
             return values;
         }
 
-        private static void AddAwardPointFields(byte[] bytes, List<TaskEditorFieldValue> values, string section, int awardStartOffset, string sourcePrefix)
+        private static void AddAwardFields(byte[] bytes, List<TaskEditorFieldValue> values, string section, int awardStartOffset, string sourcePrefix)
         {
             if (bytes == null || values == null || awardStartOffset < 0 || awardStartOffset + AwardDataSize > bytes.Length)
             {
                 return;
+            }
+
+            AwardFieldSpec[] specs =
+            {
+                new AwardFieldSpec("m_ulGoldNum", "Gold", 0x0000, "uint", "Coins awarded when the task is completed."),
+                new AwardFieldSpec("m_ulExp", "Experience", 0x0009, "uint", "Character experience awarded on completion."),
+                new AwardFieldSpec("m_ulPetExp", "Pet experience", 0x0013, "uint", "Pet experience awarded on completion."),
+                new AwardFieldSpec("m_ulSecOccpExp", "Secondary occupation EXP", 0x0017, "uint", "Secondary occupation experience awarded on completion."),
+                new AwardFieldSpec("m_ulNewTask", "Starts task", 0x001B, "uint", "Task ID started by this reward."),
+                new AwardFieldSpec("m_ulSP", "Soul power", 0x0043, "uint", "SP/soul-power style reward."),
+                new AwardFieldSpec("m_ulReputation", "Reputation", 0x0047, "uint", "Reputation awarded by the task."),
+                new AwardFieldSpec("m_lContribution", "Faction contribution", 0x004B, "uint", "Faction contribution awarded by the task."),
+                new AwardFieldSpec("m_ulFactionMoney", "Faction money", 0x004F, "uint", "Faction money resource awarded."),
+                new AwardFieldSpec("m_ulFactionMelee", "Faction melee resource", 0x0053, "uint", "Faction melee resource awarded."),
+                new AwardFieldSpec("m_ulFactionMagic", "Faction magic resource", 0x0057, "uint", "Faction magic resource awarded."),
+                new AwardFieldSpec("m_ulFactionEnconomy", "Faction economy resource", 0x005B, "uint", "Faction economy resource awarded."),
+                new AwardFieldSpec("m_ulFactionCulture", "Faction culture resource", 0x005F, "uint", "Faction culture resource awarded."),
+                new AwardFieldSpec("m_ulFactionBelief", "Faction belief resource", 0x0063, "uint", "Faction belief resource awarded."),
+                new AwardFieldSpec("m_ulFactionCredit", "Faction credit", 0x0067, "uint", "Faction credit awarded."),
+                new AwardFieldSpec("m_ulFactionVitality", "Faction vitality", 0x006B, "uint", "Faction vitality awarded."),
+                new AwardFieldSpec("m_nFamContrib", "Family contribution", 0x011B, "int", "Family contribution awarded."),
+                new AwardFieldSpec("m_ulProsperity", "Prosperity", 0x011F, "uint", "Prosperity awarded."),
+                new AwardFieldSpec("m_lPKValue", "PK value", 0x0168, "int", "PK value adjustment awarded by the task."),
+                new AwardFieldSpec("m_ulVitality", "Vitality", 0x016C, "uint", "Vitality awarded."),
+                new AwardFieldSpec("m_ulVigour", "Vigour", 0x0170, "uint", "Vigour awarded."),
+                new AwardFieldSpec("m_ulNewPeriod", "Unlocks period", 0x02F6, "uint", "New period unlocked by this reward."),
+                new AwardFieldSpec("m_ulNewRelayStation", "Unlocks relay station", 0x02FA, "uint", "Relay station unlocked by this reward."),
+                new AwardFieldSpec("m_ulStorehouseSize", "Storage slots", 0x02FE, "uint", "Personal storage slots awarded."),
+                new AwardFieldSpec("m_ulFactionStorehouseSize", "Faction storage slots", 0x0302, "uint", "Faction storage slots awarded."),
+                new AwardFieldSpec("m_lInventorySize", "Bag slots", 0x0306, "int", "Inventory slots awarded."),
+                new AwardFieldSpec("m_ulPetInventorySize", "Pet bag slots", 0x030A, "uint", "Pet inventory slots awarded."),
+                new AwardFieldSpec("m_ulPetCallInvSize", "Pet call slots", 0x030E, "uint", "Pet call slots awarded."),
+                new AwardFieldSpec("m_ulPetCombInvSize", "Pet combine slots", 0x0312, "uint", "Pet combine slots awarded."),
+                new AwardFieldSpec("m_ulPetHatchInvSize", "Pet hatch slots", 0x0316, "uint", "Pet hatch slots awarded."),
+                new AwardFieldSpec("m_ulPetIncubatorInvSize", "Pet incubator slots", 0x031A, "uint", "Pet incubator slots awarded."),
+                new AwardFieldSpec("m_ulBusinessInvSize", "Business bag slots", 0x031E, "uint", "Business inventory slots awarded."),
+                new AwardFieldSpec("m_ulFuryULimit", "Fury limit", 0x0322, "uint", "Fury limit increase awarded."),
+                new AwardFieldSpec("m_ulNewProfession", "Unlocks profession", 0x03AB, "uint", "Profession unlocked by this reward."),
+                new AwardFieldSpec("m_lBuffId", "Buff ID", 0x03D4, "int", "Buff applied by this reward."),
+                new AwardFieldSpec("m_lBuffLev", "Buff level", 0x03D8, "int", "Level of the buff applied by this reward."),
+                new AwardFieldSpec("m_ulCandItems", "Item reward groups", 0x04AD, "uint", "Number of item reward groups stored after AWARD_DATA."),
+                new AwardFieldSpec("m_iBindMoney", "Bound money", 0x05A6, "int", "Bound money awarded."),
+                new AwardFieldSpec("m_ulBindCash", "Bound cash", 0x06E5, "uint", "Bound cash awarded."),
+                new AwardFieldSpec("m_cAwardVipLevel", "VIP level", 0x06E9, "byte", "VIP level awarded or changed."),
+                new AwardFieldSpec("m_ulVipBonusTemplid", "VIP bonus template", 0x06EA, "uint", "VIP bonus template applied by this reward."),
+                new AwardFieldSpec("m_uiMasteryPoint", "Mastery point", 0x06EE, "uint", "Mastery points awarded."),
+                new AwardFieldSpec("m_uiResistancePoint", "Resistance point", 0x06F2, "uint", "Resistance points awarded."),
+                new AwardFieldSpec("m_i64GoldenValue", "Golden value", 0x06F7, "int64", "Golden-value reward."),
+                new AwardFieldSpec("m_i64GoldenValueToKingdom", "Kingdom golden value", 0x06FF, "int64", "Golden value delivered to kingdom/guild context."),
+                new AwardFieldSpec("m_iRandomGift", "Random gift", 0x070C, "int", "Random gift template awarded.")
+            };
+
+            foreach (AwardFieldSpec spec in specs)
+            {
+                string value;
+                if (!TryReadAwardField(bytes, awardStartOffset, spec, out value) || IsZeroAwardValue(value))
+                {
+                    continue;
+                }
+
+                int offset = awardStartOffset + spec.Offset;
+                values.Add(new TaskEditorFieldValue
+                {
+                    Section = section,
+                    Field = sourcePrefix + "." + spec.Name,
+                    DisplayName = spec.DisplayName,
+                    Meaning = spec.Meaning,
+                    Offset = offset,
+                    HexOffset = "0x" + offset.ToString("X4", CultureInfo.InvariantCulture),
+                    Type = spec.Kind,
+                    Value = value
+                });
             }
 
             for (int i = 0; i < AwardSideOccupationExpCount; i++)
@@ -496,13 +568,12 @@ namespace FWEledit
                     continue;
                 }
 
-                string pointName = GetSideOccupationPointName(i);
                 values.Add(new TaskEditorFieldValue
                 {
                     Section = section,
                     Field = sourcePrefix + ".m_iSideOccupExp[" + i.ToString(CultureInfo.InvariantCulture) + "]",
-                    DisplayName = pointName + " points",
-                    Meaning = "Adds side-occupation/release points when this reward is delivered.",
+                    DisplayName = "Sub-profession " + i.ToString(CultureInfo.InvariantCulture) + " EXP",
+                    Meaning = "Adds sub-profession EXP when this reward is delivered. The UI resolves the profession name from PLAYER_SUB_PROF_LEVEL_EXP_CONFIG when elements.data is loaded.",
                     Offset = offset,
                     HexOffset = "0x" + offset.ToString("X4", CultureInfo.InvariantCulture),
                     Type = "int",
@@ -528,53 +599,51 @@ namespace FWEledit
             }
         }
 
-        private static string GetSideOccupationPointName(int index)
+        private static bool TryReadAwardField(byte[] bytes, int awardStartOffset, AwardFieldSpec spec, out string value)
         {
-            string[] names =
+            value = string.Empty;
+            if (bytes == null || spec == null)
             {
-                "Slayer",
-                "Triumph",
-                "Call of Dawn",
-                "Bounty",
-                "Champion",
-                "Arena",
-                "Arena Dedication",
-                "3v3",
-                "6v6",
-                "Arena Reputation",
-                "Luck",
-                "Mentor",
-                "Contribution",
-                "Cruelty",
-                "Bounty Glory",
-                "Kindness",
-                "Courage",
-                "Master",
-                "FF",
-                "FF BF",
-                "Lionheart Champion",
-                "FF Total",
-                "Sanguine Circle",
-                "Union of Woods",
-                "Mercury Union",
-                "Hell Acclaim",
-                "Rose",
-                "Season 1 3v3",
-                "Season 1 6v6",
-                "Companion",
-                "Blessing of Antus",
-                "Empty",
-                "Promoter",
-                "Valor",
-                "Warlord",
-                "Hell",
-                "Fealty",
-                "Touch"
-            };
+                return false;
+            }
 
-            return index >= 0 && index < names.Length
-                ? names[index]
-                : "Side occupation " + index.ToString(CultureInfo.InvariantCulture);
+            int offset = awardStartOffset + spec.Offset;
+            if (offset < 0 || offset >= bytes.Length)
+            {
+                return false;
+            }
+
+            if (spec.Kind == "uint")
+            {
+                if (offset + 4 > bytes.Length) return false;
+                value = BitConverter.ToUInt32(bytes, offset).ToString(CultureInfo.InvariantCulture);
+                return true;
+            }
+            if (spec.Kind == "int")
+            {
+                if (offset + 4 > bytes.Length) return false;
+                value = BitConverter.ToInt32(bytes, offset).ToString(CultureInfo.InvariantCulture);
+                return true;
+            }
+            if (spec.Kind == "int64")
+            {
+                if (offset + 8 > bytes.Length) return false;
+                value = BitConverter.ToInt64(bytes, offset).ToString(CultureInfo.InvariantCulture);
+                return true;
+            }
+            if (spec.Kind == "byte")
+            {
+                value = bytes[offset].ToString(CultureInfo.InvariantCulture);
+                return true;
+            }
+
+            return false;
+        }
+
+        private static bool IsZeroAwardValue(string value)
+        {
+            long number;
+            return long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out number) && number == 0;
         }
 
         private static bool TryReadField(byte[] bytes, FieldSpec spec, out string value)
@@ -917,6 +986,24 @@ namespace FWEledit
             public string Name { get; private set; }
             public int Offset { get; private set; }
             public string Kind { get; private set; }
+        }
+
+        private sealed class AwardFieldSpec
+        {
+            public AwardFieldSpec(string name, string displayName, int offset, string kind, string meaning)
+            {
+                Name = name;
+                DisplayName = displayName;
+                Offset = offset;
+                Kind = kind;
+                Meaning = meaning;
+            }
+
+            public string Name { get; private set; }
+            public string DisplayName { get; private set; }
+            public int Offset { get; private set; }
+            public string Kind { get; private set; }
+            public string Meaning { get; private set; }
         }
     }
 }
