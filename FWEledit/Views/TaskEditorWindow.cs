@@ -33,7 +33,7 @@ namespace FWEledit
         private Label statusLabel;
         private Label summaryLabel;
         private SplitContainer mainSplit;
-        private RichTextBox overviewBox;
+        private FlowLayoutPanel overviewPanel;
         private DataGridView itemGrid;
         private DataGridView generalGrid;
         private DataGridView fieldGrid;
@@ -149,13 +149,14 @@ namespace FWEledit
             right.Controls.Add(tabs, 0, 1);
 
             TabPage overviewTab = new TabPage("Overview");
-            overviewBox = new RichTextBox();
-            overviewBox.Dock = DockStyle.Fill;
-            overviewBox.ReadOnly = true;
-            overviewBox.BorderStyle = BorderStyle.None;
-            overviewBox.Font = new Font("Segoe UI", 10F, FontStyle.Regular, GraphicsUnit.Point, 0);
-            overviewBox.DetectUrls = false;
-            overviewTab.Controls.Add(overviewBox);
+            overviewPanel = new FlowLayoutPanel();
+            overviewPanel.Dock = DockStyle.Fill;
+            overviewPanel.AutoScroll = true;
+            overviewPanel.FlowDirection = FlowDirection.TopDown;
+            overviewPanel.WrapContents = false;
+            overviewPanel.Padding = new Padding(10);
+            overviewPanel.Resize += (s, e) => AdjustOverviewCardWidths();
+            overviewTab.Controls.Add(overviewPanel);
             tabs.TabPages.Add(overviewTab);
 
             TabPage itemTab = new TabPage("Items");
@@ -633,7 +634,7 @@ namespace FWEledit
             AddGeneral("Detected text blocks", texts.Count.ToString(CultureInfo.InvariantCulture));
             AddGeneral("Detected task items", itemValues.Count.ToString(CultureInfo.InvariantCulture));
 
-            SetOverviewText(BuildOverview(entry, knownFields, texts, itemValues), itemValues);
+            SetOverviewCards(entry, knownFields, texts, itemValues);
 
             foreach (TaskEditorFieldValue field in knownFields)
             {
@@ -774,197 +775,260 @@ namespace FWEledit
             return builder.ToString();
         }
 
-        private void SetOverviewText(string text, List<TaskEditorItemValue> itemValues)
+        private void SetOverviewCards(TaskEditorEntry entry, List<TaskEditorFieldValue> fields, List<TaskEditorTextValue> texts, List<TaskEditorItemValue> itemValues)
         {
-            overviewBox.Clear();
-            overviewBox.Text = text ?? string.Empty;
-
-            if (string.IsNullOrEmpty(overviewBox.Text))
+            if (overviewPanel == null)
             {
                 return;
             }
 
-            overviewBox.SelectAll();
-            overviewBox.SelectionFont = new Font("Segoe UI", 10F, FontStyle.Regular, GraphicsUnit.Point, 0);
-            overviewBox.SelectionColor = Color.FromArgb(223, 230, 238);
+            overviewPanel.SuspendLayout();
+            overviewPanel.Controls.Clear();
 
-            int firstLineEnd = overviewBox.Text.IndexOf(Environment.NewLine, StringComparison.Ordinal);
-            if (firstLineEnd > 0)
-            {
-                overviewBox.Select(0, firstLineEnd);
-                overviewBox.SelectionFont = new Font("Segoe UI Semibold", 13F, FontStyle.Bold, GraphicsUnit.Point, 0);
-                overviewBox.SelectionColor = Color.FromArgb(255, 235, 170);
-            }
+            AddOverviewHeader(entry);
 
-            string[] sectionTitles =
-            {
-                "PLAYER-FACING SUMMARY",
-                "AVAILABILITY AND REPEAT RULES",
-                "GAME FLOW",
-                "REQUIRED ITEMS",
-                "REWARDS",
-                "DESCRIPTION",
-                "DIALOG PREVIEW",
-                "TECHNICAL SOURCE"
-            };
-
-            foreach (string sectionTitle in sectionTitles)
-            {
-                int index = overviewBox.Text.IndexOf(sectionTitle, StringComparison.Ordinal);
-                if (index < 0)
+            AddOverviewCard(
+                "Player-facing summary",
+                GetOverviewSectionColor("PLAYER-FACING SUMMARY"),
+                new[]
                 {
-                    continue;
-                }
+                    new OverviewRow("Task type", DescribeTaskType(GetKnownFieldValue(fields, "m_ulType"))),
+                    new OverviewRow("Completion method", DescribeCompletionMethod(GetKnownFieldValue(fields, "m_enumMethod"))),
+                    new OverviewRow("Finish handoff", DescribeFinishType(GetKnownFieldValue(fields, "m_enumFinishType"))),
+                    new OverviewRow("Recommended level", ZeroAsNone(GetKnownFieldValue(fields, "m_ulSuitableLevel"))),
+                    new OverviewRow("Start NPC", FormatNpc(GetKnownFieldValue(fields, "m_ulDelvNPC"))),
+                    new OverviewRow("Finish NPC", FormatNpc(GetKnownFieldValue(fields, "m_ulAwardNPC"))),
+                    new OverviewRow("Visibility", IsYes(fields, "m_bHidden") ? "Hidden until unlocked or triggered" : "Visible when conditions allow it"),
+                    new OverviewRow("Tracking", BuildTrackingSummary(fields)),
+                    new OverviewRow("Importance", IsYes(fields, "m_bKeyTask") ? "Marked as a key task" : "Normal task"),
+                    new OverviewRow("Task tree", BuildTaskTreeSummary(entry))
+                });
 
-                overviewBox.Select(index, sectionTitle.Length);
-                overviewBox.SelectionFont = new Font("Segoe UI Semibold", 9.5F, FontStyle.Bold, GraphicsUnit.Point, 0);
-                overviewBox.SelectionColor = GetOverviewSectionColor(sectionTitle);
+            AddOverviewCard(
+                "Availability and repeat rules",
+                GetOverviewSectionColor("AVAILABILITY AND REPEAT RULES"),
+                new[]
+                {
+                    new OverviewRow("Can give up", YesNoMeaning(fields, "m_bCanGiveUp")),
+                    new OverviewRow("Repeatable", YesNoMeaning(fields, "m_bCanRedo")),
+                    new OverviewRow("Retry after failure", YesNoMeaning(fields, "m_bCanRedoAfterFailure")),
+                    new OverviewRow("Available times", ZeroAsNone(GetKnownFieldValue(fields, "m_lAvailFrequency"))),
+                    new OverviewRow("Cooldown", FormatSeconds(GetKnownFieldValue(fields, "m_lTimeInterval"))),
+                    new OverviewRow("Time limit", FormatSeconds(GetKnownFieldValue(fields, "m_ulTimeLimit")))
+                });
+
+            AddOverviewCard(
+                "Game flow",
+                GetOverviewSectionColor("GAME FLOW"),
+                new[]
+                {
+                    new OverviewRow("Auto delivery", YesNoMeaning(fields, "m_bAutoDeliver")),
+                    new OverviewRow("Death behavior", IsYes(fields, "m_bFailAsPlayerDie") ? "Fails when the player dies" : "Does not fail from death flag"),
+                    new OverviewRow("Cleanup", IsYes(fields, "m_bClearAcquired") ? "Removes acquired task items during cleanup" : "No acquired-item cleanup flag"),
+                    new OverviewRow("Lua logic", IsYes(fields, "m_bLuaTask") ? "Uses Lua-side behavior" : "No Lua task flag")
+                });
+
+            List<TaskEditorItemValue> requiredItems = GetItemsByKind(itemValues, "Required item", "Completion item", "Submit item");
+            if (requiredItems.Count > 0)
+            {
+                List<OverviewRow> rows = new List<OverviewRow>();
+                foreach (TaskEditorItemValue item in requiredItems)
+                {
+                    rows.Add(new OverviewRow(item.Kind, FormatTaskItemValue(item), item));
+                }
+                AddOverviewCard("Required items", GetOverviewSectionColor("REQUIRED ITEMS"), rows);
             }
 
-            ApplyOverviewItemColors(itemValues);
-            InsertOverviewItemIcons(itemValues);
-            overviewBox.Select(0, 0);
+            List<TaskEditorFieldValue> rewards = GetRewardFields(fields);
+            List<TaskEditorItemValue> rewardItems = GetItemsByKind(itemValues, "Success reward item", "Given item");
+            if (rewards.Count > 0 || rewardItems.Count > 0)
+            {
+                List<OverviewRow> rows = new List<OverviewRow>
+                {
+                    new OverviewRow("Success reward mode", DescribeAwardType(GetKnownFieldValue(fields, "m_ulAwardType_S"))),
+                    new OverviewRow("Failure reward mode", DescribeAwardType(GetKnownFieldValue(fields, "m_ulAwardType_F")))
+                };
+
+                foreach (TaskEditorItemValue item in rewardItems)
+                {
+                    rows.Add(new OverviewRow(item.Kind, FormatTaskItemValue(item), item));
+                }
+                foreach (TaskEditorFieldValue reward in rewards)
+                {
+                    rows.Add(new OverviewRow(reward.DisplayName, FormatRewardValue(reward)));
+                }
+                AddOverviewCard("Rewards", GetOverviewSectionColor("REWARDS"), rows);
+            }
+
+            string description = GetDescriptionText(texts, entry != null ? entry.Name : string.Empty);
+            if (!string.IsNullOrWhiteSpace(description))
+            {
+                AddOverviewTextCard("Description", GetOverviewSectionColor("DESCRIPTION"), WrapLongText(description));
+            }
+
+            List<string> dialogLines = GetDialogPreview(texts, entry != null ? entry.Name : string.Empty, description);
+            if (dialogLines.Count > 0)
+            {
+                AddOverviewTextCard("Dialog preview", GetOverviewSectionColor("DIALOG PREVIEW"), string.Join(Environment.NewLine, dialogLines.Select(line => "- " + line).ToArray()));
+            }
+
+            AddOverviewCard(
+                "Technical source",
+                GetOverviewSectionColor("TECHNICAL SOURCE"),
+                new[]
+                {
+                    new OverviewRow("Shard", entry != null ? entry.ShardName + " / chunk " + entry.ChunkIndex.ToString(CultureInfo.InvariantCulture) : "-"),
+                    new OverviewRow("Offset", entry != null ? "0x" + entry.AbsoluteOffset.ToString("X", CultureInfo.InvariantCulture) : "-"),
+                    new OverviewRow("Size", entry != null ? entry.Size.ToString("N0", CultureInfo.InvariantCulture) + " bytes" : "-")
+                });
+
+            overviewPanel.ResumeLayout();
+            AdjustOverviewCardWidths();
         }
 
-        private void InsertOverviewItemIcons(List<TaskEditorItemValue> itemValues)
+        private void AddOverviewHeader(TaskEditorEntry entry)
         {
-            if (itemValues == null || itemValues.Count == 0 || string.IsNullOrEmpty(overviewBox.Text))
+            Panel card = CreateOverviewCard(Color.FromArgb(255, 235, 170));
+            Label title = new Label();
+            title.AutoSize = false;
+            title.Dock = DockStyle.Top;
+            title.Height = 30;
+            title.Font = new Font("Segoe UI Semibold", 13F, FontStyle.Bold, GraphicsUnit.Point, 0);
+            title.ForeColor = Color.FromArgb(255, 235, 170);
+            title.Text = entry == null ? string.Empty : entry.Id.ToString(CultureInfo.InvariantCulture) + " - " + (entry.Name ?? string.Empty);
+            card.Controls.Add(title);
+            overviewPanel.Controls.Add(card);
+        }
+
+        private void AddOverviewTextCard(string title, Color accent, string text)
+        {
+            AddOverviewCard(title, accent, new[] { new OverviewRow(string.Empty, text) });
+        }
+
+        private void AddOverviewCard(string title, Color accent, IEnumerable<OverviewRow> rows)
+        {
+            Panel card = CreateOverviewCard(accent);
+            Label titleLabel = new Label();
+            titleLabel.AutoSize = false;
+            titleLabel.Dock = DockStyle.Top;
+            titleLabel.Height = 24;
+            titleLabel.Font = new Font("Segoe UI Semibold", 9.5F, FontStyle.Bold, GraphicsUnit.Point, 0);
+            titleLabel.ForeColor = accent;
+            titleLabel.Text = title ?? string.Empty;
+            card.Controls.Add(titleLabel);
+
+            TableLayoutPanel table = new TableLayoutPanel();
+            table.Dock = DockStyle.Top;
+            table.AutoSize = true;
+            table.ColumnCount = 2;
+            table.Padding = new Padding(0, 8, 0, 0);
+            table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 150));
+            table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            card.Controls.Add(table);
+            table.BringToFront();
+
+            int rowIndex = 0;
+            foreach (OverviewRow row in rows ?? Enumerable.Empty<OverviewRow>())
+            {
+                table.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+                Label label = CreateOverviewLabel(row.Label, Color.FromArgb(146, 158, 174), FontStyle.Regular);
+                table.Controls.Add(label, 0, rowIndex);
+                Control valueControl = CreateOverviewValueControl(row);
+                table.Controls.Add(valueControl, 1, rowIndex);
+                rowIndex++;
+            }
+
+            overviewPanel.Controls.Add(card);
+        }
+
+        private Panel CreateOverviewCard(Color accent)
+        {
+            Panel card = new Panel();
+            card.Tag = "overview-card";
+            card.AutoSize = true;
+            card.Margin = new Padding(0, 0, 0, 10);
+            card.Padding = new Padding(12, 10, 12, 12);
+            card.BackColor = Color.FromArgb(22, 27, 34);
+
+            Panel stripe = new Panel();
+            stripe.Dock = DockStyle.Left;
+            stripe.Width = 3;
+            stripe.BackColor = accent;
+            card.Controls.Add(stripe);
+
+            return card;
+        }
+
+        private Control CreateOverviewValueControl(OverviewRow row)
+        {
+            if (row != null && row.Item != null)
+            {
+                FlowLayoutPanel itemPanel = new FlowLayoutPanel();
+                itemPanel.AutoSize = true;
+                itemPanel.WrapContents = false;
+                itemPanel.Margin = new Padding(0, 0, 0, 4);
+                itemPanel.Padding = new Padding(0);
+
+                PictureBox icon = new PictureBox();
+                icon.Size = new Size(22, 22);
+                icon.SizeMode = PictureBoxSizeMode.Zoom;
+                icon.Margin = new Padding(0, 0, 6, 0);
+                icon.Image = ResolveTaskItemIcon(row.Item);
+                itemPanel.Controls.Add(icon);
+
+                Label text = CreateOverviewLabel(row.Value, ResolveTaskItemTextColor(row.Item, false), FontStyle.Bold);
+                itemPanel.Controls.Add(text);
+                return itemPanel;
+            }
+
+            return CreateOverviewLabel(row != null ? row.Value : string.Empty, Color.FromArgb(223, 230, 238), FontStyle.Regular);
+        }
+
+        private Label CreateOverviewLabel(string text, Color color, FontStyle style)
+        {
+            Label label = new Label();
+            label.AutoSize = true;
+            label.Margin = new Padding(0, 0, 0, 5);
+            label.Font = new Font("Segoe UI", 9F, style, GraphicsUnit.Point, 0);
+            label.ForeColor = color;
+            label.Text = string.IsNullOrWhiteSpace(text) ? "-" : text;
+            return label;
+        }
+
+        private void AdjustOverviewCardWidths()
+        {
+            if (overviewPanel == null)
             {
                 return;
             }
 
-            List<OverviewItemIconInsertion> insertions = new List<OverviewItemIconInsertion>();
-            foreach (TaskEditorItemValue item in itemValues)
+            int width = Math.Max(320, overviewPanel.ClientSize.Width - overviewPanel.Padding.Horizontal - SystemInformation.VerticalScrollBarWidth - 6);
+            foreach (Control control in overviewPanel.Controls)
             {
-                if (item == null)
+                if (control != null && string.Equals(control.Tag as string, "overview-card", StringComparison.Ordinal))
                 {
-                    continue;
-                }
-
-                string itemText = FormatTaskItemValue(item);
-                if (string.IsNullOrWhiteSpace(itemText))
-                {
-                    continue;
-                }
-
-                int start = 0;
-                while (start < overviewBox.TextLength)
-                {
-                    int index = overviewBox.Text.IndexOf(itemText, start, StringComparison.Ordinal);
-                    if (index < 0)
-                    {
-                        break;
-                    }
-
-                    insertions.Add(new OverviewItemIconInsertion { Index = index, Item = item });
-                    start = index + itemText.Length;
-                }
-            }
-
-            foreach (OverviewItemIconInsertion insertion in insertions.OrderByDescending(value => value.Index))
-            {
-                string iconRtf = BuildRtfImage(ResolveTaskItemIcon(insertion.Item), 18, 18);
-                if (string.IsNullOrEmpty(iconRtf))
-                {
-                    continue;
-                }
-
-                overviewBox.Select(insertion.Index, 0);
-                overviewBox.SelectedText = " ";
-                overviewBox.Select(insertion.Index, 0);
-                overviewBox.SelectedRtf = iconRtf;
-            }
-        }
-
-        private sealed class OverviewItemIconInsertion
-        {
-            public int Index { get; set; }
-            public TaskEditorItemValue Item { get; set; }
-        }
-
-        private static string BuildRtfImage(Image image, int width, int height)
-        {
-            if (image == null || width <= 0 || height <= 0)
-            {
-                return string.Empty;
-            }
-
-            using (Bitmap bitmap = new Bitmap(width, height))
-            {
-                using (Graphics graphics = Graphics.FromImage(bitmap))
-                {
-                    graphics.Clear(Color.Transparent);
-                    graphics.DrawImage(image, new Rectangle(0, 0, width, height));
-                }
-
-                using (MemoryStream stream = new MemoryStream())
-                {
-                    bitmap.Save(stream, System.Drawing.Imaging.ImageFormat.Bmp);
-                    byte[] bytes = stream.ToArray();
-                    if (bytes.Length <= 14)
-                    {
-                        return string.Empty;
-                    }
-
-                    StringBuilder hex = new StringBuilder((bytes.Length - 14) * 2);
-                    for (int i = 14; i < bytes.Length; i++)
-                    {
-                        hex.Append(bytes[i].ToString("x2", CultureInfo.InvariantCulture));
-                    }
-
-                    int picwgoal = (int)Math.Round(width * 15D);
-                    int pichgoal = (int)Math.Round(height * 15D);
-                    return "{\\rtf1{\\pict\\dibitmap0\\picw"
-                        + width.ToString(CultureInfo.InvariantCulture)
-                        + "\\pich"
-                        + height.ToString(CultureInfo.InvariantCulture)
-                        + "\\picwgoal"
-                        + picwgoal.ToString(CultureInfo.InvariantCulture)
-                        + "\\pichgoal"
-                        + pichgoal.ToString(CultureInfo.InvariantCulture)
-                        + " "
-                        + hex
-                        + "}}";
+                    control.Width = width;
                 }
             }
         }
 
-        private void ApplyOverviewItemColors(List<TaskEditorItemValue> itemValues)
+        private sealed class OverviewRow
         {
-            if (itemValues == null || itemValues.Count == 0 || string.IsNullOrEmpty(overviewBox.Text))
+            public OverviewRow(string label, string value)
+                : this(label, value, null)
             {
-                return;
             }
 
-            foreach (TaskEditorItemValue item in itemValues)
+            public OverviewRow(string label, string value, TaskEditorItemValue item)
             {
-                if (item == null)
-                {
-                    continue;
-                }
-
-                string itemText = FormatTaskItemValue(item);
-                if (string.IsNullOrWhiteSpace(itemText))
-                {
-                    continue;
-                }
-
-                int start = 0;
-                Color color = ResolveTaskItemTextColor(item, false);
-                while (start < overviewBox.TextLength)
-                {
-                    int index = overviewBox.Text.IndexOf(itemText, start, StringComparison.Ordinal);
-                    if (index < 0)
-                    {
-                        break;
-                    }
-
-                    overviewBox.Select(index, itemText.Length);
-                    overviewBox.SelectionFont = new Font("Segoe UI Semibold", 10F, FontStyle.Bold, GraphicsUnit.Point, 0);
-                    overviewBox.SelectionColor = color;
-                    start = index + itemText.Length;
-                }
+                Label = label ?? string.Empty;
+                Value = value ?? string.Empty;
+                Item = item;
             }
+
+            public string Label { get; private set; }
+            public string Value { get; private set; }
+            public TaskEditorItemValue Item { get; private set; }
         }
 
         private static Color GetOverviewSectionColor(string sectionTitle)
@@ -1466,7 +1530,10 @@ namespace FWEledit
         private void ClearDetails()
         {
             summaryLabel.Text = string.Empty;
-            overviewBox.Text = string.Empty;
+            if (overviewPanel != null)
+            {
+                overviewPanel.Controls.Clear();
+            }
             itemGrid.Rows.Clear();
             generalGrid.Rows.Clear();
             fieldGrid.Rows.Clear();
