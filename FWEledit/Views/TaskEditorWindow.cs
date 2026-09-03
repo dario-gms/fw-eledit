@@ -202,14 +202,15 @@ namespace FWEledit
             textTab.Controls.Add(textGrid);
             tabs.TabPages.Add(textTab);
 
-            TabPage rawTab = new TabPage("Technical Values");
+            TabPage rawTab = new TabPage("All Values");
             rawGrid = CreateGrid();
-            rawGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Offset", Width = 78 });
-            rawGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Hint", Width = 110 });
-            rawGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Int32", Width = 112 });
-            rawGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "UInt32", Width = 112 });
-            rawGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Float", Width = 112 });
-            rawGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Bytes", AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill });
+            rawGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Group", Width = 112 });
+            rawGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Field", Width = 190 });
+            rawGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Source", Width = 190 });
+            rawGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Offset", Width = 82 });
+            rawGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Type", Width = 112 });
+            rawGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Value", Width = 260 });
+            rawGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Meaning", AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill });
             rawTab.Controls.Add(rawGrid);
             tabs.TabPages.Add(rawTab);
 
@@ -600,8 +601,8 @@ namespace FWEledit
 
             List<TaskEditorTextValue> texts = TaskEditorFileService.ExtractUnicodeTexts(entry.Bytes);
             List<TaskEditorFieldValue> knownFields = TaskEditorFileService.BuildKnownFields(entry.Bytes);
+            List<TaskEditorFieldValue> allMappedFields = TaskEditorFileService.BuildAllMappedFields(entry.Bytes);
             List<TaskEditorItemValue> itemValues = TaskEditorFileService.BuildItemValues(entry.Bytes);
-            List<TaskEditorRawValue> rawValues = TaskEditorFileService.BuildRawValues(entry.Bytes);
             ResolveTaskItems(itemValues);
             itemValues = FilterResolvedTaskItems(itemValues);
 
@@ -658,9 +659,10 @@ namespace FWEledit
                 textGrid.Rows.Add("0x" + text.Offset.ToString("X4", CultureInfo.InvariantCulture), ClassifyText(text), text.Text);
             }
 
-            foreach (TaskEditorRawValue value in rawValues)
+            foreach (TaskEditorFieldValue field in allMappedFields)
             {
-                rawGrid.Rows.Add(value.HexOffset, value.Hint, value.Int32Value, value.UInt32Value, value.FloatValue, value.HexBytes);
+                int rowIndex = rawGrid.Rows.Add(field.Section, field.DisplayName, field.Field, field.HexOffset, field.Type, field.Value, field.Meaning);
+                StyleFieldRow(rawGrid.Rows[rowIndex], field.Section);
             }
 
             hexBox.Text = BuildHexPreview(entry.Bytes, 4096);

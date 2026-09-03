@@ -621,6 +621,16 @@ namespace FWEledit
 
         public static List<TaskEditorFieldValue> BuildKnownFields(byte[] bytes)
         {
+            return BuildKnownFields(bytes, false);
+        }
+
+        public static List<TaskEditorFieldValue> BuildAllMappedFields(byte[] bytes)
+        {
+            return BuildKnownFields(bytes, true);
+        }
+
+        private static List<TaskEditorFieldValue> BuildKnownFields(byte[] bytes, bool includeEmptyArraySlots)
+        {
             List<TaskEditorFieldValue> values = new List<TaskEditorFieldValue>();
             if (bytes == null)
             {
@@ -706,7 +716,7 @@ namespace FWEledit
             foreach (FieldSpec spec in specs)
             {
                 string value;
-                if (!TryReadField(bytes, spec, out value))
+                if (!TryReadField(bytes, spec, includeEmptyArraySlots, out value))
                 {
                     continue;
                 }
@@ -1440,7 +1450,7 @@ namespace FWEledit
                 : "Release slot " + index.ToString(CultureInfo.InvariantCulture);
         }
 
-        private static bool TryReadField(byte[] bytes, FieldSpec spec, out string value)
+        private static bool TryReadField(byte[] bytes, FieldSpec spec, bool includeEmptyArraySlots, out string value)
         {
             value = string.Empty;
             if (bytes == null || spec == null || spec.Offset < 0 || spec.Offset >= bytes.Length)
@@ -1525,31 +1535,31 @@ namespace FWEledit
             }
             if (spec.Kind.StartsWith("uint-array:", StringComparison.Ordinal))
             {
-                return TryReadUInt32Array(bytes, spec.Offset, spec.Kind, "uint-array:", out value);
+                return TryReadUInt32Array(bytes, spec.Offset, spec.Kind, "uint-array:", includeEmptyArraySlots, out value);
             }
             if (spec.Kind.StartsWith("int-array:", StringComparison.Ordinal))
             {
-                return TryReadInt32Array(bytes, spec.Offset, spec.Kind, "int-array:", out value);
+                return TryReadInt32Array(bytes, spec.Offset, spec.Kind, "int-array:", includeEmptyArraySlots, out value);
             }
             if (spec.Kind.StartsWith("uint16-array:", StringComparison.Ordinal))
             {
-                return TryReadUInt16Array(bytes, spec.Offset, spec.Kind, "uint16-array:", out value);
+                return TryReadUInt16Array(bytes, spec.Offset, spec.Kind, "uint16-array:", includeEmptyArraySlots, out value);
             }
             if (spec.Kind.StartsWith("bool-array:", StringComparison.Ordinal))
             {
-                return TryReadBoolArray(bytes, spec.Offset, spec.Kind, "bool-array:", out value);
+                return TryReadBoolArray(bytes, spec.Offset, spec.Kind, "bool-array:", includeEmptyArraySlots, out value);
             }
             if (spec.Kind.StartsWith("finish-task-count-array:", StringComparison.Ordinal))
             {
-                return TryReadFinishTaskCountArray(bytes, spec.Offset, spec.Kind, out value);
+                return TryReadFinishTaskCountArray(bytes, spec.Offset, spec.Kind, includeEmptyArraySlots, out value);
             }
             if (spec.Kind.StartsWith("prem-skill-array:", StringComparison.Ordinal))
             {
-                return TryReadIdLevelFlagArray(bytes, spec.Offset, spec.Kind, "prem-skill-array:", out value);
+                return TryReadIdLevelFlagArray(bytes, spec.Offset, spec.Kind, "prem-skill-array:", includeEmptyArraySlots, out value);
             }
             if (spec.Kind.StartsWith("monctrl-array:", StringComparison.Ordinal))
             {
-                return TryReadMonsterControlArray(bytes, spec.Offset, spec.Kind, out value);
+                return TryReadMonsterControlArray(bytes, spec.Offset, spec.Kind, includeEmptyArraySlots, out value);
             }
             if (spec.Kind == "ai-msg")
             {
@@ -1580,7 +1590,7 @@ namespace FWEledit
             return false;
         }
 
-        private static bool TryReadUInt32Array(byte[] bytes, int offset, string kind, string prefix, out string value)
+        private static bool TryReadUInt32Array(byte[] bytes, int offset, string kind, string prefix, bool includeEmptySlots, out string value)
         {
             value = string.Empty;
             int count;
@@ -1593,7 +1603,7 @@ namespace FWEledit
             for (int i = 0; i < count; i++)
             {
                 uint item = BitConverter.ToUInt32(bytes, offset + i * 4);
-                if (item != 0)
+                if (includeEmptySlots || item != 0)
                 {
                     parts.Add("[" + i.ToString(CultureInfo.InvariantCulture) + "] " + item.ToString(CultureInfo.InvariantCulture));
                 }
@@ -1603,7 +1613,7 @@ namespace FWEledit
             return true;
         }
 
-        private static bool TryReadInt32Array(byte[] bytes, int offset, string kind, string prefix, out string value)
+        private static bool TryReadInt32Array(byte[] bytes, int offset, string kind, string prefix, bool includeEmptySlots, out string value)
         {
             value = string.Empty;
             int count;
@@ -1616,7 +1626,7 @@ namespace FWEledit
             for (int i = 0; i < count; i++)
             {
                 int item = BitConverter.ToInt32(bytes, offset + i * 4);
-                if (item != 0)
+                if (includeEmptySlots || item != 0)
                 {
                     parts.Add("[" + i.ToString(CultureInfo.InvariantCulture) + "] " + item.ToString(CultureInfo.InvariantCulture));
                 }
@@ -1626,7 +1636,7 @@ namespace FWEledit
             return true;
         }
 
-        private static bool TryReadUInt16Array(byte[] bytes, int offset, string kind, string prefix, out string value)
+        private static bool TryReadUInt16Array(byte[] bytes, int offset, string kind, string prefix, bool includeEmptySlots, out string value)
         {
             value = string.Empty;
             int count;
@@ -1639,7 +1649,7 @@ namespace FWEledit
             for (int i = 0; i < count; i++)
             {
                 ushort item = BitConverter.ToUInt16(bytes, offset + i * 2);
-                if (item != 0)
+                if (includeEmptySlots || item != 0)
                 {
                     parts.Add("[" + i.ToString(CultureInfo.InvariantCulture) + "] " + item.ToString(CultureInfo.InvariantCulture));
                 }
@@ -1649,7 +1659,7 @@ namespace FWEledit
             return true;
         }
 
-        private static bool TryReadBoolArray(byte[] bytes, int offset, string kind, string prefix, out string value)
+        private static bool TryReadBoolArray(byte[] bytes, int offset, string kind, string prefix, bool includeEmptySlots, out string value)
         {
             value = string.Empty;
             int count;
@@ -1661,9 +1671,10 @@ namespace FWEledit
             List<string> parts = new List<string>();
             for (int i = 0; i < count; i++)
             {
-                if (bytes[offset + i] != 0)
+                bool item = bytes[offset + i] != 0;
+                if (includeEmptySlots || item)
                 {
-                    parts.Add("[" + i.ToString(CultureInfo.InvariantCulture) + "] Yes");
+                    parts.Add("[" + i.ToString(CultureInfo.InvariantCulture) + "] " + (item ? "Yes" : "No"));
                 }
             }
 
@@ -1671,7 +1682,7 @@ namespace FWEledit
             return true;
         }
 
-        private static bool TryReadFinishTaskCountArray(byte[] bytes, int offset, string kind, out string value)
+        private static bool TryReadFinishTaskCountArray(byte[] bytes, int offset, string kind, bool includeEmptySlots, out string value)
         {
             value = string.Empty;
             int count;
@@ -1686,7 +1697,7 @@ namespace FWEledit
                 int itemOffset = offset + i * 6;
                 uint taskId = BitConverter.ToUInt32(bytes, itemOffset);
                 ushort finishCount = BitConverter.ToUInt16(bytes, itemOffset + 4);
-                if (taskId != 0 || finishCount != 0)
+                if (includeEmptySlots || taskId != 0 || finishCount != 0)
                 {
                     parts.Add("[" + i.ToString(CultureInfo.InvariantCulture) + "] Task " + taskId.ToString(CultureInfo.InvariantCulture) + " x" + finishCount.ToString(CultureInfo.InvariantCulture));
                 }
@@ -1696,7 +1707,7 @@ namespace FWEledit
             return true;
         }
 
-        private static bool TryReadIdLevelFlagArray(byte[] bytes, int offset, string kind, string prefix, out string value)
+        private static bool TryReadIdLevelFlagArray(byte[] bytes, int offset, string kind, string prefix, bool includeEmptySlots, out string value)
         {
             value = string.Empty;
             int count;
@@ -1712,7 +1723,7 @@ namespace FWEledit
                 int id = BitConverter.ToInt32(bytes, itemOffset);
                 int level = BitConverter.ToInt32(bytes, itemOffset + 4);
                 bool enabled = bytes[itemOffset + 8] != 0;
-                if (id != 0 || level != 0 || enabled)
+                if (includeEmptySlots || id != 0 || level != 0 || enabled)
                 {
                     parts.Add("[" + i.ToString(CultureInfo.InvariantCulture) + "] ID " + id.ToString(CultureInfo.InvariantCulture) + ", level " + level.ToString(CultureInfo.InvariantCulture) + ", " + (enabled ? "enabled" : "disabled"));
                 }
@@ -1722,7 +1733,7 @@ namespace FWEledit
             return true;
         }
 
-        private static bool TryReadMonsterControlArray(byte[] bytes, int offset, string kind, out string value)
+        private static bool TryReadMonsterControlArray(byte[] bytes, int offset, string kind, bool includeEmptySlots, out string value)
         {
             value = string.Empty;
             int count;
@@ -1738,7 +1749,7 @@ namespace FWEledit
                 int id = BitConverter.ToInt32(bytes, itemOffset);
                 float probability = BitConverter.ToSingle(bytes, itemOffset + 4);
                 bool open = bytes[itemOffset + 8] != 0;
-                if (id != 0 || probability != 0F || open)
+                if (includeEmptySlots || id != 0 || probability != 0F || open)
                 {
                     parts.Add("[" + i.ToString(CultureInfo.InvariantCulture) + "] ID " + id.ToString(CultureInfo.InvariantCulture) + ", prob " + probability.ToString("R", CultureInfo.InvariantCulture) + ", " + (open ? "open" : "closed"));
                 }
