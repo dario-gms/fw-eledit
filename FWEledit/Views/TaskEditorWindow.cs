@@ -1129,13 +1129,17 @@ namespace FWEledit
             card.Padding = new Padding(16, 12, 16, 16);
 
             int y = 14;
-            Label title = CreateQuestPreviewLabel(entry != null ? entry.Name : string.Empty, 10F, FontStyle.Regular, Color.FromArgb(72, 40, 20), ContentAlignment.MiddleCenter);
+            string taskName = entry != null ? entry.Name : string.Empty;
+            string description = GetDescriptionText(texts, taskName);
+
+            Label title = CreateQuestPreviewLabel(taskName, 10F, FontStyle.Regular, Color.FromArgb(72, 40, 20), ContentAlignment.MiddleCenter);
             title.Location = new Point(18, y);
-            title.Size = new Size(card.Width - 36, 22);
+            title.Size = new Size(card.Width - 48, 22);
             card.Controls.Add(title);
+            title.BringToFront();
             y = title.Bottom + 4;
 
-            string objective = BuildQuestPreviewObjective(entry, fields, texts);
+            string objective = BuildQuestPreviewObjective(entry, fields);
             if (!string.IsNullOrWhiteSpace(objective))
             {
                 Label objectiveLabel = CreateQuestPreviewLabel(objective, 9F, FontStyle.Regular, Color.FromArgb(60, 34, 20), ContentAlignment.TopLeft);
@@ -1143,7 +1147,18 @@ namespace FWEledit
                 objectiveLabel.MaximumSize = new Size(card.Width - 36, 0);
                 objectiveLabel.AutoSize = true;
                 card.Controls.Add(objectiveLabel);
-                y = objectiveLabel.Bottom + 10;
+                y = objectiveLabel.Bottom + 2;
+            }
+
+            string finishNpc = GetNpcDisplayName(FormatNpc(GetKnownFieldValue(fields, "m_ulAwardNPC")));
+            if (!string.IsNullOrWhiteSpace(finishNpc) && !string.Equals(finishNpc, "None", StringComparison.OrdinalIgnoreCase))
+            {
+                Label npcLabel = CreateQuestPreviewLabel(finishNpc, 9F, FontStyle.Regular, Color.FromArgb(0, 150, 42), ContentAlignment.TopLeft);
+                npcLabel.Location = new Point(18, y);
+                npcLabel.MaximumSize = new Size(card.Width - 36, 0);
+                npcLabel.AutoSize = true;
+                card.Controls.Add(npcLabel);
+                y = npcLabel.Bottom + 10;
             }
 
             List<TaskEditorFieldValue> rewards = GetRewardFields(fields);
@@ -1175,7 +1190,6 @@ namespace FWEledit
                 y = requiredPanel.Bottom + 8;
             }
 
-            string description = GetDescriptionText(texts, entry != null ? entry.Name : string.Empty);
             if (!string.IsNullOrWhiteSpace(description))
             {
                 Label body = CreateQuestPreviewLabel(description, 9F, FontStyle.Regular, Color.FromArgb(62, 38, 24), ContentAlignment.TopLeft);
@@ -1203,40 +1217,27 @@ namespace FWEledit
             AdjustQuestPreviewWidth();
         }
 
-        private string BuildQuestPreviewObjective(TaskEditorEntry entry, List<TaskEditorFieldValue> fields, List<TaskEditorTextValue> texts)
+        private string BuildQuestPreviewObjective(TaskEditorEntry entry, List<TaskEditorFieldValue> fields)
         {
             string taskName = entry != null ? entry.Name : string.Empty;
-            string description = GetDescriptionText(texts, taskName);
-            string firstSentence = GetFirstQuestPreviewSentence(description);
-            if (!string.IsNullOrWhiteSpace(firstSentence))
-            {
-                return firstSentence;
-            }
-
-            string finishNpc = FormatNpc(GetKnownFieldValue(fields, "m_ulAwardNPC"));
-            if (!string.Equals(finishNpc, "None", StringComparison.OrdinalIgnoreCase))
-            {
-                return "Complete quest: " + taskName + Environment.NewLine + GetNpcDisplayName(finishNpc);
-            }
-
-            return taskName;
-        }
-
-        private static string GetFirstQuestPreviewSentence(string text)
-        {
-            text = CleanTaskText(text);
-            if (string.IsNullOrWhiteSpace(text))
+            if (string.IsNullOrWhiteSpace(taskName))
             {
                 return string.Empty;
             }
 
-            int breakIndex = text.IndexOfAny(new[] { '.', '!', '?' });
-            if (breakIndex > 12 && breakIndex + 1 < text.Length)
+            int method;
+            if (int.TryParse(GetKnownFieldValue(fields, "m_enumMethod"), NumberStyles.Integer, CultureInfo.InvariantCulture, out method))
             {
-                return text.Substring(0, breakIndex + 1).Trim();
+                switch (method)
+                {
+                    case 1: return "Defeat targets: " + taskName;
+                    case 2: return "Collect items: " + taskName;
+                    case 3: return "Complete quest: " + taskName;
+                    case 17: return "Hand in items: " + taskName;
+                }
             }
 
-            return text.Length > 120 ? text.Substring(0, 120).Trim() : text;
+            return "Complete quest: " + taskName;
         }
 
         private static string GetNpcDisplayName(string formattedNpc)
@@ -1301,6 +1302,7 @@ namespace FWEledit
             panel.MaximumSize = new Size(GetQuestPreviewCardWidth() - 36, 0);
             panel.Padding = new Padding(0);
             panel.Margin = new Padding(0);
+            panel.BackColor = Color.FromArgb(235, 226, 166);
 
             foreach (TaskEditorItemValue item in items ?? new List<TaskEditorItemValue>())
             {
@@ -1308,7 +1310,7 @@ namespace FWEledit
                 slot.Tag = "quest-preview";
                 slot.Size = new Size(42, 42);
                 slot.Margin = new Padding(0, 0, 6, 6);
-                slot.BackColor = Color.FromArgb(20, 27, 20);
+                slot.BackColor = Color.FromArgb(235, 226, 166);
                 previewToolTip.SetToolTip(slot, FormatTaskItemValue(item));
 
                 PictureBox icon = new PictureBox();
@@ -1379,10 +1381,12 @@ namespace FWEledit
                 card.Width = width;
                 foreach (Control child in card.Controls)
                 {
-                    if (child is Label)
+                    Label label = child as Label;
+                    if (label != null)
                     {
-                        child.Width = width - 36;
-                        child.MaximumSize = new Size(width - 36, 0);
+                        int labelWidth = label.TextAlign == ContentAlignment.MiddleCenter ? width - 48 : width - 36;
+                        child.Width = labelWidth;
+                        child.MaximumSize = new Size(labelWidth, 0);
                     }
                     FlowLayoutPanel strip = child as FlowLayoutPanel;
                     if (strip != null)
