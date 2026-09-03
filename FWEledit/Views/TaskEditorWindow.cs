@@ -14,21 +14,27 @@ namespace FWEledit
     {
         private readonly TaskEditorFileService fileService = new TaskEditorFileService();
         private readonly NpcGenEntityLookupService entityLookupService = new NpcGenEntityLookupService();
+        private readonly ItemReferenceService itemReferenceService = new ItemReferenceService();
+        private readonly IconResolutionService iconResolutionService = new IconResolutionService();
+        private const int MaxDisplayedTasks = 20000;
         private readonly ISessionService sessionService;
         private TaskEditorData currentData;
         private List<TaskEditorEntry> filteredEntries = new List<TaskEditorEntry>();
+        private Dictionary<int, ItemReferenceOption> itemOptionsById;
         private int loadRequestId;
         private bool isLoading;
 
         private TextBox rootPathBox;
         private Button openFolderButton;
         private Button reloadButton;
+        private Button searchButton;
         private TextBox searchBox;
         private DataGridView taskGrid;
         private Label statusLabel;
         private Label summaryLabel;
         private SplitContainer mainSplit;
         private RichTextBox overviewBox;
+        private DataGridView itemGrid;
         private DataGridView generalGrid;
         private DataGridView fieldGrid;
         private DataGridView textGrid;
@@ -79,9 +85,10 @@ namespace FWEledit
 
             TableLayoutPanel header = new TableLayoutPanel();
             header.Dock = DockStyle.Fill;
-            header.ColumnCount = 4;
+            header.ColumnCount = 5;
             header.RowCount = 2;
             header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 96));
             header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 96));
             header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 96));
             header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 160));
@@ -92,17 +99,20 @@ namespace FWEledit
             rootPathBox = new TextBox { Dock = DockStyle.Fill, ReadOnly = true };
             openFolderButton = new Button { Text = "Open", Dock = DockStyle.Fill };
             reloadButton = new Button { Text = "Reload", Dock = DockStyle.Fill };
+            searchButton = new Button { Text = "Search", Dock = DockStyle.Fill };
             searchBox = new TextBox { Dock = DockStyle.Fill };
             openFolderButton.Click += openFolderButton_Click;
             reloadButton.Click += reloadButton_Click;
-            searchBox.TextChanged += (s, e) => ApplyFilter(false);
+            searchButton.Click += (s, e) => ApplyFilter(false);
+            searchBox.KeyDown += searchBox_KeyDown;
 
             header.Controls.Add(rootPathBox, 0, 0);
             header.Controls.Add(openFolderButton, 1, 0);
             header.Controls.Add(reloadButton, 2, 0);
-            header.Controls.Add(new Label { Text = "Read-only viewer", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleRight }, 3, 0);
+            header.Controls.Add(new Label { Text = "Read-only viewer", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleRight }, 4, 0);
             header.Controls.Add(searchBox, 0, 1);
             header.SetColumnSpan(searchBox, 4);
+            header.Controls.Add(searchButton, 4, 1);
 
             Panel contentPanel = new Panel();
             contentPanel.Dock = DockStyle.Fill;
@@ -147,6 +157,24 @@ namespace FWEledit
             overviewBox.DetectUrls = false;
             overviewTab.Controls.Add(overviewBox);
             tabs.TabPages.Add(overviewTab);
+
+            TabPage itemTab = new TabPage("Items");
+            itemGrid = CreateGrid();
+            itemGrid.RowTemplate.Height = 30;
+            itemGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Kind", Width = 150 });
+            DataGridViewImageColumn itemIconColumn = new DataGridViewImageColumn();
+            itemIconColumn.HeaderText = "Icon";
+            itemIconColumn.Width = 42;
+            itemIconColumn.ImageLayout = DataGridViewImageCellLayout.Zoom;
+            itemIconColumn.DefaultCellStyle.NullValue = Properties.Resources.NoIcon;
+            itemGrid.Columns.Add(itemIconColumn);
+            itemGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "ID", Width = 86 });
+            itemGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Name", AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill });
+            itemGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Count", Width = 72 });
+            itemGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Source", Width = 220 });
+            itemGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Offset", Width = 82 });
+            itemTab.Controls.Add(itemGrid);
+            tabs.TabPages.Add(itemTab);
 
             TabPage generalTab = new TabPage("General");
             generalGrid = CreateGrid();
@@ -316,21 +344,27 @@ namespace FWEledit
             }
 
             string query = (searchBox.Text ?? string.Empty).Trim();
-            filteredEntries = currentData.Entries
-                .Where(entry => Matches(entry, query))
-                .Take(5000)
+            filteredEntries = BuildVisibleTaskEntries(query)
+                .Take(MaxDisplayedTasks)
                 .ToList();
 
             foreach (TaskEditorEntry entry in filteredEntries)
             {
-                int rowIndex = taskGrid.Rows.Add(entry.Id, entry.Name, entry.ShardIndex);
-                taskGrid.Rows[rowIndex].Tag = entry;
+                int rowIndex = taskGrid.Rows.Add(entry.Id, FormatTaskTreeName(entry), entry.ShardIndex);
+                DataGridViewRow row = taskGrid.Rows[rowIndex];
+                row.Tag = entry;
+                if (entry.TreeDepth > 0)
+                {
+                    row.DefaultCellStyle.ForeColor = Color.FromArgb(195, 217, 238);
+                }
             }
 
             if (taskGrid.Rows.Count > 0)
             {
-                taskGrid.Rows[0].Selected = true;
-                taskGrid.CurrentCell = taskGrid.Rows[0].Cells[0];
+                DataGridViewRow selectedRow = FindPreferredInitialRow(query) ?? taskGrid.Rows[0];
+                selectedRow.Selected = true;
+                taskGrid.CurrentCell = selectedRow.Cells[0];
+                LoadEntry(selectedRow.Tag as TaskEditorEntry);
             }
 
             taskGrid.Invalidate();
@@ -341,6 +375,198 @@ namespace FWEledit
                 "Showing {0:N0} of {1:N0} task entries.",
                 filteredEntries.Count,
                 currentData.Entries.Count);
+        }
+
+        private DataGridViewRow FindPreferredInitialRow(string query)
+        {
+            if (taskGrid == null || taskGrid.Rows.Count == 0)
+            {
+                return null;
+            }
+
+            if (string.IsNullOrWhiteSpace(query))
+            {
+                return taskGrid.Rows[0];
+            }
+
+            foreach (DataGridViewRow row in taskGrid.Rows)
+            {
+                TaskEditorEntry entry = row.Tag as TaskEditorEntry;
+                if (entry != null
+                    && (string.Equals(entry.Name, query, StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(entry.Id.ToString(CultureInfo.InvariantCulture), query, StringComparison.OrdinalIgnoreCase)))
+                {
+                    return row;
+                }
+            }
+
+            foreach (DataGridViewRow row in taskGrid.Rows)
+            {
+                TaskEditorEntry entry = row.Tag as TaskEditorEntry;
+                if (Matches(entry, query))
+                {
+                    return row;
+                }
+            }
+
+            return taskGrid.Rows[0];
+        }
+
+        private List<TaskEditorEntry> BuildVisibleTaskEntries(string query)
+        {
+            if (currentData == null || currentData.Entries == null)
+            {
+                return new List<TaskEditorEntry>();
+            }
+
+            Dictionary<int, TaskEditorEntry> byId = currentData.Entries
+                .GroupBy(entry => entry.Id)
+                .ToDictionary(group => group.Key, group => group.First());
+            Dictionary<int, List<TaskEditorEntry>> childrenByParent = currentData.Entries
+                .Where(entry => entry.ParentId > 0)
+                .GroupBy(entry => entry.ParentId)
+                .ToDictionary(group => group.Key, group => SortTaskEntries(group.ToList()));
+
+            HashSet<int> included = new HashSet<int>();
+            bool hasQuery = !string.IsNullOrWhiteSpace(query);
+            if (hasQuery)
+            {
+                foreach (TaskEditorEntry entry in currentData.Entries.Where(entry => Matches(entry, query)))
+                {
+                    IncludeEntryWithContext(entry, byId, childrenByParent, included);
+                }
+            }
+
+            List<TaskEditorEntry> roots = currentData.Entries
+                .Where(entry => entry.ParentId <= 0 || !byId.ContainsKey(entry.ParentId))
+                .ToList();
+            roots = SortTaskEntries(roots);
+
+            List<TaskEditorEntry> result = new List<TaskEditorEntry>();
+            HashSet<int> emitted = new HashSet<int>();
+            foreach (TaskEditorEntry root in roots)
+            {
+                AppendTaskTree(root, childrenByParent, included, hasQuery, 0, result, emitted);
+            }
+
+            foreach (TaskEditorEntry entry in SortTaskEntries(currentData.Entries))
+            {
+                if (emitted.Contains(entry.Id))
+                {
+                    continue;
+                }
+
+                AppendTaskTree(entry, childrenByParent, included, hasQuery, 0, result, emitted);
+            }
+
+            return result;
+        }
+
+        private void IncludeEntryWithContext(
+            TaskEditorEntry entry,
+            Dictionary<int, TaskEditorEntry> byId,
+            Dictionary<int, List<TaskEditorEntry>> childrenByParent,
+            HashSet<int> included)
+        {
+            if (entry == null || included == null)
+            {
+                return;
+            }
+
+            bool wasAlreadyIncluded = included.Contains(entry.Id);
+            included.Add(entry.Id);
+            if (wasAlreadyIncluded)
+            {
+                return;
+            }
+
+            TaskEditorEntry cursor = entry;
+            HashSet<int> guard = new HashSet<int>();
+            while (cursor != null && cursor.ParentId > 0 && guard.Add(cursor.Id))
+            {
+                TaskEditorEntry parent;
+                if (!byId.TryGetValue(cursor.ParentId, out parent) || parent == null)
+                {
+                    break;
+                }
+
+                included.Add(parent.Id);
+                cursor = parent;
+            }
+
+            List<TaskEditorEntry> children;
+            if (childrenByParent.TryGetValue(entry.Id, out children))
+            {
+                foreach (TaskEditorEntry child in children)
+                {
+                    IncludeEntryWithContext(child, byId, childrenByParent, included);
+                }
+            }
+        }
+
+        private static void AppendTaskTree(
+            TaskEditorEntry entry,
+            Dictionary<int, List<TaskEditorEntry>> childrenByParent,
+            HashSet<int> included,
+            bool hasQuery,
+            int depth,
+            List<TaskEditorEntry> result,
+            HashSet<int> emitted)
+        {
+            if (entry == null || result == null || emitted == null || emitted.Contains(entry.Id))
+            {
+                return;
+            }
+
+            bool include = !hasQuery || (included != null && included.Contains(entry.Id));
+            if (include)
+            {
+                entry.TreeDepth = Math.Min(depth, 12);
+                entry.HasChildren = entry.HasChildren || (childrenByParent != null && childrenByParent.ContainsKey(entry.Id));
+                result.Add(entry);
+                emitted.Add(entry.Id);
+            }
+
+            List<TaskEditorEntry> children;
+            if (childrenByParent == null || !childrenByParent.TryGetValue(entry.Id, out children))
+            {
+                return;
+            }
+
+            foreach (TaskEditorEntry child in children)
+            {
+                AppendTaskTree(child, childrenByParent, included, hasQuery, depth + 1, result, emitted);
+            }
+        }
+
+        private static List<TaskEditorEntry> SortTaskEntries(List<TaskEditorEntry> entries)
+        {
+            return (entries ?? new List<TaskEditorEntry>())
+                .OrderBy(entry => entry.ShardIndex)
+                .ThenBy(entry => entry.ChunkIndex)
+                .ThenBy(entry => entry.LocalOffset)
+                .ThenBy(entry => entry.Id)
+                .ToList();
+        }
+
+        private static string FormatTaskTreeName(TaskEditorEntry entry)
+        {
+            if (entry == null)
+            {
+                return string.Empty;
+            }
+
+            string prefix = new string(' ', Math.Max(0, entry.TreeDepth) * 3);
+            if (entry.HasChildren)
+            {
+                prefix += "+ ";
+            }
+            else if (entry.TreeDepth > 0)
+            {
+                prefix += "- ";
+            }
+
+            return prefix + (entry.Name ?? string.Empty);
         }
 
         private bool Matches(TaskEditorEntry entry, string query)
@@ -374,7 +600,10 @@ namespace FWEledit
 
             List<TaskEditorTextValue> texts = TaskEditorFileService.ExtractUnicodeTexts(entry.Bytes);
             List<TaskEditorFieldValue> knownFields = TaskEditorFileService.BuildKnownFields(entry.Bytes);
+            List<TaskEditorItemValue> itemValues = TaskEditorFileService.BuildItemValues(entry.Bytes);
             List<TaskEditorRawValue> rawValues = TaskEditorFileService.BuildRawValues(entry.Bytes);
+            ResolveTaskItems(itemValues);
+            itemValues = FilterResolvedTaskItems(itemValues);
 
             summaryLabel.Text = string.Format(
                 CultureInfo.InvariantCulture,
@@ -401,13 +630,27 @@ namespace FWEledit
             AddGeneral("Absolute task offset", "0x" + entry.AbsoluteOffset.ToString("X", CultureInfo.InvariantCulture));
             AddGeneral("Size", entry.Size.ToString(CultureInfo.InvariantCulture));
             AddGeneral("Detected text blocks", texts.Count.ToString(CultureInfo.InvariantCulture));
+            AddGeneral("Detected task items", itemValues.Count.ToString(CultureInfo.InvariantCulture));
 
-            SetOverviewText(BuildOverview(entry, knownFields, texts));
+            SetOverviewText(BuildOverview(entry, knownFields, texts, itemValues), itemValues);
 
             foreach (TaskEditorFieldValue field in knownFields)
             {
                 int rowIndex = fieldGrid.Rows.Add(field.Section, field.DisplayName, field.Value, field.Meaning, field.Field, field.HexOffset);
                 StyleFieldRow(fieldGrid.Rows[rowIndex], field.Section);
+            }
+
+            foreach (TaskEditorItemValue item in itemValues)
+            {
+                int rowIndex = itemGrid.Rows.Add(
+                    item.Kind,
+                    ResolveTaskItemIcon(item),
+                    item.ItemId.ToString(CultureInfo.InvariantCulture),
+                    string.IsNullOrWhiteSpace(item.Name) ? "Item " + item.ItemId.ToString(CultureInfo.InvariantCulture) : item.Name,
+                    item.Count.ToString(CultureInfo.InvariantCulture),
+                    item.Source,
+                    item.HexOffset);
+                StyleItemRow(itemGrid.Rows[rowIndex], item);
             }
 
             foreach (TaskEditorTextValue text in texts)
@@ -439,7 +682,7 @@ namespace FWEledit
             return field != null ? field.Value : string.Empty;
         }
 
-        private string BuildOverview(TaskEditorEntry entry, List<TaskEditorFieldValue> fields, List<TaskEditorTextValue> texts)
+        private string BuildOverview(TaskEditorEntry entry, List<TaskEditorFieldValue> fields, List<TaskEditorTextValue> texts, List<TaskEditorItemValue> itemValues)
         {
             StringBuilder builder = new StringBuilder();
             builder.AppendLine(entry.Id.ToString(CultureInfo.InvariantCulture) + " - " + (entry.Name ?? string.Empty));
@@ -453,6 +696,7 @@ namespace FWEledit
             AppendItem(builder, "Visibility", IsYes(fields, "m_bHidden") ? "Hidden until unlocked or triggered" : "Visible when conditions allow it");
             AppendItem(builder, "Tracking", BuildTrackingSummary(fields));
             AppendItem(builder, "Importance", IsYes(fields, "m_bKeyTask") ? "Marked as a key task" : "Normal task");
+            AppendItem(builder, "Task tree", BuildTaskTreeSummary(entry));
 
             builder.AppendLine();
             AppendSection(builder, "Availability and repeat rules");
@@ -470,11 +714,27 @@ namespace FWEledit
             AppendItem(builder, "Cleanup", IsYes(fields, "m_bClearAcquired") ? "Removes acquired task items during cleanup" : "No acquired-item cleanup flag");
             AppendItem(builder, "Lua logic", IsYes(fields, "m_bLuaTask") ? "Uses Lua-side behavior" : "No Lua task flag");
 
+            List<TaskEditorItemValue> requiredItems = GetItemsByKind(itemValues, "Required item", "Completion item", "Submit item");
+            if (requiredItems.Count > 0)
+            {
+                builder.AppendLine();
+                AppendSection(builder, "Required items");
+                foreach (TaskEditorItemValue item in requiredItems)
+                {
+                    AppendItem(builder, item.Kind, FormatTaskItemValue(item));
+                }
+            }
+
             List<TaskEditorFieldValue> rewards = GetRewardFields(fields);
-            if (rewards.Count > 0)
+            List<TaskEditorItemValue> rewardItems = GetItemsByKind(itemValues, "Success reward item", "Given item");
+            if (rewards.Count > 0 || rewardItems.Count > 0)
             {
                 builder.AppendLine();
                 AppendSection(builder, "Rewards");
+                foreach (TaskEditorItemValue item in rewardItems)
+                {
+                    AppendItem(builder, item.Kind, FormatTaskItemValue(item));
+                }
                 foreach (TaskEditorFieldValue reward in rewards)
                 {
                     AppendItem(builder, reward.DisplayName, FormatRewardValue(reward));
@@ -508,7 +768,7 @@ namespace FWEledit
             return builder.ToString();
         }
 
-        private void SetOverviewText(string text)
+        private void SetOverviewText(string text, List<TaskEditorItemValue> itemValues)
         {
             overviewBox.Clear();
             overviewBox.Text = text ?? string.Empty;
@@ -535,6 +795,7 @@ namespace FWEledit
                 "PLAYER-FACING SUMMARY",
                 "AVAILABILITY AND REPEAT RULES",
                 "GAME FLOW",
+                "REQUIRED ITEMS",
                 "REWARDS",
                 "DESCRIPTION",
                 "DIALOG PREVIEW",
@@ -554,7 +815,150 @@ namespace FWEledit
                 overviewBox.SelectionColor = GetOverviewSectionColor(sectionTitle);
             }
 
+            ApplyOverviewItemColors(itemValues);
+            InsertOverviewItemIcons(itemValues);
             overviewBox.Select(0, 0);
+        }
+
+        private void InsertOverviewItemIcons(List<TaskEditorItemValue> itemValues)
+        {
+            if (itemValues == null || itemValues.Count == 0 || string.IsNullOrEmpty(overviewBox.Text))
+            {
+                return;
+            }
+
+            List<OverviewItemIconInsertion> insertions = new List<OverviewItemIconInsertion>();
+            foreach (TaskEditorItemValue item in itemValues)
+            {
+                if (item == null)
+                {
+                    continue;
+                }
+
+                string itemText = FormatTaskItemValue(item);
+                if (string.IsNullOrWhiteSpace(itemText))
+                {
+                    continue;
+                }
+
+                int start = 0;
+                while (start < overviewBox.TextLength)
+                {
+                    int index = overviewBox.Text.IndexOf(itemText, start, StringComparison.Ordinal);
+                    if (index < 0)
+                    {
+                        break;
+                    }
+
+                    insertions.Add(new OverviewItemIconInsertion { Index = index, Item = item });
+                    start = index + itemText.Length;
+                }
+            }
+
+            foreach (OverviewItemIconInsertion insertion in insertions.OrderByDescending(value => value.Index))
+            {
+                string iconRtf = BuildRtfImage(ResolveTaskItemIcon(insertion.Item), 18, 18);
+                if (string.IsNullOrEmpty(iconRtf))
+                {
+                    continue;
+                }
+
+                overviewBox.Select(insertion.Index, 0);
+                overviewBox.SelectedText = " ";
+                overviewBox.Select(insertion.Index, 0);
+                overviewBox.SelectedRtf = iconRtf;
+            }
+        }
+
+        private sealed class OverviewItemIconInsertion
+        {
+            public int Index { get; set; }
+            public TaskEditorItemValue Item { get; set; }
+        }
+
+        private static string BuildRtfImage(Image image, int width, int height)
+        {
+            if (image == null || width <= 0 || height <= 0)
+            {
+                return string.Empty;
+            }
+
+            using (Bitmap bitmap = new Bitmap(width, height))
+            {
+                using (Graphics graphics = Graphics.FromImage(bitmap))
+                {
+                    graphics.Clear(Color.Transparent);
+                    graphics.DrawImage(image, new Rectangle(0, 0, width, height));
+                }
+
+                using (MemoryStream stream = new MemoryStream())
+                {
+                    bitmap.Save(stream, System.Drawing.Imaging.ImageFormat.Bmp);
+                    byte[] bytes = stream.ToArray();
+                    if (bytes.Length <= 14)
+                    {
+                        return string.Empty;
+                    }
+
+                    StringBuilder hex = new StringBuilder((bytes.Length - 14) * 2);
+                    for (int i = 14; i < bytes.Length; i++)
+                    {
+                        hex.Append(bytes[i].ToString("x2", CultureInfo.InvariantCulture));
+                    }
+
+                    int picwgoal = (int)Math.Round(width * 15D);
+                    int pichgoal = (int)Math.Round(height * 15D);
+                    return "{\\rtf1{\\pict\\dibitmap0\\picw"
+                        + width.ToString(CultureInfo.InvariantCulture)
+                        + "\\pich"
+                        + height.ToString(CultureInfo.InvariantCulture)
+                        + "\\picwgoal"
+                        + picwgoal.ToString(CultureInfo.InvariantCulture)
+                        + "\\pichgoal"
+                        + pichgoal.ToString(CultureInfo.InvariantCulture)
+                        + " "
+                        + hex
+                        + "}}";
+                }
+            }
+        }
+
+        private void ApplyOverviewItemColors(List<TaskEditorItemValue> itemValues)
+        {
+            if (itemValues == null || itemValues.Count == 0 || string.IsNullOrEmpty(overviewBox.Text))
+            {
+                return;
+            }
+
+            foreach (TaskEditorItemValue item in itemValues)
+            {
+                if (item == null)
+                {
+                    continue;
+                }
+
+                string itemText = FormatTaskItemValue(item);
+                if (string.IsNullOrWhiteSpace(itemText))
+                {
+                    continue;
+                }
+
+                int start = 0;
+                Color color = ResolveTaskItemTextColor(item, false);
+                while (start < overviewBox.TextLength)
+                {
+                    int index = overviewBox.Text.IndexOf(itemText, start, StringComparison.Ordinal);
+                    if (index < 0)
+                    {
+                        break;
+                    }
+
+                    overviewBox.Select(index, itemText.Length);
+                    overviewBox.SelectionFont = new Font("Segoe UI Semibold", 10F, FontStyle.Bold, GraphicsUnit.Point, 0);
+                    overviewBox.SelectionColor = color;
+                    start = index + itemText.Length;
+                }
+            }
         }
 
         private static Color GetOverviewSectionColor(string sectionTitle)
@@ -564,6 +968,7 @@ namespace FWEledit
                 case "PLAYER-FACING SUMMARY": return Color.FromArgb(111, 202, 255);
                 case "AVAILABILITY AND REPEAT RULES": return Color.FromArgb(125, 214, 157);
                 case "GAME FLOW": return Color.FromArgb(255, 196, 116);
+                case "REQUIRED ITEMS": return Color.FromArgb(255, 155, 116);
                 case "REWARDS": return Color.FromArgb(255, 213, 105);
                 case "DESCRIPTION": return Color.FromArgb(218, 188, 255);
                 case "DIALOG PREVIEW": return Color.FromArgb(255, 145, 165);
@@ -594,6 +999,50 @@ namespace FWEledit
             return parts.Count == 0 ? "No tracking flags enabled" : string.Join(", ", parts);
         }
 
+        private string BuildTaskTreeSummary(TaskEditorEntry entry)
+        {
+            if (entry == null)
+            {
+                return "No subtask relationship detected";
+            }
+
+            List<string> parts = new List<string>();
+            TaskEditorEntry parent = FindTaskById(entry.ParentId);
+            if (parent != null)
+            {
+                parts.Add("Child of " + parent.Id.ToString(CultureInfo.InvariantCulture) + " - " + parent.Name);
+            }
+            else if (entry.ParentId > 0)
+            {
+                parts.Add("Child of " + entry.ParentId.ToString(CultureInfo.InvariantCulture));
+            }
+
+            if (entry.HasChildren || entry.FirstChildId > 0)
+            {
+                TaskEditorEntry firstChild = FindTaskById(entry.FirstChildId);
+                if (firstChild != null)
+                {
+                    parts.Add("First child " + firstChild.Id.ToString(CultureInfo.InvariantCulture) + " - " + firstChild.Name);
+                }
+                else
+                {
+                    parts.Add("Has child tasks");
+                }
+            }
+
+            return parts.Count == 0 ? "No subtask relationship detected" : string.Join("; ", parts);
+        }
+
+        private TaskEditorEntry FindTaskById(int id)
+        {
+            if (id <= 0 || currentData == null || currentData.Entries == null)
+            {
+                return null;
+            }
+
+            return currentData.Entries.FirstOrDefault(entry => entry.Id == id);
+        }
+
         private List<TaskEditorFieldValue> GetRewardFields(List<TaskEditorFieldValue> fields)
         {
             if (fields == null)
@@ -604,7 +1053,41 @@ namespace FWEledit
             return fields
                 .Where(field => field != null)
                 .Where(field => string.Equals(field.Section, "Success reward", StringComparison.Ordinal))
+                .Where(field => !string.Equals(field.DisplayName, "Item reward groups", StringComparison.OrdinalIgnoreCase))
                 .ToList();
+        }
+
+        private static List<TaskEditorItemValue> GetItemsByKind(List<TaskEditorItemValue> items, params string[] kinds)
+        {
+            if (items == null || kinds == null || kinds.Length == 0)
+            {
+                return new List<TaskEditorItemValue>();
+            }
+
+            return items
+                .Where(item => item != null)
+                .Where(item => kinds.Any(kind => item.Kind != null && item.Kind.StartsWith(kind, StringComparison.OrdinalIgnoreCase)))
+                .ToList();
+        }
+
+        private static string FormatTaskItemValue(TaskEditorItemValue item)
+        {
+            if (item == null)
+            {
+                return string.Empty;
+            }
+
+            string name = string.IsNullOrWhiteSpace(item.Name)
+                ? "Item " + item.ItemId.ToString(CultureInfo.InvariantCulture)
+                : item.Name;
+            string flags = item.Bind ? ", bound" : string.Empty;
+            return item.Count.ToString(CultureInfo.InvariantCulture)
+                + "x "
+                + name
+                + " (ID "
+                + item.ItemId.ToString(CultureInfo.InvariantCulture)
+                + flags
+                + ")";
         }
 
         private string FormatRewardValue(TaskEditorFieldValue reward)
@@ -715,14 +1198,20 @@ namespace FWEledit
                 return string.Empty;
             }
 
-            return texts
-                .Where(text => text != null && !string.IsNullOrWhiteSpace(text.Text))
-                .Where(text => !string.Equals(text.Text, taskName, StringComparison.OrdinalIgnoreCase))
-                .Where(text => !string.Equals(text.Text, "RootNode", StringComparison.OrdinalIgnoreCase))
-                .Where(text => text.Text.Length >= 70)
-                .OrderByDescending(text => text.Text.Length)
-                .Select(text => text.Text)
-                .FirstOrDefault() ?? string.Empty;
+            int rootNodeOffset = GetRootNodeOffset(texts);
+            List<string> candidates = texts
+                .Where(text => IsPlayerFacingText(text, taskName))
+                .Where(text => rootNodeOffset < 0 || text.Offset < rootNodeOffset)
+                .Select(text => CleanTaskText(text.Text))
+                .Where(text => !string.IsNullOrWhiteSpace(text))
+                .Take(12)
+                .ToList();
+            if (candidates.Count == 0)
+            {
+                return string.Empty;
+            }
+
+            return JoinTextFragments(candidates);
         }
 
         private List<string> GetDialogPreview(List<TaskEditorTextValue> texts, string taskName, string description)
@@ -732,15 +1221,136 @@ namespace FWEledit
                 return new List<string>();
             }
 
+            int rootNodeOffset = GetRootNodeOffset(texts);
+            if (rootNodeOffset < 0)
+            {
+                return new List<string>();
+            }
+
             return texts
-                .Where(text => text != null && !string.IsNullOrWhiteSpace(text.Text))
-                .Select(text => text.Text.Trim())
+                .Where(text => IsPlayerFacingText(text, taskName))
+                .Where(text => text.Offset > rootNodeOffset)
+                .Select(text => CleanTaskText(text.Text))
                 .Where(text => !string.Equals(text, taskName, StringComparison.OrdinalIgnoreCase))
                 .Where(text => !string.Equals(text, "RootNode", StringComparison.OrdinalIgnoreCase))
                 .Where(text => !string.Equals(text, description, StringComparison.Ordinal))
                 .Where(text => text.Length >= 8)
                 .Take(6)
                 .ToList();
+        }
+
+        private static int GetRootNodeOffset(List<TaskEditorTextValue> texts)
+        {
+            TaskEditorTextValue root = (texts ?? new List<TaskEditorTextValue>())
+                .FirstOrDefault(text => text != null && string.Equals(text.Text, "RootNode", StringComparison.OrdinalIgnoreCase));
+            return root != null ? root.Offset : -1;
+        }
+
+        private static bool IsPlayerFacingText(TaskEditorTextValue text, string taskName)
+        {
+            if (text == null || string.IsNullOrWhiteSpace(text.Text))
+            {
+                return false;
+            }
+
+            string value = CleanTaskText(text.Text);
+            if ((value.Length < 4 && !IsShortCommandText(value))
+                || string.Equals(value, taskName, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(value, "RootNode", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(value, "pos:", StringComparison.OrdinalIgnoreCase)
+                || LooksLikeCoordinate(value)
+                || (!IsShortCommandText(value) && !HasReadableLatinText(value)))
+            {
+                return false;
+            }
+
+            return true;
+        }
+
+        private static bool IsShortCommandText(string value)
+        {
+            value = (value ?? string.Empty).Trim();
+            if (value.Length != 1)
+            {
+                return false;
+            }
+
+            char c = value[0];
+            return c == 'O';
+        }
+
+        private static string CleanTaskText(string text)
+        {
+            string value = (text ?? string.Empty).Trim();
+            while (value.Length >= 7 && value[0] == '^' && IsHexColor(value.Substring(1, 6)))
+            {
+                value = value.Substring(7).TrimStart();
+            }
+
+            return value;
+        }
+
+        private static bool IsHexColor(string value)
+        {
+            if (string.IsNullOrEmpty(value) || value.Length != 6)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < value.Length; i++)
+            {
+                if (!Uri.IsHexDigit(value[i]))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private static bool LooksLikeCoordinate(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return false;
+            }
+
+            int digits = value.Count(char.IsDigit);
+            int separators = value.Count(ch => ch == ',' || ch == '-' || ch == '.');
+            return digits >= 3 && separators >= 2 && digits + separators >= value.Length - 1;
+        }
+
+        private static bool HasReadableLatinText(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return false;
+            }
+
+            int latin = value.Count(ch => (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z'));
+            int suspiciousCjk = value.Count(ch => (ch >= 0x2E80 && ch <= 0x9FFF) || (ch >= 0xF900 && ch <= 0xFAFF));
+            return latin >= 2 && suspiciousCjk <= Math.Max(1, value.Length / 4);
+        }
+
+        private static string JoinTextFragments(List<string> fragments)
+        {
+            StringBuilder builder = new StringBuilder();
+            foreach (string fragment in fragments ?? new List<string>())
+            {
+                if (string.IsNullOrWhiteSpace(fragment))
+                {
+                    continue;
+                }
+
+                if (builder.Length > 0 && !builder.ToString().EndsWith(" ", StringComparison.Ordinal))
+                {
+                    builder.Append(' ');
+                }
+
+                builder.Append(fragment.Trim());
+            }
+
+            return builder.ToString().Trim();
         }
 
         private static string WrapLongText(string text)
@@ -780,6 +1390,7 @@ namespace FWEledit
         {
             summaryLabel.Text = string.Empty;
             overviewBox.Text = string.Empty;
+            itemGrid.Rows.Clear();
             generalGrid.Rows.Clear();
             fieldGrid.Rows.Clear();
             textGrid.Rows.Clear();
@@ -841,6 +1452,239 @@ namespace FWEledit
             row.DefaultCellStyle.BackColor = color;
         }
 
+        private void StyleItemRow(DataGridViewRow row, TaskEditorItemValue item)
+        {
+            if (row == null)
+            {
+                return;
+            }
+
+            string kind = item != null ? item.Kind : string.Empty;
+            string text = kind ?? string.Empty;
+            if (text.IndexOf("reward", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                row.DefaultCellStyle.BackColor = Color.FromArgb(42, 34, 19);
+            }
+            else if (text.IndexOf("required", StringComparison.OrdinalIgnoreCase) >= 0
+                || text.IndexOf("submit", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                row.DefaultCellStyle.BackColor = Color.FromArgb(42, 25, 20);
+            }
+            else
+            {
+                row.DefaultCellStyle.BackColor = Color.FromArgb(20, 29, 34);
+            }
+
+            if (row.Cells.Count > 3)
+            {
+                row.Cells[3].Style.ForeColor = ResolveTaskItemTextColor(item, false);
+                row.Cells[3].Style.SelectionForeColor = ResolveTaskItemTextColor(item, true);
+            }
+        }
+
+        private void ResolveTaskItems(List<TaskEditorItemValue> items)
+        {
+            if (items == null || items.Count == 0)
+            {
+                return;
+            }
+
+            EnsureItemOptions();
+            if (itemOptionsById == null)
+            {
+                return;
+            }
+
+            foreach (TaskEditorItemValue item in items)
+            {
+                ItemReferenceOption option;
+                if (item != null && itemOptionsById.TryGetValue(item.ItemId, out option) && option != null)
+                {
+                    item.Name = option.Name;
+                    item.NameForeColor = option.NameForeColor;
+                    item.IconKey = option.IconKey;
+                    item.Quality = option.Quality;
+                    item.AccentHex = option.AccentHex;
+                }
+            }
+        }
+
+        private List<TaskEditorItemValue> FilterResolvedTaskItems(List<TaskEditorItemValue> items)
+        {
+            if (items == null || items.Count == 0 || itemOptionsById == null)
+            {
+                return items ?? new List<TaskEditorItemValue>();
+            }
+
+            return items
+                .Where(item => item != null)
+                .Where(item => itemOptionsById.ContainsKey(item.ItemId))
+                .Where(item => !string.IsNullOrWhiteSpace(item.Name))
+                .ToList();
+        }
+
+        private void EnsureItemOptions()
+        {
+            if (itemOptionsById != null || sessionService == null || sessionService.ListCollection == null)
+            {
+                return;
+            }
+
+            List<ItemReferenceOption> options = itemReferenceService.BuildSearchableItemOptions(
+                sessionService.ListCollection,
+                sessionService.Database,
+                iconResolutionService);
+            itemOptionsById = options
+                .Where(option => option != null && option.Id > 0)
+                .GroupBy(option => option.Id)
+                .ToDictionary(group => group.Key, group => group
+                    .OrderByDescending(ScoreItemReferenceOption)
+                    .First());
+        }
+
+        private static int ScoreItemReferenceOption(ItemReferenceOption option)
+        {
+            if (option == null)
+            {
+                return 0;
+            }
+
+            int score = 0;
+            if (!string.IsNullOrWhiteSpace(option.IconKey)) score += 8;
+            if (option.NameForeColor.HasValue) score += 4;
+            if (!string.IsNullOrWhiteSpace(option.AccentHex)) score += 2;
+            if (option.Quality >= 0) score += 1;
+            return score;
+        }
+
+        private Image ResolveTaskItemIcon(TaskEditorItemValue item)
+        {
+            Bitmap baseIcon = Properties.Resources.NoIcon;
+            bool hasRealIcon = false;
+
+            if (item != null
+                && sessionService != null
+                && sessionService.Database != null
+                && !string.IsNullOrWhiteSpace(item.IconKey))
+            {
+                try
+                {
+                    if (sessionService.Database.ContainsKey(item.IconKey))
+                    {
+                        baseIcon = sessionService.Database.images(item.IconKey);
+                        hasRealIcon = true;
+                    }
+                }
+                catch
+                {
+                }
+            }
+
+            Color accentColor;
+            if (!hasRealIcon && TryParseAccentColor(item != null ? item.AccentHex : string.Empty, out accentColor))
+            {
+                return CreateTaskItemSwatch(accentColor);
+            }
+
+            return CreateTaskItemIconPreview(baseIcon, ResolveTaskItemTextColor(item, false));
+        }
+
+        private static Image CreateTaskItemIconPreview(Image icon, Color borderColor)
+        {
+            Bitmap preview = new Bitmap(32, 32);
+            using (Graphics graphics = Graphics.FromImage(preview))
+            {
+                graphics.Clear(Color.FromArgb(13, 16, 20));
+                if (icon != null)
+                {
+                    graphics.DrawImage(icon, new Rectangle(3, 3, 26, 26));
+                }
+
+                using (Pen border = new Pen(borderColor, 2F))
+                {
+                    graphics.DrawRectangle(border, 1, 1, 29, 29);
+                }
+            }
+
+            return preview;
+        }
+
+        private static Image CreateTaskItemSwatch(Color accentColor)
+        {
+            Bitmap preview = new Bitmap(32, 32);
+            using (Graphics graphics = Graphics.FromImage(preview))
+            {
+                using (SolidBrush brush = new SolidBrush(accentColor))
+                {
+                    graphics.FillRectangle(brush, new Rectangle(3, 3, 26, 26));
+                }
+
+                using (SolidBrush gloss = new SolidBrush(Color.FromArgb(54, Color.White)))
+                {
+                    graphics.FillRectangle(gloss, new Rectangle(3, 3, 26, 8));
+                }
+
+                using (Pen border = new Pen(accentColor, 2F))
+                {
+                    graphics.DrawRectangle(border, 1, 1, 29, 29);
+                }
+            }
+
+            return preview;
+        }
+
+        private static Color ResolveTaskItemTextColor(TaskEditorItemValue item, bool selected)
+        {
+            if (item != null && item.NameForeColor.HasValue)
+            {
+                return item.NameForeColor.Value;
+            }
+
+            Color accentColor;
+            if (TryParseAccentColor(item != null ? item.AccentHex : string.Empty, out accentColor))
+            {
+                return accentColor;
+            }
+
+            Color qualityColor;
+            int quality = item != null ? item.Quality : -1;
+            if (ItemQualityCatalog.TryGetColor(quality, out qualityColor))
+            {
+                if (quality == 1 && !selected)
+                {
+                    return Color.FromArgb(235, 238, 244);
+                }
+
+                return qualityColor;
+            }
+
+            return selected ? Color.White : Color.FromArgb(226, 231, 239);
+        }
+
+        private static bool TryParseAccentColor(string accentHex, out Color color)
+        {
+            color = Color.Empty;
+            if (string.IsNullOrWhiteSpace(accentHex))
+            {
+                return false;
+            }
+
+            string normalized = accentHex.Trim().TrimStart('#');
+            if (normalized.Length != 6)
+            {
+                return false;
+            }
+
+            int rgb;
+            if (!int.TryParse(normalized, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out rgb))
+            {
+                return false;
+            }
+
+            color = Color.FromArgb((rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
+            return true;
+        }
+
         private void openFolderButton_Click(object sender, EventArgs e)
         {
             using (FolderBrowserDialog dialog = new FolderBrowserDialog())
@@ -866,6 +1710,17 @@ namespace FWEledit
             }
         }
 
+        private void searchBox_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.KeyCode != Keys.Enter)
+            {
+                return;
+            }
+
+            e.SuppressKeyPress = true;
+            ApplyFilter(false);
+        }
+
         private void SetLoadingState(bool loading, string message)
         {
             isLoading = loading;
@@ -873,6 +1728,7 @@ namespace FWEledit
             openFolderButton.Enabled = !loading;
             reloadButton.Enabled = !loading;
             searchBox.Enabled = !loading;
+            searchButton.Enabled = !loading;
             taskGrid.Enabled = !loading;
             if (loading)
             {

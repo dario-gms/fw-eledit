@@ -10,11 +10,42 @@ namespace FWEledit
 {
     public sealed class TaskEditorFileService
     {
-        private const int FixedTaskDataSize = 0x0BCB;
+        private const int FixedTaskDataSize = 0x1007;
         private const int AwardDataSize = 0x0710;
+        private const int TaskTimeSize = 24;
+        private const int TaskNameTextBytes = 60;
+        private const int TaskMethodTextBytes = 128;
+        private const int ItemWantedSize = 52;
+        private const int MonsterWantedSize = 23;
+        private const int TeamMemberWantedSize = 37;
+        private const int MaxTimetableEntries = 12;
+        private const int MaxItemWantedEntries = 32;
+        private const int MaxItemSubmitEntries = 16;
+        private const int MaxMonsterWantedEntries = 6;
+        private const int MaxTeamMemberWantedEntries = 8;
+        private const int MaxAwardItemCandidates = 8;
+        private const int MaxAwardItems = 32;
+        private const int HasSignOffset = 0x0042;
+        private const int TimetableCountOffset = 0x0054;
+        private const int PremItemsCountOffset = 0x01DC;
+        private const int GivenItemsCountOffset = 0x01E9;
+        private const int PremTitleCountOffset = 0x0205;
+        private const int TeamworkOffset = 0x0A32;
+        private const int TeamMemberWantedCountOffset = 0x0A4E;
+        private const int MonsterWantedCountOffset = 0x0DEA;
+        private const int HasGatherMonsterOffset = 0x0DFE;
+        private const int ItemsWantedCountOffset = 0x0E11;
+        private const int HasFinishTaskTimesOffset = 0x0E9F;
+        private const int ItemsSubmitWantedCountOffset = 0x0EB5;
+        private const int WelcomeWordsCountOffset = 0x0EC9;
         private const int AwardSideOccupationExpOffset = 0x05B2;
         private const int AwardSideOccupationExpCount = 64;
         private const int AwardSideOccupationPointsOffset = 0x06B2;
+        private const int AwardItemCandidateCountOffset = 0x04AD;
+        private const int ParentTaskIdOffset = FixedTaskDataSize - 16;
+        private const int PrevSiblingTaskIdOffset = FixedTaskDataSize - 12;
+        private const int NextSiblingTaskIdOffset = FixedTaskDataSize - 8;
+        private const int FirstChildTaskIdOffset = FixedTaskDataSize - 4;
 
         public TaskEditorData LoadFromGameRoot(string gameRootPath)
         {
@@ -27,6 +58,7 @@ namespace FWEledit
                 LoadShard(files[i], i, data);
             }
 
+            SanitizeTaskHierarchy(data.Entries);
             data.Entries.Sort(CompareEntries);
             return data;
         }
@@ -121,11 +153,12 @@ namespace FWEledit
                     }
                 }
 
+                List<TaskEditorEntry> chunkEntries = new List<TaskEditorEntry>();
                 for (int i = 0; i < candidates.Count; i++)
                 {
                     TaskChunkCandidate candidate = candidates[i];
                     int candidateEnd = i < candidates.Count - 1 ? candidates[i + 1].Start : chunkBytes.Length;
-                    if (candidateEnd <= candidate.Start)
+                    if (candidateEnd <= candidate.Start || candidateEnd - candidate.Start < FixedTaskDataSize)
                     {
                         continue;
                     }
@@ -154,8 +187,12 @@ namespace FWEledit
                         Size = entryBytes.Length,
                         Bytes = entryBytes
                     };
+                    PopulateTaskHierarchy(entry);
+                    chunkEntries.Add(entry);
                     data.Entries.Add(entry);
                 }
+
+                PopulateChunkHierarchyFallback(chunkEntries);
             }
         }
 
@@ -237,10 +274,104 @@ namespace FWEledit
                 return true;
             }
 
+            int markerA = ReadInt32(chunkBytes, offset + 68);
+            int markerB = ReadInt32(chunkBytes, offset + 72);
             return ReadInt32(chunkBytes, offset + 64) == 0
-                && ReadInt32(chunkBytes, offset + 68) == 0
-                && ReadInt32(chunkBytes, offset + 72) == 67108864
-                && ReadInt32(chunkBytes, offset + 76) == 0;
+                && ReadInt32(chunkBytes, offset + 76) == 0
+                && ((markerA == 0 && IsTaskHeaderMarker(markerB)) || (IsTaskHeaderMarker(markerA) && markerB == 0));
+        }
+
+        private static bool IsTaskHeaderMarker(int value)
+        {
+            if (value <= 0)
+            {
+                return false;
+            }
+
+            return value == 0x04000000 || value == 0x07000000;
+        }
+
+        private static void PopulateTaskHierarchy(TaskEditorEntry entry)
+        {
+            if (entry == null || entry.Bytes == null)
+            {
+                return;
+            }
+
+            entry.ParentId = ReadUInt32AsInt(entry.Bytes, ParentTaskIdOffset);
+            entry.PrevSiblingId = ReadUInt32AsInt(entry.Bytes, PrevSiblingTaskIdOffset);
+            entry.NextSiblingId = ReadUInt32AsInt(entry.Bytes, NextSiblingTaskIdOffset);
+            entry.FirstChildId = ReadUInt32AsInt(entry.Bytes, FirstChildTaskIdOffset);
+            entry.HasChildren = entry.FirstChildId > 0;
+        }
+
+        private static void PopulateChunkHierarchyFallback(List<TaskEditorEntry> entries)
+        {
+            if (entries == null || entries.Count <= 1)
+            {
+                return;
+            }
+
+            TaskEditorEntry root = entries[0];
+            HashSet<int> chunkIds = new HashSet<int>(entries.Select(entry => entry.Id));
+            if (!chunkIds.Contains(root.FirstChildId))
+            {
+                root.FirstChildId = entries[1].Id;
+            }
+
+            root.HasChildren = true;
+            for (int i = 1; i < entries.Count; i++)
+            {
+                TaskEditorEntry entry = entries[i];
+                if (!chunkIds.Contains(entry.ParentId))
+                {
+                    entry.ParentId = root.Id;
+                }
+
+                entry.PrevSiblingId = i > 1 ? entries[i - 1].Id : 0;
+                entry.NextSiblingId = i < entries.Count - 1 ? entries[i + 1].Id : 0;
+            }
+        }
+
+        private static void SanitizeTaskHierarchy(TaskEditorEntry entry, ISet<int> knownTaskIds)
+        {
+            if (entry == null || knownTaskIds == null)
+            {
+                return;
+            }
+
+            if (!knownTaskIds.Contains(entry.ParentId))
+            {
+                entry.ParentId = 0;
+            }
+            if (!knownTaskIds.Contains(entry.PrevSiblingId))
+            {
+                entry.PrevSiblingId = 0;
+            }
+            if (!knownTaskIds.Contains(entry.NextSiblingId))
+            {
+                entry.NextSiblingId = 0;
+            }
+            if (!knownTaskIds.Contains(entry.FirstChildId))
+            {
+                entry.FirstChildId = 0;
+            }
+
+            entry.HasChildren = entry.FirstChildId > 0;
+        }
+
+        private static void SanitizeTaskHierarchy(List<TaskEditorEntry> entries)
+        {
+            if (entries == null || entries.Count == 0)
+            {
+                return;
+            }
+
+            HashSet<int> knownTaskIds = new HashSet<int>(entries.Select(entry => entry.Id));
+            foreach (TaskEditorEntry entry in entries)
+            {
+                SanitizeTaskHierarchy(entry, knownTaskIds);
+            }
         }
 
         private static List<TaskChunkCandidate> FilterCloseCandidates(List<TaskChunkCandidate> candidates)
@@ -304,8 +435,8 @@ namespace FWEledit
                     offset += 2;
                 }
 
-                string text = builder.ToString().Trim();
-                if (text.Length >= 3 && IsUsefulText(text))
+                string text = NormalizeExtractedText(builder.ToString());
+                if ((text.Length >= 3 || IsUsefulShortText(text)) && IsUsefulText(text))
                 {
                     values.Add(new TaskEditorTextValue { Offset = start, Text = text });
                 }
@@ -345,6 +476,119 @@ namespace FWEledit
                 }
             }
             return false;
+        }
+
+        private static bool IsUsefulShortText(string text)
+        {
+            text = (text ?? string.Empty).Trim();
+            return text.Length == 1 && IsAsciiLetterOrDigit(text[0]);
+        }
+
+        private static bool IsAsciiLetterOrDigit(char c)
+        {
+            return (c >= 'A' && c <= 'Z')
+                || (c >= 'a' && c <= 'z')
+                || (c >= '0' && c <= '9');
+        }
+
+        private static string NormalizeExtractedText(string text)
+        {
+            text = (text ?? string.Empty).Trim();
+            if (text.Length == 0)
+            {
+                return text;
+            }
+
+            string swapped = SwapUtf16Bytes(text).Trim();
+            if (text.Length < 3 && IsUsefulShortText(swapped))
+            {
+                return swapped;
+            }
+
+            if (ShouldUseByteSwappedText(text, swapped))
+            {
+                return swapped;
+            }
+
+            return text;
+        }
+
+        private static string SwapUtf16Bytes(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+            {
+                return string.Empty;
+            }
+
+            StringBuilder builder = new StringBuilder(text.Length);
+            for (int i = 0; i < text.Length; i++)
+            {
+                int code = text[i];
+                builder.Append((char)(((code & 0x00FF) << 8) | ((code & 0xFF00) >> 8)));
+            }
+
+            return builder.ToString();
+        }
+
+        private static bool ShouldUseByteSwappedText(string original, string swapped)
+        {
+            if (string.IsNullOrWhiteSpace(swapped) || !IsUsefulText(swapped))
+            {
+                return false;
+            }
+
+            int originalCjk = CountCjkCharacters(original);
+            int originalLatin = CountLatinCharacters(original);
+            int swappedLatin = CountLatinCharacters(swapped);
+            int swappedPrintable = CountSupportedCharacters(swapped);
+            return originalCjk >= Math.Max(2, original.Length / 2)
+                && swappedLatin > originalLatin
+                && swappedLatin >= Math.Max(2, swapped.Length / 3)
+                && swappedPrintable >= swapped.Length - 1;
+        }
+
+        private static int CountCjkCharacters(string text)
+        {
+            int count = 0;
+            for (int i = 0; i < (text ?? string.Empty).Length; i++)
+            {
+                char c = text[i];
+                if ((c >= 0x2E80 && c <= 0x9FFF) || (c >= 0xF900 && c <= 0xFAFF))
+                {
+                    count++;
+                }
+            }
+
+            return count;
+        }
+
+        private static int CountLatinCharacters(string text)
+        {
+            int count = 0;
+            for (int i = 0; i < (text ?? string.Empty).Length; i++)
+            {
+                char c = text[i];
+                if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'))
+                {
+                    count++;
+                }
+            }
+
+            return count;
+        }
+
+        private static int CountSupportedCharacters(string text)
+        {
+            int count = 0;
+            for (int i = 0; i < (text ?? string.Empty).Length; i++)
+            {
+                if (IsSupportedTextCharacter(text[i]))
+                {
+                    count++;
+                }
+            }
+
+            return count;
         }
 
         public static List<TaskEditorRawValue> BuildRawValues(byte[] bytes)
@@ -451,7 +695,11 @@ namespace FWEledit
                 new FieldSpec("General", "m_ulCameraMove", 0x0125, "uint"),
                 new FieldSpec("Message", "m_bSendMsg", 0x0129, "bool"),
                 new FieldSpec("Message", "m_nMsgChannel", 0x012A, "int"),
-                new FieldSpec("Terminate", "m_ulTerminateCount", 0x012E, "uint")
+                new FieldSpec("Terminate", "m_ulTerminateCount", 0x012E, "uint"),
+                new FieldSpec("Hierarchy", "m_ulParent", ParentTaskIdOffset, "uint"),
+                new FieldSpec("Hierarchy", "m_ulPrevSibling", PrevSiblingTaskIdOffset, "uint"),
+                new FieldSpec("Hierarchy", "m_ulNextSibling", NextSiblingTaskIdOffset, "uint"),
+                new FieldSpec("Hierarchy", "m_ulFirstChild", FirstChildTaskIdOffset, "uint")
             };
 
             foreach (FieldSpec spec in specs)
@@ -475,9 +723,247 @@ namespace FWEledit
                 });
             }
 
-            AddAwardFields(bytes, values, "Success reward", FixedTaskDataSize, "m_Award_S");
+            TaskEditorLayout layout;
+            if (TryBuildTaskLayout(bytes, out layout))
+            {
+                AddAwardFields(bytes, values, "Success reward", layout.SuccessAwardOffset, "m_Award_S");
+                AddAwardFields(bytes, values, "Fail reward", layout.FailAwardOffset, "m_Award_F");
+            }
 
             return values;
+        }
+
+        public static List<TaskEditorItemValue> BuildItemValues(byte[] bytes)
+        {
+            List<TaskEditorItemValue> values = new List<TaskEditorItemValue>();
+            TaskEditorLayout layout;
+            if (!TryBuildTaskLayout(bytes, out layout))
+            {
+                return values;
+            }
+
+            AddItemArray(bytes, values, "Required item", "m_PremItems", layout.PremItemsOffset, layout.PremItemsCount);
+            AddItemArray(bytes, values, "Given item", "m_GivenItems", layout.GivenItemsOffset, layout.GivenItemsCount);
+            AddItemArray(bytes, values, "Completion item", "m_ItemsWanted", layout.ItemsWantedOffset, layout.ItemsWantedCount);
+            AddItemArray(bytes, values, "Submit item", "m_ItemsSubmitWanted", layout.ItemsSubmitWantedOffset, layout.ItemsSubmitWantedCount);
+            AddAwardItemValues(bytes, values, "Success reward item", "m_Award_S", layout.SuccessAwardOffset);
+            AddAwardItemValues(bytes, values, "Fail reward item", "m_Award_F", layout.FailAwardOffset);
+            return values
+                .Where(value => value != null && value.ItemId > 0 && value.Count > 0)
+                .ToList();
+        }
+
+        private static bool TryBuildTaskLayout(byte[] bytes, out TaskEditorLayout layout)
+        {
+            layout = null;
+            if (bytes == null || bytes.Length < FixedTaskDataSize)
+            {
+                return false;
+            }
+
+            int timetableCount = ClampCount(ReadUInt32AsInt(bytes, TimetableCountOffset), MaxTimetableEntries);
+            int premItemsCount = ClampCount(ReadUInt32AsInt(bytes, PremItemsCountOffset), MaxItemWantedEntries);
+            int givenItemsCount = ClampCount(ReadUInt32AsInt(bytes, GivenItemsCountOffset), MaxItemWantedEntries);
+            int premTitleCount = ClampCount(ReadUInt32AsInt(bytes, PremTitleCountOffset), MaxItemWantedEntries);
+            int teamMemberCount = ClampCount(ReadUInt32AsInt(bytes, TeamMemberWantedCountOffset), MaxTeamMemberWantedEntries);
+            int monsterCount = ClampCount(ReadUInt32AsInt(bytes, MonsterWantedCountOffset), MaxMonsterWantedEntries);
+            int itemsWantedCount = ClampCount(ReadUInt32AsInt(bytes, ItemsWantedCountOffset), MaxItemWantedEntries);
+            int itemsSubmitWantedCount = ClampCount(ReadUInt32AsInt(bytes, ItemsSubmitWantedCountOffset), MaxItemSubmitEntries);
+            int welcomeWordsCount = ClampCount(ReadUInt32AsInt(bytes, WelcomeWordsCountOffset), 65535);
+
+            int cursor = FixedTaskDataSize;
+            if (ReadBool(bytes, HasSignOffset))
+            {
+                cursor += TaskNameTextBytes;
+            }
+
+            cursor += timetableCount * TaskTimeSize * 2;
+
+            int premItemsOffset = cursor;
+            cursor += premItemsCount * ItemWantedSize;
+
+            int premTitlesOffset = cursor;
+            cursor += premTitleCount * 2;
+
+            int givenItemsOffset = cursor;
+            cursor += givenItemsCount * ItemWantedSize;
+
+            int teamMemberOffset = cursor;
+            if (ReadBool(bytes, TeamworkOffset))
+            {
+                cursor += teamMemberCount * TeamMemberWantedSize;
+            }
+
+            int monsterWantedOffset = cursor;
+            cursor += monsterCount * MonsterWantedSize;
+
+            if (ReadBool(bytes, HasGatherMonsterOffset))
+            {
+                cursor += TaskNameTextBytes;
+            }
+
+            if (ReadBool(bytes, HasFinishTaskTimesOffset))
+            {
+                cursor += TaskMethodTextBytes;
+            }
+
+            int itemsWantedOffset = cursor;
+            cursor += itemsWantedCount * ItemWantedSize;
+
+            cursor += welcomeWordsCount * 2;
+
+            int itemsSubmitWantedOffset = cursor;
+            cursor += itemsSubmitWantedCount * ItemWantedSize;
+
+            if (cursor < FixedTaskDataSize || cursor + AwardDataSize * 2 > bytes.Length)
+            {
+                return false;
+            }
+
+            int successAwardOffset = cursor;
+            int afterSuccessAward = SkipAwardData(bytes, successAwardOffset);
+            if (afterSuccessAward <= successAwardOffset)
+            {
+                return false;
+            }
+
+            int failAwardOffset = afterSuccessAward;
+            int afterFailAward = SkipAwardData(bytes, failAwardOffset);
+            if (afterFailAward <= failAwardOffset)
+            {
+                return false;
+            }
+
+            layout = new TaskEditorLayout
+            {
+                PremItemsOffset = premItemsOffset,
+                PremItemsCount = premItemsCount,
+                PremTitlesOffset = premTitlesOffset,
+                GivenItemsOffset = givenItemsOffset,
+                GivenItemsCount = givenItemsCount,
+                TeamMemberOffset = teamMemberOffset,
+                MonsterWantedOffset = monsterWantedOffset,
+                ItemsWantedOffset = itemsWantedOffset,
+                ItemsWantedCount = itemsWantedCount,
+                ItemsSubmitWantedOffset = itemsSubmitWantedOffset,
+                ItemsSubmitWantedCount = itemsSubmitWantedCount,
+                SuccessAwardOffset = successAwardOffset,
+                FailAwardOffset = failAwardOffset,
+                AfterFailAwardOffset = afterFailAward
+            };
+            return true;
+        }
+
+        private static int SkipAwardData(byte[] bytes, int awardOffset)
+        {
+            if (bytes == null || awardOffset < 0 || awardOffset + AwardDataSize > bytes.Length)
+            {
+                return -1;
+            }
+
+            int cursor = awardOffset + AwardDataSize;
+            int candidateCount = ClampCount(ReadUInt32AsInt(bytes, awardOffset + AwardItemCandidateCountOffset), MaxAwardItemCandidates);
+            for (int i = 0; i < candidateCount; i++)
+            {
+                if (cursor + 5 > bytes.Length)
+                {
+                    return -1;
+                }
+
+                cursor++;
+                int itemCount = ClampCount(ReadUInt32AsInt(bytes, cursor), MaxAwardItems);
+                cursor += 4 + itemCount * ItemWantedSize;
+            }
+
+            return cursor <= bytes.Length ? cursor : -1;
+        }
+
+        private static void AddItemArray(byte[] bytes, List<TaskEditorItemValue> values, string kind, string source, int offset, int count)
+        {
+            if (bytes == null || values == null || count <= 0 || offset < 0 || offset + count * ItemWantedSize > bytes.Length)
+            {
+                return;
+            }
+
+            for (int i = 0; i < count; i++)
+            {
+                int itemOffset = offset + i * ItemWantedSize;
+                TaskEditorItemValue item;
+                if (TryReadItemWanted(bytes, itemOffset, kind, source + "[" + i.ToString(CultureInfo.InvariantCulture) + "]", out item))
+                {
+                    values.Add(item);
+                }
+            }
+        }
+
+        private static void AddAwardItemValues(byte[] bytes, List<TaskEditorItemValue> values, string kind, string source, int awardOffset)
+        {
+            if (bytes == null || values == null || awardOffset < 0 || awardOffset + AwardDataSize > bytes.Length)
+            {
+                return;
+            }
+
+            int cursor = awardOffset + AwardDataSize;
+            int candidateCount = ClampCount(ReadUInt32AsInt(bytes, awardOffset + AwardItemCandidateCountOffset), MaxAwardItemCandidates);
+            for (int group = 0; group < candidateCount; group++)
+            {
+                if (cursor + 5 > bytes.Length)
+                {
+                    return;
+                }
+
+                bool randomChoose = bytes[cursor] != 0;
+                cursor++;
+                int itemCount = ClampCount(ReadUInt32AsInt(bytes, cursor), MaxAwardItems);
+                cursor += 4;
+                for (int i = 0; i < itemCount; i++)
+                {
+                    int itemOffset = cursor + i * ItemWantedSize;
+                    string itemSource = source
+                        + ".m_CandItems["
+                        + group.ToString(CultureInfo.InvariantCulture)
+                        + "].m_AwardItems["
+                        + i.ToString(CultureInfo.InvariantCulture)
+                        + "]";
+                    TaskEditorItemValue item;
+                    if (TryReadItemWanted(bytes, itemOffset, kind + (randomChoose ? " (random group)" : string.Empty), itemSource, out item))
+                    {
+                        values.Add(item);
+                    }
+                }
+
+                cursor += itemCount * ItemWantedSize;
+            }
+        }
+
+        private static bool TryReadItemWanted(byte[] bytes, int offset, string kind, string source, out TaskEditorItemValue item)
+        {
+            item = null;
+            if (bytes == null || offset < 0 || offset + ItemWantedSize > bytes.Length)
+            {
+                return false;
+            }
+
+            int itemId = ReadUInt32AsInt(bytes, offset);
+            int count = ReadUInt32AsInt(bytes, offset + 5);
+            if (itemId <= 0 || count <= 0)
+            {
+                return false;
+            }
+
+            item = new TaskEditorItemValue
+            {
+                Kind = kind,
+                Source = source,
+                Offset = offset,
+                HexOffset = "0x" + offset.ToString("X4", CultureInfo.InvariantCulture),
+                ItemId = itemId,
+                Count = count,
+                CommonItem = bytes[offset + 4] != 0,
+                Bind = bytes[offset + 19] != 0,
+                Quality = -1
+            };
+            return true;
         }
 
         private static void AddAwardFields(byte[] bytes, List<TaskEditorFieldValue> values, string section, int awardStartOffset, string sourcePrefix)
@@ -837,6 +1323,10 @@ namespace FWEledit
                 case "m_bSendMsg": return "Sends message";
                 case "m_nMsgChannel": return "Message channel";
                 case "m_ulTerminateCount": return "Terminate count";
+                case "m_ulParent": return "Parent task";
+                case "m_ulPrevSibling": return "Previous sibling";
+                case "m_ulNextSibling": return "Next sibling";
+                case "m_ulFirstChild": return "First child";
                 default: return MakeDisplayName(fieldName);
             }
         }
@@ -886,6 +1376,10 @@ namespace FWEledit
                 case "m_bPursueTradeTask": return "Connects the task to trade-route gameplay.";
                 case "m_bSendMsg": return "Sends a configured message when the task logic fires.";
                 case "m_ulTerminateCount": return "Number of termination records stored after the fixed header.";
+                case "m_ulParent": return "Task ID of the parent task when the task is part of a subtask tree.";
+                case "m_ulPrevSibling": return "Task ID of the previous subtask at the same tree level.";
+                case "m_ulNextSibling": return "Task ID of the next subtask at the same tree level.";
+                case "m_ulFirstChild": return "Task ID of the first subtask under this task.";
                 default: return string.Empty;
             }
         }
@@ -985,6 +1479,32 @@ namespace FWEledit
                 : 0;
         }
 
+        private static int ReadUInt32AsInt(byte[] bytes, int offset)
+        {
+            if (bytes == null || offset < 0 || offset + 4 > bytes.Length)
+            {
+                return 0;
+            }
+
+            uint value = BitConverter.ToUInt32(bytes, offset);
+            return value <= int.MaxValue ? (int)value : 0;
+        }
+
+        private static bool ReadBool(byte[] bytes, int offset)
+        {
+            return bytes != null && offset >= 0 && offset < bytes.Length && bytes[offset] != 0;
+        }
+
+        private static int ClampCount(int count, int max)
+        {
+            if (count <= 0)
+            {
+                return 0;
+            }
+
+            return count > max ? max : count;
+        }
+
         private static int CompareEntries(TaskEditorEntry left, TaskEditorEntry right)
         {
             if (left == null && right == null)
@@ -1020,6 +1540,24 @@ namespace FWEledit
             public int Start { get; set; }
             public int Id { get; set; }
             public string Name { get; set; }
+        }
+
+        private sealed class TaskEditorLayout
+        {
+            public int PremItemsOffset { get; set; }
+            public int PremItemsCount { get; set; }
+            public int PremTitlesOffset { get; set; }
+            public int GivenItemsOffset { get; set; }
+            public int GivenItemsCount { get; set; }
+            public int TeamMemberOffset { get; set; }
+            public int MonsterWantedOffset { get; set; }
+            public int ItemsWantedOffset { get; set; }
+            public int ItemsWantedCount { get; set; }
+            public int ItemsSubmitWantedOffset { get; set; }
+            public int ItemsSubmitWantedCount { get; set; }
+            public int SuccessAwardOffset { get; set; }
+            public int FailAwardOffset { get; set; }
+            public int AfterFailAwardOffset { get; set; }
         }
 
         private sealed class FieldSpec

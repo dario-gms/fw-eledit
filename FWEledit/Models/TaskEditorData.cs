@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Drawing;
 
 namespace FWEledit
 {
@@ -37,6 +38,12 @@ namespace FWEledit
         public int AbsoluteOffset { get; set; }
         public int Size { get; set; }
         public byte[] Bytes { get; set; }
+        public int ParentId { get; set; }
+        public int PrevSiblingId { get; set; }
+        public int NextSiblingId { get; set; }
+        public int FirstChildId { get; set; }
+        public bool HasChildren { get; set; }
+        public int TreeDepth { get; set; }
         public List<TaskEditorTextValue> Texts { get; private set; }
         public List<TaskEditorRawValue> RawValues { get; private set; }
 
@@ -64,6 +71,23 @@ namespace FWEledit
         public string HexOffset { get; set; }
         public string Type { get; set; }
         public string Value { get; set; }
+    }
+
+    public sealed class TaskEditorItemValue
+    {
+        public string Kind { get; set; }
+        public string Source { get; set; }
+        public int Offset { get; set; }
+        public string HexOffset { get; set; }
+        public int ItemId { get; set; }
+        public int Count { get; set; }
+        public bool CommonItem { get; set; }
+        public bool Bind { get; set; }
+        public string Name { get; set; }
+        public Color? NameForeColor { get; set; }
+        public string IconKey { get; set; }
+        public int Quality { get; set; }
+        public string AccentHex { get; set; }
     }
 
     public sealed class TaskEditorRawValue
