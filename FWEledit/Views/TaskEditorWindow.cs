@@ -735,8 +735,8 @@ namespace FWEledit
             {
                 builder.AppendLine();
                 AppendSection(builder, "Rewards");
-                AppendItem(builder, "Success reward mode", DescribeAwardType(GetKnownFieldValue(fields, "m_enumAwardType_S")));
-                AppendItem(builder, "Failure reward mode", DescribeAwardType(GetKnownFieldValue(fields, "m_enumAwardType_F")));
+                AppendItem(builder, "Success reward mode", DescribeAwardType(GetKnownFieldValue(fields, "m_ulAwardType_S")));
+                AppendItem(builder, "Failure reward mode", DescribeAwardType(GetKnownFieldValue(fields, "m_ulAwardType_F")));
                 foreach (TaskEditorItemValue item in rewardItems)
                 {
                     AppendItem(builder, item.Kind, FormatTaskItemValue(item));
