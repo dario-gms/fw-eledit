@@ -16,6 +16,7 @@ namespace FWEledit
         private const int TaskNameTextBytes = 60;
         private const int TaskMethodTextBytes = 128;
         private const int ItemWantedSize = 52;
+        private const int AwardItemSize = 53;
         private const int MonsterWantedSize = 23;
         private const int TeamMemberWantedSize = 37;
         private const int MaxTimetableEntries = 12;
@@ -979,7 +980,7 @@ namespace FWEledit
 
                 cursor++;
                 int itemCount = ClampCount(ReadUInt32AsInt(bytes, cursor), MaxAwardItems);
-                cursor += 4 + itemCount * ItemWantedSize;
+                cursor += 4 + itemCount * AwardItemSize;
             }
 
             return cursor <= bytes.Length ? cursor : -1;
@@ -1025,7 +1026,7 @@ namespace FWEledit
                 cursor += 4;
                 for (int i = 0; i < itemCount; i++)
                 {
-                    int itemOffset = cursor + i * ItemWantedSize;
+                    int itemOffset = cursor + i * AwardItemSize;
                     string itemSource = source
                         + ".m_CandItems["
                         + group.ToString(CultureInfo.InvariantCulture)
@@ -1039,7 +1040,7 @@ namespace FWEledit
                     }
                 }
 
-                cursor += itemCount * ItemWantedSize;
+                cursor += itemCount * AwardItemSize;
             }
         }
 
