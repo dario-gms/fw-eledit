@@ -22,6 +22,7 @@ namespace FWEledit
         private TaskEditorData currentData;
         private List<TaskEditorEntry> filteredEntries = new List<TaskEditorEntry>();
         private Dictionary<int, ItemReferenceOption> itemOptionsById;
+        private Dictionary<int, long> levelExperienceByLevel;
         private int loadRequestId;
         private bool isLoading;
 
@@ -619,8 +620,10 @@ namespace FWEledit
             List<TaskEditorFieldValue> knownFields = TaskEditorFileService.BuildKnownFields(entry.Bytes);
             List<TaskEditorFieldValue> allMappedFields = TaskEditorFileService.BuildAllMappedFields(entry.Bytes);
             List<TaskEditorItemValue> itemValues = TaskEditorFileService.BuildItemValues(entry.Bytes);
+            List<TaskEditorMonsterValue> monsterValues = TaskEditorFileService.BuildMonsterWantedValues(entry.Bytes);
             ResolveTaskItems(itemValues);
             itemValues = FilterResolvedTaskItems(itemValues);
+            ResolveTaskMonsters(monsterValues);
 
             summaryLabel.Text = string.Format(
                 CultureInfo.InvariantCulture,
@@ -650,7 +653,7 @@ namespace FWEledit
             AddGeneral("Detected task items", itemValues.Count.ToString(CultureInfo.InvariantCulture));
 
             SetOverviewCards(entry, knownFields, texts, itemValues);
-            SetQuestPreview(entry, knownFields, texts, itemValues);
+            SetQuestPreview(entry, knownFields, texts, itemValues, monsterValues);
 
             foreach (TaskEditorFieldValue field in knownFields)
             {
@@ -760,7 +763,7 @@ namespace FWEledit
                 }
                 foreach (TaskEditorFieldValue reward in rewards)
                 {
-                    AppendItem(builder, reward.DisplayName, FormatRewardValue(reward));
+                    AppendItem(builder, reward.DisplayName, FormatRewardValue(reward, fields));
                 }
             }
 
@@ -871,7 +874,7 @@ namespace FWEledit
                 }
                 foreach (TaskEditorFieldValue reward in rewards)
                 {
-                    rows.Add(new OverviewRow(reward.DisplayName, FormatRewardValue(reward)));
+                    rows.Add(new OverviewRow(reward.DisplayName, FormatRewardValue(reward, fields)));
                 }
                 AddOverviewCard("Rewards", GetOverviewSectionColor("REWARDS"), rows);
             }
@@ -1112,7 +1115,7 @@ namespace FWEledit
             public TaskEditorItemValue Item { get; private set; }
         }
 
-        private void SetQuestPreview(TaskEditorEntry entry, List<TaskEditorFieldValue> fields, List<TaskEditorTextValue> texts, List<TaskEditorItemValue> itemValues)
+        private void SetQuestPreview(TaskEditorEntry entry, List<TaskEditorFieldValue> fields, List<TaskEditorTextValue> texts, List<TaskEditorItemValue> itemValues, List<TaskEditorMonsterValue> monsterValues)
         {
             if (questPreviewPanel == null)
             {
@@ -1139,7 +1142,7 @@ namespace FWEledit
             title.BringToFront();
             y = title.Bottom + 4;
 
-            string objective = BuildQuestPreviewObjective(entry, fields);
+            string objective = BuildQuestPreviewObjective(entry, fields, monsterValues);
             if (!string.IsNullOrWhiteSpace(objective))
             {
                 Label objectiveLabel = CreateQuestPreviewLabel(objective, 9F, FontStyle.Regular, Color.FromArgb(60, 34, 20), ContentAlignment.TopLeft);
@@ -1165,12 +1168,16 @@ namespace FWEledit
             List<TaskEditorItemValue> rewardItems = GetItemsByKind(itemValues, "Success reward item", "Given item");
             if (rewards.Count > 0 || rewardItems.Count > 0)
             {
-                Label rewardText = CreateQuestPreviewLabel(BuildQuestPreviewRewardText(rewards), 9F, FontStyle.Regular, Color.FromArgb(30, 73, 66), ContentAlignment.TopLeft);
-                rewardText.Location = new Point(18, y);
-                rewardText.MaximumSize = new Size(card.Width - 36, 0);
-                rewardText.AutoSize = true;
-                card.Controls.Add(rewardText);
-                y = rewardText.Bottom + 6;
+                string rewardSummary = BuildQuestPreviewRewardText(rewards, fields);
+                if (!string.IsNullOrWhiteSpace(rewardSummary))
+                {
+                    Label rewardText = CreateQuestPreviewLabel(rewardSummary, 9F, FontStyle.Regular, Color.FromArgb(30, 73, 66), ContentAlignment.TopLeft);
+                    rewardText.Location = new Point(18, y);
+                    rewardText.MaximumSize = new Size(card.Width - 36, 0);
+                    rewardText.AutoSize = true;
+                    card.Controls.Add(rewardText);
+                    y = rewardText.Bottom + 6;
+                }
 
                 if (rewardItems.Count > 0)
                 {
@@ -1217,7 +1224,7 @@ namespace FWEledit
             AdjustQuestPreviewWidth();
         }
 
-        private string BuildQuestPreviewObjective(TaskEditorEntry entry, List<TaskEditorFieldValue> fields)
+        private string BuildQuestPreviewObjective(TaskEditorEntry entry, List<TaskEditorFieldValue> fields, List<TaskEditorMonsterValue> monsterValues)
         {
             string taskName = entry != null ? entry.Name : string.Empty;
             if (string.IsNullOrWhiteSpace(taskName))
@@ -1230,7 +1237,9 @@ namespace FWEledit
             {
                 switch (method)
                 {
-                    case 1: return "Defeat targets: " + taskName;
+                    case 1:
+                        string monsterObjective = BuildMonsterObjective(monsterValues);
+                        return string.IsNullOrWhiteSpace(monsterObjective) ? "Defeat targets: " + taskName : monsterObjective;
                     case 2: return "Collect items: " + taskName;
                     case 3: return "Complete quest: " + taskName;
                     case 17: return "Hand in items: " + taskName;
@@ -1238,6 +1247,30 @@ namespace FWEledit
             }
 
             return "Complete quest: " + taskName;
+        }
+
+        private static string BuildMonsterObjective(List<TaskEditorMonsterValue> monsterValues)
+        {
+            if (monsterValues == null || monsterValues.Count == 0)
+            {
+                return string.Empty;
+            }
+
+            List<string> lines = new List<string>();
+            foreach (TaskEditorMonsterValue monster in monsterValues)
+            {
+                if (monster == null || monster.MonsterId <= 0 || monster.Count <= 0)
+                {
+                    continue;
+                }
+
+                string name = string.IsNullOrWhiteSpace(monster.Name)
+                    ? "Monster " + monster.MonsterId.ToString(CultureInfo.InvariantCulture)
+                    : monster.Name;
+                lines.Add(name + "(0/" + monster.Count.ToString(CultureInfo.InvariantCulture) + ")");
+            }
+
+            return string.Join(Environment.NewLine, lines.ToArray());
         }
 
         private static string GetNpcDisplayName(string formattedNpc)
@@ -1251,7 +1284,7 @@ namespace FWEledit
             return separator >= 0 ? formattedNpc.Substring(separator + 3) : formattedNpc;
         }
 
-        private string BuildQuestPreviewRewardText(List<TaskEditorFieldValue> rewards)
+        private string BuildQuestPreviewRewardText(List<TaskEditorFieldValue> rewards, List<TaskEditorFieldValue> allFields)
         {
             List<string> lines = new List<string>();
             foreach (TaskEditorFieldValue reward in rewards ?? new List<TaskEditorFieldValue>())
@@ -1260,14 +1293,22 @@ namespace FWEledit
                 {
                     continue;
                 }
+                if (IsAuxiliaryRewardField(reward))
+                {
+                    continue;
+                }
 
                 if (reward.DisplayName.IndexOf("EXP", StringComparison.OrdinalIgnoreCase) >= 0)
                 {
-                    lines.Add("Exp: " + reward.Value);
+                    lines.Add("Exp: " + FormatExperienceReward(reward, allFields));
                 }
                 else if (reward.DisplayName.IndexOf("Gold", StringComparison.OrdinalIgnoreCase) >= 0)
                 {
-                    lines.Add("Gold: " + reward.Value);
+                    lines.Add("Money: " + FormatMoneyReward(reward.Value));
+                }
+                else if (reward.DisplayName.IndexOf("Soul power", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    lines.Add("Soul Power: " + reward.Value);
                 }
                 else if (IsPointRewardName(reward.DisplayName))
                 {
@@ -1524,6 +1565,7 @@ namespace FWEledit
                 .Where(field => field != null)
                 .Where(field => string.Equals(field.Section, "Success reward", StringComparison.Ordinal))
                 .Where(field => !string.Equals(field.DisplayName, "Item reward groups", StringComparison.OrdinalIgnoreCase))
+                .Where(field => !IsAuxiliaryRewardField(field))
                 .ToList();
         }
 
@@ -1562,9 +1604,19 @@ namespace FWEledit
 
         private string FormatRewardValue(TaskEditorFieldValue reward)
         {
+            return FormatRewardValue(reward, null);
+        }
+
+        private string FormatRewardValue(TaskEditorFieldValue reward, List<TaskEditorFieldValue> allFields)
+        {
             if (reward == null)
             {
                 return string.Empty;
+            }
+
+            if (reward.DisplayName.IndexOf("EXP", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return FormatExperienceReward(reward, allFields);
             }
 
             if (string.Equals(reward.DisplayName, "Item reward groups", StringComparison.OrdinalIgnoreCase))
@@ -1578,6 +1630,260 @@ namespace FWEledit
             }
 
             return reward.Value;
+        }
+
+        private string FormatExperienceReward(TaskEditorFieldValue reward, List<TaskEditorFieldValue> allFields)
+        {
+            if (reward == null)
+            {
+                return string.Empty;
+            }
+
+            long rawValue;
+            if (!long.TryParse(reward.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out rawValue))
+            {
+                return reward.Value ?? string.Empty;
+            }
+
+            int reviseLevel;
+            if (IsYesValue(GetSiblingFieldValue(allFields, reward, "m_bExpRevise"))
+                && int.TryParse(GetSiblingFieldValue(allFields, reward, "m_lExpReviseLev"), NumberStyles.Integer, CultureInfo.InvariantCulture, out reviseLevel)
+                && TryGetLevelExperience(reviseLevel, out long levelExperience))
+            {
+                long adjusted = rawValue * levelExperience / 10000L;
+                return adjusted.ToString("N0", CultureInfo.InvariantCulture);
+            }
+
+            return rawValue.ToString("N0", CultureInfo.InvariantCulture);
+        }
+
+        private static string GetSiblingFieldValue(List<TaskEditorFieldValue> fields, TaskEditorFieldValue origin, string siblingName)
+        {
+            if (fields == null || origin == null || string.IsNullOrWhiteSpace(origin.Field) || string.IsNullOrWhiteSpace(siblingName))
+            {
+                return string.Empty;
+            }
+
+            int separator = origin.Field.LastIndexOf('.');
+            string fieldName = separator >= 0 ? origin.Field.Substring(0, separator + 1) + siblingName : siblingName;
+            TaskEditorFieldValue sibling = fields.FirstOrDefault(field => string.Equals(field.Field, fieldName, StringComparison.Ordinal));
+            return sibling != null ? sibling.Value : string.Empty;
+        }
+
+        private static bool IsYesValue(string value)
+        {
+            return string.Equals(value, "Yes", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private bool TryGetLevelExperience(int level, out long experience)
+        {
+            if (TryGetSessionLevelExperience(level, out experience))
+            {
+                return true;
+            }
+
+            return TryGetKnownLevelExperience(level, out experience);
+        }
+
+        private bool TryGetSessionLevelExperience(int level, out long experience)
+        {
+            EnsureLevelExperienceCache();
+            if (levelExperienceByLevel != null && levelExperienceByLevel.TryGetValue(level, out experience))
+            {
+                return true;
+            }
+
+            experience = 0L;
+            return false;
+        }
+
+        private void EnsureLevelExperienceCache()
+        {
+            if (levelExperienceByLevel != null)
+            {
+                return;
+            }
+
+            levelExperienceByLevel = new Dictionary<int, long>();
+            if (sessionService == null || sessionService.ListCollection == null || sessionService.ListCollection.Lists == null)
+            {
+                return;
+            }
+
+            for (int listIndex = 0; listIndex < sessionService.ListCollection.Lists.Length; listIndex++)
+            {
+                eList list = sessionService.ListCollection.Lists[listIndex];
+                if (list == null
+                    || eListCollection.IsRawTailList(list)
+                    || list.elementFields == null
+                    || list.elementValues == null)
+                {
+                    continue;
+                }
+
+                string listName = list.listName ?? string.Empty;
+                bool likelyLevelExpList = listName.IndexOf("LEVEL", StringComparison.OrdinalIgnoreCase) >= 0
+                    && listName.IndexOf("EXP", StringComparison.OrdinalIgnoreCase) >= 0;
+                if (!likelyLevelExpList)
+                {
+                    continue;
+                }
+
+                int levelFieldIndex = FindFirstFieldIndex(list, "level", "id", "ID");
+                int expFieldIndex = FindBestExperienceFieldIndex(list);
+                if (levelFieldIndex < 0 || expFieldIndex < 0)
+                {
+                    continue;
+                }
+
+                foreach (object[] row in list.elementValues)
+                {
+                    if (row == null || row.Length <= Math.Max(levelFieldIndex, expFieldIndex))
+                    {
+                        continue;
+                    }
+
+                    int rowLevel;
+                    long rowExperience;
+                    if (TryConvertToInt(row[levelFieldIndex], out rowLevel)
+                        && TryConvertToLong(row[expFieldIndex], out rowExperience)
+                        && rowLevel > 0
+                        && rowExperience > 0
+                        && !levelExperienceByLevel.ContainsKey(rowLevel))
+                    {
+                        levelExperienceByLevel.Add(rowLevel, rowExperience);
+                    }
+                }
+            }
+        }
+
+        private static int FindFirstFieldIndex(eList list, params string[] names)
+        {
+            if (list == null || list.elementFields == null || names == null)
+            {
+                return -1;
+            }
+
+            for (int i = 0; i < list.elementFields.Length; i++)
+            {
+                foreach (string name in names)
+                {
+                    if (string.Equals(list.elementFields[i], name, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return i;
+                    }
+                }
+            }
+
+            return -1;
+        }
+
+        private static int FindBestExperienceFieldIndex(eList list)
+        {
+            if (list == null || list.elementFields == null)
+            {
+                return -1;
+            }
+
+            for (int i = 0; i < list.elementFields.Length; i++)
+            {
+                string field = list.elementFields[i] ?? string.Empty;
+                if (field.IndexOf("exp", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    return i;
+                }
+            }
+
+            return -1;
+        }
+
+        private static bool TryConvertToInt(object value, out int result)
+        {
+            long longValue;
+            if (TryConvertToLong(value, out longValue) && longValue >= int.MinValue && longValue <= int.MaxValue)
+            {
+                result = (int)longValue;
+                return true;
+            }
+
+            result = 0;
+            return false;
+        }
+
+        private static bool TryConvertToLong(object value, out long result)
+        {
+            if (value == null)
+            {
+                result = 0L;
+                return false;
+            }
+
+            if (value is long)
+            {
+                result = (long)value;
+                return true;
+            }
+
+            if (value is int)
+            {
+                result = (int)value;
+                return true;
+            }
+
+            if (value is uint)
+            {
+                result = (uint)value;
+                return true;
+            }
+
+            return long.TryParse(Convert.ToString(value, CultureInfo.InvariantCulture), NumberStyles.Integer, CultureInfo.InvariantCulture, out result);
+        }
+
+        private static bool TryGetKnownLevelExperience(int level, out long experience)
+        {
+            switch (level)
+            {
+                case 90:
+                    experience = 246340000L;
+                    return true;
+                default:
+                    experience = 0L;
+                    return false;
+            }
+        }
+
+        private static bool IsAuxiliaryRewardField(TaskEditorFieldValue reward)
+        {
+            if (reward == null || string.IsNullOrWhiteSpace(reward.Field))
+            {
+                return false;
+            }
+
+            string field = reward.Field;
+            return field.EndsWith(".m_bGoldRevise", StringComparison.Ordinal)
+                || field.EndsWith(".m_lGoldReviseLev", StringComparison.Ordinal)
+                || field.EndsWith(".m_bExpRevise", StringComparison.Ordinal)
+                || field.EndsWith(".m_lExpReviseLev", StringComparison.Ordinal)
+                || field.EndsWith(".m_bExpFix", StringComparison.Ordinal)
+                || field.EndsWith(".m_ulExpAlgo", StringComparison.Ordinal)
+                || field.EndsWith(".m_ulFriendshipAlgo", StringComparison.Ordinal)
+                || field.EndsWith(".m_ulBindMoneyAlgo", StringComparison.Ordinal);
+        }
+
+        private static string FormatMoneyReward(string value)
+        {
+            long amount;
+            if (!long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out amount))
+            {
+                return value ?? string.Empty;
+            }
+
+            if (amount >= 1000000L && amount % 1000000L == 0L)
+            {
+                return (amount / 1000000L).ToString("N0", CultureInfo.InvariantCulture);
+            }
+
+            return amount.ToString("N0", CultureInfo.InvariantCulture);
         }
 
         private static bool IsPointRewardName(string displayName)
@@ -2090,6 +2396,32 @@ namespace FWEledit
                 .Where(item => itemOptionsById.ContainsKey(item.ItemId))
                 .Where(item => !string.IsNullOrWhiteSpace(item.Name))
                 .ToList();
+        }
+
+        private void ResolveTaskMonsters(List<TaskEditorMonsterValue> monsters)
+        {
+            if (monsters == null || monsters.Count == 0 || sessionService == null)
+            {
+                return;
+            }
+
+            foreach (TaskEditorMonsterValue monster in monsters)
+            {
+                if (monster == null || monster.MonsterId <= 0)
+                {
+                    continue;
+                }
+
+                NpcGenEntityInfo info = entityLookupService.Resolve(sessionService.ListCollection, sessionService.Database, monster.MonsterId);
+                if (info == null)
+                {
+                    continue;
+                }
+
+                monster.Name = info.Name;
+                monster.NameForeColor = info.NameColor;
+                monster.Icon = info.Icon;
+            }
         }
 
         private void EnsureItemOptions()

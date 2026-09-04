@@ -772,6 +772,46 @@ namespace FWEledit
                 .ToList();
         }
 
+        public static List<TaskEditorMonsterValue> BuildMonsterWantedValues(byte[] bytes)
+        {
+            List<TaskEditorMonsterValue> values = new List<TaskEditorMonsterValue>();
+            TaskEditorLayout layout;
+            if (!TryBuildTaskLayout(bytes, out layout)
+                || layout.MonsterWantedOffset < 0
+                || layout.MonsterWantedCount <= 0)
+            {
+                return values;
+            }
+
+            for (int i = 0; i < layout.MonsterWantedCount; i++)
+            {
+                int offset = layout.MonsterWantedOffset + i * MonsterWantedSize;
+                if (offset < 0 || offset + 8 > bytes.Length)
+                {
+                    break;
+                }
+
+                int monsterId = ReadUInt32AsInt(bytes, offset);
+                int count = ReadUInt32AsInt(bytes, offset + 4);
+                if (monsterId <= 0 || count <= 0)
+                {
+                    continue;
+                }
+
+                values.Add(new TaskEditorMonsterValue
+                {
+                    Kind = "Wanted monster",
+                    Source = "m_MonsterWanted[" + i.ToString(CultureInfo.InvariantCulture) + "]",
+                    Offset = offset,
+                    HexOffset = "0x" + offset.ToString("X4", CultureInfo.InvariantCulture),
+                    MonsterId = monsterId,
+                    Count = count
+                });
+            }
+
+            return values;
+        }
+
         private static bool TryBuildTaskLayout(byte[] bytes, out TaskEditorLayout layout)
         {
             layout = null;
@@ -1475,7 +1515,7 @@ namespace FWEledit
                 new AwardFieldSpec("m_bMineProtect", "m_bMineProtect", 0x06DD, "bool", ""),
                 new AwardFieldSpec("m_bMineDestroy", "m_bMineDestroy", 0x06DE, "bool", ""),
                 new AwardFieldSpec("m_bUpFlyLevel", "m_bUpFlyLevel", 0x06DF, "bool", ""),
-                new AwardFieldSpec("m_iBelief", "Fealty", 0x06E0, "int", "Fealty points awarded."),
+                new AwardFieldSpec("m_iBelief", "Soul Power", 0x06E0, "int", "Soul Power awarded."),
                 new AwardFieldSpec("m_bIgnoreBeliefLimit", "m_bIgnoreBeliefLimit", 0x06E4, "bool", ""),
                 new AwardFieldSpec("m_ulBindCash", "Bound cash", 0x06E5, "uint", "Bound cash awarded."),
                 new AwardFieldSpec("m_cAwardVipLevel", "VIP level", 0x06E9, "byte", "VIP level awarded or changed."),

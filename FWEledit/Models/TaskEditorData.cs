@@ -90,6 +90,19 @@ namespace FWEledit
         public string AccentHex { get; set; }
     }
 
+    public sealed class TaskEditorMonsterValue
+    {
+        public string Kind { get; set; }
+        public string Source { get; set; }
+        public int Offset { get; set; }
+        public string HexOffset { get; set; }
+        public int MonsterId { get; set; }
+        public int Count { get; set; }
+        public string Name { get; set; }
+        public Color? NameForeColor { get; set; }
+        public Bitmap Icon { get; set; }
+    }
+
     public sealed class TaskEditorRawValue
     {
         public int Offset { get; set; }
