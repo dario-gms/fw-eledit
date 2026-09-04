@@ -42,6 +42,8 @@ namespace FWEledit
         private const int AwardSideOccupationExpOffset = 0x05B2;
         private const int AwardSideOccupationExpCount = 64;
         private const int AwardSideOccupationPointsOffset = 0x06B2;
+        private const int AwardFriendshipOffset = 0x0176;
+        private const int AwardFriendshipCount = 64;
         private const int AwardItemCandidateCountOffset = 0x04AD;
         private const int ParentTaskIdOffset = FixedTaskDataSize - 16;
         private const int PrevSiblingTaskIdOffset = FixedTaskDataSize - 12;
@@ -1380,7 +1382,7 @@ namespace FWEledit
                 new AwardFieldSpec("m_ulVigour", "Vigour", 0x0170, "uint", "Vigour awarded."),
                 new AwardFieldSpec("m_bResetPKValue", "m_bResetPKValue", 0x0174, "bool", ""),
                 new AwardFieldSpec("m_bDivorce", "m_bDivorce", 0x0175, "bool", ""),
-                new AwardFieldSpec("m_aFriendships", "m_aFriendships", 0x0176, "int-array:64", ""),
+                new AwardFieldSpec("m_aFriendships", "Reputation points", 0x0176, "int-array:64", "Reputation-style point rewards indexed by reputation type."),
                 new AwardFieldSpec("m_aSpecialCounter", "m_aSpecialCounter", 0x0276, "int-array:32", ""),
                 new AwardFieldSpec("m_ulNewPeriod", "Unlocks period", 0x02F6, "uint", "New period unlocked by this reward."),
                 new AwardFieldSpec("m_ulNewRelayStation", "Unlocks relay station", 0x02FA, "uint", "Relay station unlocked by this reward."),
@@ -1473,7 +1475,7 @@ namespace FWEledit
                 new AwardFieldSpec("m_bMineProtect", "m_bMineProtect", 0x06DD, "bool", ""),
                 new AwardFieldSpec("m_bMineDestroy", "m_bMineDestroy", 0x06DE, "bool", ""),
                 new AwardFieldSpec("m_bUpFlyLevel", "m_bUpFlyLevel", 0x06DF, "bool", ""),
-                new AwardFieldSpec("m_iBelief", "m_iBelief", 0x06E0, "int", ""),
+                new AwardFieldSpec("m_iBelief", "Fealty", 0x06E0, "int", "Fealty points awarded."),
                 new AwardFieldSpec("m_bIgnoreBeliefLimit", "m_bIgnoreBeliefLimit", 0x06E4, "bool", ""),
                 new AwardFieldSpec("m_ulBindCash", "Bound cash", 0x06E5, "uint", "Bound cash awarded."),
                 new AwardFieldSpec("m_cAwardVipLevel", "VIP level", 0x06E9, "byte", "VIP level awarded or changed."),
@@ -1490,7 +1492,7 @@ namespace FWEledit
 
             foreach (AwardFieldSpec spec in specs)
             {
-                if (!includeEmptyAwardFields && (spec.Name == "m_iSideOccupExp" || spec.Name == "m_iSideOccupPoints"))
+                if (!includeEmptyAwardFields && (spec.Name == "m_iSideOccupExp" || spec.Name == "m_iSideOccupPoints" || spec.Name == "m_aFriendships"))
                 {
                     continue;
                 }
@@ -1518,6 +1520,29 @@ namespace FWEledit
             if (includeEmptyAwardFields)
             {
                 return;
+            }
+
+            for (int i = 0; i < AwardFriendshipCount; i++)
+            {
+                int offset = awardStartOffset + AwardFriendshipOffset + i * 4;
+                int points = BitConverter.ToInt32(bytes, offset);
+                if (points == 0)
+                {
+                    continue;
+                }
+
+                string pointName = GetReleasePointRewardName(i);
+                values.Add(new TaskEditorFieldValue
+                {
+                    Section = section,
+                    Field = sourcePrefix + ".m_aFriendships[" + i.ToString(CultureInfo.InvariantCulture) + "]",
+                    DisplayName = pointName,
+                    Meaning = "Adds " + pointName + " when this reward is delivered.",
+                    Offset = offset,
+                    HexOffset = "0x" + offset.ToString("X4", CultureInfo.InvariantCulture),
+                    Type = "int",
+                    Value = points.ToString(CultureInfo.InvariantCulture)
+                });
             }
 
             for (int i = 0; i < AwardSideOccupationExpCount; i++)
@@ -1656,7 +1681,7 @@ namespace FWEledit
                 "Promoter Points",
                 "Valor",
                 "Warlord Points",
-                "Hell",
+                "Hell Points",
                 "Fealty",
                 "Touch Points",
                 "Flower Score"

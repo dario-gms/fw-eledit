@@ -1269,7 +1269,7 @@ namespace FWEledit
                 {
                     lines.Add("Gold: " + reward.Value);
                 }
-                else if (reward.DisplayName.IndexOf("points", StringComparison.OrdinalIgnoreCase) >= 0)
+                else if (IsPointRewardName(reward.DisplayName))
                 {
                     lines.Add(reward.DisplayName + ": " + reward.Value);
                 }
@@ -1572,13 +1572,34 @@ namespace FWEledit
                 return reward.Value + " group(s)";
             }
 
-            if (reward.DisplayName != null
-                && reward.DisplayName.IndexOf("points", StringComparison.OrdinalIgnoreCase) >= 0)
+            if (IsPointRewardName(reward.DisplayName))
             {
                 return reward.Value + " point(s)";
             }
 
             return reward.Value;
+        }
+
+        private static bool IsPointRewardName(string displayName)
+        {
+            if (string.IsNullOrWhiteSpace(displayName))
+            {
+                return false;
+            }
+
+            return displayName.IndexOf("point", StringComparison.OrdinalIgnoreCase) >= 0
+                || displayName.IndexOf("score", StringComparison.OrdinalIgnoreCase) >= 0
+                || displayName.IndexOf("reputation", StringComparison.OrdinalIgnoreCase) >= 0
+                || displayName.IndexOf("fealty", StringComparison.OrdinalIgnoreCase) >= 0
+                || displayName.IndexOf("valor", StringComparison.OrdinalIgnoreCase) >= 0
+                || displayName.IndexOf("acclaim", StringComparison.OrdinalIgnoreCase) >= 0
+                || displayName.IndexOf("contribution", StringComparison.OrdinalIgnoreCase) >= 0
+                || displayName.IndexOf("kindness", StringComparison.OrdinalIgnoreCase) >= 0
+                || displayName.IndexOf("courage", StringComparison.OrdinalIgnoreCase) >= 0
+                || displayName.IndexOf("cruelty", StringComparison.OrdinalIgnoreCase) >= 0
+                || displayName.IndexOf("luck", StringComparison.OrdinalIgnoreCase) >= 0
+                || displayName.IndexOf("mentor", StringComparison.OrdinalIgnoreCase) >= 0
+                || displayName.IndexOf("rose", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private string DescribeTaskType(string value)
