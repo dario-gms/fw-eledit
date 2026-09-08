@@ -95,6 +95,11 @@ namespace FWEledit
                 return BuildUsedItemIdsAcrossLists(listCollection, listIndex, excludedRowIndex);
             }
 
+            if (IsCreatureTemplateList(listCollection, listIndex))
+            {
+                return BuildUsedIdsAcrossLists(listCollection, listIndex, excludedRowIndex);
+            }
+
             int idFieldIndex = GetIdFieldIndex(listCollection, listIndex);
             HashSet<int> used = BuildUsedIds(listCollection, listIndex, idFieldIndex);
             if (listCollection != null
@@ -112,6 +117,18 @@ namespace FWEledit
             }
 
             return used;
+        }
+
+        private static bool IsCreatureTemplateList(eListCollection listCollection, int listIndex)
+        {
+            if (listCollection == null || listIndex < 0 || listIndex >= listCollection.Lists.Length)
+            {
+                return false;
+            }
+
+            string listName = ItemListCatalog.NormalizeListName(listCollection.Lists[listIndex].listName);
+            return string.Equals(listName, "NPC_ESSENCE", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(listName, "MONSTER_ESSENCE", StringComparison.OrdinalIgnoreCase);
         }
 
         public HashSet<int> BuildUsedItemIdsAcrossLists(eListCollection listCollection, int excludedListIndex, int excludedRowIndex)
