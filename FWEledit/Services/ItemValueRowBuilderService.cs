@@ -294,7 +294,8 @@ namespace FWEledit
                 {
                     fieldValue = MovementSpeedDisplayService.FormatDisplay(listCollection, listIndex, fieldName, fieldValue);
                 }
-                else if (SkillReferenceCatalog.IsSkillFieldName(fieldName))
+                else if (SkillReferenceCatalog.IsSkillFieldName(fieldName)
+                    || SkillReferenceCatalog.IsSkillMatterDisplayField(listCollection, listIndex, fieldName))
                 {
                     fieldValue = SkillReferenceCatalog.FormatDisplay(listCollection, listIndex, elementIndex, fieldName, database, fieldValue);
                 }

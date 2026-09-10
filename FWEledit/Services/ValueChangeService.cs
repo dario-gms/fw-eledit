@@ -386,7 +386,8 @@ namespace FWEledit
                     request.FieldName,
                     valueToSet);
             }
-            else if (SkillReferenceCatalog.IsSkillFieldName(request.FieldName))
+            else if (SkillReferenceCatalog.IsSkillFieldName(request.FieldName)
+                || SkillReferenceCatalog.IsSkillMatterDisplayField(request.ListCollection, request.ListIndex, request.FieldName))
             {
                 result.DisplayValue = SkillReferenceCatalog.FormatDisplay(
                     request.ListCollection,

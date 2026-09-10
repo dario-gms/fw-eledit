@@ -163,6 +163,11 @@ namespace FWEledit
             string normalizedName = name.ToLowerInvariant();
             string targetListName = null;
 
+            if (SkillReferenceCatalog.IsSkillMatterTypeField(listCollection, listIndex, name))
+            {
+                return false;
+            }
+
             if (string.Equals(sourceListName, "NPC_ESSENCE", StringComparison.OrdinalIgnoreCase)
                 && TryGetNpcServiceTargetListName(name, out targetListName))
             {
