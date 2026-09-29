@@ -157,15 +157,8 @@ namespace FWPckUpdater
 
                 if (!File.Exists(targetPck))
                 {
-                    Console.WriteLine("Creating new package from staged root entries...");
-                    int createResult = RebuildPackageFromRoots(topLevelEntries, targetPck, compressionLevel, pckVersionId);
-                    if (createResult != WinPckOk)
-                    {
-                        Console.Error.WriteLine("WinPCK create failed with code " + createResult.ToString() + ".");
-                        return 10;
-                    }
-                    Console.WriteLine("Package update completed.");
-                    return 0;
+                    Console.Error.WriteLine("Refusing to update missing package: " + targetPck);
+                    return 10;
                 }
 
                 string[] files = Directory.GetFiles(stagingFolder, "*", SearchOption.AllDirectories)
@@ -178,47 +171,6 @@ namespace FWPckUpdater
                 }
 
                 HashSet<string> directoriesAddedAsFolders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                string[] stagedDirectories = Directory.GetDirectories(stagingFolder, "*", SearchOption.AllDirectories)
-                    .OrderBy(path => GetRelativePckPath(stagingFolder, path).Count(ch => ch == '\\'))
-                    .ThenBy(path => path, StringComparer.OrdinalIgnoreCase)
-                    .ToArray();
-                for (int i = 0; i < stagedDirectories.Length; i++)
-                {
-                    string directory = stagedDirectories[i];
-                    string directoryInPck = GetRelativePckPath(stagingFolder, directory);
-                    if (string.IsNullOrWhiteSpace(directoryInPck)
-                        || IsUnderAddedDirectory(directoryInPck, directoriesAddedAsFolders))
-                    {
-                        continue;
-                    }
-
-                    string parentInPck = Path.GetDirectoryName(directoryInPck) ?? string.Empty;
-                    parentInPck = parentInPck.Replace(Path.DirectorySeparatorChar, '\\').Replace(Path.AltDirectorySeparatorChar, '\\');
-
-                    if (PackageEntryExists(targetPck, directoryInPck))
-                    {
-                        Console.WriteLine("Merging existing folder: " + directoryInPck);
-                        int mergeFolderResult = do_AddFileToPckFile(directory, targetPck, parentInPck, compressionLevel);
-                        if (mergeFolderResult == WinPckOk)
-                        {
-                            directoriesAddedAsFolders.Add(directoryInPck);
-                            continue;
-                        }
-
-                        Console.WriteLine("Existing folder merge failed with code " + mergeFolderResult.ToString() + " for " + directoryInPck + "; trying child entries." + BuildLastErrorSuffix());
-                        continue;
-                    }
-
-                    Console.WriteLine("Adding new folder: " + directoryInPck);
-                    int addFolderResult = do_AddFileToPckFile(directory, targetPck, parentInPck, compressionLevel);
-                    if (addFolderResult != WinPckOk)
-                    {
-                        Console.WriteLine("Folder add failed with code " + addFolderResult.ToString() + " for " + directoryInPck + "; falling back to individual files." + BuildLastErrorSuffix());
-                        continue;
-                    }
-
-                    directoriesAddedAsFolders.Add(directoryInPck);
-                }
 
                 bool usedRootSubmitFallback = false;
                 for (int i = 0; i < files.Length; i++)

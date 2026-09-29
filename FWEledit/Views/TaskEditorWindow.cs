@@ -23,6 +23,7 @@ namespace FWEledit
         private List<TaskEditorEntry> filteredEntries = new List<TaskEditorEntry>();
         private Dictionary<int, ItemReferenceOption> itemOptionsById;
         private Dictionary<int, long> levelExperienceByLevel;
+        private readonly Dictionary<string, Image> moneyIconByUnit = new Dictionary<string, Image>(StringComparer.OrdinalIgnoreCase);
         private int loadRequestId;
         private bool isLoading;
 
@@ -188,6 +189,7 @@ namespace FWEledit
             itemGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "ID", Width = 86 });
             itemGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Name", AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill });
             itemGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Count", Width = 72 });
+            itemGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Chance", Width = 82 });
             itemGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Source", Width = 220 });
             itemGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Offset", Width = 82 });
             itemTab.Controls.Add(itemGrid);
@@ -669,6 +671,7 @@ namespace FWEledit
                     item.ItemId.ToString(CultureInfo.InvariantCulture),
                     string.IsNullOrWhiteSpace(item.Name) ? "Item " + item.ItemId.ToString(CultureInfo.InvariantCulture) : item.Name,
                     item.Count.ToString(CultureInfo.InvariantCulture),
+                    FormatTaskItemChance(item),
                     item.Source,
                     item.HexOffset);
                 StyleItemRow(itemGrid.Rows[rowIndex], item);
@@ -1168,16 +1171,7 @@ namespace FWEledit
             List<TaskEditorItemValue> rewardItems = GetItemsByKind(itemValues, "Success reward item", "Given item");
             if (rewards.Count > 0 || rewardItems.Count > 0)
             {
-                string rewardSummary = BuildQuestPreviewRewardText(rewards, fields);
-                if (!string.IsNullOrWhiteSpace(rewardSummary))
-                {
-                    Label rewardText = CreateQuestPreviewLabel(rewardSummary, 9F, FontStyle.Regular, Color.FromArgb(30, 73, 66), ContentAlignment.TopLeft);
-                    rewardText.Location = new Point(18, y);
-                    rewardText.MaximumSize = new Size(card.Width - 36, 0);
-                    rewardText.AutoSize = true;
-                    card.Controls.Add(rewardText);
-                    y = rewardText.Bottom + 6;
-                }
+                y = AddQuestPreviewRewardLines(card, rewards, fields, y);
 
                 if (rewardItems.Count > 0)
                 {
@@ -1319,6 +1313,100 @@ namespace FWEledit
             return lines.Count == 0 ? string.Empty : string.Join(Environment.NewLine, lines.ToArray());
         }
 
+        private int AddQuestPreviewRewardLines(Control card, List<TaskEditorFieldValue> rewards, List<TaskEditorFieldValue> allFields, int y)
+        {
+            bool added = false;
+            foreach (TaskEditorFieldValue reward in rewards ?? new List<TaskEditorFieldValue>())
+            {
+                if (reward == null || string.IsNullOrWhiteSpace(reward.Value) || string.Equals(reward.Value, "0", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+                if (IsAuxiliaryRewardField(reward))
+                {
+                    continue;
+                }
+
+                Control rewardControl = null;
+                if (string.Equals(reward.DisplayName, "Gold", StringComparison.OrdinalIgnoreCase))
+                {
+                    rewardControl = CreateQuestPreviewMoneyLine("Money:", reward.Value, false);
+                }
+                else if (reward.DisplayName.IndexOf("Bound money", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    rewardControl = CreateQuestPreviewMoneyLine("Soul Coins:", reward.Value, true);
+                }
+                else if (reward.DisplayName.IndexOf("EXP", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    rewardControl = CreateQuestPreviewLabel("Exp: " + FormatExperienceReward(reward, allFields), 9F, FontStyle.Regular, Color.FromArgb(30, 73, 66), ContentAlignment.TopLeft);
+                }
+                else if (reward.DisplayName.IndexOf("Soul power", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    rewardControl = CreateQuestPreviewLabel("Soul Power: " + reward.Value, 9F, FontStyle.Regular, Color.FromArgb(30, 73, 66), ContentAlignment.TopLeft);
+                }
+                else if (IsPointRewardName(reward.DisplayName))
+                {
+                    rewardControl = CreateQuestPreviewLabel(reward.DisplayName + ": " + reward.Value, 9F, FontStyle.Regular, Color.FromArgb(30, 73, 66), ContentAlignment.TopLeft);
+                }
+
+                if (rewardControl == null)
+                {
+                    continue;
+                }
+
+                rewardControl.Location = new Point(18, y);
+                rewardControl.MaximumSize = new Size(card.Width - 36, 0);
+                Label rewardLabel = rewardControl as Label;
+                if (rewardLabel != null)
+                {
+                    rewardLabel.AutoSize = true;
+                }
+
+                card.Controls.Add(rewardControl);
+                y = rewardControl.Bottom + 2;
+                added = true;
+            }
+
+            return added ? y + 4 : y;
+        }
+
+        private FlowLayoutPanel CreateQuestPreviewMoneyLine(string label, string value, bool bound)
+        {
+            FlowLayoutPanel panel = new FlowLayoutPanel();
+            panel.Tag = "quest-preview";
+            panel.AutoSize = true;
+            panel.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            panel.WrapContents = true;
+            panel.MaximumSize = new Size(GetQuestPreviewCardWidth() - 36, 0);
+            panel.Padding = new Padding(0);
+            panel.Margin = new Padding(0);
+            panel.BackColor = Color.Transparent;
+
+            Label title = CreateQuestPreviewLabel(label, 9F, FontStyle.Regular, Color.FromArgb(30, 73, 66), ContentAlignment.MiddleLeft);
+            title.AutoSize = true;
+            title.Margin = new Padding(0, 0, 4, 0);
+            panel.Controls.Add(title);
+
+            foreach (MoneyPiece piece in BuildMoneyPieces(value, bound))
+            {
+                Label amount = CreateQuestPreviewLabel(piece.Amount.ToString("N0", CultureInfo.InvariantCulture), 9F, FontStyle.Regular, Color.FromArgb(30, 73, 66), ContentAlignment.MiddleLeft);
+                amount.AutoSize = true;
+                amount.Margin = new Padding(0, 0, 2, 0);
+                panel.Controls.Add(amount);
+
+                PictureBox icon = new PictureBox();
+                icon.Tag = "quest-preview";
+                icon.Image = ResolveMoneyIcon(piece.Unit, piece.Bound);
+                icon.SizeMode = PictureBoxSizeMode.Zoom;
+                icon.Size = new Size(piece.Bound ? 22 : 18, 18);
+                icon.Margin = new Padding(0, 0, 6, 0);
+                previewToolTip.SetToolTip(icon, piece.Unit);
+                panel.Controls.Add(icon);
+            }
+
+            return panel;
+        }
+
         private string BuildQuestPreviewHint(List<TaskEditorFieldValue> fields)
         {
             if (IsYes(fields, "m_bCanRedo") && !string.Equals(GetKnownFieldValue(fields, "m_lAvailFrequency"), "0", StringComparison.Ordinal))
@@ -1339,45 +1427,56 @@ namespace FWEledit
             FlowLayoutPanel panel = new FlowLayoutPanel();
             panel.Tag = "quest-preview";
             panel.AutoSize = true;
+            panel.AutoSizeMode = AutoSizeMode.GrowAndShrink;
             panel.WrapContents = true;
             panel.MaximumSize = new Size(GetQuestPreviewCardWidth() - 36, 0);
             panel.Padding = new Padding(0);
             panel.Margin = new Padding(0);
-            panel.BackColor = Color.FromArgb(235, 226, 166);
+            panel.BackColor = Color.Transparent;
 
             foreach (TaskEditorItemValue item in items ?? new List<TaskEditorItemValue>())
             {
-                Panel slot = new Panel();
+                PictureBox slot = new PictureBox();
                 slot.Tag = "quest-preview";
-                slot.Size = new Size(42, 42);
-                slot.Margin = new Padding(0, 0, 6, 6);
-                slot.BackColor = Color.FromArgb(235, 226, 166);
+                slot.Size = new Size(36, 36);
+                slot.Margin = new Padding(0, 0, 5, 5);
+                slot.BackColor = Color.FromArgb(13, 16, 20);
+                slot.Image = CreateQuestPreviewItemImage(item);
+                slot.SizeMode = PictureBoxSizeMode.CenterImage;
                 previewToolTip.SetToolTip(slot, FormatTaskItemValue(item));
-
-                PictureBox icon = new PictureBox();
-                icon.Tag = "quest-preview";
-                icon.Image = ResolveTaskItemIcon(item);
-                icon.SizeMode = PictureBoxSizeMode.Zoom;
-                icon.Location = new Point(4, 4);
-                icon.Size = new Size(34, 34);
-                slot.Controls.Add(icon);
-                previewToolTip.SetToolTip(icon, FormatTaskItemValue(item));
-
-                if (item.Count > 1)
-                {
-                    Label count = CreateQuestPreviewLabel(item.Count.ToString(CultureInfo.InvariantCulture), 7F, FontStyle.Bold, Color.White, ContentAlignment.BottomLeft);
-                    count.Tag = "quest-preview";
-                    count.BackColor = Color.Transparent;
-                    count.Location = new Point(3, 24);
-                    count.Size = new Size(34, 14);
-                    slot.Controls.Add(count);
-                    count.BringToFront();
-                }
 
                 panel.Controls.Add(slot);
             }
 
             return panel;
+        }
+
+        private Image CreateQuestPreviewItemImage(TaskEditorItemValue item)
+        {
+            Bitmap preview = new Bitmap(36, 36);
+            using (Graphics graphics = Graphics.FromImage(preview))
+            {
+                graphics.Clear(Color.FromArgb(13, 16, 20));
+                Image icon = ResolveTaskItemIcon(item);
+                if (icon != null)
+                {
+                    graphics.DrawImage(icon, new Rectangle(2, 2, 32, 32));
+                }
+
+                if (item != null && item.Count > 1)
+                {
+                    string text = item.Count.ToString(CultureInfo.InvariantCulture);
+                    using (Font font = new Font("Segoe UI", 7F, FontStyle.Bold, GraphicsUnit.Point, 0))
+                    using (SolidBrush shadow = new SolidBrush(Color.Black))
+                    using (SolidBrush brush = new SolidBrush(Color.White))
+                    {
+                        graphics.DrawString(text, font, shadow, new PointF(3F, 23F));
+                        graphics.DrawString(text, font, brush, new PointF(2F, 22F));
+                    }
+                }
+            }
+
+            return preview;
         }
 
         private Label CreateQuestPreviewLabel(string text, float size, FontStyle style, Color color, ContentAlignment alignment)
@@ -1593,6 +1692,12 @@ namespace FWEledit
                 ? "Item " + item.ItemId.ToString(CultureInfo.InvariantCulture)
                 : item.Name;
             string flags = item.Bind ? ", bound" : string.Empty;
+            string chance = FormatTaskItemChance(item);
+            if (!string.IsNullOrWhiteSpace(chance))
+            {
+                flags += ", " + chance;
+            }
+
             return item.Count.ToString(CultureInfo.InvariantCulture)
                 + "x "
                 + name
@@ -1600,6 +1705,23 @@ namespace FWEledit
                 + item.ItemId.ToString(CultureInfo.InvariantCulture)
                 + flags
                 + ")";
+        }
+
+        private static string FormatTaskItemChance(TaskEditorItemValue item)
+        {
+            if (item == null || !item.Probability.HasValue)
+            {
+                return string.Empty;
+            }
+
+            float probability = item.Probability.Value;
+            if (float.IsNaN(probability) || float.IsInfinity(probability) || probability <= 0F)
+            {
+                return string.Empty;
+            }
+
+            float percent = probability <= 1F ? probability * 100F : probability;
+            return percent.ToString("0.##", CultureInfo.InvariantCulture) + "%";
         }
 
         private string FormatRewardValue(TaskEditorFieldValue reward)
@@ -1884,6 +2006,282 @@ namespace FWEledit
             }
 
             return amount.ToString("N0", CultureInfo.InvariantCulture);
+        }
+
+        private List<MoneyPiece> BuildMoneyPieces(string value, bool bound)
+        {
+            List<MoneyPiece> pieces = new List<MoneyPiece>();
+            long amount;
+            if (!long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out amount) || amount <= 0)
+            {
+                return pieces;
+            }
+
+            AddMoneyPiece(pieces, ref amount, 1000000L, "Diamond", bound);
+            AddMoneyPiece(pieces, ref amount, 10000L, "Gold", bound);
+            AddMoneyPiece(pieces, ref amount, 100L, "Silver", bound);
+            AddMoneyPiece(pieces, ref amount, 1L, "Copper", bound);
+            return pieces;
+        }
+
+        private static void AddMoneyPiece(List<MoneyPiece> pieces, ref long amount, long scale, string unit, bool bound)
+        {
+            if (amount < scale)
+            {
+                return;
+            }
+
+            long count = amount / scale;
+            amount %= scale;
+            if (count <= 0 || count > int.MaxValue)
+            {
+                return;
+            }
+
+            pieces.Add(new MoneyPiece { Amount = (int)count, Unit = unit, Bound = bound });
+        }
+
+        private Image ResolveMoneyIcon(string unit, bool bound)
+        {
+            string cacheKey = (bound ? "bound:" : "gold:") + (unit ?? string.Empty);
+            Image cached;
+            if (moneyIconByUnit.TryGetValue(cacheKey, out cached))
+            {
+                return cached;
+            }
+
+            Image loaded = (bound ? TryLoadBoundMoneyIconFromStrip(unit) : null)
+                ?? TryLoadMoneyIcon(GetMoneyIconResourcePath(unit, bound))
+                ?? (bound ? TryLoadMoneyIcon(GetMoneyIconResourcePath(unit, false)) : null)
+                ?? CreateFallbackMoneyIcon(unit, bound);
+            moneyIconByUnit[cacheKey] = loaded;
+            return loaded;
+        }
+
+        private Image TryLoadBoundMoneyIconFromStrip(string unit)
+        {
+            Rectangle source;
+            if (!TryGetBoundMoneyStripSource(unit, out source))
+            {
+                return null;
+            }
+
+            Bitmap strip = TryLoadMoneyIcon(Path.Combine("surfaces", "sm", "smbutton", "money_bound_samll_1.tga")) as Bitmap;
+            if (strip == null)
+            {
+                return null;
+            }
+
+            try
+            {
+                Rectangle safeSource = Rectangle.Intersect(source, new Rectangle(0, 0, strip.Width, strip.Height));
+                if (safeSource.Width <= 0 || safeSource.Height <= 0)
+                {
+                    return null;
+                }
+
+                Bitmap icon = new Bitmap(safeSource.Width, safeSource.Height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+                using (Graphics graphics = Graphics.FromImage(icon))
+                {
+                    graphics.Clear(Color.Transparent);
+                    graphics.DrawImage(strip, new Rectangle(0, 0, safeSource.Width, safeSource.Height), safeSource, GraphicsUnit.Pixel);
+                }
+
+                return icon;
+            }
+            finally
+            {
+                strip.Dispose();
+            }
+        }
+
+        private static bool TryGetBoundMoneyStripSource(string unit, out Rectangle source)
+        {
+            if (string.Equals(unit, "Diamond", StringComparison.OrdinalIgnoreCase))
+            {
+                source = new Rectangle(0, 0, 27, 21);
+                return true;
+            }
+            if (string.Equals(unit, "Gold", StringComparison.OrdinalIgnoreCase))
+            {
+                source = new Rectangle(39, 0, 29, 21);
+                return true;
+            }
+            if (string.Equals(unit, "Silver", StringComparison.OrdinalIgnoreCase))
+            {
+                source = new Rectangle(78, 0, 31, 21);
+                return true;
+            }
+            if (string.Equals(unit, "Copper", StringComparison.OrdinalIgnoreCase))
+            {
+                source = new Rectangle(116, 0, 25, 21);
+                return true;
+            }
+
+            source = Rectangle.Empty;
+            return false;
+        }
+
+        private Image TryLoadMoneyIcon(string relativePath)
+        {
+            if (string.IsNullOrWhiteSpace(relativePath))
+            {
+                return null;
+            }
+
+            if (sessionService != null && sessionService.Database != null)
+            {
+                try
+                {
+                    if (sessionService.Database.ContainsKey(relativePath))
+                    {
+                        return sessionService.Database.images(relativePath);
+                    }
+                }
+                catch
+                {
+                }
+            }
+
+            return null;
+        }
+
+        private static string GetMoneyIconResourcePath(string unit, bool bound)
+        {
+            if (bound)
+            {
+                if (string.Equals(unit, "Diamond", StringComparison.OrdinalIgnoreCase))
+                {
+                    return Path.Combine("surfaces", "sm", "smbutton", "money_bound_samll_3.tga");
+                }
+                if (string.Equals(unit, "Gold", StringComparison.OrdinalIgnoreCase))
+                {
+                    return Path.Combine("surfaces", "sm", "smbutton", "money_bound_samll_2.tga");
+                }
+                if (string.Equals(unit, "Silver", StringComparison.OrdinalIgnoreCase))
+                {
+                    return Path.Combine("surfaces", "sm", "smbutton", "money_bound_samll_2.tga");
+                }
+                if (string.Equals(unit, "Copper", StringComparison.OrdinalIgnoreCase))
+                {
+                    return Path.Combine("surfaces", "sm", "smbutton", "money_bound_samll_3.tga");
+                }
+
+                return Path.Combine("surfaces", "sm", "smbutton", "money_bound_samll.tga");
+            }
+
+            if (string.Equals(unit, "Diamond", StringComparison.OrdinalIgnoreCase))
+            {
+                return Path.Combine("surfaces", "sm", "smbutton", "money0_small.tga");
+            }
+            if (string.Equals(unit, "Gold", StringComparison.OrdinalIgnoreCase))
+            {
+                return Path.Combine("surfaces", "sm", "smbutton", "money1_small.tga");
+            }
+            if (string.Equals(unit, "Silver", StringComparison.OrdinalIgnoreCase))
+            {
+                return Path.Combine("surfaces", "sm", "smbutton", "money2_small.tga");
+            }
+
+            return Path.Combine("surfaces", "sm", "smbutton", "money3_small.tga");
+        }
+
+        private static Image CreateFallbackMoneyIcon(string unit, bool bound)
+        {
+            Bitmap icon = new Bitmap(14, 14);
+            using (Graphics graphics = Graphics.FromImage(icon))
+            {
+                graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                graphics.Clear(Color.Transparent);
+
+                Color fill = GetMoneyUnitColor(unit);
+                using (SolidBrush shadow = new SolidBrush(Color.FromArgb(92, 40, 30, 14)))
+                {
+                    graphics.FillEllipse(shadow, new Rectangle(2, 3, 11, 10));
+                }
+
+                using (SolidBrush brush = new SolidBrush(fill))
+                {
+                    if (string.Equals(unit, "Diamond", StringComparison.OrdinalIgnoreCase))
+                    {
+                        Point[] diamond =
+                        {
+                            new Point(7, 1),
+                            new Point(13, 7),
+                            new Point(7, 13),
+                            new Point(1, 7)
+                        };
+                        graphics.FillPolygon(brush, diamond);
+                    }
+                    else
+                    {
+                        graphics.FillEllipse(brush, new Rectangle(1, 1, 12, 12));
+                    }
+                }
+
+                using (Pen rim = new Pen(Color.FromArgb(150, 52, 35, 16), 1F))
+                {
+                    if (string.Equals(unit, "Diamond", StringComparison.OrdinalIgnoreCase))
+                    {
+                        Point[] diamond =
+                        {
+                            new Point(7, 1),
+                            new Point(13, 7),
+                            new Point(7, 13),
+                            new Point(1, 7),
+                            new Point(7, 1)
+                        };
+                        graphics.DrawLines(rim, diamond);
+                    }
+                    else
+                    {
+                        graphics.DrawEllipse(rim, new Rectangle(1, 1, 12, 12));
+                    }
+                }
+
+                using (SolidBrush shine = new SolidBrush(Color.FromArgb(130, Color.White)))
+                {
+                    graphics.FillEllipse(shine, new Rectangle(4, 3, 4, 3));
+                }
+
+                if (bound)
+                {
+                    using (SolidBrush lockBrush = new SolidBrush(Color.FromArgb(220, 40, 32, 24)))
+                    using (Pen lockPen = new Pen(Color.FromArgb(230, 245, 210, 86), 1F))
+                    {
+                        graphics.FillRectangle(lockBrush, new Rectangle(8, 8, 5, 5));
+                        graphics.DrawRectangle(lockPen, new Rectangle(8, 8, 5, 5));
+                        graphics.DrawArc(lockPen, new Rectangle(8, 5, 5, 6), 200, 140);
+                    }
+                }
+            }
+
+            return icon;
+        }
+
+        private static Color GetMoneyUnitColor(string unit)
+        {
+            if (string.Equals(unit, "Diamond", StringComparison.OrdinalIgnoreCase))
+            {
+                return Color.FromArgb(108, 167, 226);
+            }
+            if (string.Equals(unit, "Gold", StringComparison.OrdinalIgnoreCase))
+            {
+                return Color.FromArgb(226, 181, 57);
+            }
+            if (string.Equals(unit, "Silver", StringComparison.OrdinalIgnoreCase))
+            {
+                return Color.FromArgb(184, 194, 205);
+            }
+
+            return Color.FromArgb(187, 104, 49);
+        }
+
+        private sealed class MoneyPiece
+        {
+            public int Amount { get; set; }
+            public string Unit { get; set; }
+            public bool Bound { get; set; }
         }
 
         private static bool IsPointRewardName(string displayName)

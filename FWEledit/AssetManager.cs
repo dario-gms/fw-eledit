@@ -766,6 +766,12 @@ namespace FWEledit
 
                 int timeoutMs = GetPckOperationTimeoutMs(gamePck, true);
                 string updateMode = hadGamePck && packageHasVersion ? "update" : "rebuild";
+                if (string.Equals(package, "surfaces", StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(updateMode, "rebuild", StringComparison.OrdinalIgnoreCase))
+                {
+                    error = "Refusing to rebuild surfaces.pck. Surface assets must be updated incrementally from the existing package.";
+                    return false;
+                }
                 int? createVersionId = string.Equals(updateMode, "rebuild", StringComparison.OrdinalIgnoreCase) ? FwPckVersionId : (int?)null;
                 string helperError;
                 if (!RunWinPckHelper(updateMode, stagingDirectory, gamePck, 1, timeoutMs, out helperError, createVersionId))

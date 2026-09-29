@@ -14,12 +14,20 @@ namespace FWEledit
             }
 
             int itemID = 0;
+            Color color = Color.White;
             if (database != null && database.item_color != null && database.item_color.ContainsKey(data.itemId))
             {
                 itemID = database.item_color[data.itemId];
+                color = Helper.getByID(itemID);
             }
-
-            Color color = Helper.getByID(itemID);
+            else if (data.itemQuality >= 0)
+            {
+                Color qualityColor;
+                if (ItemQualityCatalog.TryGetColor(data.itemQuality, out qualityColor))
+                {
+                    color = qualityColor;
+                }
+            }
             string title = BuildTitle(data);
             string line = BuildPreviewText(data);
 
@@ -81,7 +89,7 @@ namespace FWEledit
 
         private static string GetProcTypeLine(uint procTypeValue, uint flag, string label)
         {
-            return (procTypeValue & flag) == flag ? label : string.Empty;
+            return (procTypeValue & flag) == flag ? "^FFFF00" + label + "^FFFFFF" : string.Empty;
         }
 
         private static string FormatDescriptionBlock(string description)

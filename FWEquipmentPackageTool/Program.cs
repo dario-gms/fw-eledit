@@ -110,6 +110,10 @@ namespace FWEquipmentPackageTool
             AddManifestPathDataAssets(manifest, assetsByKey, assetManager, entriesByPackage);
             ExpandEquipmentModelCompanions(assetsByKey, assetManager);
             ExpandEquipmentGfxDependencies(assetsByKey, assetManager);
+            if (HasMountModelFields(manifest))
+            {
+                ExpandMountModelCompanions(assetsByKey, assetManager, entriesByPackage);
+            }
             manifest.Assets = assetsByKey.Values.OrderBy(a => a.Package).ThenBy(a => a.RelativePath).ToList();
 
             string folder = Path.GetDirectoryName(request.OutputFile);
@@ -191,7 +195,7 @@ namespace FWEquipmentPackageTool
 
             foreach (ItemTransferFieldValue field in manifest.Fields)
             {
-                if (field == null || !IsPackageAssetPathIdField(field.Name))
+                if (field == null || (!IsPackageAssetPathIdField(field.Name) && !IsMountModelPathIdField(field.Name)))
                 {
                     continue;
                 }
@@ -322,7 +326,7 @@ namespace FWEquipmentPackageTool
             {
                 string fieldName = field.Name ?? string.Empty;
                 string value = field.Value ?? string.Empty;
-                if (IsPackageAssetPathIdField(fieldName))
+                if (IsPackageAssetPathIdField(fieldName) || IsMountModelPathIdField(fieldName))
                 {
                     int pathId = TryParseInt(value);
                     string mapped;
@@ -498,6 +502,108 @@ namespace FWEquipmentPackageTool
                         {
                             pending.Enqueue(addedAsset);
                         }
+                    }
+                }
+            }
+        }
+
+        private static void ExpandMountModelCompanions(
+            Dictionary<string, ItemTransferAssetEntry> assets,
+            AssetManager assetManager,
+            Dictionary<string, List<string>> entriesByPackage)
+        {
+            if (assets == null || assetManager == null)
+            {
+                return;
+            }
+
+            Queue<ItemTransferAssetEntry> pending = new Queue<ItemTransferAssetEntry>(
+                assets.Values.Where(a => a != null && IsModelLikeExtension(Path.GetExtension(a.RelativePath))).ToArray());
+            HashSet<string> processed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            HashSet<string> processedCompanionPrefixes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            const int MaxProcessedModels = 512;
+
+            while (pending.Count > 0 && processed.Count < MaxProcessedModels)
+            {
+                ItemTransferAssetEntry current = pending.Dequeue();
+                if (current == null || !processed.Add(current.Package + "|" + current.RelativePath))
+                {
+                    continue;
+                }
+
+                Report("Collecting mount companions", current.MappedPath ?? current.RelativePath ?? string.Empty, processed.Count, Math.Max(processed.Count + pending.Count, assets.Count), false);
+                foreach (string companion in CollectMountCompanionAssets(current, assetManager, entriesByPackage, processedCompanionPrefixes))
+                {
+                    ItemTransferAssetEntry addedAsset;
+                    if (TryAddExistingAsset(assets, companion, assetManager, out addedAsset)
+                        && addedAsset != null
+                        && IsModelLikeExtension(Path.GetExtension(addedAsset.RelativePath)))
+                    {
+                        pending.Enqueue(addedAsset);
+                    }
+                }
+            }
+        }
+
+        private static IEnumerable<string> CollectMountCompanionAssets(
+            ItemTransferAssetEntry current,
+            AssetManager assetManager,
+            Dictionary<string, List<string>> entriesByPackage,
+            HashSet<string> processedCompanionPrefixes)
+        {
+            if (current == null || assetManager == null || entriesByPackage == null)
+            {
+                yield break;
+            }
+
+            if (!IsModelLikeExtension(Path.GetExtension(current.RelativePath)))
+            {
+                yield break;
+            }
+
+            List<string> entries;
+            if (!entriesByPackage.TryGetValue(current.Package, out entries))
+            {
+                if (!assetManager.TryEnumeratePckIndexEntries(current.Package, out entries))
+                {
+                    entries = new List<string>();
+                }
+                entriesByPackage[current.Package] = entries;
+            }
+            if (entries == null || entries.Count == 0)
+            {
+                yield break;
+            }
+
+            string directory = Path.GetDirectoryName(current.RelativePath);
+            string fileName = Path.GetFileNameWithoutExtension(current.RelativePath);
+            foreach (string prefix in BuildMountCompanionPrefixes(current.Package, directory, fileName))
+            {
+                string package;
+                string relativePrefix;
+                if (!TrySplitPackagePath(prefix, out package, out relativePrefix)
+                    || !string.Equals(package, current.Package, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                string normalizedPrefix = NormalizePath(relativePrefix);
+                if (!normalizedPrefix.EndsWith("\\", StringComparison.Ordinal))
+                {
+                    normalizedPrefix += "\\";
+                }
+                if (processedCompanionPrefixes != null && !processedCompanionPrefixes.Add(current.Package + "|" + normalizedPrefix))
+                {
+                    continue;
+                }
+
+                foreach (string entry in entries)
+                {
+                    string normalizedEntry = NormalizePath(entry);
+                    if (normalizedEntry.StartsWith(normalizedPrefix, StringComparison.OrdinalIgnoreCase)
+                        && AssetExtensionPattern.IsMatch(normalizedEntry))
+                    {
+                        yield return current.Package + "\\" + normalizedEntry;
                     }
                 }
             }
@@ -1082,6 +1188,25 @@ namespace FWEquipmentPackageTool
             }
         }
 
+        private static IEnumerable<string> BuildMountCompanionPrefixes(string package, string directory, string fileName)
+        {
+            if (string.IsNullOrWhiteSpace(package) || string.IsNullOrWhiteSpace(directory))
+            {
+                yield break;
+            }
+
+            yield return package + "\\" + directory;
+            yield return package + "\\" + directory + "\\tcks";
+            yield return package + "\\" + directory + "\\tck";
+            yield return package + "\\" + directory + "\\textures";
+            yield return package + "\\" + directory + "\\texture";
+            if (!string.IsNullOrWhiteSpace(fileName))
+            {
+                yield return package + "\\" + directory + "\\tcks_" + fileName;
+                yield return package + "\\" + directory + "\\tex_" + fileName;
+            }
+        }
+
         private static bool IsPackageAssetPathIdField(string fieldName)
         {
             string normalized = NormalizeFieldNameKey(fieldName);
@@ -1098,6 +1223,47 @@ namespace FWEquipmentPackageTool
                 || normalized.StartsWith("gfx_", StringComparison.OrdinalIgnoreCase)
                 || normalized.Contains("_gfx_")
                 || normalized.EndsWith("_gfx", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsMountModelPathIdField(string fieldName)
+        {
+            string normalized = NormalizeFieldNameKey(fieldName);
+            return normalized.StartsWith("model_name", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool HasMountModelFields(ItemTransferPackageManifest manifest)
+        {
+            if (manifest == null || manifest.Fields == null)
+            {
+                return false;
+            }
+
+            string sourceListName = NormalizeFieldNameKey(manifest.SourceListName);
+            if (sourceListName.Contains("aircraft_essence") || sourceListName.Contains("vehicle_essence"))
+            {
+                return true;
+            }
+
+            bool hasModelName = false;
+            bool hasFileModels = false;
+            bool hasAircraftMotion = false;
+            bool hasVehicleMovement = false;
+            bool hasRaceMask = false;
+            for (int i = 0; i < manifest.Fields.Count; i++)
+            {
+                ItemTransferFieldValue field = manifest.Fields[i];
+                string name = NormalizeFieldNameKey(field != null ? field.Name : string.Empty);
+                hasModelName |= name.StartsWith("model_name", StringComparison.Ordinal);
+                hasFileModels |= name.StartsWith("file_models", StringComparison.Ordinal);
+                hasAircraftMotion |= string.Equals(name, "cruise_speed", StringComparison.Ordinal)
+                    || string.Equals(name, "sprint_speed", StringComparison.Ordinal)
+                    || string.Equals(name, "fly_mode", StringComparison.Ordinal);
+                hasVehicleMovement |= string.Equals(name, "speed", StringComparison.Ordinal)
+                    || string.Equals(name, "height", StringComparison.Ordinal);
+                hasRaceMask |= string.Equals(name, "race_mask", StringComparison.Ordinal);
+            }
+
+            return (hasModelName && hasAircraftMotion) || (hasFileModels && hasRaceMask && hasVehicleMovement);
         }
 
         private static bool IsIconAssetPathIdField(string fieldName)

@@ -6,6 +6,8 @@ namespace FWEledit
 {
     public sealed class ListItemTooltipService
     {
+        private readonly EquipmentEssenceTooltipService equipmentEssenceTooltipService = new EquipmentEssenceTooltipService();
+
         public bool TryBuildTooltip(
             ISessionService sessionService,
             int listIndex,
@@ -51,6 +53,12 @@ namespace FWEledit
                     }
                     tooltipText = text;
                     return true;
+                }
+
+                string equipmentTooltip;
+                if (equipmentEssenceTooltipService.TryBuildBasicAddons(sessionService, listIndex, rowIndex, out equipmentTooltip))
+                {
+                    infoTool.basicAdons = equipmentTooltip;
                 }
 
                 infoTool.description = listIndex == 0

@@ -22,7 +22,7 @@
     <UpdateRequired>false</UpdateRequired>
     <MapFileExtensions>true</MapFileExtensions>
     <ApplicationRevision>0</ApplicationRevision>
-    <ApplicationVersion>0.9.5.26</ApplicationVersion>
+    <ApplicationVersion>0.9.5.28</ApplicationVersion>
     <IsWebBootstrapper>false</IsWebBootstrapper>
     <UseApplicationTrust>false</UseApplicationTrust>
     <BootstrapperEnabled>true</BootstrapperEnabled>
@@ -799,6 +799,7 @@
     <Compile Include="Services\ElementsJoinWorkflowService.cs" />
     <Compile Include="Services\ElementsSessionService.cs" />
     <Compile Include="Services\ElementIndexResolverService.cs" />
+    <Compile Include="Services\EquipmentEssenceTooltipService.cs" />
     <Compile Include="Services\EquipmentTabService.cs" />
     <Compile Include="Services\MonsterFieldService.cs" />
     <Compile Include="Services\GridActiveRowService.cs" />

@@ -92,7 +92,7 @@ namespace FWEledit
         {
             if (ItemListCatalog.IsItemList(listCollection, listIndex))
             {
-                return BuildUsedItemIdsAcrossLists(listCollection, listIndex, excludedRowIndex);
+                return BuildUsedIdsAcrossLists(listCollection, listIndex, excludedRowIndex);
             }
 
             if (IsNpcRuntimeEssenceList(listCollection, listIndex))

@@ -204,7 +204,7 @@ namespace FWEledit
                 }
 
                 HashSet<int> usedIds = ItemListCatalog.IsItemList(request.ListCollection, request.ListIndex)
-                    ? idGenerationService.BuildUsedItemIdsAcrossLists(request.ListCollection, request.ListIndex, -1)
+                    ? idGenerationService.BuildUsedIdsAcrossLists(request.ListCollection, request.ListIndex, -1)
                     : idGenerationService.BuildUsedIds(request.ListCollection, request.ListIndex, request.FieldIndex);
                 for (int i = 0; i < request.SelectedElementIndices.Length; i++)
                 {

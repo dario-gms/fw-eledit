@@ -1078,6 +1078,8 @@ namespace FWEledit
                     TaskEditorItemValue item;
                     if (TryReadItemWanted(bytes, itemOffset, kind + (randomChoose ? " (random group)" : string.Empty), itemSource, out item))
                     {
+                        item.RandomGroup = randomChoose;
+                        item.Probability = ReadAwardItemProbability(bytes, itemOffset);
                         values.Add(item);
                     }
                 }
@@ -1114,6 +1116,16 @@ namespace FWEledit
                 Quality = -1
             };
             return true;
+        }
+
+        private static float? ReadAwardItemProbability(byte[] bytes, int offset)
+        {
+            if (bytes == null || offset < 0 || offset + AwardItemSize > bytes.Length)
+            {
+                return null;
+            }
+
+            return BitConverter.ToSingle(bytes, offset + 9);
         }
 
         private static void AddExtendedFixedFieldSpecs(List<FieldSpec> specs)

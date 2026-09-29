@@ -4849,7 +4849,27 @@ namespace FWEledit
             string ext = Path.GetExtension(normalized) ?? string.Empty;
             if (!string.IsNullOrWhiteSpace(ext))
             {
-                return new string[] { normalized };
+                string withoutExt = normalized.Substring(0, normalized.Length - ext.Length);
+                List<string> candidates = new List<string>(6);
+                HashSet<string> seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                AddUniquePathCandidate(candidates, seen, normalized);
+
+                string[] alternateExtensions = new string[]
+                {
+                    ".dds",
+                    ".tga",
+                    ".bmp",
+                    ".png",
+                    ".jpg",
+                    ".jpeg"
+                };
+
+                for (int i = 0; i < alternateExtensions.Length; i++)
+                {
+                    AddUniquePathCandidate(candidates, seen, withoutExt + alternateExtensions[i]);
+                }
+
+                return candidates.ToArray();
             }
 
             return new string[]

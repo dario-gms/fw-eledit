@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Windows.Forms;
 
 namespace FWEledit
@@ -39,10 +40,16 @@ namespace FWEledit
                 return;
             }
 
+            int[] elementIndices = ResolveSelectedElementIndices(listCollection, listIndex, elementGrid, selIndices);
+            if (elementIndices.Length == 0)
+            {
+                return;
+            }
+
             enableSelectionList = false;
             enableSelectionItem = false;
 
-            ElementCloneResult result = mutationService.CloneItems(listCollection, listIndex, selIndices);
+            ElementCloneResult result = mutationService.CloneItems(listCollection, listIndex, elementIndices);
             cloneUiService.ApplyCloneResult(
                 result,
                 listCollection,
@@ -91,13 +98,19 @@ namespace FWEledit
                 return;
             }
 
+            int[] elementIndices = ResolveSelectedElementIndices(listCollection, listIndex, elementGrid, selIndices);
+            if (elementIndices.Length == 0)
+            {
+                return;
+            }
+
             if (viewModel != null)
             {
                 viewModel.EnableSelectionList = false;
                 viewModel.EnableSelectionItem = false;
             }
 
-            ElementCloneResult result = mutationService.CloneItems(listCollection, listIndex, selIndices);
+            ElementCloneResult result = mutationService.CloneItems(listCollection, listIndex, elementIndices);
             cloneUiService.ApplyCloneResult(
                 result,
                 listCollection,
@@ -109,6 +122,28 @@ namespace FWEledit
                 refreshListAction,
                 refreshItemAction,
                 getFriendlyListName);
+        }
+
+        private static int[] ResolveSelectedElementIndices(eListCollection listCollection, int listIndex, DataGridView elementGrid, int[] selectedGridIndices)
+        {
+            if (selectedGridIndices == null || selectedGridIndices.Length == 0)
+            {
+                return new int[0];
+            }
+
+            ElementIndexResolverService resolver = new ElementIndexResolverService();
+            List<int> elementIndices = new List<int>();
+            HashSet<int> seen = new HashSet<int>();
+            for (int i = 0; i < selectedGridIndices.Length; i++)
+            {
+                int elementIndex = resolver.ResolveElementIndexFromGridRow(listCollection, listIndex, selectedGridIndices[i], elementGrid);
+                if (elementIndex >= 0 && seen.Add(elementIndex))
+                {
+                    elementIndices.Add(elementIndex);
+                }
+            }
+
+            return elementIndices.ToArray();
         }
     }
 }

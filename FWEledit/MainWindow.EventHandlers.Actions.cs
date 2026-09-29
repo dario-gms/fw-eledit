@@ -16,6 +16,15 @@ namespace FWEledit
 		{
             int listIndex = comboBox_lists.SelectedIndex;
             int[] deletedDescriptionIds = GetSelectedDescriptionItemIds();
+            int[] selectedGridRows = gridSelectionService != null
+                ? gridSelectionService.GetSelectedIndices(dataGridView_elems)
+                : new int[0];
+            int firstDisplayedRow = dataGridView_elems != null && dataGridView_elems.Rows.Count > 0
+                ? dataGridView_elems.FirstDisplayedScrollingRowIndex
+                : -1;
+            int currentGridRow = dataGridView_elems != null && dataGridView_elems.CurrentCell != null
+                ? dataGridView_elems.CurrentCell.RowIndex
+                : -1;
             mainWindowActionsCoordinatorService.HandleDeleteSelected(
                 mainWindowElementActionsUiService,
                 elementDeleteCommandService,
@@ -27,15 +36,99 @@ namespace FWEledit
                 elementDeletionUiService,
                 comboBox_lists,
                 viewModel,
-                () => change_item(null, null));
+                () =>
+                {
+                    change_list(null, null);
+                    RestoreElementGridPositionAfterDelete(selectedGridRows, firstDisplayedRow, currentGridRow);
+                });
             RemoveDescriptionsForDeletedItems(deletedDescriptionIds);
 		}
+
+        private void RestoreElementGridPositionAfterDelete(int[] deletedGridRows, int firstDisplayedRow, int currentGridRow)
+        {
+            if (dataGridView_elems == null || dataGridView_elems.Rows.Count == 0)
+            {
+                return;
+            }
+
+            int deletedBeforeFirst = CountDeletedRowsBefore(deletedGridRows, firstDisplayedRow);
+            int restoredFirstRow = firstDisplayedRow >= 0
+                ? Math.Max(0, firstDisplayedRow - deletedBeforeFirst)
+                : -1;
+
+            int deletedBeforeCurrent = CountDeletedRowsBefore(deletedGridRows, currentGridRow);
+            int restoredCurrentRow = currentGridRow >= 0
+                ? Math.Max(0, currentGridRow - deletedBeforeCurrent)
+                : restoredFirstRow;
+
+            if (restoredCurrentRow < 0)
+            {
+                restoredCurrentRow = restoredFirstRow >= 0 ? restoredFirstRow : 0;
+            }
+            if (restoredCurrentRow >= dataGridView_elems.Rows.Count)
+            {
+                restoredCurrentRow = dataGridView_elems.Rows.Count - 1;
+            }
+
+            try
+            {
+                dataGridView_elems.ClearSelection();
+                dataGridView_elems.CurrentCell = dataGridView_elems[0, restoredCurrentRow];
+                dataGridView_elems.Rows[restoredCurrentRow].Selected = true;
+            }
+            catch
+            {
+            }
+
+            if (restoredFirstRow >= 0)
+            {
+                if (restoredFirstRow >= dataGridView_elems.Rows.Count)
+                {
+                    restoredFirstRow = dataGridView_elems.Rows.Count - 1;
+                }
+
+                try
+                {
+                    dataGridView_elems.FirstDisplayedScrollingRowIndex = restoredFirstRow;
+                }
+                catch
+                {
+                }
+            }
+        }
+
+        private static int CountDeletedRowsBefore(int[] deletedGridRows, int rowIndex)
+        {
+            if (deletedGridRows == null || rowIndex <= 0)
+            {
+                return 0;
+            }
+
+            int count = 0;
+            for (int i = 0; i < deletedGridRows.Length; i++)
+            {
+                if (deletedGridRows[i] >= 0 && deletedGridRows[i] < rowIndex)
+                {
+                    count++;
+                }
+            }
+
+            return count;
+        }
 
 
         private void click_cloneItem(object sender, EventArgs ea)
 		{
             int listIndex = comboBox_lists.SelectedIndex;
             int[] sourceDescriptionIds = GetSelectedDescriptionItemIds();
+            int elementCountBeforeClone = sessionService != null
+                && sessionService.ListCollection != null
+                && listIndex >= 0
+                && listIndex < sessionService.ListCollection.Lists.Length
+                && sessionService.ListCollection.Lists[listIndex] != null
+                && sessionService.ListCollection.Lists[listIndex].elementValues != null
+                    ? sessionService.ListCollection.Lists[listIndex].elementValues.Length
+                    : -1;
             mainWindowActionsCoordinatorService.HandleCloneSelected(
                 mainWindowElementActionsUiService,
                 elementCloneCommandService,
@@ -56,7 +149,8 @@ namespace FWEledit
                 () => change_list(null, null),
                 () => change_item(null, null),
                 index => listDisplayService.GetFriendlyListName(sessionService.ListCollection.Lists[index].listName));
-            CopyDescriptionsForClonedItems(sourceDescriptionIds, GetSelectedDescriptionItemIds());
+            int[] targetDescriptionIds = GetClonedDescriptionItemIds(listIndex, elementCountBeforeClone, sourceDescriptionIds.Length);
+            CopyDescriptionsForClonedItems(sourceDescriptionIds, targetDescriptionIds);
 
             InvalidateItemReferenceOptionCaches();
             if (!referenceIndexReady)
@@ -91,6 +185,39 @@ namespace FWEledit
                 UpdateReferenceIndexForEditedElement(listIndex, elementIndex);
             }
 		}
+
+        private int[] GetClonedDescriptionItemIds(int listIndex, int elementCountBeforeClone, int expectedCloneCount)
+        {
+            if (sessionService == null
+                || sessionService.ListCollection == null
+                || listIndex < 0
+                || listIndex >= sessionService.ListCollection.Lists.Length
+                || elementCountBeforeClone < 0
+                || expectedCloneCount <= 0)
+            {
+                return new int[0];
+            }
+
+            eList list = sessionService.ListCollection.Lists[listIndex];
+            if (list == null || list.elementValues == null || elementCountBeforeClone >= list.elementValues.Length)
+            {
+                return new int[0];
+            }
+
+            int cloneCount = Math.Min(expectedCloneCount, list.elementValues.Length - elementCountBeforeClone);
+            int[] itemIds = new int[cloneCount];
+            for (int i = 0; i < cloneCount; i++)
+            {
+                int itemId;
+                if (!int.TryParse(sessionService.ListCollection.GetValue(listIndex, elementCountBeforeClone + i, 0), out itemId))
+                {
+                    itemId = 0;
+                }
+                itemIds[i] = itemId;
+            }
+
+            return itemIds;
+        }
 
 
         private void click_exportItem(object sender, EventArgs ea)
@@ -1028,7 +1155,8 @@ namespace FWEledit
                     string message = result.ImportedItemCount > 1
                         ? "Item packages imported: " + result.ImportedItemCount.ToString()
                         : "Item package imported.\nNew ID: " + result.NewId.ToString();
-                    message += "\nAssets imported: " + result.ImportedAssetCount.ToString();
+                    message += "\nAssets checked in package: " + GetCheckedImportAssetCount(result).ToString();
+                    message += "\nAssets copied to PCK: " + result.ImportedAssetCount.ToString();
                     message += "\nAssets already present: " + result.ExistingAssetCount.ToString();
                     if (result.UpdatedPackageCount > 0)
                     {
@@ -1064,7 +1192,8 @@ namespace FWEledit
         private void ShowModelsOnlyImportResult(ItemTransferImportResult result)
         {
             string importDetails = BuildModelsOnlyImportDetailsText(result);
-            string message = "Assets imported: " + result.ImportedAssetCount.ToString();
+            string message = "Assets checked in package: " + GetCheckedImportAssetCount(result).ToString();
+            message += "\nAssets copied to PCK: " + result.ImportedAssetCount.ToString();
             message += "\nAssets already present: " + result.ExistingAssetCount.ToString();
             if (result.UpdatedPackageCount > 0)
             {
@@ -1093,6 +1222,16 @@ namespace FWEledit
             {
                 MessageBox.Show(this, message + "\n\nNo model path IDs were found in this package.", "Import Models Only", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
+        }
+
+        private static int GetCheckedImportAssetCount(ItemTransferImportResult result)
+        {
+            if (result == null)
+            {
+                return 0;
+            }
+
+            return result.ImportedAssetCount + result.ExistingAssetCount + result.MissingAssetCount;
         }
 
         private static string BuildModelsOnlyImportDetailsText(ItemTransferImportResult result)

@@ -806,9 +806,21 @@ namespace FWEledit
 
                 for (int k = 0; k < sessionService.ListCollection.Lists[l].elementFields.Length; k++)
                 {
-                    if (sessionService.ListCollection.Lists[l].elementFields[k] == "Name")
+                    if (string.Equals(sessionService.ListCollection.Lists[l].elementFields[k], "Name", StringComparison.OrdinalIgnoreCase))
                     {
                         ift.name = sessionService.ListCollection.GetValue(l, pos_item, k);
+                        break;
+                    }
+                }
+                for (int k = 0; k < sessionService.ListCollection.Lists[l].elementFields.Length; k++)
+                {
+                    if (string.Equals(sessionService.ListCollection.Lists[l].elementFields[k], "item_quality", StringComparison.OrdinalIgnoreCase))
+                    {
+                        int quality;
+                        if (int.TryParse(sessionService.ListCollection.GetValue(l, pos_item, k), out quality))
+                        {
+                            ift.itemQuality = quality;
+                        }
                         break;
                     }
                 }

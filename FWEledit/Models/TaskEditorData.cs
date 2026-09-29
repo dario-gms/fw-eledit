@@ -83,6 +83,8 @@ namespace FWEledit
         public int Count { get; set; }
         public bool CommonItem { get; set; }
         public bool Bind { get; set; }
+        public float? Probability { get; set; }
+        public bool RandomGroup { get; set; }
         public string Name { get; set; }
         public Color? NameForeColor { get; set; }
         public string IconKey { get; set; }

@@ -18,5 +18,6 @@ namespace FWEledit
         internal string file_icon = "";
         internal Object test = null;
         internal uint procTypeValue = 0;
+        internal int itemQuality = -1;
     }
 }

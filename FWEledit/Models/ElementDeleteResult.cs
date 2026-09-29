@@ -6,5 +6,6 @@ namespace FWEledit
         public bool IsConversationList { get; set; }
         public bool DeleteAllBlocked { get; set; }
         public int[] DeletedIndices { get; set; } = new int[0];
+        public int[] DeletedGridIndices { get; set; } = new int[0];
     }
 }
