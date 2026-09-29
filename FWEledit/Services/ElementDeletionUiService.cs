@@ -36,15 +36,6 @@ namespace FWEledit
             enableSelectionList = false;
             enableSelectionItem = false;
 
-            for (int i = result.DeletedIndices.Length - 1; i > -1; i--)
-            {
-                int rowIndex = result.DeletedIndices[i];
-                if (rowIndex > -1 && rowIndex < elementGrid.Rows.Count)
-                {
-                    elementGrid.Rows.RemoveAt(rowIndex);
-                }
-            }
-
             hasUnsavedChanges = true;
             ListComboPopulationService.SetItemTextPreservingIcon(
                 listComboBox,
@@ -88,15 +79,6 @@ namespace FWEledit
 
             viewModel.EnableSelectionList = false;
             viewModel.EnableSelectionItem = false;
-
-            for (int i = result.DeletedIndices.Length - 1; i > -1; i--)
-            {
-                int rowIndex = result.DeletedIndices[i];
-                if (rowIndex > -1 && rowIndex < elementGrid.Rows.Count)
-                {
-                    elementGrid.Rows.RemoveAt(rowIndex);
-                }
-            }
 
             viewModel.HasUnsavedChanges = true;
             ListComboPopulationService.SetItemTextPreservingIcon(

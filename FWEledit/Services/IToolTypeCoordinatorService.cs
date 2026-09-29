@@ -61,11 +61,12 @@ namespace FWEledit
             }
 
             const int minWidth = 360;
-            const int maxWidth = 460;
+            const int maxWidth = 560;
             const int horizontalPadding = 24;
             const int headerHeight = 58;
             const int bottomPadding = 12;
-            const int maxHeight = 560;
+            Rectangle workingArea = Screen.FromPoint(owner.Location).WorkingArea;
+            int maxHeight = Math.Max(260, workingArea.Height - 40);
 
             int measuredWidth = TextRenderer.MeasureText(
                 previewBox.Text ?? string.Empty,
@@ -74,23 +75,34 @@ namespace FWEledit
                 TextFormatFlags.WordBreak).Width + horizontalPadding + 8;
             owner.Width = Math.Max(minWidth, Math.Min(maxWidth, measuredWidth));
             previewBox.Width = owner.Width - horizontalPadding;
+            if (titleLabelFromOwner(owner) != null)
+            {
+                titleLabelFromOwner(owner).Width = Math.Max(80, owner.Width - 70);
+            }
 
-            int desiredTextHeight = Math.Max(42, previewBox.Height);
+            int measuredTextHeight = TextRenderer.MeasureText(
+                previewBox.Text ?? string.Empty,
+                previewBox.Font,
+                new Size(previewBox.Width - 8, int.MaxValue),
+                TextFormatFlags.WordBreak).Height + 18;
+            int desiredTextHeight = Math.Max(Math.Max(42, previewBox.Height), measuredTextHeight);
             int desiredHeight = headerHeight + desiredTextHeight + bottomPadding;
             owner.Height = Math.Min(maxHeight, desiredHeight);
             previewBox.Height = Math.Max(42, owner.Height - headerHeight - bottomPadding);
+            previewBox.ScrollBars = desiredHeight > owner.Height
+                ? RichTextBoxScrollBars.Vertical
+                : RichTextBoxScrollBars.None;
 
-            Size screen = Screen.PrimaryScreen.WorkingArea.Size;
-            int bottomLimit = screen.Height;
+            int bottomLimit = workingArea.Bottom;
             if (owner.Bottom > bottomLimit)
             {
-                owner.Top = owner.Top - owner.Height;
+                owner.Top = Math.Max(workingArea.Top, bottomLimit - owner.Height);
             }
 
-            int rightLimit = screen.Width;
+            int rightLimit = workingArea.Right;
             if (owner.Right > rightLimit)
             {
-                owner.Left = Math.Max(0, rightLimit - owner.Width);
+                owner.Left = Math.Max(workingArea.Left, rightLimit - owner.Width);
             }
         }
 
@@ -101,7 +113,23 @@ namespace FWEledit
                 return;
             }
 
-            previewBox.Height = Math.Min(490, e.NewRectangle.Height + 8);
+            Rectangle workingArea = Screen.FromControl(previewBox).WorkingArea;
+            int maxTextHeight = Math.Max(180, workingArea.Height - 110);
+            previewBox.Height = Math.Min(maxTextHeight, e.NewRectangle.Height + 12);
+            previewBox.ScrollBars = e.NewRectangle.Height + 12 > maxTextHeight
+                ? RichTextBoxScrollBars.Vertical
+                : RichTextBoxScrollBars.None;
+        }
+
+        private static Label titleLabelFromOwner(Form owner)
+        {
+            if (owner == null)
+            {
+                return null;
+            }
+
+            Control[] controls = owner.Controls.Find("titleText", false);
+            return controls != null && controls.Length > 0 ? controls[0] as Label : null;
         }
 
         public void HandleFadeTick(Form owner, Timer timer, double increment)

@@ -22,7 +22,7 @@
     <UpdateRequired>false</UpdateRequired>
     <MapFileExtensions>true</MapFileExtensions>
     <ApplicationRevision>0</ApplicationRevision>
-    <ApplicationVersion>0.9.5.26</ApplicationVersion>
+    <ApplicationVersion>0.9.5.28</ApplicationVersion>
     <IsWebBootstrapper>false</IsWebBootstrapper>
     <UseApplicationTrust>false</UseApplicationTrust>
     <BootstrapperEnabled>true</BootstrapperEnabled>
@@ -491,6 +491,7 @@
     <Compile Include="Models\ItemTransferPackageModels.cs" />
     <Compile Include="Models\NpcGenData.cs" />
     <Compile Include="Models\NpcGenMapPreviewData.cs" />
+    <Compile Include="Models\TaskEditorData.cs" />
     <Compile Include="ItemTransferImportModeWindow.cs" />
     <Compile Include="ItemTransferModelsOnlyResultWindow.cs" />
     <Compile Include="Models\ElementSearchRequest.cs" />
@@ -798,6 +799,7 @@
     <Compile Include="Services\ElementsJoinWorkflowService.cs" />
     <Compile Include="Services\ElementsSessionService.cs" />
     <Compile Include="Services\ElementIndexResolverService.cs" />
+    <Compile Include="Services\EquipmentEssenceTooltipService.cs" />
     <Compile Include="Services\EquipmentTabService.cs" />
     <Compile Include="Services\MonsterFieldService.cs" />
     <Compile Include="Services\GridActiveRowService.cs" />
@@ -871,6 +873,7 @@
     <Compile Include="Services\NpcGenMapNameResolverService.cs" />
     <Compile Include="Services\NpcGenMapPreviewService.cs" />
     <Compile Include="Services\NpcGenScriptReferenceService.cs" />
+    <Compile Include="Services\TaskEditorFileService.cs" />
     <Compile Include="Services\GameShopDataService.cs" />
     <Compile Include="Services\GameShopIconService.cs" />
     <Compile Include="Services\ReferenceIndexService.cs" />
@@ -1082,6 +1085,9 @@
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="Views\NpcGenSpawnEditorWindow.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Views\TaskEditorWindow.cs">
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="Views\EquipmentMaskPickerWindow.cs">

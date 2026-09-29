@@ -767,6 +767,26 @@ namespace FWEledit
                 || int.TryParse(candidate, NumberStyles.Integer, CultureInfo.CurrentCulture, out value);
         }
 
+        public static bool IsSkillMatterDisplayField(eListCollection listCollection, int listIndex, string fieldName)
+        {
+            if (string.IsNullOrWhiteSpace(fieldName) || !IsSkillMatterList(listCollection, listIndex))
+            {
+                return false;
+            }
+
+            string normalizedField = fieldName.Trim();
+            return string.Equals(normalizedField, "id_skill", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(normalizedField, "level_skill", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(normalizedField, "cast_skill", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(normalizedField, "skill_matter_type", StringComparison.OrdinalIgnoreCase);
+        }
+
+        public static bool IsSkillMatterTypeField(eListCollection listCollection, int listIndex, string fieldName)
+        {
+            return IsSkillMatterList(listCollection, listIndex)
+                && string.Equals(fieldName != null ? fieldName.Trim() : string.Empty, "skill_matter_type", StringComparison.OrdinalIgnoreCase);
+        }
+
         private static bool IsSkillMatterList(eListCollection listCollection, int listIndex)
         {
             if (listCollection == null || listIndex < 0 || listIndex >= listCollection.Lists.Length)

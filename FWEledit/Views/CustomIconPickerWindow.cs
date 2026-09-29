@@ -16,6 +16,8 @@ namespace FWEledit
         private readonly Label capacityLabel;
         private readonly Button expandButton;
         private readonly Button removeButton;
+        private readonly Image itemFrame;
+        private Image previewComposedImage;
         private readonly Func<IWin32Window, CustomIconEntry> importIcon;
         private readonly Func<CustomIconCapacityInfo> getCapacity;
         private readonly Func<IWin32Window, CustomIconCapacityInfo> expandCapacity;
@@ -29,7 +31,8 @@ namespace FWEledit
             Func<IWin32Window, CustomIconEntry> importIcon,
             Func<CustomIconCapacityInfo> getCapacity,
             Func<IWin32Window, CustomIconCapacityInfo> expandCapacity,
-            Func<IWin32Window, CustomIconEntry, bool> removeIcon)
+            Func<IWin32Window, CustomIconEntry, bool> removeIcon,
+            Image itemFrame)
         {
             allEntries = entries ?? new List<CustomIconEntry>();
             SelectedPathId = currentPathId;
@@ -37,6 +40,7 @@ namespace FWEledit
             this.getCapacity = getCapacity;
             this.expandCapacity = expandCapacity;
             this.removeIcon = removeIcon;
+            this.itemFrame = itemFrame;
 
             Text = "Custom Icons...";
             StartPosition = FormStartPosition.CenterParent;
@@ -126,11 +130,6 @@ namespace FWEledit
             bottom.BackColor = BackColor;
             bottom.Padding = new Padding(0, 8, 0, 0);
 
-            Button cancelButton = BuildButton("Cancel [ESC]");
-            cancelButton.Width = 105;
-            cancelButton.Dock = DockStyle.Right;
-            cancelButton.Click += (s, e) => { DialogResult = DialogResult.Cancel; Close(); };
-
             Button okButton = BuildButton("OK [Enter]");
             okButton.Width = 95;
             okButton.Dock = DockStyle.Right;
@@ -157,7 +156,6 @@ namespace FWEledit
             bottom.Controls.Add(importButton);
             bottom.Controls.Add(expandButton);
             bottom.Controls.Add(removeButton);
-            bottom.Controls.Add(cancelButton);
             bottom.Controls.Add(okButton);
 
             right.Controls.Add(previewBox);
@@ -170,7 +168,6 @@ namespace FWEledit
             Controls.Add(root);
 
             AcceptButton = okButton;
-            CancelButton = cancelButton;
 
             ApplyFilter();
             RefreshCapacity();
@@ -198,12 +195,7 @@ namespace FWEledit
 
         private void Window_KeyDown(object sender, KeyEventArgs e)
         {
-            if (e.KeyCode == Keys.Escape)
-            {
-                DialogResult = DialogResult.Cancel;
-                Close();
-            }
-            else if (e.KeyCode == Keys.Enter)
+            if (e.KeyCode == Keys.Enter)
             {
                 ConfirmSelection();
                 e.SuppressKeyPress = true;
@@ -235,7 +227,7 @@ namespace FWEledit
                 }
 
                 int imageIndex = imageList.Images.Count;
-                imageList.Images.Add(entry.Thumbnail ?? Properties.Resources.NoIcon);
+                imageList.Images.Add(CreateItemSlotPreview(entry.Thumbnail ?? Properties.Resources.NoIcon, imageList.ImageSize));
 
                 ListViewItem item = new ListViewItem(entry.PathId.ToString(), imageIndex);
                 item.SubItems.Add(entry.Name ?? string.Empty);
@@ -378,15 +370,61 @@ namespace FWEledit
             CustomIconEntry entry = GetSelectedEntry();
             if (entry == null)
             {
-                previewBox.Image = null;
+                SetPreviewImage(null);
                 detailLabel.Text = string.Empty;
                 removeButton.Enabled = false;
                 return;
             }
 
-            previewBox.Image = entry.Thumbnail;
+            SetPreviewImage(CreateItemSlotPreview(entry.Thumbnail ?? Properties.Resources.NoIcon, new Size(128, 128)));
             detailLabel.Text = "ID: " + entry.PathId + Environment.NewLine + (entry.Path ?? string.Empty);
             removeButton.Enabled = removeIcon != null;
+        }
+
+        private Image CreateItemSlotPreview(Image icon, Size size)
+        {
+            int width = Math.Max(1, size.Width);
+            int height = Math.Max(1, size.Height);
+            Bitmap composed = new Bitmap(width, height);
+            using (Graphics graphics = Graphics.FromImage(composed))
+            {
+                graphics.Clear(Color.Transparent);
+                graphics.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.NearestNeighbor;
+                graphics.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.Half;
+
+                if (itemFrame != null)
+                {
+                    graphics.DrawImage(itemFrame, new Rectangle(0, 0, width, height));
+                }
+                else
+                {
+                    using (Brush brush = new SolidBrush(Color.FromArgb(13, 16, 20)))
+                    {
+                        graphics.FillRectangle(brush, 0, 0, width, height);
+                    }
+                }
+
+                if (icon != null)
+                {
+                    int inset = Math.Max(2, width / 10);
+                    Rectangle iconBounds = new Rectangle(inset, inset, Math.Max(1, width - (inset * 2)), Math.Max(1, height - (inset * 2)));
+                    graphics.DrawImage(icon, iconBounds);
+                }
+            }
+
+            return composed;
+        }
+
+        private void SetPreviewImage(Image image)
+        {
+            if (previewComposedImage != null)
+            {
+                previewComposedImage.Dispose();
+                previewComposedImage = null;
+            }
+
+            previewComposedImage = image;
+            previewBox.Image = previewComposedImage;
         }
 
         private void RemoveIcon()
@@ -453,6 +491,24 @@ namespace FWEledit
             SelectedPathId = entry.PathId;
             DialogResult = DialogResult.OK;
             Close();
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                if (previewComposedImage != null)
+                {
+                    previewComposedImage.Dispose();
+                    previewComposedImage = null;
+                }
+                if (itemFrame != null)
+                {
+                    itemFrame.Dispose();
+                }
+            }
+
+            base.Dispose(disposing);
         }
     }
 }

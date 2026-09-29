@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Windows.Forms;
 
 namespace FWEledit
@@ -33,7 +34,9 @@ namespace FWEledit
                 return;
             }
 
-            ElementDeleteResult result = mutationService.DeleteItems(listCollection, listIndex, selIndices);
+            int[] elementIndices = ResolveSelectedElementIndices(listCollection, listIndex, elementGrid, selIndices);
+            ElementDeleteResult result = mutationService.DeleteItems(listCollection, listIndex, elementIndices);
+            result.DeletedGridIndices = selIndices;
             deletionUiService.ApplyDeletionResult(
                 result,
                 listCollection,
@@ -73,7 +76,9 @@ namespace FWEledit
                 return;
             }
 
-            ElementDeleteResult result = mutationService.DeleteItems(listCollection, listIndex, selIndices);
+            int[] elementIndices = ResolveSelectedElementIndices(listCollection, listIndex, elementGrid, selIndices);
+            ElementDeleteResult result = mutationService.DeleteItems(listCollection, listIndex, elementIndices);
+            result.DeletedGridIndices = selIndices;
             deletionUiService.ApplyDeletionResult(
                 result,
                 listCollection,
@@ -82,6 +87,28 @@ namespace FWEledit
                 listComboBox,
                 viewModel,
                 refreshItemAction);
+        }
+
+        private static int[] ResolveSelectedElementIndices(eListCollection listCollection, int listIndex, DataGridView elementGrid, int[] selectedGridIndices)
+        {
+            if (selectedGridIndices == null || selectedGridIndices.Length == 0)
+            {
+                return new int[0];
+            }
+
+            ElementIndexResolverService resolver = new ElementIndexResolverService();
+            List<int> elementIndices = new List<int>();
+            HashSet<int> seen = new HashSet<int>();
+            for (int i = 0; i < selectedGridIndices.Length; i++)
+            {
+                int elementIndex = resolver.ResolveElementIndexFromGridRow(listCollection, listIndex, selectedGridIndices[i], elementGrid);
+                if (elementIndex >= 0 && seen.Add(elementIndex))
+                {
+                    elementIndices.Add(elementIndex);
+                }
+            }
+
+            return elementIndices.ToArray();
         }
     }
 }

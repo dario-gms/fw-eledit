@@ -92,7 +92,12 @@ namespace FWEledit
         {
             if (ItemListCatalog.IsItemList(listCollection, listIndex))
             {
-                return BuildUsedItemIdsAcrossLists(listCollection, listIndex, excludedRowIndex);
+                return BuildUsedIdsAcrossLists(listCollection, listIndex, excludedRowIndex);
+            }
+
+            if (IsNpcRuntimeEssenceList(listCollection, listIndex))
+            {
+                return BuildUsedIdsAcrossLists(listCollection, listIndex, excludedRowIndex);
             }
 
             int idFieldIndex = GetIdFieldIndex(listCollection, listIndex);
@@ -112,6 +117,21 @@ namespace FWEledit
             }
 
             return used;
+        }
+
+        private static bool IsNpcRuntimeEssenceList(eListCollection listCollection, int listIndex)
+        {
+            if (listCollection == null || listIndex < 0 || listIndex >= listCollection.Lists.Length)
+            {
+                return false;
+            }
+
+            string listName = ItemListCatalog.NormalizeListName(listCollection.Lists[listIndex].listName);
+            return string.Equals(listName, "NPC_ESSENCE", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(listName, "MONSTER_ESSENCE", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(listName, "NPC_TASK_IN_SERVICE", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(listName, "NPC_TASK_OUT_SERVICE", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(listName, "NPC_TASK_MATTER_SERVICE", StringComparison.OrdinalIgnoreCase);
         }
 
         public HashSet<int> BuildUsedItemIdsAcrossLists(eListCollection listCollection, int excludedListIndex, int excludedRowIndex)

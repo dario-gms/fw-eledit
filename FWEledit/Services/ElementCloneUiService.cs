@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Windows.Forms;
 
 namespace FWEledit
@@ -57,20 +58,7 @@ namespace FWEledit
                 listIndex,
                 "[" + listIndex + "] " + friendlyListName + " (" + listCollection.Lists[listIndex].elementValues.Length + ")");
 
-            elementGrid.ClearSelection();
-            for (int i = 0; i < result.NewIndices.Length; i++)
-            {
-                int rowIndex = result.NewIndices[i];
-                if (rowIndex > -1 && rowIndex < elementGrid.Rows.Count)
-                {
-                    elementGrid.Rows[rowIndex].Selected = true;
-                    elementGrid.CurrentCell = elementGrid[0, rowIndex];
-                }
-            }
-            if (elementGrid.CurrentCell != null)
-            {
-                elementGrid.FirstDisplayedScrollingRowIndex = elementGrid.CurrentCell.RowIndex;
-            }
+            SelectNewRows(elementGrid, result.NewIndices);
 
             if (refreshItemSelection != null)
             {
@@ -130,24 +118,54 @@ namespace FWEledit
                 listIndex,
                 "[" + listIndex + "] " + friendlyListName + " (" + listCollection.Lists[listIndex].elementValues.Length + ")");
 
-            elementGrid.ClearSelection();
-            for (int i = 0; i < result.NewIndices.Length; i++)
-            {
-                int rowIndex = result.NewIndices[i];
-                if (rowIndex > -1 && rowIndex < elementGrid.Rows.Count)
-                {
-                    elementGrid.Rows[rowIndex].Selected = true;
-                    elementGrid.CurrentCell = elementGrid[0, rowIndex];
-                }
-            }
-            if (elementGrid.CurrentCell != null)
-            {
-                elementGrid.FirstDisplayedScrollingRowIndex = elementGrid.CurrentCell.RowIndex;
-            }
+            SelectNewRows(elementGrid, result.NewIndices);
 
             if (refreshItemSelection != null)
             {
                 refreshItemSelection();
+            }
+        }
+
+        private static void SelectNewRows(DataGridView elementGrid, int[] newElementIndices)
+        {
+            if (elementGrid == null)
+            {
+                return;
+            }
+
+            elementGrid.ClearSelection();
+            if (newElementIndices == null || newElementIndices.Length == 0)
+            {
+                return;
+            }
+
+            HashSet<int> pendingElementIndices = new HashSet<int>(newElementIndices);
+            bool currentCellSet = false;
+            for (int rowIndex = 0; rowIndex < elementGrid.Rows.Count; rowIndex++)
+            {
+                DataGridViewRow row = elementGrid.Rows[rowIndex];
+                if (!(row.Tag is int))
+                {
+                    continue;
+                }
+
+                int elementIndex = (int)row.Tag;
+                if (!pendingElementIndices.Contains(elementIndex))
+                {
+                    continue;
+                }
+
+                row.Selected = true;
+                if (!currentCellSet)
+                {
+                    elementGrid.CurrentCell = elementGrid[0, rowIndex];
+                    currentCellSet = true;
+                }
+            }
+
+            if (elementGrid.CurrentCell != null)
+            {
+                elementGrid.FirstDisplayedScrollingRowIndex = elementGrid.CurrentCell.RowIndex;
             }
         }
     }

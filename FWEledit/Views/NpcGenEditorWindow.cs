@@ -14,6 +14,8 @@ namespace FWEledit
 
         private readonly NpcGenFileService fileService = new NpcGenFileService();
         private readonly NpcGenEntityLookupService entityLookupService = new NpcGenEntityLookupService();
+        private readonly ItemReferenceService itemReferenceService = new ItemReferenceService();
+        private readonly IconResolutionService iconResolutionService = new IconResolutionService();
         private readonly NpcGenMapNameResolverService mapNameResolverService = new NpcGenMapNameResolverService();
         private readonly NpcGenMapPreviewService mapPreviewService = new NpcGenMapPreviewService();
         private readonly GameFolderDialogService folderDialogService = new GameFolderDialogService();
@@ -22,6 +24,9 @@ namespace FWEledit
         private string currentMapDisplayName = string.Empty;
         private bool suppressChanges;
         private bool isDirty;
+        private eListCollection cachedNpcPickerListCollection;
+        private CacheSave cachedNpcPickerDatabase;
+        private List<ItemReferenceOption> cachedNpcPickerOptions;
 
         private TextBox pathTextBox;
         private Label mapNameLabel;
@@ -97,6 +102,7 @@ namespace FWEledit
         private CheckBox entryDefaultFactionHelper;
         private CheckBox entryDefaultFactionAccept;
         private Button addAreaButton;
+        private Button cloneAreaButton;
         private Button deleteAreaButton;
         private Button addEntryButton;
         private Button deleteEntryButton;
@@ -223,15 +229,19 @@ namespace FWEledit
             areaGrid.SelectionChanged += areaGrid_SelectionChanged;
             left.Controls.Add(areaGrid, 0, 1);
 
-            TableLayoutPanel areaButtons = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2 };
-            areaButtons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
-            areaButtons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+            TableLayoutPanel areaButtons = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3 };
+            areaButtons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 34));
+            areaButtons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33));
+            areaButtons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33));
             addAreaButton = new Button { Text = "Add", Dock = DockStyle.Fill };
+            cloneAreaButton = new Button { Text = "Clone", Dock = DockStyle.Fill };
             deleteAreaButton = new Button { Text = "Delete", Dock = DockStyle.Fill };
             addAreaButton.Click += addAreaButton_Click;
+            cloneAreaButton.Click += cloneAreaButton_Click;
             deleteAreaButton.Click += deleteAreaButton_Click;
             areaButtons.Controls.Add(addAreaButton, 0, 0);
-            areaButtons.Controls.Add(deleteAreaButton, 1, 0);
+            areaButtons.Controls.Add(cloneAreaButton, 1, 0);
+            areaButtons.Controls.Add(deleteAreaButton, 2, 0);
             left.Controls.Add(areaButtons, 0, 2);
 
             TableLayoutPanel right = new TableLayoutPanel();
@@ -879,9 +889,9 @@ namespace FWEledit
             {
                 return;
             }
-            area.Position = new PointF3((float)posX.Value, (float)posY.Value, (float)posZ.Value);
-            area.Direction = new PointF3((float)dirX.Value, (float)dirY.Value, (float)dirZ.Value);
-            area.Extents = new PointF3((float)extX.Value, (float)extY.Value, (float)extZ.Value);
+            area.Position = new PointF3(ReadFloatBox(posX), ReadFloatBox(posY), ReadFloatBox(posZ));
+            area.Direction = new PointF3(ReadFloatBox(dirX), ReadFloatBox(dirY), ReadFloatBox(dirZ));
+            area.Extents = new PointF3(ReadFloatBox(extX), ReadFloatBox(extY), ReadFloatBox(extZ));
             area.AreaType = groupTypeCombo.SelectedIndex == 1 ? 1 : 0;
             area.GroupType = Math.Max(0, groupBehaviorCombo.SelectedIndex);
             area.NpcType = (int)groupRawType.Value;
@@ -915,8 +925,8 @@ namespace FWEledit
             entry.Refresh = (int)entryRefresh.Value;
             entry.DiedTimes = (int)entryDiedTimes.Value;
             entry.Aggressive = (int)entryAggressive.Value;
-            entry.OffsetWater = (float)entryOffsetWater.Value;
-            entry.OffsetTerrain = (float)entryOffsetTerrain.Value;
+            entry.OffsetWater = ReadFloatBox(entryOffsetWater);
+            entry.OffsetTerrain = ReadFloatBox(entryOffsetTerrain);
             entry.PathId = (int)entryPathId.Value;
             entry.LoopType = (int)entryLoopType.Value;
             entry.SpeedFlag = (int)entrySpeedFlag.Value;
@@ -971,6 +981,113 @@ namespace FWEledit
             }
             int index = entryGrid.CurrentRow.Index;
             return index >= 0 && index < area.Entries.Count ? area.Entries[index] : null;
+        }
+
+        private static NpcGenArea CloneArea(NpcGenArea source)
+        {
+            NpcGenArea clone = new NpcGenArea
+            {
+                AreaType = source.AreaType,
+                Position = source.Position,
+                Direction = source.Direction,
+                Extents = source.Extents,
+                NpcType = source.NpcType,
+                GroupType = source.GroupType,
+                InitGen = source.InitGen,
+                AutoRevive = source.AutoRevive,
+                ValidOnce = source.ValidOnce,
+                GenId = source.GenId,
+                ControllerId = source.ControllerId,
+                LifeTime = source.LifeTime,
+                MaxNum = source.MaxNum,
+                ExportId = source.ExportId,
+                RawAttachCount = source.RawAttachCount,
+                BufferRegionId = source.BufferRegionId
+            };
+
+            for (int i = 0; i < source.Entries.Count; i++)
+            {
+                clone.Entries.Add(CloneEntry(source.Entries[i]));
+            }
+
+            for (int i = 0; i < source.AttachIds.Count; i++)
+            {
+                clone.AttachIds.Add(source.AttachIds[i]);
+            }
+
+            return clone;
+        }
+
+        private static NpcGenEntry CloneEntry(NpcGenEntry source)
+        {
+            return new NpcGenEntry
+            {
+                Id = source.Id,
+                Num = source.Num,
+                Refresh = source.Refresh,
+                DiedTimes = source.DiedTimes,
+                Aggressive = source.Aggressive,
+                OffsetWater = source.OffsetWater,
+                OffsetTerrain = source.OffsetTerrain,
+                Faction = source.Faction,
+                FactionHelper = source.FactionHelper,
+                FactionAccept = source.FactionAccept,
+                NeedHelp = source.NeedHelp,
+                DefaultFaction = source.DefaultFaction,
+                DefaultFactionHelper = source.DefaultFactionHelper,
+                DefaultFactionAccept = source.DefaultFactionAccept,
+                PathId = source.PathId,
+                LoopType = source.LoopType,
+                SpeedFlag = source.SpeedFlag,
+                DeadTime = source.DeadTime
+            };
+        }
+
+        private static NpcGenEntry CreateDefaultEntry(int id)
+        {
+            return new NpcGenEntry
+            {
+                Id = id,
+                Num = 1,
+                DefaultFaction = 1,
+                DefaultFactionHelper = 1,
+                DefaultFactionAccept = 1
+            };
+        }
+
+        private int GetNextNpcGenExportId()
+        {
+            if (currentData == null || currentData.Areas.Count == 0)
+            {
+                return 1;
+            }
+
+            int max = 0;
+            for (int i = 0; i < currentData.Areas.Count; i++)
+            {
+                if (currentData.Areas[i] != null && currentData.Areas[i].ExportId > max)
+                {
+                    max = currentData.Areas[i].ExportId;
+                }
+            }
+
+            return max + 1;
+        }
+
+        private int GetNpcGenNormalInsertIndex()
+        {
+            if (currentData == null || currentData.Areas.Count == 0)
+            {
+                return 0;
+            }
+
+            ulong reservedTailCount = (ulong)currentData.CopyCount + (ulong)currentData.FlyCopyCount;
+            if (reservedTailCount == 0 || reservedTailCount >= (ulong)currentData.Areas.Count)
+            {
+                return currentData.Areas.Count;
+            }
+
+            return currentData.Areas.Count - (int)reservedTailCount;
         }
 
         private NpcGenController GetSelectedController()
@@ -1568,6 +1685,25 @@ namespace FWEledit
             }
         }
 
+        private void SelectAreaByIndex(int areaIndex)
+        {
+            if (currentData == null || areaIndex < 0 || areaIndex >= currentData.Areas.Count)
+            {
+                return;
+            }
+
+            foreach (DataGridViewRow row in areaGrid.Rows)
+            {
+                if (row.Tag is int && (int)row.Tag == areaIndex)
+                {
+                    row.Selected = true;
+                    areaGrid.CurrentCell = row.Cells[0];
+                    LoadSelectedArea();
+                    return;
+                }
+            }
+        }
+
         private void SelectEntryByIndex(int entryIndex)
         {
             if (entryIndex < 0 || entryIndex >= entryGrid.Rows.Count)
@@ -1643,22 +1779,143 @@ namespace FWEledit
             }
         }
 
+        private bool TryPickNpcOrMonster(int currentId, string title, out ItemReferenceOption selected)
+        {
+            selected = null;
+            if (sessionService == null || sessionService.ListCollection == null)
+            {
+                MessageBox.Show(this, "Open elements.data first so NPC and monster names can be resolved.", "NPCGen Editor", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return false;
+            }
+
+            List<ItemReferenceOption> options = BuildNpcOrMonsterOptions();
+            if (options.Count == 0)
+            {
+                MessageBox.Show(this, "No NPC_ESSENCE or MONSTER_ESSENCE entries were found.", "NPCGen Editor", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return false;
+            }
+
+            using (ItemReferencePickerWindow picker = new ItemReferencePickerWindow(
+                options,
+                currentId,
+                -1,
+                sessionService.Database,
+                title,
+                sessionService.AssetManager))
+            {
+                if (picker.ShowDialog(this) != DialogResult.OK || picker.SelectedOption == null)
+                {
+                    return false;
+                }
+
+                selected = picker.SelectedOption;
+                return true;
+            }
+        }
+
+        private List<ItemReferenceOption> BuildNpcOrMonsterOptions()
+        {
+            eListCollection listCollection = sessionService != null ? sessionService.ListCollection : null;
+            CacheSave database = sessionService != null ? sessionService.Database : null;
+            if (ReferenceEquals(cachedNpcPickerListCollection, listCollection)
+                && ReferenceEquals(cachedNpcPickerDatabase, database)
+                && cachedNpcPickerOptions != null)
+            {
+                return cachedNpcPickerOptions;
+            }
+
+            List<ItemReferenceOption> options = new List<ItemReferenceOption>();
+            if (listCollection != null && listCollection.Lists != null)
+            {
+                for (int listIndex = 0; listIndex < listCollection.Lists.Length; listIndex++)
+                {
+                    eList list = listCollection.Lists[listIndex];
+                    string listName = NormalizeElementListName(list != null ? list.listName : string.Empty);
+                    if (!string.Equals(listName, "NPC_ESSENCE", StringComparison.OrdinalIgnoreCase)
+                        && !string.Equals(listName, "MONSTER_ESSENCE", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    options.AddRange(itemReferenceService.BuildOptions(listCollection, listIndex, database, iconResolutionService));
+                }
+            }
+
+            cachedNpcPickerListCollection = listCollection;
+            cachedNpcPickerDatabase = database;
+            cachedNpcPickerOptions = options
+                .OrderBy(option => NormalizeElementListName(option.ListName), StringComparer.OrdinalIgnoreCase)
+                .ThenBy(option => option.Id)
+                .ToList();
+
+            return cachedNpcPickerOptions;
+        }
+
+        private static bool IsNpcOption(ItemReferenceOption option)
+        {
+            return string.Equals(NormalizeElementListName(option != null ? option.ListName : string.Empty), "NPC_ESSENCE", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string NormalizeElementListName(string listName)
+        {
+            if (string.IsNullOrWhiteSpace(listName))
+            {
+                return string.Empty;
+            }
+
+            string[] split = listName.Split(new[] { " - " }, StringSplitOptions.None);
+            return split.Length > 1 ? split[1].Trim() : listName.Trim();
+        }
+
         private void addAreaButton_Click(object sender, EventArgs e)
         {
             if (currentData == null)
             {
                 return;
             }
+
+            ItemReferenceOption selected;
+            if (!TryPickNpcOrMonster(0, "Choose NPC or monster...", out selected))
+            {
+                return;
+            }
+
             NpcGenArea area = new NpcGenArea();
-            area.AreaType = 1;
+            area.AreaType = IsNpcOption(selected) ? 1 : 0;
+            area.NpcType = area.AreaType;
             area.GroupType = 0;
             area.InitGen = 1;
             area.AutoRevive = 1;
             area.ValidOnce = 1;
-            area.Entries.Add(new NpcGenEntry { Num = 1 });
-            currentData.Areas.Add(area);
+            area.ExportId = GetNextNpcGenExportId();
+            area.Entries.Add(CreateDefaultEntry(selected.Id));
+            int insertIndex = GetNpcGenNormalInsertIndex();
+            currentData.Areas.Insert(insertIndex, area);
             MarkDirty();
             PopulateAreas();
+            SelectAreaByIndex(insertIndex);
+        }
+
+        private void cloneAreaButton_Click(object sender, EventArgs e)
+        {
+            if (currentData == null)
+            {
+                return;
+            }
+
+            NpcGenArea source = GetSelectedArea();
+            if (source == null)
+            {
+                return;
+            }
+
+            NpcGenArea clone = CloneArea(source);
+            clone.ExportId = GetNextNpcGenExportId();
+            int insertIndex = GetNpcGenNormalInsertIndex();
+            currentData.Areas.Insert(insertIndex, clone);
+            MarkDirty();
+            PopulateAreas();
+            SelectAreaByIndex(insertIndex);
         }
 
         private void deleteAreaButton_Click(object sender, EventArgs e)
@@ -1683,9 +1940,19 @@ namespace FWEledit
             {
                 return;
             }
-            area.Entries.Add(new NpcGenEntry { Num = 1 });
+
+            ItemReferenceOption selected;
+            if (!TryPickNpcOrMonster(0, "Choose NPC or monster...", out selected))
+            {
+                return;
+            }
+
+            area.Entries.Add(CreateDefaultEntry(selected.Id));
+            area.AreaType = IsNpcOption(selected) ? 1 : area.AreaType;
+            area.NpcType = IsNpcOption(selected) ? 1 : area.NpcType;
             MarkDirty();
             LoadSelectedArea();
+            SelectEntryByIndex(area.Entries.Count - 1);
         }
 
         private void deleteEntryButton_Click(object sender, EventArgs e)
@@ -1835,6 +2102,7 @@ namespace FWEledit
             NumericUpDown box = CreateIntBox();
             box.DecimalPlaces = 6;
             box.Increment = 0.1M;
+            box.ThousandsSeparator = false;
             return box;
         }
 
@@ -1936,6 +2204,26 @@ namespace FWEledit
                 decimalValue = box.Maximum;
             }
             box.Value = decimalValue;
+        }
+
+        private static float ReadFloatBox(NumericUpDown box)
+        {
+            string text = (box.Text ?? string.Empty).Trim();
+            float parsed;
+            if (text.IndexOf('.') >= 0
+                && float.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out parsed))
+            {
+                return parsed;
+            }
+            if (float.TryParse(text, NumberStyles.Float, CultureInfo.CurrentCulture, out parsed))
+            {
+                return parsed;
+            }
+            if (float.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out parsed))
+            {
+                return parsed;
+            }
+            return (float)box.Value;
         }
 
         private void ApplyDarkTheme(Control root)

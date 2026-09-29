@@ -15,6 +15,8 @@ namespace FWEledit
         private int lastDescriptionUiRowIndex = -1;
         private int lastDescriptionUiItemId = -1;
         private string lastDescriptionPreviewText = null;
+        private eListCollection descriptionIdUsageCacheSource = null;
+        private Dictionary<int, List<DescriptionIdUsage>> descriptionIdUsageCache = null;
 
         private void ApplyItemDescriptionRuntime(string[] data)
         {
@@ -89,7 +91,7 @@ namespace FWEledit
             }
 
             RestoreDescriptionTabIfNeeded();
-            if (TryApplyAddonPackageDescModeForSelection())
+            if (TryApplyInlineDescriptionModeForSelection())
             {
                 return;
             }
@@ -97,16 +99,29 @@ namespace FWEledit
             if (CurrentListShouldHideDescriptionTab())
             {
                 RemoveDescriptionTabForCurrentList();
-                ConfigureAddonPackageDescMode(false);
+                ConfigureInlineDescriptionMode(false, string.Empty);
                 return;
             }
 
-            ConfigureAddonPackageDescMode(false);
+            ConfigureInlineDescriptionMode(false, string.Empty);
 
             bool supportsDescriptions = CurrentListSupportsItemDescriptions();
             if (fwDescriptionEditor != null)
             {
                 fwDescriptionEditor.ReadOnly = !supportsDescriptions;
+            }
+            if (supportsDescriptions
+                && TryGetCurrentDescriptionItemId(out int currentDescriptionItemId)
+                && HasDescriptionIdCollisionOutsideSelection(comboBox_lists.SelectedIndex, new int[] { currentDescriptionItemId }, GetSelectedDescriptionElementIndices(), out string collisionStatus))
+            {
+                if (fwDescriptionEditor != null)
+                {
+                    fwDescriptionEditor.ReadOnly = true;
+                }
+                if (fwDescriptionStatusLabel != null)
+                {
+                    fwDescriptionStatusLabel.Text = collisionStatus;
+                }
             }
 
             if (!IsDescriptionTabActive())
@@ -184,6 +199,8 @@ namespace FWEledit
             lastDescriptionUiRowIndex = -1;
             lastDescriptionUiItemId = -1;
             lastDescriptionPreviewText = null;
+            descriptionIdUsageCacheSource = null;
+            descriptionIdUsageCache = null;
         }
 
         private bool TryGetCurrentDescriptionSelectionKey(out int listIndex, out int rowIndex, out int itemId)
@@ -514,7 +531,36 @@ namespace FWEledit
                 return false;
             }
 
-            return listIndex != 0;
+            return ListSupportsItemDescriptions(listIndex);
+        }
+
+        private bool ListSupportsItemDescriptions(int listIndex)
+        {
+            if (sessionService == null || sessionService.ListCollection == null)
+            {
+                return false;
+            }
+
+            if (listIndex <= 0 || listIndex >= sessionService.ListCollection.Lists.Length)
+            {
+                return false;
+            }
+
+            if (listIndex == sessionService.ListCollection.ConversationListIndex)
+            {
+                return false;
+            }
+
+            eList list = sessionService.ListCollection.Lists[listIndex];
+            if (list == null)
+            {
+                return false;
+            }
+
+            string listName = list.listName ?? string.Empty;
+            return !IsNamedConfigList(listName, "ADDON_PACKAGE_CONFIG")
+                && !MonsterFieldCatalog.IsMonsterEssenceList(sessionService.ListCollection, listIndex)
+                && ItemListCatalog.IsItemList(sessionService.ListCollection, listIndex);
         }
 
         private bool UpdateColorPreviewTabForSelection()
@@ -1099,20 +1145,26 @@ namespace FWEledit
             }
         }
 
-        private bool TryApplyAddonPackageDescModeForSelection()
+        private bool TryApplyInlineDescriptionModeForSelection()
         {
-            if (!TryGetCurrentAddonPackageDescContext(out int listIndex, out int elementIndex, out int descFieldIndex))
+            if (!TryGetCurrentInlineDescriptionContext(out int listIndex, out int elementIndex, out int descFieldIndex))
             {
                 return false;
             }
 
-            ConfigureAddonPackageDescMode(true);
+            string descFieldName = sessionService.ListCollection.Lists[listIndex].elementFields[descFieldIndex] ?? "description";
+            ConfigureInlineDescriptionMode(true, descFieldName);
 
             string descText = NormalizeAddonPackageDescForEditor(
                 sessionService.ListCollection.GetValue(listIndex, elementIndex, descFieldIndex) ?? string.Empty);
             viewModel.IsUpdatingDescriptionUi = true;
             try
             {
+                if (viewModel.DescriptionViewModel != null)
+                {
+                    viewModel.DescriptionViewModel.GetEditorTextForItem(0, null);
+                }
+
                 if (fwDescriptionPreview != null && !string.Equals(fwDescriptionPreview.Text, descText, StringComparison.Ordinal))
                 {
                     fwDescriptionPreview.Text = descText;
@@ -1130,22 +1182,23 @@ namespace FWEledit
 
             if (fwDescriptionStatusLabel != null)
             {
-                fwDescriptionStatusLabel.Text = "Editing " + sessionService.ListCollection.Lists[listIndex].elementFields[descFieldIndex] + " from elements.data";
+                fwDescriptionStatusLabel.Text = "Editing " + descFieldName + " from elements.data";
             }
 
             return true;
         }
 
-        private void ConfigureAddonPackageDescMode(bool enabled)
+        private void ConfigureInlineDescriptionMode(bool enabled, string fieldName)
         {
+            string displayFieldName = string.IsNullOrWhiteSpace(fieldName) ? "description" : fieldName.Trim();
             if (fwDescriptionTab != null)
             {
-                fwDescriptionTab.Text = enabled ? "desc" : "Description";
+                fwDescriptionTab.Text = "Description";
             }
 
             if (fwDescriptionSaveButton != null)
             {
-                fwDescriptionSaveButton.Text = enabled ? "Apply desc" : "Stage Description";
+                fwDescriptionSaveButton.Text = enabled ? "Apply Description" : "Stage Description";
             }
 
             if (fwDescriptionPreview != null)
@@ -1213,7 +1266,7 @@ namespace FWEledit
             }
         }
 
-        private bool TryGetCurrentAddonPackageDescContext(out int listIndex, out int elementIndex, out int descFieldIndex)
+        private bool TryGetCurrentInlineDescriptionContext(out int listIndex, out int elementIndex, out int descFieldIndex)
         {
             listIndex = -1;
             elementIndex = -1;
@@ -1233,18 +1286,20 @@ namespace FWEledit
                 return false;
             }
 
+            if (!ListSupportsInlineDescriptionMode(listIndex))
+            {
+                return false;
+            }
+
             eList list = sessionService.ListCollection.Lists[listIndex];
-            string listName = list != null ? list.listName : string.Empty;
-            bool isAddonPackageConfig = string.Equals(listName, "ADDON_PACKAGE_CONFIG", StringComparison.OrdinalIgnoreCase)
-                || listIndex == 105;
-            if (!isAddonPackageConfig || list == null || list.elementFields == null)
+            if (list == null || list.elementFields == null)
             {
                 return false;
             }
 
             for (int fieldIndex = 0; fieldIndex < list.elementFields.Length; fieldIndex++)
             {
-                if (string.Equals(list.elementFields[fieldIndex], "desc", StringComparison.OrdinalIgnoreCase))
+                if (IsInlineDescriptionField(list.elementFields[fieldIndex]))
                 {
                     descFieldIndex = fieldIndex;
                     break;
@@ -1273,6 +1328,42 @@ namespace FWEledit
             return elementIndex >= 0
                 && list.elementValues != null
                 && elementIndex < list.elementValues.Length;
+        }
+
+        private bool ListSupportsInlineDescriptionMode(int listIndex)
+        {
+            if (sessionService == null
+                || sessionService.ListCollection == null
+                || listIndex <= 0
+                || listIndex >= sessionService.ListCollection.Lists.Length)
+            {
+                return false;
+            }
+
+            eList list = sessionService.ListCollection.Lists[listIndex];
+            string listName = list != null ? list.listName : string.Empty;
+            return !IsNamedConfigList(listName, "MONSTER_ESSENCE")
+                && !MonsterFieldCatalog.IsMonsterEssenceList(sessionService.ListCollection, listIndex)
+                && !ItemListCatalog.IsItemList(sessionService.ListCollection, listIndex)
+                && ListHasInlineDescriptionField(list);
+        }
+
+        private static bool ListHasInlineDescriptionField(eList list)
+        {
+            if (list == null || list.elementFields == null)
+            {
+                return false;
+            }
+
+            for (int fieldIndex = 0; fieldIndex < list.elementFields.Length; fieldIndex++)
+            {
+                if (IsInlineDescriptionField(list.elementFields[fieldIndex]))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private static bool IsInlineDescriptionFieldName(string fieldName)
@@ -1364,20 +1455,20 @@ namespace FWEledit
             if (viewModel == null
                 || viewModel.IsUpdatingDescriptionUi
                 || fwDescriptionPreview == null
-                || !TryGetCurrentAddonPackageDescContext(out _, out _, out _))
+                || !TryGetCurrentInlineDescriptionContext(out _, out _, out _))
             {
                 return;
             }
 
             if (fwDescriptionStatusLabel != null)
             {
-                fwDescriptionStatusLabel.Text = "Editing desc from elements.data";
+                fwDescriptionStatusLabel.Text = "Editing description from elements.data";
             }
         }
 
-        private bool TryApplyAddonPackageDescChange()
+        private bool TryApplyInlineDescriptionChange()
         {
-            if (!TryGetCurrentAddonPackageDescContext(out int listIndex, out int elementIndex, out int descFieldIndex))
+            if (!TryGetCurrentInlineDescriptionContext(out int listIndex, out int elementIndex, out int descFieldIndex))
             {
                 return false;
             }
@@ -1389,7 +1480,7 @@ namespace FWEledit
             {
                 if (fwDescriptionStatusLabel != null)
                 {
-                    fwDescriptionStatusLabel.Text = "desc already up to date";
+                    fwDescriptionStatusLabel.Text = sessionService.ListCollection.Lists[listIndex].elementFields[descFieldIndex] + " already up to date";
                 }
 
                 return true;
@@ -1426,7 +1517,7 @@ namespace FWEledit
 
             if (fwDescriptionStatusLabel != null)
             {
-                fwDescriptionStatusLabel.Text = "desc applied to elements.data";
+                fwDescriptionStatusLabel.Text = sessionService.ListCollection.Lists[listIndex].elementFields[descFieldIndex] + " applied to elements.data";
             }
 
             return true;
@@ -1446,6 +1537,23 @@ namespace FWEledit
 
         private void StageCurrentDescriptionChange(bool updateStatus)
         {
+            if (TryApplyInlineDescriptionChange())
+            {
+                return;
+            }
+
+            int selectedListIndex = comboBox_lists != null ? comboBox_lists.SelectedIndex : -1;
+            int[] selectedDescriptionIds = GetSelectedDescriptionItemIds();
+            string collisionStatus;
+            if (HasDescriptionIdCollisionOutsideSelection(selectedListIndex, selectedDescriptionIds, GetSelectedDescriptionElementIndices(), out collisionStatus))
+            {
+                if (updateStatus && fwDescriptionStatusLabel != null)
+                {
+                    fwDescriptionStatusLabel.Text = collisionStatus;
+                }
+                return;
+            }
+
             DescriptionChangeResult result = mainWindowDescriptionCoordinatorService.StageCurrentDescriptionChange(
                 mainWindowDescriptionUiService,
                 descriptionUiService,
@@ -1457,7 +1565,7 @@ namespace FWEledit
                 ApplyItemDescriptionRuntime,
                 null,
                 () => comboBox_lists.SelectedIndex,
-                GetSelectedDescriptionItemIds,
+                () => selectedDescriptionIds,
                 GetSelectedDescriptionElementIndices,
                 null,
                 updateStatus,
@@ -1510,6 +1618,125 @@ namespace FWEledit
             }
 
             return ids.ToArray();
+        }
+
+        private bool HasCrossListDescriptionIdCollision(int currentListIndex, int itemId, out string status)
+        {
+            return HasDescriptionIdCollisionOutsideSelection(currentListIndex, new int[] { itemId }, GetSelectedDescriptionElementIndices(), out status);
+        }
+
+        private bool HasCrossListDescriptionIdCollision(int currentListIndex, int[] itemIds, out string status)
+        {
+            return HasDescriptionIdCollisionOutsideSelection(currentListIndex, itemIds, GetSelectedDescriptionElementIndices(), out status);
+        }
+
+        private bool HasDescriptionIdCollisionOutsideSelection(int currentListIndex, int[] itemIds, int[] currentElementIndices, out string status)
+        {
+            status = string.Empty;
+            if (itemIds == null || itemIds.Length == 0 || currentListIndex < 0)
+            {
+                return false;
+            }
+
+            Dictionary<int, List<DescriptionIdUsage>> usageById = GetDescriptionIdUsageCache();
+            if (usageById == null || usageById.Count == 0)
+            {
+                return false;
+            }
+
+            HashSet<int> selectedElements = currentElementIndices != null
+                ? new HashSet<int>(currentElementIndices)
+                : new HashSet<int>();
+            HashSet<int> seenIds = new HashSet<int>();
+            foreach (int itemId in itemIds)
+            {
+                if (itemId <= 0 || !seenIds.Add(itemId))
+                {
+                    continue;
+                }
+
+                List<DescriptionIdUsage> usages;
+                if (!usageById.TryGetValue(itemId, out usages) || usages == null)
+                {
+                    continue;
+                }
+
+                DescriptionIdUsage other = usages.FirstOrDefault(u => u != null
+                    && (u.ListIndex != currentListIndex || !selectedElements.Contains(u.ElementIndex)));
+                if (other == null)
+                {
+                    continue;
+                }
+
+                status = "Description locked: ID " + itemId + " is also used by "
+                    + other.ListName + " / " + other.Name + ". item_ext_desc.txt is shared by ID.";
+                return true;
+            }
+
+            return false;
+        }
+
+        private Dictionary<int, List<DescriptionIdUsage>> GetDescriptionIdUsageCache()
+        {
+            if (sessionService == null || sessionService.ListCollection == null)
+            {
+                return null;
+            }
+
+            eListCollection listCollection = sessionService.ListCollection;
+            if (ReferenceEquals(descriptionIdUsageCacheSource, listCollection) && descriptionIdUsageCache != null)
+            {
+                return descriptionIdUsageCache;
+            }
+
+            Dictionary<int, List<DescriptionIdUsage>> usageById = new Dictionary<int, List<DescriptionIdUsage>>();
+            for (int listIndex = 0; listIndex < listCollection.Lists.Length; listIndex++)
+            {
+                if (!ListSupportsItemDescriptions(listIndex))
+                {
+                    continue;
+                }
+
+                eList list = listCollection.Lists[listIndex];
+                if (list == null || list.elementValues == null)
+                {
+                    continue;
+                }
+
+                int nameFieldIndex = fieldIndexLookupService != null
+                    ? fieldIndexLookupService.GetNameFieldIndex(listCollection, listIndex)
+                    : -1;
+
+                for (int elementIndex = 0; elementIndex < list.elementValues.Length; elementIndex++)
+                {
+                    int itemId;
+                    if (!int.TryParse(listCollection.GetValue(listIndex, elementIndex, 0), out itemId) || itemId <= 0)
+                    {
+                        continue;
+                    }
+
+                    List<DescriptionIdUsage> usages;
+                    if (!usageById.TryGetValue(itemId, out usages))
+                    {
+                        usages = new List<DescriptionIdUsage>();
+                        usageById[itemId] = usages;
+                    }
+
+                    usages.Add(new DescriptionIdUsage
+                    {
+                        ListIndex = listIndex,
+                        ElementIndex = elementIndex,
+                        ListName = ItemListCatalog.NormalizeListName(list.listName),
+                        Name = nameFieldIndex >= 0
+                            ? FwTextColorService.StripLeadingColor(listCollection.GetValue(listIndex, elementIndex, nameFieldIndex))
+                            : "row " + elementIndex.ToString()
+                    });
+                }
+            }
+
+            descriptionIdUsageCacheSource = listCollection;
+            descriptionIdUsageCache = usageById;
+            return descriptionIdUsageCache;
         }
 
         private int[] GetSelectedDescriptionElementIndices()
@@ -1577,11 +1804,36 @@ namespace FWEledit
                 return;
             }
 
+            descriptionIdUsageCacheSource = null;
+            descriptionIdUsageCache = null;
+            Dictionary<int, List<DescriptionIdUsage>> usageById = GetDescriptionIdUsageCache();
+            List<int> removableItemIds = new List<int>();
+            HashSet<int> seenIds = new HashSet<int>();
+            for (int i = 0; i < itemIds.Length; i++)
+            {
+                int itemId = itemIds[i];
+                if (itemId <= 0 || !seenIds.Add(itemId))
+                {
+                    continue;
+                }
+
+                List<DescriptionIdUsage> usages;
+                if (usageById == null || !usageById.TryGetValue(itemId, out usages) || usages == null || usages.Count == 0)
+                {
+                    removableItemIds.Add(itemId);
+                }
+            }
+
+            if (removableItemIds.Count == 0)
+            {
+                return;
+            }
+
             EnsureItemDescriptionsAvailable();
             string status;
             if (viewModel != null
                 && viewModel.DescriptionViewModel != null
-                && viewModel.DescriptionViewModel.RemoveItems(itemIds, out status))
+                && viewModel.DescriptionViewModel.RemoveItems(removableItemIds, out status))
             {
                 descriptionLoadService.SyncRuntime(
                     viewModel.DescriptionViewModel,
@@ -1901,7 +2153,7 @@ namespace FWEledit
                 return;
             }
 
-            if (TryApplyAddonPackageDescChange())
+            if (TryApplyInlineDescriptionChange())
             {
                 return;
             }
@@ -1922,6 +2174,14 @@ namespace FWEledit
                     || viewModel.DescriptionViewModel.HasPendingChanges;
                 RefreshDescriptionDirtyRows();
             }
+        }
+
+        private sealed class DescriptionIdUsage
+        {
+            public int ListIndex { get; set; }
+            public int ElementIndex { get; set; }
+            public string ListName { get; set; }
+            public string Name { get; set; }
         }
     }
 }

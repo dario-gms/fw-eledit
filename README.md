@@ -12,15 +12,18 @@ FWEledit is based on [sELedit++ by Wrechid](https://github.com/Wrechid/sELedit-)
 
 ---
 
-## What's New in v0.9.5.27
+## What's New in v0.9.5.28
 
-- Added reverse references for `[81] Title Prop Config` by resolving title definition IDs used by reward fields, including references from `[149] Random Gift Bag Essence`.
-- Title rows now use the icon from the first external item that references the title, making title lists easier to scan visually.
-- Added custom portrait import from PNG with automatic conversion to game-ready TGA assets and `path.data` registration.
-- Added safer item import ID handling, including cross-list item ID collision checks and a right-click **Set unique ID** action.
-- Added a **Custom Icons...** manager for icon fields with PNG import, DDS/icon atlas registration, optional capacity expansion with confirmation, and custom icon removal.
-- Kept the experimental NPCGen map preview code in the project for future work, but disabled the Map View button and disabled client PCK/cache map loading from that feature.
-- Updated project/app version metadata to `v0.9.5.27`.
+- Fixed NPC cloning and NPCGen insertion so cloned NPCs receive safe service/task IDs and load correctly in game.
+- Fixed cloned task-in/task-out data so NPCs using cloned task services no longer disappear when spawned from `npcgen.data`.
+- Added faster picker/resource loading paths and reused existing cache data where possible, reducing stalls when adding icons, models, and custom assets.
+- Hardened item description handling so element-backed descriptions no longer bleed into unrelated config rows with matching IDs, and cloned/deleted descriptions stay attached to the intended item.
+- Fixed multi-item clone/delete behavior in filtered or shifted element lists, including preserving the user's position instead of jumping back to the start after deletes.
+- Fixed equipment package/clone output that could create in-game `Wrong item` entries by keeping imported/cloned item IDs, paths, and package metadata aligned.
+- Improved the model picker layout so all columns remain visible and the splitter cannot open in an invalid hidden-column state.
+- Expanded the task viewer with clearer random reward group handling, including reward chance/probability display for supported task reward layouts.
+- Reworked Equipment Essence hover previews to better match in-game tooltips, including quality-based colors, stat/addon lines, set bonuses, exchange/bind flags, and scroll-safe sizing for long tooltips.
+- Updated project/app version metadata to `v0.9.5.28`.
 
 Previous release notes were moved to [docs/WHATS_NEW.md](docs/WHATS_NEW.md).
 

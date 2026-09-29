@@ -92,6 +92,10 @@ namespace FWEledit
                 AddPreviewResolvedDependencies(assetsByKey, manifest, assetManager, progress);
                 ExpandEquipmentModelCompanions(assetsByKey, assetManager, progress, cancellationToken);
                 ExpandEquipmentGfxDependencies(assetsByKey, assetManager, progress, cancellationToken);
+                if (HasMountModelFields(manifest))
+                {
+                    ExpandAssetDependencies(assetsByKey, assetManager, progress, cancellationToken);
+                }
                 manifest.Assets = assetsByKey.Values.OrderBy(a => a.Package).ThenBy(a => a.RelativePath).ToList();
 
                 string folder = Path.GetDirectoryName(outputFile);
@@ -260,12 +264,13 @@ namespace FWEledit
                     }
 
                     Dictionary<string, string> packageRemap = BuildImportPackageRemap(manifest, assetManager, result);
+                    bool overwriteChangedMountAssets = HasMountModelFields(manifest);
 
                     ReportProgress(progress, "Importing path data", "Resolving path.data entries...", 0, 0, true);
                     cancellationToken.ThrowIfCancellationRequested();
                     Dictionary<int, int> pathIdRemap = ImportPathDataEntries(manifest, database, assetManager, result, packageRemap);
 
-                    ImportAssets(archive, manifest, assetManager, result, progress, cancellationToken, packageRemap);
+                    ImportAssets(archive, manifest, assetManager, result, progress, cancellationToken, packageRemap, overwriteChangedMountAssets);
 
                     result.ImportedModelPaths = BuildImportedModelPathSummary(manifest, database, pathIdRemap);
 
@@ -429,6 +434,7 @@ namespace FWEledit
                         }
 
                         Dictionary<string, string> packageRemap = BuildImportPackageRemap(manifest, assetManager, result);
+                        bool overwriteChangedMountAssets = HasMountModelFields(manifest);
 
                         ReportProgress(progress, "Importing path data", Path.GetFileName(packageFile), fileIndex + 1, files.Count, false);
                         Dictionary<int, int> pathIdRemap = ImportPathDataEntries(manifest, database, assetManager, result, packageRemap);
@@ -446,7 +452,8 @@ namespace FWEledit
                             stagedAssetKeys,
                             summaryByPackage,
                             fileIndex + 1,
-                            files.Count);
+                            files.Count,
+                            overwriteChangedMountAssets);
 
                         pendingPackages.Add(new PendingImportedPackage
                         {
@@ -1474,6 +1481,8 @@ namespace FWEledit
             }
 
             yield return package + "\\" + directory;
+            yield return package + "\\" + directory + "\\tcks";
+            yield return package + "\\" + directory + "\\tck";
             yield return package + "\\" + directory + "\\textures";
             yield return package + "\\" + directory + "\\texture";
             if (!string.IsNullOrWhiteSpace(fileName))
@@ -2144,7 +2153,8 @@ namespace FWEledit
             ItemTransferImportResult result,
             Action<ItemTransferProgressInfo> progress,
             CancellationToken cancellationToken,
-            Dictionary<string, string> packageRemap)
+            Dictionary<string, string> packageRemap,
+            bool overwriteChangedAssets)
         {
             if (manifest.Assets == null)
             {
@@ -2170,7 +2180,8 @@ namespace FWEledit
                     stagedAssetKeys,
                     summaryByPackage,
                     1,
-                    1);
+                    1,
+                    overwriteChangedAssets);
                 UpdateStagedPackages(stagingRoot, stagedCountsByPackage, assetManager, result, progress, cancellationToken);
             }
             finally
@@ -2216,7 +2227,8 @@ namespace FWEledit
             HashSet<string> stagedAssetKeys,
             Dictionary<string, ItemTransferPackageAssetSummary> summaryByPackage,
             int packageNumber,
-            int packageCount)
+            int packageCount,
+            bool overwriteChangedAssets)
         {
             if (archive == null || manifest == null || manifest.Assets == null)
             {
@@ -2247,7 +2259,7 @@ namespace FWEledit
                     false);
 
                 string targetPackage = ResolveImportPackage(asset.Package, packageRemap);
-                string targetRelativePath = NormalizeImportAssetRelativePath(asset, targetPackage, packageRemap);
+                string targetRelativePath = NormalizeImportAssetRelativePath(asset, targetPackage, packageRemap, overwriteChangedAssets);
                 string stagedKey = targetPackage + "|" + targetRelativePath;
                 if (stagedAssetKeys != null && stagedAssetKeys.Contains(stagedKey))
                 {
@@ -2255,8 +2267,8 @@ namespace FWEledit
                     continue;
                 }
 
-                byte[] existingPayload;
-                string existingError;
+                byte[] existingPayload = null;
+                string existingError = string.Empty;
                 bool needsReferenceRewrite = NeedsPackageReferenceRewrite(asset, packageRemap);
                 bool targetEntryExists = false;
                 HashSet<string> exactEntries;
@@ -2288,18 +2300,6 @@ namespace FWEledit
                     targetEntryExists = assetManager.TryReadPackageEntry(targetPackage, targetRelativePath, out existingPayload, out existingError)
                         && existingPayload != null;
                 }
-                if (targetEntryExists)
-                {
-                    result.ExistingAssetCount++;
-                    IncrementAssetSummary(result, summaryByPackage, targetPackage, false);
-                    AddDependencyAssetPath(result, targetPackage, targetRelativePath);
-                    continue;
-                }
-                if (IsFatalPackageReadError(existingError))
-                {
-                    throw new InvalidOperationException("Target " + targetPackage + ".pck could not be read before import. Restore a clean backup before importing more assets. " + existingError);
-                }
-
                 ZipArchiveEntry entry = archive.GetEntry(asset.ZipPath);
                 if (entry == null)
                 {
@@ -2326,6 +2326,24 @@ namespace FWEledit
                 {
                     payload = RewritePackageReferences(payload, packageRemap);
                 }
+                if (overwriteChangedAssets)
+                {
+                    payload = RewriteMountRuntimeReferences(payload, targetPackage, targetRelativePath);
+                }
+                if (targetEntryExists)
+                {
+                    if (!overwriteChangedAssets || PayloadsEqual(existingPayload, payload))
+                    {
+                        result.ExistingAssetCount++;
+                        IncrementAssetSummary(result, summaryByPackage, targetPackage, false);
+                        AddDependencyAssetPath(result, targetPackage, targetRelativePath);
+                        continue;
+                    }
+                }
+                if (IsFatalPackageReadError(existingError))
+                {
+                    throw new InvalidOperationException("Target " + targetPackage + ".pck could not be read before import. Restore a clean backup before importing more assets. " + existingError);
+                }
 
                 using (FileStream output = new FileStream(outputPath, FileMode.Create, FileAccess.Write))
                 {
@@ -2345,7 +2363,11 @@ namespace FWEledit
             }
         }
 
-        private static string NormalizeImportAssetRelativePath(ItemTransferAssetEntry asset, string targetPackage, Dictionary<string, string> packageRemap)
+        private static string NormalizeImportAssetRelativePath(
+            ItemTransferAssetEntry asset,
+            string targetPackage,
+            Dictionary<string, string> packageRemap,
+            bool preserveExactPackagePath)
         {
             if (asset == null)
             {
@@ -2358,20 +2380,42 @@ namespace FWEledit
                 && TrySplitMappedPackagePrefix(RemapMappedPackage(asset.MappedPath, packageRemap), out mappedPackage, out mappedRelative)
                 && string.Equals(NormalizePackageName(mappedPackage), NormalizePackageName(targetPackage), StringComparison.OrdinalIgnoreCase))
             {
-                return CanonicalizePackageRelativePath(targetPackage, mappedRelative);
+                return preserveExactPackagePath ? NormalizePath(mappedRelative) : CanonicalizePackageRelativePath(targetPackage, mappedRelative);
             }
 
-            return NormalizeImportAssetRelativePath(asset.RelativePath, targetPackage);
+            return NormalizeImportAssetRelativePath(asset.RelativePath, targetPackage, preserveExactPackagePath);
         }
 
-        private static string NormalizeImportAssetRelativePath(string relativePath, string targetPackage)
+        private static string NormalizeImportAssetRelativePath(string relativePath, string targetPackage, bool preserveExactPackagePath)
         {
             string normalized = NormalizePath(relativePath);
             string packagePrefix = NormalizePath(targetPackage) + "\\";
             string relative = normalized.StartsWith(packagePrefix, StringComparison.OrdinalIgnoreCase)
                 ? normalized.Substring(packagePrefix.Length)
                 : normalized;
-            return CanonicalizePackageRelativePath(targetPackage, relative);
+            return preserveExactPackagePath ? NormalizePath(relative) : CanonicalizePackageRelativePath(targetPackage, relative);
+        }
+
+        private static bool PayloadsEqual(byte[] left, byte[] right)
+        {
+            if (ReferenceEquals(left, right))
+            {
+                return true;
+            }
+            if (left == null || right == null || left.Length != right.Length)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < left.Length; i++)
+            {
+                if (left[i] != right[i])
+                {
+                    return false;
+                }
+            }
+
+            return true;
         }
 
         private static string CanonicalizePackageRelativePath(string packageName, string relativePath)
@@ -2541,6 +2585,35 @@ namespace FWEledit
 
                 rewritten = ReplacePackagePrefix(rewritten, source, target);
             }
+
+            return string.Equals(text, rewritten, StringComparison.Ordinal)
+                ? payload
+                : encoding.GetBytes(rewritten);
+        }
+
+        private static byte[] RewriteMountRuntimeReferences(byte[] payload, string targetPackage, string targetRelativePath)
+        {
+            if (payload == null
+                || payload.Length == 0
+                || !string.Equals(NormalizePackageName(targetPackage), "models", StringComparison.OrdinalIgnoreCase))
+            {
+                return payload;
+            }
+
+            string extension = Path.GetExtension(targetRelativePath ?? string.Empty);
+            if (!string.Equals(extension, ".ecm", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(extension, ".smd", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(extension, ".ini", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(extension, ".cfg", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(extension, ".txt", StringComparison.OrdinalIgnoreCase))
+            {
+                return payload;
+            }
+
+            Encoding encoding = Encoding.GetEncoding("GBK");
+            string text = encoding.GetString(payload);
+            string rewritten = Regex.Replace(text, "Models([\\\\/])NPCS([\\\\/])", match => "models" + match.Groups[1].Value + "npcs" + match.Groups[2].Value, RegexOptions.IgnoreCase);
+            rewritten = Regex.Replace(rewritten, "(^|[^A-Za-z0-9_])NPCS([\\\\/])", match => match.Groups[1].Value + "npcs" + match.Groups[2].Value, RegexOptions.IgnoreCase);
 
             return string.Equals(text, rewritten, StringComparison.Ordinal)
                 ? payload
@@ -3226,6 +3299,7 @@ namespace FWEledit
                 || string.Equals(normalized, "music_pick", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(normalized, "music_drop", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(normalized, "id_change_model", StringComparison.OrdinalIgnoreCase)
+                || normalized.StartsWith("model_name", StringComparison.OrdinalIgnoreCase)
                 || normalized.StartsWith("file_model", StringComparison.OrdinalIgnoreCase)
                 || normalized.StartsWith("file_models", StringComparison.OrdinalIgnoreCase)
                 || (normalized.StartsWith("models_", StringComparison.OrdinalIgnoreCase)
@@ -3233,6 +3307,41 @@ namespace FWEledit
                 || normalized.StartsWith("gfx_", StringComparison.OrdinalIgnoreCase)
                 || normalized.Contains("_gfx_")
                 || normalized.EndsWith("_gfx", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool HasMountModelFields(ItemTransferPackageManifest manifest)
+        {
+            if (manifest == null || manifest.Fields == null)
+            {
+                return false;
+            }
+
+            string sourceListName = NormalizeFieldNameKey(manifest.SourceListName);
+            if (sourceListName.Contains("aircraft_essence") || sourceListName.Contains("vehicle_essence"))
+            {
+                return true;
+            }
+
+            bool hasModelName = false;
+            bool hasFileModels = false;
+            bool hasAircraftMotion = false;
+            bool hasVehicleMovement = false;
+            bool hasRaceMask = false;
+            for (int i = 0; i < manifest.Fields.Count; i++)
+            {
+                ItemTransferFieldValue field = manifest.Fields[i];
+                string name = NormalizeFieldNameKey(field != null ? field.Name : string.Empty);
+                hasModelName |= name.StartsWith("model_name", StringComparison.Ordinal);
+                hasFileModels |= name.StartsWith("file_models", StringComparison.Ordinal);
+                hasAircraftMotion |= string.Equals(name, "cruise_speed", StringComparison.Ordinal)
+                    || string.Equals(name, "sprint_speed", StringComparison.Ordinal)
+                    || string.Equals(name, "fly_mode", StringComparison.Ordinal);
+                hasVehicleMovement |= string.Equals(name, "speed", StringComparison.Ordinal)
+                    || string.Equals(name, "height", StringComparison.Ordinal);
+                hasRaceMask |= string.Equals(name, "race_mask", StringComparison.Ordinal);
+            }
+
+            return (hasModelName && hasAircraftMotion) || (hasFileModels && hasRaceMask && hasVehicleMovement);
         }
 
         private static bool IsIconAssetPathIdField(string fieldName)
@@ -3246,6 +3355,7 @@ namespace FWEledit
             string normalized = NormalizeFieldNameKey(fieldName);
             return normalized.StartsWith("file_model", StringComparison.OrdinalIgnoreCase)
                 || normalized.StartsWith("file_models", StringComparison.OrdinalIgnoreCase)
+                || normalized.StartsWith("model_name", StringComparison.OrdinalIgnoreCase)
                 || (normalized.StartsWith("models_", StringComparison.OrdinalIgnoreCase)
                     && normalized.Contains("_file_model"))
                 || string.Equals(normalized, "id_change_model", StringComparison.OrdinalIgnoreCase);

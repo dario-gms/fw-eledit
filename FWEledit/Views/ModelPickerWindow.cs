@@ -148,8 +148,8 @@ namespace FWEledit
 
             Text = "Choice Model";
             StartPosition = FormStartPosition.CenterParent;
-            MinimumSize = new Size(900, 550);
-            Size = new Size(1200, 760);
+            MinimumSize = new Size(1200, 550);
+            Size = new Size(1460, 760);
             KeyPreview = true;
             BackColor = Color.White;
             Font = new Font("Segoe UI", 9F, FontStyle.Regular, GraphicsUnit.Point, ((byte)(0)));
@@ -405,19 +405,7 @@ namespace FWEledit
             Controls.Add(contentSplit);
             Controls.Add(bottom);
             Controls.Add(top);
-            Shown += (s, e) =>
-            {
-                const int desiredListMinWidth = 520;
-                const int desiredPreviewMinWidth = 300;
-                int availableWidth = contentSplit.ClientSize.Width;
-                if (availableWidth > desiredListMinWidth + desiredPreviewMinWidth + contentSplit.SplitterWidth)
-                {
-                    int previewWidth = Math.Min(440, Math.Max(320, availableWidth / 3));
-                    int splitterDistance = availableWidth - previewWidth - contentSplit.SplitterWidth;
-                    int maxDistance = availableWidth - desiredPreviewMinWidth - contentSplit.SplitterWidth;
-                    contentSplit.SplitterDistance = Math.Max(desiredListMinWidth, Math.Min(maxDistance, splitterDistance));
-                }
-            };
+            Shown += (s, e) => ApplyInitialSplitterDistance(contentSplit);
 
             filterTimer = new System.Windows.Forms.Timer();
             filterTimer.Interval = 200;
@@ -470,6 +458,44 @@ namespace FWEledit
             {
                 DialogResult = DialogResult.Cancel;
                 Close();
+            }
+        }
+
+        private static void ApplyInitialSplitterDistance(SplitContainer split)
+        {
+            if (split == null)
+            {
+                return;
+            }
+
+            const int desiredListWidth = 1040;
+            const int desiredPreviewWidth = 380;
+            int availableWidth = split.ClientSize.Width;
+            if (availableWidth <= split.SplitterWidth + 2)
+            {
+                return;
+            }
+
+            int minDistance = Math.Max(1, split.Panel1MinSize);
+            int maxDistance = availableWidth - Math.Max(1, split.Panel2MinSize) - split.SplitterWidth;
+            if (maxDistance < minDistance)
+            {
+                return;
+            }
+
+            int desiredDistance = availableWidth - desiredPreviewWidth - split.SplitterWidth;
+            if (availableWidth >= desiredListWidth + desiredPreviewWidth + split.SplitterWidth)
+            {
+                desiredDistance = desiredListWidth;
+            }
+
+            int distance = Math.Max(minDistance, Math.Min(maxDistance, desiredDistance));
+            try
+            {
+                split.SplitterDistance = distance;
+            }
+            catch
+            {
             }
         }
 

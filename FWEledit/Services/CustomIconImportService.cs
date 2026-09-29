@@ -15,6 +15,7 @@ namespace FWEledit
         private const string CustomIconPrefix = "surfaces\\icon\\custom\\";
         private const string IconsetTextPath = "iconset\\iconlist_ivtr0.txt";
         private const string IconsetImagePath = "iconset\\iconlist_ivtr0.dds";
+        private const int ImportedIconSize = 42;
 
         public List<CustomIconEntry> BuildEntries(CacheSave database)
         {
@@ -80,7 +81,7 @@ namespace FWEledit
 
                 Directory.CreateDirectory(Path.GetDirectoryName(stagedFile));
                 using (Bitmap source = LoadSourceBitmap(sourcePath))
-                using (Bitmap converted = BuildIconBitmap(source, GetAtlasIconWidth(database), GetAtlasIconHeight(database)))
+                using (Bitmap converted = BuildIconBitmap(source, ImportedIconSize, ImportedIconSize))
                 {
                     WriteDdsDxt3(stagedFile, converted);
                     if (!TryStageIconsetEntry(database, assetManager, stagingRoot, iconFileName, converted, out error))
@@ -90,7 +91,7 @@ namespace FWEledit
                 }
 
                 string importError;
-                if (!assetManager.ImportStagedPackageAssets("surfaces", stagingRoot, out importError))
+                if (!assetManager.ImportStagedPackageAssetsIncrementalOnly("surfaces", stagingRoot, out importError))
                 {
                     error = string.IsNullOrWhiteSpace(importError)
                         ? "Failed to update surfaces.pck."
@@ -164,7 +165,7 @@ namespace FWEledit
             File.WriteAllText(stagedText, string.Join("\r\n", lines) + "\r\n", encoding);
 
             string importError;
-            if (!assetManager.ImportStagedPackageAssets("surfaces", stagingRoot, out importError))
+            if (!assetManager.ImportStagedPackageAssetsIncrementalOnly("surfaces", stagingRoot, out importError))
             {
                 error = string.IsNullOrWhiteSpace(importError)
                     ? "Failed to update iconlist_ivtr0 capacity."
@@ -245,25 +246,11 @@ namespace FWEledit
             File.WriteAllBytes(stagedAtlas, patchedAtlas);
 
             string importError;
-            if (!assetManager.ImportStagedPackageAssets("surfaces", stagingRoot, out importError))
+            if (!assetManager.ImportStagedPackageAssetsIncrementalOnly("surfaces", stagingRoot, out importError))
             {
                 error = string.IsNullOrWhiteSpace(importError)
                     ? "Failed to update iconlist_ivtr0."
                     : importError;
-                return false;
-            }
-
-            string relativePath = mappedPath;
-            if (relativePath.StartsWith("surfaces\\", StringComparison.OrdinalIgnoreCase))
-            {
-                relativePath = relativePath.Substring("surfaces\\".Length);
-            }
-            string removeAssetError;
-            if (!assetManager.TryRemovePackageEntryByRebuild("surfaces", relativePath, out removeAssetError))
-            {
-                error = string.IsNullOrWhiteSpace(removeAssetError)
-                    ? "Failed to remove custom icon file from surfaces.pck."
-                    : removeAssetError;
                 return false;
             }
 
@@ -498,7 +485,7 @@ namespace FWEledit
             }
 
             byte[] textPayload;
-            if (!assetManager.TryReadPackageEntry("surfaces", IconsetTextPath, out textPayload, out error)
+            if (!TryReadIconsetPayload(assetManager, IconsetTextPath, out textPayload, out error)
                 || textPayload == null
                 || textPayload.Length == 0)
             {
@@ -529,7 +516,7 @@ namespace FWEledit
                 return false;
             }
 
-            if (!assetManager.TryReadPackageEntry("surfaces", IconsetImagePath, out imagePayload, out error)
+            if (!TryReadIconsetPayload(assetManager, IconsetImagePath, out imagePayload, out error)
                 || imagePayload == null
                 || imagePayload.Length == 0)
             {
@@ -559,6 +546,26 @@ namespace FWEledit
                 UsedSlots = Math.Max(0, lines.Count - 4)
             };
             return true;
+        }
+
+        private static bool TryReadIconsetPayload(AssetManager assetManager, string relativePath, out byte[] payload, out string error)
+        {
+            payload = null;
+            error = string.Empty;
+            if (assetManager == null)
+            {
+                error = "Asset manager unavailable.";
+                return false;
+            }
+
+            if (assetManager.TryReadPackageEntry("surfaces", relativePath, out payload, out error)
+                && payload != null
+                && payload.Length > 0)
+            {
+                return true;
+            }
+
+            return false;
         }
 
         private static int FindIconsetLineIndex(List<string> lines, string iconFileName)

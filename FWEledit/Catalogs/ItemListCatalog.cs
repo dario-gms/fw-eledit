@@ -22,6 +22,14 @@ namespace FWEledit
             {
                 return true;
             }
+            if (IsMountEssenceAlias(listName))
+            {
+                return true;
+            }
+            if (IsSuiteEssenceAlias(listName))
+            {
+                return true;
+            }
 
             string[] fields = list.elementFields;
             if (fields == null)
@@ -55,6 +63,23 @@ namespace FWEledit
         {
             return string.Equals(listName, "Equipment", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(listName, "EQUIPMENT_ESSENCE", StringComparison.OrdinalIgnoreCase);
+        }
+
+        public static bool IsMountEssenceAlias(string listName)
+        {
+            return string.Equals(listName, "Aircraft", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(listName, "Aircraft Essence", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(listName, "AIRCRAFT_ESSENCE", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(listName, "Vehicle", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(listName, "Vehicle Essence", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(listName, "VEHICLE_ESSENCE", StringComparison.OrdinalIgnoreCase);
+        }
+
+        public static bool IsSuiteEssenceAlias(string listName)
+        {
+            return string.Equals(listName, "Suite", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(listName, "Suite Essence", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(listName, "SUITE_ESSENCE", StringComparison.OrdinalIgnoreCase);
         }
     }
 }

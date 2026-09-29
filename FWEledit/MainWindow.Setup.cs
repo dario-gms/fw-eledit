@@ -92,7 +92,7 @@ namespace FWEledit
                 assembly,
                 label_Version,
                 navigationStateService,
-                "0.9.5.27");
+                "0.9.5.28");
 
             fwDarkMode = Properties.Settings.Default.UseDarkMode;
             cpb2.Value = 0;
@@ -508,6 +508,19 @@ namespace FWEledit
                 toolStripMenuItem3.DropDownItems.Insert(insertIndex, titleEditorItem);
             }
 
+            if (!toolStripMenuItem3.DropDownItems.ContainsKey("taskEditorToolStripMenuItem"))
+            {
+                ToolStripMenuItem taskEditorItem = new ToolStripMenuItem();
+                taskEditorItem.Name = "taskEditorToolStripMenuItem";
+                taskEditorItem.Text = "Task Viewer...";
+                taskEditorItem.Click += click_taskEditor;
+
+                int insertIndex = toolStripMenuItem3.DropDownItems.ContainsKey("advancedTitleEditorToolStripMenuItem")
+                    ? toolStripMenuItem3.DropDownItems.IndexOfKey("advancedTitleEditorToolStripMenuItem") + 1
+                    : Math.Min(8, toolStripMenuItem3.DropDownItems.Count);
+                toolStripMenuItem3.DropDownItems.Insert(insertIndex, taskEditorItem);
+            }
+
             if (!toolStripMenuItem3.DropDownItems.ContainsKey("pckExplorerToolStripMenuItem"))
             {
                 ToolStripMenuItem pckExplorerItem = new ToolStripMenuItem();
@@ -515,7 +528,9 @@ namespace FWEledit
                 pckExplorerItem.Text = "PCK Explorer / Importer...";
                 pckExplorerItem.Click += click_pckExplorer;
 
-                int insertIndex = toolStripMenuItem3.DropDownItems.ContainsKey("advancedTitleEditorToolStripMenuItem")
+                int insertIndex = toolStripMenuItem3.DropDownItems.ContainsKey("taskEditorToolStripMenuItem")
+                    ? toolStripMenuItem3.DropDownItems.IndexOfKey("taskEditorToolStripMenuItem") + 1
+                    : toolStripMenuItem3.DropDownItems.ContainsKey("advancedTitleEditorToolStripMenuItem")
                     ? toolStripMenuItem3.DropDownItems.IndexOfKey("advancedTitleEditorToolStripMenuItem") + 1
                     : toolStripMenuItem3.DropDownItems.Count;
                 toolStripMenuItem3.DropDownItems.Insert(insertIndex, pckExplorerItem);

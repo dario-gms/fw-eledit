@@ -261,6 +261,11 @@ namespace FWEledit
                 return false;
             }
 
+            if (map.ContainsKey(targetId))
+            {
+                return false;
+            }
+
             return Stage(targetId, raw);
         }
 
@@ -324,6 +329,14 @@ namespace FWEledit
             {
                 statusText = "Description file saved with main Save";
                 return true;
+            }
+            if ((string.IsNullOrWhiteSpace(FilePath) || !File.Exists(FilePath)) && asm != null)
+            {
+                string resolvedPath = asm.EnsureItemExtDescriptionFile();
+                if (!string.IsNullOrWhiteSpace(resolvedPath))
+                {
+                    FilePath = resolvedPath;
+                }
             }
             if (string.IsNullOrWhiteSpace(FilePath))
             {

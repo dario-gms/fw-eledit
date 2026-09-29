@@ -53,6 +53,7 @@ namespace FWEledit
         private Form referencesViewerForm;
         private GameShopEditorWindow gameShopEditorWindow;
         private NpcGenEditorWindow npcGenEditorWindow;
+        private TaskEditorWindow taskEditorWindow;
         private TitleEditorWindow titleEditorWindow;
         private Label referencesViewerLabel;
         private TabControl referencesViewerTabs;

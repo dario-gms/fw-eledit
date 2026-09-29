@@ -1833,13 +1833,15 @@ namespace FWEledit
             int currentPathId = TryGetCurrentPathId(itemGrid, rowIndex, modelPickerService, pathIdResolutionService);
             CustomIconImportService customIconService = new CustomIconImportService();
             List<CustomIconEntry> entries = customIconService.BuildEntries(database);
+            Image itemFrame = TryLoadCustomIconItemFrame(assetManager);
             using (CustomIconPickerWindow picker = new CustomIconPickerWindow(
                 entries,
                 currentPathId,
                 ownerWindow => ImportCustomIcon(database, assetManager, customIconService, ownerWindow),
                 () => GetCustomIconCapacity(assetManager, customIconService),
                 ownerWindow => ExpandCustomIconCapacity(database, assetManager, customIconService, ownerWindow),
-                (ownerWindow, entry) => RemoveCustomIcon(database, assetManager, customIconService, ownerWindow, entry)))
+                (ownerWindow, entry) => RemoveCustomIcon(listCollection, database, assetManager, customIconService, ownerWindow, entry),
+                itemFrame))
             {
                 if (picker.ShowDialog(owner) != DialogResult.OK)
                 {
@@ -1861,6 +1863,40 @@ namespace FWEledit
                 IconResolutionService iconResolutionService = new IconResolutionService();
                 itemGrid.Rows[rowIndex].Cells[2].Value = iconResolutionService.FormatIconPathIdDisplay(database, listCollection, listIndex, selectedPathId.ToString());
             }
+        }
+
+        private static Image TryLoadCustomIconItemFrame(AssetManager assetManager)
+        {
+            if (assetManager == null)
+            {
+                return null;
+            }
+
+            string[] candidates =
+            {
+                @"SM\smicon\iconback.tga",
+                @"SM\smicon\iconback_gray.tga",
+                @"DG\图标\40按钮底板.tga"
+            };
+
+            TgaImageService tgaImageService = new TgaImageService();
+            for (int i = 0; i < candidates.Length; i++)
+            {
+                byte[] payload;
+                string error;
+                if (!assetManager.TryReadPackageEntry("surfaces", candidates[i], out payload, out error) || payload == null || payload.Length == 0)
+                {
+                    continue;
+                }
+
+                Image frame = tgaImageService.TryLoad(payload);
+                if (frame != null)
+                {
+                    return frame;
+                }
+            }
+
+            return null;
         }
 
         private static CustomIconCapacityInfo GetCustomIconCapacity(
@@ -1980,6 +2016,7 @@ namespace FWEledit
         }
 
         private static bool RemoveCustomIcon(
+            eListCollection listCollection,
             CacheSave database,
             AssetManager assetManager,
             CustomIconImportService customIconService,
@@ -1996,11 +2033,25 @@ namespace FWEledit
                 return false;
             }
 
+            string usageSummary = BuildCustomIconUsageSummary(listCollection, entry.PathId, 12);
+            if (!string.IsNullOrWhiteSpace(usageSummary))
+            {
+                MessageBox.Show(
+                    owner,
+                    "This custom icon is still used by elements.data and cannot be removed safely.\n\n"
+                    + usageSummary
+                    + "\n\nChange those icon fields to another PathID first, then remove this custom icon.",
+                    "Custom Icon In Use",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+                return false;
+            }
+
             DialogResult confirm = MessageBox.Show(
                 owner,
                 "Remove custom icon PathID "
                 + entry.PathId.ToString(CultureInfo.InvariantCulture)
-                + "?\n\nThis removes the icon from iconlist_ivtr0, deletes the custom DDS from surfaces.pck, and frees the PathID from path.data.",
+                + "?\n\nThis removes the icon from iconlist_ivtr0, clears its atlas slot, and frees the PathID from path.data. The old DDS bytes may remain orphaned inside surfaces.pck until a safe compact operation exists.",
                 "Remove Custom Icon",
                 MessageBoxButtons.YesNo,
                 MessageBoxIcon.Warning,
@@ -2029,7 +2080,9 @@ namespace FWEledit
 
                 MessageBox.Show(
                     owner,
-                    "Removed custom icon PathID " + entry.PathId.ToString(CultureInfo.InvariantCulture) + ".",
+                    "Removed custom icon PathID "
+                    + entry.PathId.ToString(CultureInfo.InvariantCulture)
+                    + ".\n\nThe icon is no longer referenced by iconlist_ivtr0 or path.data. surfaces.pck was not compacted, so orphaned bytes may remain in the package.",
                     "Custom Icons",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Information);
@@ -2038,6 +2091,114 @@ namespace FWEledit
             finally
             {
                 Cursor.Current = previous;
+            }
+        }
+
+        private static string BuildCustomIconUsageSummary(eListCollection listCollection, int pathId, int maxRows)
+        {
+            if (listCollection == null || listCollection.Lists == null || pathId <= 0)
+            {
+                return string.Empty;
+            }
+
+            ItemFieldClassifierService classifier = new ItemFieldClassifierService();
+            List<string> rows = new List<string>();
+            int total = 0;
+
+            for (int listIndex = 0; listIndex < listCollection.Lists.Length; listIndex++)
+            {
+                eList list = listCollection.Lists[listIndex];
+                if (list == null || list.elementFields == null || list.elementValues == null)
+                {
+                    continue;
+                }
+
+                List<int> iconFields = new List<int>();
+                for (int fieldIndex = 0; fieldIndex < list.elementFields.Length; fieldIndex++)
+                {
+                    if (classifier.IsIconFieldName(list.elementFields[fieldIndex]))
+                    {
+                        iconFields.Add(fieldIndex);
+                    }
+                }
+                if (iconFields.Count == 0)
+                {
+                    continue;
+                }
+
+                int nameFieldIndex = FindFieldIndex(list, "Name");
+                for (int elementIndex = 0; elementIndex < list.elementValues.Length; elementIndex++)
+                {
+                    for (int iconField = 0; iconField < iconFields.Count; iconField++)
+                    {
+                        int fieldIndex = iconFields[iconField];
+                        string raw = listCollection.GetValue(listIndex, elementIndex, fieldIndex);
+                        if (!int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out int value) || value != pathId)
+                        {
+                            continue;
+                        }
+
+                        total++;
+                        if (rows.Count < maxRows)
+                        {
+                            string id = SafeGetListValue(listCollection, listIndex, elementIndex, 0);
+                            string name = nameFieldIndex >= 0
+                                ? SafeGetListValue(listCollection, listIndex, elementIndex, nameFieldIndex)
+                                : string.Empty;
+                            string itemLabel = string.IsNullOrWhiteSpace(name)
+                                ? id
+                                : name + " (" + id + ")";
+                            rows.Add("- "
+                                + (list.listName ?? ("List " + listIndex.ToString(CultureInfo.InvariantCulture)))
+                                + " / "
+                                + itemLabel
+                                + " / "
+                                + (list.elementFields[fieldIndex] ?? ("field " + fieldIndex.ToString(CultureInfo.InvariantCulture))));
+                        }
+                    }
+                }
+            }
+
+            if (total == 0)
+            {
+                return string.Empty;
+            }
+
+            if (total > rows.Count)
+            {
+                rows.Add("- ... and " + (total - rows.Count).ToString(CultureInfo.InvariantCulture) + " more reference(s).");
+            }
+
+            return string.Join(Environment.NewLine, rows);
+        }
+
+        private static int FindFieldIndex(eList list, string fieldName)
+        {
+            if (list == null || list.elementFields == null || string.IsNullOrWhiteSpace(fieldName))
+            {
+                return -1;
+            }
+
+            for (int i = 0; i < list.elementFields.Length; i++)
+            {
+                if (string.Equals(list.elementFields[i], fieldName, StringComparison.OrdinalIgnoreCase))
+                {
+                    return i;
+                }
+            }
+
+            return -1;
+        }
+
+        private static string SafeGetListValue(eListCollection listCollection, int listIndex, int elementIndex, int fieldIndex)
+        {
+            try
+            {
+                return listCollection.GetValue(listIndex, elementIndex, fieldIndex) ?? string.Empty;
+            }
+            catch
+            {
+                return string.Empty;
             }
         }
 
