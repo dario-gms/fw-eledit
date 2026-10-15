@@ -235,6 +235,7 @@ namespace FWEledit
             string smdPackage;
             string relativeSmd;
             ResolveReferencedPath(package, relativeEcm, skinModelPath, out smdPackage, out relativeSmd);
+            TryPreferLocalVariantSkinModel(package, relativeEcm, smdPackage, relativeSmd, out smdPackage, out relativeSmd);
             if (string.IsNullOrWhiteSpace(relativeSmd))
             {
                 error = "Invalid SkinModelPath: " + skinModelPath;
@@ -495,6 +496,7 @@ namespace FWEledit
             string[] addiSkinPaths = ExtractRepeatedFieldValues(ecmText, "AddiSkinPath");
 
             ResolveReferencedPath(package, resolvedEcmRelative, skinModelPath, out string smdPackage, out string relativeSmd);
+            TryPreferLocalVariantSkinModel(package, resolvedEcmRelative, smdPackage, relativeSmd, out smdPackage, out relativeSmd);
             if (string.IsNullOrWhiteSpace(relativeSmd) || !string.Equals(smdPackage, package, StringComparison.OrdinalIgnoreCase))
             {
                 error = string.Empty;
@@ -918,6 +920,59 @@ namespace FWEledit
             return false;
         }
 
+        private bool TryReadModelFileInPackage(
+            AssetManager assetManager,
+            string package,
+            string relativePath,
+            out byte[] bytes)
+        {
+            bytes = null;
+            string normalizedRelative = NormalizeRelativePath(relativePath);
+            if (string.IsNullOrWhiteSpace(normalizedRelative))
+            {
+                return false;
+            }
+
+            string absolutePath = ResolveAbsolutePath(assetManager, package, normalizedRelative);
+            if (!string.IsNullOrWhiteSpace(absolutePath) && File.Exists(absolutePath))
+            {
+                try
+                {
+                    bytes = File.ReadAllBytes(absolutePath);
+                    CaptureDependencyPath(package, normalizedRelative);
+                    return true;
+                }
+                catch
+                {
+                }
+            }
+
+            List<KeyValuePair<string, string>> readTargets = BuildPckReadTargets(package, normalizedRelative);
+            for (int i = 0; i < readTargets.Count; i++)
+            {
+                string probePackage = readTargets[i].Key ?? string.Empty;
+                string probeRelative = readTargets[i].Value ?? string.Empty;
+                if (string.IsNullOrWhiteSpace(probePackage) || string.IsNullOrWhiteSpace(probeRelative))
+                {
+                    continue;
+                }
+
+                if (pckEntryReaderService.TryReadFileFast(
+                    probePackage,
+                    probeRelative,
+                    out bytes,
+                    out string resolvedRelative,
+                    out string _))
+                {
+                    CaptureDependencyPath(probePackage, resolvedRelative);
+                    return true;
+                }
+            }
+
+            bytes = null;
+            return false;
+        }
+
         private bool TryReadModelFileFromAnyPackage(
             AssetManager assetManager,
             List<KeyValuePair<string, string>> readTargets,
@@ -1044,7 +1099,9 @@ namespace FWEledit
                 return new List<string>();
             }
 
-            string resourcesSignature = BuildResourcePackagesStateSignature(resourcesRoot);
+            string resourcesSignature = resourcesRoot.Trim().ToLowerInvariant()
+                + "|"
+                + PckEntryReaderService.GetGlobalStateVersion().ToString();
 
             lock (ResourcePackageCacheSync)
             {
@@ -1093,74 +1150,9 @@ namespace FWEledit
                 return string.Empty;
             }
 
-            string resourcesRoot = Path.Combine(gameRoot, "resources");
-            return BuildResourcePackagesStateSignature(resourcesRoot);
-        }
-
-        private static string BuildResourcePackagesStateSignature(string resourcesRoot)
-        {
-            if (string.IsNullOrWhiteSpace(resourcesRoot))
-            {
-                return string.Empty;
-            }
-
-            if (!Directory.Exists(resourcesRoot))
-            {
-                return "missing|" + resourcesRoot.ToLowerInvariant();
-            }
-
-            try
-            {
-                string[] pckFiles = Directory.GetFiles(resourcesRoot, "*.pck", SearchOption.TopDirectoryOnly);
-                string[] pkxFiles = Directory.GetFiles(resourcesRoot, "*.pkx", SearchOption.TopDirectoryOnly);
-                Array.Sort(pckFiles, StringComparer.OrdinalIgnoreCase);
-                Array.Sort(pkxFiles, StringComparer.OrdinalIgnoreCase);
-
-                StringBuilder sb = new StringBuilder(resourcesRoot.Length + ((pckFiles.Length + pkxFiles.Length) * 48));
-                sb.Append(resourcesRoot.ToLowerInvariant());
-                AppendPackageSignatureFiles(sb, pckFiles);
-                AppendPackageSignatureFiles(sb, pkxFiles);
-                return sb.ToString();
-            }
-            catch
-            {
-                return "error|" + resourcesRoot.ToLowerInvariant();
-            }
-        }
-
-        private static void AppendPackageSignatureFiles(StringBuilder sb, string[] files)
-        {
-            if (sb == null || files == null)
-            {
-                return;
-            }
-
-            for (int i = 0; i < files.Length; i++)
-            {
-                string filePath = files[i] ?? string.Empty;
-                if (string.IsNullOrWhiteSpace(filePath))
-                {
-                    continue;
-                }
-
-                string relativeName = Path.GetFileName(filePath) ?? string.Empty;
-                try
-                {
-                    FileInfo info = new FileInfo(filePath);
-                    sb.Append('|')
-                        .Append(relativeName.ToLowerInvariant())
-                        .Append(':')
-                        .Append(info.Exists ? info.Length.ToString() : "missing")
-                        .Append(':')
-                        .Append(info.Exists ? info.LastWriteTimeUtc.Ticks.ToString() : "0");
-                }
-                catch
-                {
-                    sb.Append('|')
-                        .Append(relativeName.ToLowerInvariant())
-                        .Append(":error");
-                }
-            }
+            return gameRoot.Trim().ToLowerInvariant()
+                + "|"
+                + PckEntryReaderService.GetGlobalStateVersion().ToString();
         }
 
         private static string BuildCrossPackageCacheKey(string relativePath)
@@ -1612,6 +1604,8 @@ namespace FWEledit
                         continue;
                     }
 
+                    addiRef = PreferLocalVariantAdditionalSki(ecmPackage, relativeEcm, addiRef);
+
                     if (!TryReadSkiWithFallback(
                         assetManager,
                         smdPackage,
@@ -1661,6 +1655,30 @@ namespace FWEledit
                         addiSkinVertices = RemapSkinVerticesToSkeletonIndices(
                             addiSkinVertices,
                             addiSkinBoneSkeletonIndices);
+                    }
+
+                    if (IsSameMeshSurface(
+                        vertices,
+                        uvs,
+                        indices,
+                        triangleColors,
+                        triangleTextureIndices,
+                        textures,
+                        addiVertices,
+                        addiUvs,
+                        addiIndices,
+                        addiTriangleColors,
+                        addiTriangleTextureIndices,
+                        addiTextures))
+                    {
+                        if (HasMeaningfullyDifferentSkinning(skinVertices, addiSkinVertices))
+                        {
+                            ReplaceSkinVertices(mergedSkinVertices, 0, vertices.Length, addiSkinVertices);
+                            hasSkinningData = hasSkinningData || addiHasSkinningData;
+                            skinBoneCount = Math.Max(skinBoneCount, addiSkinBoneCount);
+                            skeletonBoneCount = Math.Max(skeletonBoneCount, addiSkeletonBoneCount);
+                        }
+                        continue;
                     }
 
                     hasSkinningData = hasSkinningData || addiHasSkinningData;
@@ -1766,6 +1784,135 @@ namespace FWEledit
                 indices[i] = i;
             }
             return indices;
+        }
+
+        private static bool IsSameMeshSurface(
+            Vector3f[] firstVertices,
+            Vector2f[] firstUvs,
+            int[] firstIndices,
+            int[] firstTriangleColors,
+            int[] firstTriangleTextureIndices,
+            PreviewTextureData[] firstTextures,
+            Vector3f[] secondVertices,
+            Vector2f[] secondUvs,
+            int[] secondIndices,
+            int[] secondTriangleColors,
+            int[] secondTriangleTextureIndices,
+            PreviewTextureData[] secondTextures)
+        {
+            if (firstVertices == null || secondVertices == null
+                || firstVertices.Length != secondVertices.Length
+                || !IntArraysEqual(firstIndices, secondIndices)
+                || !IntArraysEqual(firstTriangleColors, secondTriangleColors)
+                || !IntArraysEqual(firstTriangleTextureIndices, secondTriangleTextureIndices)
+                || (firstTextures == null ? 0 : firstTextures.Length)
+                    != (secondTextures == null ? 0 : secondTextures.Length))
+            {
+                return false;
+            }
+
+            Vector2f[] safeFirstUvs = firstUvs ?? new Vector2f[0];
+            Vector2f[] safeSecondUvs = secondUvs ?? new Vector2f[0];
+            if (safeFirstUvs.Length != safeSecondUvs.Length)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < firstVertices.Length; i++)
+            {
+                Vector3f first = firstVertices[i];
+                Vector3f second = secondVertices[i];
+                if (first.X != second.X || first.Y != second.Y || first.Z != second.Z)
+                {
+                    return false;
+                }
+            }
+
+            for (int i = 0; i < safeFirstUvs.Length; i++)
+            {
+                if (safeFirstUvs[i].X != safeSecondUvs[i].X
+                    || safeFirstUvs[i].Y != safeSecondUvs[i].Y)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private static bool HasMeaningfullyDifferentSkinning(
+            PreviewSkinVertexData[] first,
+            PreviewSkinVertexData[] second)
+        {
+            PreviewSkinVertexData[] safeFirst = first ?? new PreviewSkinVertexData[0];
+            PreviewSkinVertexData[] safeSecond = second ?? new PreviewSkinVertexData[0];
+            if (safeFirst.Length == 0 || safeFirst.Length != safeSecond.Length)
+            {
+                return false;
+            }
+
+            int differenceCount = 0;
+            int requiredDifferences = Math.Max(8, safeFirst.Length / 100);
+            for (int i = 0; i < safeFirst.Length; i++)
+            {
+                PreviewSkinVertexData firstVertex = safeFirst[i];
+                PreviewSkinVertexData secondVertex = safeSecond[i];
+                if (firstVertex.Weight0 == secondVertex.Weight0
+                    && firstVertex.Weight1 == secondVertex.Weight1
+                    && firstVertex.Weight2 == secondVertex.Weight2
+                    && firstVertex.PackedBoneIndices == secondVertex.PackedBoneIndices)
+                {
+                    continue;
+                }
+
+                differenceCount++;
+                if (differenceCount >= requiredDifferences)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static void ReplaceSkinVertices(
+            List<PreviewSkinVertexData> mergedSkinVertices,
+            int destinationStart,
+            int vertexCount,
+            PreviewSkinVertexData[] replacement)
+        {
+            if (mergedSkinVertices == null || vertexCount <= 0 || destinationStart < 0)
+            {
+                return;
+            }
+
+            PreviewSkinVertexData[] safeReplacement = replacement ?? new PreviewSkinVertexData[0];
+            int availableDestination = Math.Max(0, mergedSkinVertices.Count - destinationStart);
+            int replaceCount = Math.Min(vertexCount, Math.Min(safeReplacement.Length, availableDestination));
+            for (int i = 0; i < replaceCount; i++)
+            {
+                mergedSkinVertices[destinationStart + i] = safeReplacement[i];
+            }
+        }
+
+        private static bool IntArraysEqual(int[] first, int[] second)
+        {
+            int[] safeFirst = first ?? new int[0];
+            int[] safeSecond = second ?? new int[0];
+            if (safeFirst.Length != safeSecond.Length)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < safeFirst.Length; i++)
+            {
+                if (safeFirst[i] != safeSecond[i])
+                {
+                    return false;
+                }
+            }
+
+            return true;
         }
 
         private static void AppendParsedMeshSegment(
@@ -2121,6 +2268,98 @@ namespace FWEledit
                 ? "Failed to resolve .ski path for preview."
                 : lastProbeError;
             return false;
+        }
+
+        private void TryPreferLocalVariantSkinModel(
+            string ecmPackage,
+            string relativeEcm,
+            string referencedPackage,
+            string referencedRelative,
+            out string resolvedPackage,
+            out string resolvedRelative)
+        {
+            resolvedPackage = referencedPackage;
+            resolvedRelative = referencedRelative;
+
+            if (!string.Equals(ecmPackage, referencedPackage, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            string ecmDirectory = NormalizeRelativePath(Path.GetDirectoryName(NormalizeRelativePath(relativeEcm)) ?? string.Empty);
+            string referencedDirectory = NormalizeRelativePath(Path.GetDirectoryName(NormalizeRelativePath(referencedRelative)) ?? string.Empty);
+            string variantName = Path.GetFileName(ecmDirectory) ?? string.Empty;
+            string referencedName = Path.GetFileName(referencedDirectory) ?? string.Empty;
+            string variantSuffix = ExtractTrailingModelNumberSuffix(variantName);
+            if (string.IsNullOrWhiteSpace(ecmDirectory)
+                || string.IsNullOrWhiteSpace(variantSuffix)
+                || string.IsNullOrWhiteSpace(referencedName)
+                || string.Equals(ecmDirectory, referencedDirectory, StringComparison.OrdinalIgnoreCase)
+                || !string.Equals(
+                    variantName.Substring(0, variantName.Length - variantSuffix.Length),
+                    referencedName,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            string[] extensions = new string[] { ".smd", ".ski" };
+            for (int i = 0; i < extensions.Length; i++)
+            {
+                string candidate = NormalizeRelativePath(ecmDirectory + "\\" + variantName + extensions[i]);
+                if (pckEntryReaderService.TryReadFileFast(ecmPackage, candidate, out byte[] _, out string localRelative, out string _))
+                {
+                    resolvedPackage = ecmPackage;
+                    resolvedRelative = localRelative;
+                    return;
+                }
+            }
+        }
+
+        private string PreferLocalVariantAdditionalSki(string ecmPackage, string relativeEcm, string additionalReference)
+        {
+            string normalizedReference = NormalizeRelativePath(additionalReference);
+            string ecmDirectory = NormalizeRelativePath(Path.GetDirectoryName(NormalizeRelativePath(relativeEcm)) ?? string.Empty);
+            string variantName = Path.GetFileName(ecmDirectory) ?? string.Empty;
+            string variantSuffix = ExtractTrailingModelNumberSuffix(variantName);
+            string fileName = Path.GetFileName(normalizedReference) ?? string.Empty;
+            string stem = Path.GetFileNameWithoutExtension(fileName) ?? string.Empty;
+            string extension = Path.GetExtension(fileName) ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(ecmPackage)
+                || string.IsNullOrWhiteSpace(ecmDirectory)
+                || string.IsNullOrWhiteSpace(variantSuffix)
+                || string.IsNullOrWhiteSpace(stem)
+                || !string.Equals(extension, ".ski", StringComparison.OrdinalIgnoreCase))
+            {
+                return additionalReference;
+            }
+
+            List<string> candidates = new List<string>(3);
+            candidates.Add(NormalizeRelativePath(ecmDirectory + "\\" + fileName));
+
+            Match terminalLetters = Regex.Match(stem, @"^(.*?)([A-Za-z]+)$");
+            if (terminalLetters.Success)
+            {
+                candidates.Add(NormalizeRelativePath(
+                    ecmDirectory + "\\" + terminalLetters.Groups[1].Value + variantSuffix + terminalLetters.Groups[2].Value + extension));
+            }
+
+            string ecmStem = Path.GetFileNameWithoutExtension(relativeEcm) ?? string.Empty;
+            if (terminalLetters.Success && !string.IsNullOrWhiteSpace(ecmStem))
+            {
+                candidates.Add(NormalizeRelativePath(
+                    ecmDirectory + "\\" + ecmStem + terminalLetters.Groups[2].Value + extension));
+            }
+
+            for (int i = 0; i < candidates.Count; i++)
+            {
+                if (pckEntryReaderService.TryReadFileFast(ecmPackage, candidates[i], out byte[] _, out string resolvedRelative, out string _))
+                {
+                    return resolvedRelative;
+                }
+            }
+
+            return additionalReference;
         }
 
         private bool TryResolveNearestSkiByFileName(
@@ -4020,11 +4259,6 @@ namespace FWEledit
         {
             clipBytes = null;
             ResolveReferencedPath(smdPackage, relativeSmd, reference, out string clipPackage, out string clipRelative);
-            if (!string.IsNullOrWhiteSpace(clipRelative)
-                && TryReadModelFile(assetManager, clipPackage, clipRelative, out clipBytes, out string _))
-            {
-                return true;
-            }
 
             string smdDirectory;
             string smdName;
@@ -4058,7 +4292,7 @@ namespace FWEledit
                     continue;
                 }
 
-                if (TryReadModelFile(assetManager, smdPackage, candidate, out clipBytes, out string _))
+                if (TryReadModelFileInPackage(assetManager, smdPackage, candidate, out clipBytes))
                 {
                     return true;
                 }
@@ -4071,7 +4305,13 @@ namespace FWEledit
                     out string nearestClipRelative,
                     out string _)
                 && !string.IsNullOrWhiteSpace(nearestClipRelative)
-                && TryReadModelFile(assetManager, smdPackage, nearestClipRelative, out clipBytes, out string _))
+                && TryReadModelFileInPackage(assetManager, smdPackage, nearestClipRelative, out clipBytes))
+            {
+                return true;
+            }
+
+            if (!string.IsNullOrWhiteSpace(clipRelative)
+                && TryReadModelFileInPackage(assetManager, clipPackage, clipRelative, out clipBytes))
             {
                 return true;
             }
@@ -5627,11 +5867,17 @@ namespace FWEledit
                 return TextureAlphaPolicy.PreferCutout;
             }
 
+            if (lower.Contains("lms\\mounts\\") || lower.Contains("\\mounts\\"))
+            {
+                // Legacy ground-mount atlases commonly use alpha as auxiliary/specular data.
+                return TextureAlphaPolicy.PreferMountOpaque;
+            }
+
             if (IsMountRelativeSkiPath(lower))
             {
-                // Mount atlases in FW frequently encode auxiliary data in alpha.
-                // Keep them opaque and apply dedicated RGB recovery/fill steps.
-                return TextureAlphaPolicy.PreferMountOpaque;
+                // Flying mounts mix real opacity masks with auxiliary alpha channels.
+                // Classify each texture so cutout cards stay cut out while data-only alpha remains opaque.
+                return TextureAlphaPolicy.PreferCutout;
             }
 
             return TextureAlphaPolicy.Default;
@@ -5735,22 +5981,26 @@ namespace FWEledit
             textureData = null;
 
             string[] candidates = BuildTexturePathCandidates(relativeSkiPath, textureContextRelativePath, texturePath);
-            for (int i = 0; i < candidates.Length; i++)
+            for (int pass = 0; pass < 2; pass++)
             {
-                string texPackage;
-                string texRelative;
-                ResolveReferencedPath(skiPackage, relativeSkiPath, candidates[i], out texPackage, out texRelative);
-                if (string.IsNullOrWhiteSpace(texRelative))
+                bool allowNearbyFallback = pass > 0;
+                for (int i = 0; i < candidates.Length; i++)
                 {
-                    continue;
-                }
+                    string texPackage;
+                    string texRelative;
+                    ResolveReferencedPath(skiPackage, relativeSkiPath, candidates[i], out texPackage, out texRelative);
+                    if (string.IsNullOrWhiteSpace(texRelative))
+                    {
+                        continue;
+                    }
 
-                if (TryReadTextureBytesWithPackageFallback(assetManager, texPackage, relativeSkiPath, texRelative, out byte[] bytes, out string resolvedTexturePath)
-                    && TryDecodeTextureData(texRelative, bytes, alphaPolicy, out PreviewTextureData decoded))
-                {
-                    decoded.Name = resolvedTexturePath;
-                    textureData = decoded;
-                    return true;
+                    if (TryReadTextureBytesWithPackageFallback(assetManager, texPackage, relativeSkiPath, texRelative, allowNearbyFallback, out byte[] bytes, out string resolvedTexturePath)
+                        && TryDecodeTextureData(texRelative, bytes, alphaPolicy, out PreviewTextureData decoded))
+                    {
+                        decoded.Name = resolvedTexturePath;
+                        textureData = decoded;
+                        return true;
+                    }
                 }
             }
 
@@ -5884,6 +6134,7 @@ namespace FWEledit
             string preferredPackage,
             string anchorRelativePath,
             string textureRelativePath,
+            bool allowNearbyFallback,
             out byte[] bytes,
             out string resolvedPath)
         {
@@ -5910,23 +6161,9 @@ namespace FWEledit
                 return true;
             }
 
-            for (int i = 0; i < packageCandidates.Count; i++)
-            {
-                string pkg = packageCandidates[i];
-                if (string.IsNullOrWhiteSpace(pkg))
-                {
-                    continue;
-                }
-
-                if (TryReadModelFile(assetManager, pkg, textureRelativePath, out bytes, out string _))
-                {
-                    resolvedPath = BuildMappedPath(pkg, textureRelativePath);
-                    return true;
-                }
-            }
-
-            string[] nearbyTextureFileNames = BuildTextureFileCandidates(textureRelativePath);
-            if (!string.IsNullOrWhiteSpace(normalizedPreferredPackage)
+            string[] nearbyTextureFileNames = allowNearbyFallback ? BuildTextureFileCandidates(textureRelativePath) : new string[0];
+            if (allowNearbyFallback
+                && !string.IsNullOrWhiteSpace(normalizedPreferredPackage)
                 && !string.IsNullOrWhiteSpace(anchorRelativePath)
                 && nearbyTextureFileNames.Length > 0
                 && pckEntryReaderService.TryResolveNearestEntryByFileNames(normalizedPreferredPackage, anchorRelativePath, nearbyTextureFileNames, out string nearbyRelative, out string _)
@@ -5934,6 +6171,22 @@ namespace FWEledit
             {
                 resolvedPath = BuildMappedPath(normalizedPreferredPackage, resolvedNearbyRelative);
                 return true;
+            }
+
+            for (int i = 0; i < packageCandidates.Count; i++)
+            {
+                string pkg = packageCandidates[i];
+                if (string.IsNullOrWhiteSpace(pkg)
+                    || string.Equals(pkg, normalizedPreferredPackage, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (pckEntryReaderService.TryReadFileFast(pkg, textureRelativePath, out bytes, out string packageResolvedRelative, out string _))
+                {
+                    resolvedPath = BuildMappedPath(pkg, packageResolvedRelative);
+                    return true;
+                }
             }
 
             return false;
