@@ -1426,7 +1426,7 @@ namespace FWEledit
                 return;
             }
 
-            string text = "Drag: rotate | Shift+drag: fine rotate | Scroll: zoom | Double-click: reset | "
+            string text = "L-drag: rotate | R-drag: move | Wheel: zoom | Double-click: reset | "
                 + GetActiveRendererStatusText();
             if (animationCheck != null && animationCheck.Checked)
             {
@@ -2250,9 +2250,12 @@ namespace FWEledit
             private float yaw;
             private float pitch;
             private float zoom;
+            private float panX;
+            private float panY;
             private bool experimentalAnimationEnabled;
             private bool useTrueScale;
             private bool isDragging;
+            private bool isPanning;
             private System.Drawing.Point lastMouse;
             private const float PitchLimit = 1.35f;
 
@@ -2479,6 +2482,8 @@ namespace FWEledit
                 yaw = defaultYaw;
                 pitch = defaultPitch;
                 zoom = 1.0f;
+                panX = 0f;
+                panY = 0f;
                 Invalidate();
             }
 
@@ -2926,7 +2931,7 @@ float4 PSMain(PS_INPUT input) : SV_Target
                     * SharpDX.Matrix.RotationY(yaw)
                     * SharpDX.Matrix.RotationX(pitch);
                 float cameraDistance = 3.2f / Math.Max(0.15f, zoom);
-                world *= SharpDX.Matrix.Translation(0f, 0f, -cameraDistance);
+                world *= SharpDX.Matrix.Translation(panX, panY, -cameraDistance);
                 SharpDX.Matrix worldViewProjection = world * projection;
 
                 deviceContext.InputAssembler.InputLayout = inputLayout;
@@ -2942,7 +2947,7 @@ float4 PSMain(PS_INPUT input) : SV_Target
                 deviceContext.Rasterizer.State = ShowWireframe ? rasterStateWireframe : rasterStateSolid;
 
                 const float alphaEpsilon = 0.0001f;
-                const float cutoutAlphaThreshold = 0.01f;
+                const float cutoutAlphaThreshold = 0.50f;
                 DrawSubsets(opaqueSubsets, world, worldViewProjection, false, 0.0f, 1.0f + alphaEpsilon);
                 DrawSubsets(cutoutSubsets, world, worldViewProjection, false, cutoutAlphaThreshold, 1.0f + alphaEpsilon);
                 DrawSubsets(transparentSubsets, world, worldViewProjection, false, 0.98f, 1.0f + alphaEpsilon);
@@ -3198,41 +3203,59 @@ float4 PSMain(PS_INPUT input) : SV_Target
 
             private void OnMouseDown(object sender, MouseEventArgs e)
             {
-                if (e.Button != MouseButtons.Left)
+                if (e.Button != MouseButtons.Left && e.Button != MouseButtons.Right)
                 {
                     return;
                 }
 
-                isDragging = true;
+                isDragging = e.Button == MouseButtons.Left;
+                isPanning = e.Button == MouseButtons.Right;
                 lastMouse = e.Location;
                 Cursor = Cursors.SizeAll;
+                Capture = true;
                 Focus();
             }
 
             private void OnMouseUp(object sender, MouseEventArgs e)
             {
-                if (e.Button != MouseButtons.Left)
+                if (e.Button == MouseButtons.Left)
                 {
-                    return;
+                    isDragging = false;
+                }
+                else if (e.Button == MouseButtons.Right)
+                {
+                    isPanning = false;
                 }
 
-                isDragging = false;
-                Cursor = Cursors.Default;
+                if (!isDragging && !isPanning)
+                {
+                    Cursor = Cursors.Default;
+                    Capture = false;
+                }
             }
 
             private void OnMouseMove(object sender, MouseEventArgs e)
             {
-                if (!isDragging)
+                if (!isDragging && !isPanning)
                 {
                     return;
                 }
 
                 int dx = e.X - lastMouse.X;
                 int dy = e.Y - lastMouse.Y;
-                float sensitivity = (ModifierKeys & Keys.Shift) == Keys.Shift ? 0.0017f : 0.0036f;
-                yaw += dx * sensitivity;
-                pitch += dy * sensitivity;
-                pitch = Math.Max(-PitchLimit, Math.Min(PitchLimit, pitch));
+                if (isPanning)
+                {
+                    float panSensitivity = 2.65f / (Math.Max(1, Math.Min(ClientSize.Width, ClientSize.Height)) * Math.Max(0.15f, zoom));
+                    panX += dx * panSensitivity;
+                    panY -= dy * panSensitivity;
+                }
+                else
+                {
+                    float sensitivity = (ModifierKeys & Keys.Shift) == Keys.Shift ? 0.0017f : 0.0036f;
+                    yaw += dx * sensitivity;
+                    pitch += dy * sensitivity;
+                    pitch = Math.Max(-PitchLimit, Math.Min(PitchLimit, pitch));
+                }
                 lastMouse = e.Location;
                 Invalidate();
             }
@@ -3304,9 +3327,12 @@ float4 PSMain(PS_INPUT input) : SV_Target
             private float yaw;
             private float pitch;
             private float zoom;
+            private float panX;
+            private float panY;
             private bool experimentalAnimationEnabled;
             private bool useTrueScale;
             private bool isDragging;
+            private bool isPanning;
             private System.Drawing.Point lastMouse;
             private bool glResourcesInitialized;
             private string gpuInitializationError = string.Empty;
@@ -3634,6 +3660,8 @@ float4 PSMain(PS_INPUT input) : SV_Target
                 yaw = defaultYaw;
                 pitch = defaultPitch;
                 zoom = 1.0f;
+                panX = 0f;
+                panY = 0f;
                 Invalidate();
             }
 
@@ -3877,7 +3905,7 @@ float4 PSMain(PS_INPUT input) : SV_Target
                 model *= Matrix4.CreateRotationY(yaw);
                 model *= Matrix4.CreateRotationX(pitch);
                 float cameraDistance = 3.2f / Math.Max(0.15f, zoom);
-                model *= Matrix4.CreateTranslation(0f, 0f, -cameraDistance);
+                model *= Matrix4.CreateTranslation(panX, panY, -cameraDistance);
 
                 GL.MatrixMode(MatrixMode.Projection);
                 GL.LoadMatrix(ref projection);
@@ -3913,7 +3941,7 @@ float4 PSMain(PS_INPUT input) : SV_Target
                 GL.Disable(EnableCap.AlphaTest);
                     DrawGpuBatchList(opaqueBatches, false, false);
 
-                const float cutoutAlphaThreshold = 0.01f;
+                const float cutoutAlphaThreshold = 0.50f;
                 GL.Enable(EnableCap.AlphaTest);
                 GL.AlphaFunc(AlphaFunction.Greater, cutoutAlphaThreshold);
                     DrawGpuBatchList(cutoutBatches, false, false);
@@ -4284,41 +4312,59 @@ float4 PSMain(PS_INPUT input) : SV_Target
 
             private void OnMouseDown(object sender, MouseEventArgs e)
             {
-                if (e.Button != MouseButtons.Left)
+                if (e.Button != MouseButtons.Left && e.Button != MouseButtons.Right)
                 {
                     return;
                 }
 
-                isDragging = true;
+                isDragging = e.Button == MouseButtons.Left;
+                isPanning = e.Button == MouseButtons.Right;
                 lastMouse = e.Location;
                 Cursor = Cursors.SizeAll;
+                Capture = true;
                 Focus();
             }
 
             private void OnMouseUp(object sender, MouseEventArgs e)
             {
-                if (e.Button != MouseButtons.Left)
+                if (e.Button == MouseButtons.Left)
                 {
-                    return;
+                    isDragging = false;
+                }
+                else if (e.Button == MouseButtons.Right)
+                {
+                    isPanning = false;
                 }
 
-                isDragging = false;
-                Cursor = Cursors.Default;
+                if (!isDragging && !isPanning)
+                {
+                    Cursor = Cursors.Default;
+                    Capture = false;
+                }
             }
 
             private void OnMouseMove(object sender, MouseEventArgs e)
             {
-                if (!isDragging)
+                if (!isDragging && !isPanning)
                 {
                     return;
                 }
 
                 int dx = e.X - lastMouse.X;
                 int dy = e.Y - lastMouse.Y;
-                float sensitivity = (ModifierKeys & Keys.Shift) == Keys.Shift ? 0.0017f : 0.0036f;
-                yaw += dx * sensitivity;
-                pitch += dy * sensitivity;
-                pitch = Math.Max(-PitchLimit, Math.Min(PitchLimit, pitch));
+                if (isPanning)
+                {
+                    float panSensitivity = 2.65f / (Math.Max(1, Math.Min(ClientSize.Width, ClientSize.Height)) * Math.Max(0.15f, zoom));
+                    panX += dx * panSensitivity;
+                    panY -= dy * panSensitivity;
+                }
+                else
+                {
+                    float sensitivity = (ModifierKeys & Keys.Shift) == Keys.Shift ? 0.0017f : 0.0036f;
+                    yaw += dx * sensitivity;
+                    pitch += dy * sensitivity;
+                    pitch = Math.Max(-PitchLimit, Math.Min(PitchLimit, pitch));
+                }
                 lastMouse = e.Location;
                 Invalidate();
             }
@@ -4371,9 +4417,12 @@ float4 PSMain(PS_INPUT input) : SV_Target
             private float yaw;
             private float pitch;
             private float zoom;
+            private float panX;
+            private float panY;
             private bool experimentalAnimationEnabled;
             private bool useTrueScale;
             private bool isDragging;
+            private bool isPanning;
             private System.Drawing.Point lastMouse;
             private bool useHardwareRendering;
             private HardwareRenderBackend preferredHardwareBackend;
@@ -4538,6 +4587,8 @@ float4 PSMain(PS_INPUT input) : SV_Target
                 yaw = defaultYaw;
                 pitch = defaultPitch;
                 zoom = 1.0f;
+                panX = 0f;
+                panY = 0f;
                 Invalidate();
             }
 
@@ -4656,8 +4707,8 @@ float4 PSMain(PS_INPUT input) : SV_Target
                         continue;
                     }
 
-                    projectedX[i] = cx + (ryX * baseScale / d);
-                    projectedY[i] = cy - (rxY * baseScale / d);
+                    projectedX[i] = cx + ((ryX + panX) * baseScale / d);
+                    projectedY[i] = cy - ((rxY + panY) * baseScale / d);
                     reciprocalDepth[i] = 1f / d;
                     visible[i] = true;
                 }
@@ -5075,7 +5126,7 @@ float4 PSMain(PS_INPUT input) : SV_Target
                             float v = ((w0 * uv0.Y * invD0) + (w1 * uv1.Y * invD1) + (w2 * uv2.Y * invD2)) / invDepth;
                             int textureArgb = SampleTextureArgb(texture, u, v, bilinearTextureSampling);
                             int textureAlpha = (textureArgb >> 24) & 0xFF;
-                            if (textureUsesAlphaAsOpacity && textureAlpha <= 2)
+                            if (textureUsesAlphaAsOpacity && textureAlpha < 128)
                             {
                                 continue;
                             }
@@ -5613,14 +5664,16 @@ float4 PSMain(PS_INPUT input) : SV_Target
 
             private void OnMouseDown(object sender, MouseEventArgs e)
             {
-                if (e.Button != MouseButtons.Left)
+                if (e.Button != MouseButtons.Left && e.Button != MouseButtons.Right)
                 {
                     return;
                 }
 
-                isDragging = true;
+                isDragging = e.Button == MouseButtons.Left;
+                isPanning = e.Button == MouseButtons.Right;
                 Capture = true;
                 lastMouse = e.Location;
+                Cursor = Cursors.SizeAll;
                 Focus();
             }
 
@@ -5629,14 +5682,23 @@ float4 PSMain(PS_INPUT input) : SV_Target
                 if (e.Button == MouseButtons.Left)
                 {
                     isDragging = false;
+                }
+                else if (e.Button == MouseButtons.Right)
+                {
+                    isPanning = false;
+                }
+
+                if (!isDragging && !isPanning)
+                {
                     Capture = false;
+                    Cursor = Cursors.Default;
                     Invalidate();
                 }
             }
 
             private void OnMouseMove(object sender, MouseEventArgs e)
             {
-                if (!isDragging)
+                if (!isDragging && !isPanning)
                 {
                     return;
                 }
@@ -5644,6 +5706,15 @@ float4 PSMain(PS_INPUT input) : SV_Target
                 int dx = e.X - lastMouse.X;
                 int dy = e.Y - lastMouse.Y;
                 lastMouse = e.Location;
+
+                if (isPanning)
+                {
+                    float panSensitivity = 7.62f / (Math.Max(1, Math.Min(ClientSize.Width, ClientSize.Height)) * Math.Max(0.15f, zoom));
+                    panX += dx * panSensitivity;
+                    panY -= dy * panSensitivity;
+                    Invalidate();
+                    return;
+                }
 
                 float sensitivity = RotationSensitivity;
                 if ((ModifierKeys & Keys.Shift) == Keys.Shift)

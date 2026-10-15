@@ -22,8 +22,9 @@ namespace FWEledit
 
         private static readonly object globalInvalidationSync = new object();
         private static readonly Dictionary<string, int> globalPackageVersions = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-        private readonly object syncRoot = new object();
-        private readonly Dictionary<string, PckPackageIndex> packageCache = new Dictionary<string, PckPackageIndex>(StringComparer.OrdinalIgnoreCase);
+        private static readonly object packageCacheSync = new object();
+        private static readonly Dictionary<string, PckPackageIndex> packageCache = new Dictionary<string, PckPackageIndex>(StringComparer.OrdinalIgnoreCase);
+        private static int globalStateVersion;
         public static Action<string, string, TimeSpan, int> ProfileEvent;
 
         public static void InvalidatePackageGlobally(string packageName)
@@ -39,9 +40,44 @@ namespace FWEledit
                 int version;
                 globalPackageVersions.TryGetValue(normalized, out version);
                 globalPackageVersions[normalized] = version + 1;
+                unchecked
+                {
+                    globalStateVersion++;
+                }
+            }
+
+            List<PckPackageIndex> staleIndexes = new List<PckPackageIndex>();
+            lock (packageCacheSync)
+            {
+                string prefix = packageName.Trim() + "|";
+                List<string> staleKeys = packageCache.Keys
+                    .Where(key => key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+                for (int i = 0; i < staleKeys.Count; i++)
+                {
+                    PckPackageIndex stale;
+                    if (packageCache.TryGetValue(staleKeys[i], out stale) && stale != null)
+                    {
+                        staleIndexes.Add(stale);
+                    }
+                    packageCache.Remove(staleKeys[i]);
+                }
+            }
+
+            for (int i = 0; i < staleIndexes.Count; i++)
+            {
+                staleIndexes[i].Dispose();
             }
 
             DeletePackageIndexDiskCache(packageName);
+        }
+
+        public static int GetGlobalStateVersion()
+        {
+            lock (globalInvalidationSync)
+            {
+                return globalStateVersion;
+            }
         }
 
         public bool TryWarmPackageIndex(string packageName, out string error)
@@ -84,7 +120,7 @@ namespace FWEledit
             if (TryGetPackageIndex(normalizedPackage, pckPath, pkxPath, out index, out managedError) && index != null)
             {
                 if (TryResolveIndexedEntry(index, normalizedPackage, normalizedEntry, out PckFileEntry entry, out string resolvedRelativePath)
-                    && TryReadIndexedEntry(normalizedPackage, pckPath, pkxPath, resolvedRelativePath, entry, out payload, out error))
+                    && TryReadIndexedEntry(normalizedPackage, index, resolvedRelativePath, entry, out payload, out error))
                 {
                     return true;
                 }
@@ -141,7 +177,7 @@ namespace FWEledit
                 return false;
             }
 
-            return TryReadIndexedEntry(normalizedPackage, pckPath, pkxPath, resolvedRelativePath, entry, out payload, out error);
+            return TryReadIndexedEntry(normalizedPackage, index, resolvedRelativePath, entry, out payload, out error);
         }
 
         public bool TryResolveSiblingByExtension(
@@ -448,7 +484,7 @@ namespace FWEledit
                 return false;
             }
 
-            return TryReadIndexedEntry(normalizedPackage, pckPath, safePkxPath, resolvedRelativePath, entry, out payload, out error);
+            return TryReadIndexedEntry(normalizedPackage, index, resolvedRelativePath, entry, out payload, out error);
         }
 
         private static bool TryResolveIndexedEntry(
@@ -659,8 +695,7 @@ namespace FWEledit
 
         private static bool TryReadIndexedEntry(
             string packageName,
-            string pckPath,
-            string pkxPath,
+            PckPackageIndex index,
             string relativePath,
             PckFileEntry entry,
             out byte[] payload,
@@ -672,34 +707,31 @@ namespace FWEledit
             try
             {
                 Stopwatch stopwatch = Stopwatch.StartNew();
-                using (PckConcatStream stream = new PckConcatStream(pckPath, pkxPath))
+                if (index == null || index.ReadSession == null)
                 {
-                    if (entry.Offset < 0 || entry.CompressedSize <= 0 || entry.Offset + entry.CompressedSize > stream.Length)
-                    {
-                        error = "Invalid package entry data span for: " + relativePath;
-                        return false;
-                    }
-
-                    stream.Seek(entry.Offset, SeekOrigin.Begin);
-                    byte[] compressed = new byte[entry.CompressedSize];
-                    int read = stream.Read(compressed, 0, compressed.Length);
-                    if (read != compressed.Length)
-                    {
-                        error = "Failed to read package entry data: " + relativePath;
-                        return false;
-                    }
-
-                    if (entry.Encrypted)
-                    {
-                        DecryptGamePayload(compressed, compressed.Length);
-                    }
-
-                    byte[] inflated = TryInflateEntry(compressed);
-                    payload = inflated ?? compressed;
-                    stopwatch.Stop();
-                    EmitProfileEvent("read-entry", packageName + ":" + relativePath, stopwatch.Elapsed, payload.Length);
-                    return true;
+                    error = "Package read session is unavailable: " + packageName;
+                    return false;
                 }
+
+                byte[] compressed;
+                if (!index.ReadSession.TryRead(entry.Offset, entry.CompressedSize, out compressed, out error))
+                {
+                    error = string.IsNullOrWhiteSpace(error)
+                        ? "Failed to read package entry data: " + relativePath
+                        : error;
+                    return false;
+                }
+
+                if (entry.Encrypted)
+                {
+                    DecryptGamePayload(compressed, compressed.Length);
+                }
+
+                byte[] inflated = TryInflateEntry(compressed);
+                payload = inflated ?? compressed;
+                stopwatch.Stop();
+                EmitProfileEvent("read-entry", packageName + ":" + relativePath, stopwatch.Elapsed, payload.Length);
+                return true;
             }
             catch (Exception ex)
             {
@@ -718,20 +750,22 @@ namespace FWEledit
             index = null;
             error = string.Empty;
 
-            string signature = BuildPackageSignature(packageName, pckPath, pkxPath);
             string cacheKey = packageName + "|" + pckPath + "|" + pkxPath;
+            int packageVersion = GetGlobalPackageVersion(packageName);
 
-            lock (syncRoot)
+            lock (packageCacheSync)
             {
                 PckPackageIndex cached;
                 if (packageCache.TryGetValue(cacheKey, out cached)
                     && cached != null
-                    && string.Equals(cached.Signature, signature, StringComparison.OrdinalIgnoreCase))
+                    && cached.PackageVersion == packageVersion)
                 {
                     index = cached;
                     return true;
                 }
             }
+
+            string signature = BuildPackageSignature(packageName, pckPath, pkxPath);
 
             Dictionary<string, PckFileEntry> decodedEntries;
             List<string> orderedEntries;
@@ -752,19 +786,16 @@ namespace FWEledit
                 PckPackageIndex cachedFromDisk = new PckPackageIndex
                 {
                     Signature = signature,
+                    PackageVersion = packageVersion,
                     Entries = decodedEntries,
                     OrderedEntries = orderedEntries,
                     EntryPositions = entryPositions,
                     EntriesByExtension = entriesByExtension,
-                    EntriesByFileName = entriesByFileName
+                    EntriesByFileName = entriesByFileName,
+                    ReadSession = new PckPackageReadSession(pckPath, pkxPath)
                 };
 
-                lock (syncRoot)
-                {
-                    packageCache[cacheKey] = cachedFromDisk;
-                }
-
-                index = cachedFromDisk;
+                index = PublishPackageIndex(cacheKey, cachedFromDisk);
                 return true;
             }
 
@@ -791,20 +822,43 @@ namespace FWEledit
             PckPackageIndex built = new PckPackageIndex
             {
                 Signature = signature,
+                PackageVersion = packageVersion,
                 Entries = decodedEntries,
                 OrderedEntries = orderedEntries,
                 EntryPositions = entryPositions,
                 EntriesByExtension = entriesByExtension,
-                EntriesByFileName = entriesByFileName
+                EntriesByFileName = entriesByFileName,
+                ReadSession = new PckPackageReadSession(pckPath, pkxPath)
             };
 
-            lock (syncRoot)
+            index = PublishPackageIndex(cacheKey, built);
+            return true;
+        }
+
+        private static PckPackageIndex PublishPackageIndex(string cacheKey, PckPackageIndex candidate)
+        {
+            PckPackageIndex replaced = null;
+            lock (packageCacheSync)
             {
-                packageCache[cacheKey] = built;
+                PckPackageIndex current;
+                if (packageCache.TryGetValue(cacheKey, out current) && current != null)
+                {
+                    if (current.PackageVersion == candidate.PackageVersion)
+                    {
+                        candidate.Dispose();
+                        return current;
+                    }
+                    replaced = current;
+                }
+
+                packageCache[cacheKey] = candidate;
             }
 
-            index = built;
-            return true;
+            if (replaced != null)
+            {
+                replaced.Dispose();
+            }
+            return candidate;
         }
 
         private static bool TryLoadPackageIndexFromDiskCache(
@@ -1835,14 +1889,89 @@ namespace FWEledit
             return true;
         }
 
-        private sealed class PckPackageIndex
+        private sealed class PckPackageIndex : IDisposable
         {
             public string Signature { get; set; } = string.Empty;
+            public int PackageVersion { get; set; }
             public Dictionary<string, PckFileEntry> Entries { get; set; } = new Dictionary<string, PckFileEntry>(StringComparer.OrdinalIgnoreCase);
             public List<string> OrderedEntries { get; set; } = new List<string>();
             public Dictionary<string, int> EntryPositions { get; set; } = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             public Dictionary<string, List<string>> EntriesByExtension { get; set; } = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
             public Dictionary<string, List<string>> EntriesByFileName { get; set; } = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+            public PckPackageReadSession ReadSession { get; set; }
+
+            public void Dispose()
+            {
+                if (ReadSession != null)
+                {
+                    ReadSession.Dispose();
+                    ReadSession = null;
+                }
+            }
+        }
+
+        private sealed class PckPackageReadSession : IDisposable
+        {
+            private readonly object readSync = new object();
+            private PckConcatStream stream;
+            private bool disposed;
+
+            public PckPackageReadSession(string pckPath, string pkxPath)
+            {
+                stream = new PckConcatStream(pckPath, pkxPath);
+            }
+
+            public bool TryRead(long offset, int count, out byte[] payload, out string error)
+            {
+                payload = null;
+                error = string.Empty;
+                lock (readSync)
+                {
+                    if (disposed || stream == null)
+                    {
+                        error = "Package read session is closed.";
+                        return false;
+                    }
+                    if (offset < 0 || count <= 0 || offset + count > stream.Length)
+                    {
+                        error = "Invalid package entry data span.";
+                        return false;
+                    }
+
+                    stream.Seek(offset, SeekOrigin.Begin);
+                    payload = new byte[count];
+                    int totalRead = 0;
+                    while (totalRead < count)
+                    {
+                        int read = stream.Read(payload, totalRead, count - totalRead);
+                        if (read <= 0)
+                        {
+                            payload = null;
+                            error = "Unexpected end of package data.";
+                            return false;
+                        }
+                        totalRead += read;
+                    }
+                    return true;
+                }
+            }
+
+            public void Dispose()
+            {
+                lock (readSync)
+                {
+                    if (disposed)
+                    {
+                        return;
+                    }
+                    disposed = true;
+                    if (stream != null)
+                    {
+                        stream.Dispose();
+                        stream = null;
+                    }
+                }
+            }
         }
 
         private sealed class PckFileEntry

@@ -2,6 +2,20 @@
 
 This file keeps the older release notes that used to live in the README. The README now shows only the newest release notes so it stays easier to scan.
 
+## What's New in v0.9.5.29
+
+- Completely reworked the 3D Preview based on PWModelViewer behavior.
+- Added model animation playback with animation selection and Play/Pause controls.
+- Added STCK animation, BON skeleton, and SKI skinning support.
+- Added animation support for composed GFX models.
+- Made animations more natural and fluid, with fewer stalls.
+- Fixed models that appeared deformed, dark, or with missing parts.
+- Improved OpenGL rendering quality and performance.
+- Fixed renderer selection with mutually exclusive controls.
+- Model changes now pause animation automatically.
+
+---
+
 ## What's New in v0.9.5.28
 
 - Fixed NPC cloning and NPCGen insertion so cloned NPCs receive safe service/task IDs and load correctly in game.
