@@ -57,8 +57,8 @@ Each list uses this structure to decode the binary data into rows and fields.
 ### Write
 1. Validate list integrity (field types and sizes).
 2. Rebuild binary output list-by-list.
-3. Write to a temp file.
-4. Create `.bak` backup.
+3. Write to a temp file under `backups/fweledit/temp/`.
+4. Create `.bak` backup under `backups/fweledit/<category>/`.
 5. Replace original `elements.data`.
 
 ---
@@ -119,7 +119,7 @@ These are UI helpers only; the underlying binary values are preserved.
 ## Safety Notes
 
 - The editor validates IDs before save.
-- Writes are atomic (`.tmp_fweledit` + `.bak`).
+- Writes use centralized temp/backup paths under `backups/fweledit/`.
 - A failed save does not corrupt the original file.
 
 ---

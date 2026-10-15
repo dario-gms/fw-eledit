@@ -155,7 +155,7 @@ namespace FWEledit
                 }
                 Directory.CreateDirectory(dir);
 
-                tempPath = Path.Combine(dir, Path.GetFileName(targetPath) + ".tmp_fweledit");
+                tempPath = AssetManager.GetTemporaryFilePath(targetPath, "elements", ".tmp_fweledit");
                 if (File.Exists(tempPath))
                 {
                     File.Delete(tempPath);
@@ -169,12 +169,9 @@ namespace FWEledit
 
                 if (File.Exists(targetPath))
                 {
-                    string backupRoot = assetManager != null && !string.IsNullOrWhiteSpace(AssetManager.GameRootPath)
-                        ? AssetManager.GameRootPath
-                        : dir;
-                    string backupDir = Path.Combine(backupRoot, "backup_elements");
+                    string backupDir = AssetManager.GetBackupDirectory("elements");
                     AssetManager.CreateTimestampedZipBackup(targetPath, backupDir, "elements");
-                    File.Copy(targetPath, targetPath + ".bak", true);
+                    AssetManager.CopyLatestBackup(targetPath, "elements");
                 }
 
                 File.Copy(tempPath, targetPath, true);

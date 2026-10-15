@@ -12,18 +12,17 @@ FWEledit is based on [sELedit++ by Wrechid](https://github.com/Wrechid/sELedit-)
 
 ---
 
-## What's New in v0.9.5.28
+## What's New in v0.9.5.29
 
-- Fixed NPC cloning and NPCGen insertion so cloned NPCs receive safe service/task IDs and load correctly in game.
-- Fixed cloned task-in/task-out data so NPCs using cloned task services no longer disappear when spawned from `npcgen.data`.
-- Added faster picker/resource loading paths and reused existing cache data where possible, reducing stalls when adding icons, models, and custom assets.
-- Hardened item description handling so element-backed descriptions no longer bleed into unrelated config rows with matching IDs, and cloned/deleted descriptions stay attached to the intended item.
-- Fixed multi-item clone/delete behavior in filtered or shifted element lists, including preserving the user's position instead of jumping back to the start after deletes.
-- Fixed equipment package/clone output that could create in-game `Wrong item` entries by keeping imported/cloned item IDs, paths, and package metadata aligned.
-- Improved the model picker layout so all columns remain visible and the splitter cannot open in an invalid hidden-column state.
-- Expanded the task viewer with clearer random reward group handling, including reward chance/probability display for supported task reward layouts.
-- Reworked Equipment Essence hover previews to better match in-game tooltips, including quality-based colors, stat/addon lines, set bonuses, exchange/bind flags, and scroll-safe sizing for long tooltips.
-- Updated project/app version metadata to `v0.9.5.28`.
+- Completely reworked the 3D Preview based on PWModelViewer behavior.
+- Added model animation playback with animation selection and Play/Pause controls.
+- Added STCK animation, BON skeleton, and SKI skinning support.
+- Added animation support for composed GFX models.
+- Made animations more natural and fluid, with fewer stalls.
+- Fixed models that appeared deformed, dark, or with missing parts.
+- Improved OpenGL rendering quality and performance.
+- Fixed renderer selection with mutually exclusive controls.
+- Model changes now pause animation automatically.
 
 Previous release notes were moved to [docs/WHATS_NEW.md](docs/WHATS_NEW.md).
 
@@ -101,9 +100,9 @@ Previous release notes were moved to [docs/WHATS_NEW.md](docs/WHATS_NEW.md).
 **Edit safety**
 - Valid changed fields highlighted in blue; invalid entries (duplicate or non-numeric IDs) highlighted in red and blocked from write
 - Pre-save duplicate ID validation across every list
-- Atomic save pipeline: writes to a temp file, creates/updates `.bak`, then replaces the target — a failed save cannot corrupt your data
+- Atomic save pipeline: writes to a temp file, stores rollback backups under `backups/fweledit/`, then replaces the target — a failed save cannot corrupt your data
 - Close confirmation when there are unsaved changes
-- Timestamped ZIP backups are created on save (see [Saving](#saving))
+- Timestamped ZIP backups are created under `backups/fweledit/` on save (see [Saving](#saving))
 
 **Session restore**
 - Remembers last game folder, last selected list, and last selected item ID across restarts
@@ -218,9 +217,9 @@ Model, icon, description, script, and asset lists are read from PCK package data
 The **PCK Explorer / Importer** can open an external package, preview supported 3D assets, filter by file type, and import selected entries into the current client. Imports resolve associated dependencies across packages where possible and finish with an audit summary showing which packages and file types were updated.
 
 **On Save**, the editor:
-1. Writes `elements.data` atomically (temp → backup → replace).
+1. Writes `elements.data` atomically (central temp → backup → replace).
 2. Updates any modified packages (`configs.pck` if descriptions changed, plus resource packages touched by import tools) back into the game's `resources` folder.
-3. Creates a `.bak` backup of the previous `.pck` before replacing it.
+3. Creates rollback and timestamped backups under `backups/fweledit/` before replacing package data.
 
 PCK helper tools are bundled with release builds; missing helper binaries only affect package-backed operations, not basic `elements.data` editing.
 
@@ -299,17 +298,17 @@ Right-click an item in the left grid (or use the **Edit** menu) to access:
 
 **Save pipeline for `elements.data`:**
 1. Validates all lists for duplicate or non-numeric `id` field values. Save is blocked if any are found, and a per-list report is shown.
-2. Writes to a temp file (`<filename>.tmp_fweledit`).
-3. Copies the existing file to `<filename>.bak`.
+2. Writes to a temp file under `backups/fweledit/temp/elements/`.
+3. Copies the existing file to `backups/fweledit/elements/<filename>.bak`.
 4. Replaces the target with the temp file.
 5. Any error is appended to `logs/fweledit-errors.log`.
 
 A failure at any step does not corrupt the original file.
 
-**Additional backups:** On each save, the editor also writes a dated ZIP backup of:
-- `elements.data` to `backup_elements/`
-- `configs.pck` (when modified) to `backup_configs/`
-- `path.data` (when modified) to `backup_path/`
+**Additional backups:** On each save, the editor also writes dated ZIP backups under `backups/fweledit/<category>/`, including:
+- `elements.data` under `backups/fweledit/elements/`
+- `configs.pck`, `script.pck`, and `surfaces.pck` under their package category when modified
+- `path.data` under `backups/fweledit/path/`
 
 ---
 

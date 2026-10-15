@@ -54,6 +54,15 @@ namespace FWEledit
         public int OrgColorArgb { get; set; } = unchecked((int)0xFFFFFFFF);
         public float[] ShaderFloats { get; set; } = new float[0];
         public int OuterNum { get; set; }
+        public bool HasSkinningData { get; set; }
+        public int SkinBoneCount { get; set; }
+        public int SkeletonBoneCount { get; set; }
+        public string[] AnimationNames { get; set; } = new string[0];
+        public string[] AnimationPaths { get; set; } = new string[0];
+        public PreviewAnimationClip[] AnimationClips { get; set; } = new PreviewAnimationClip[0];
+        public PreviewSkinVertexData[] SkinVertices { get; set; } = new PreviewSkinVertexData[0];
+        public int[] SkinBoneSkeletonIndices { get; set; } = new int[0];
+        public PreviewSkeletonBone[] SkeletonBones { get; set; } = new PreviewSkeletonBone[0];
         public int VertexCount
         {
             get { return Vertices == null ? 0 : Vertices.Length; }
@@ -77,6 +86,79 @@ namespace FWEledit
         public bool HasTriangleTextureIndices
         {
             get { return TriangleTextureIndices != null && TriangleTextureIndices.Length == TriangleCount; }
+        }
+
+        public bool HasAnimations
+        {
+            get { return AnimationNames != null && AnimationNames.Length > 0; }
+        }
+    }
+
+    public struct PreviewSkinVertexData
+    {
+        public float Weight0;
+        public float Weight1;
+        public float Weight2;
+        public uint PackedBoneIndices;
+
+        public PreviewSkinVertexData(float weight0, float weight1, float weight2, uint packedBoneIndices)
+        {
+            Weight0 = weight0;
+            Weight1 = weight1;
+            Weight2 = weight2;
+            PackedBoneIndices = packedBoneIndices;
+        }
+    }
+
+    public sealed class PreviewSkeletonBone
+    {
+        public string Name { get; set; } = string.Empty;
+        public int ParentIndex { get; set; } = -1;
+        public bool IsFlipped { get; set; }
+        public float[] RelativeMatrix { get; set; } = new float[0];
+        public float[] BindMatrix { get; set; } = new float[0];
+    }
+
+    public sealed class PreviewAnimationClip
+    {
+        public string Name { get; set; } = string.Empty;
+        public string Path { get; set; } = string.Empty;
+        public float DurationSeconds { get; set; }
+        public float FramesPerSecond { get; set; }
+        public PreviewAnimationTrack[] Tracks { get; set; } = new PreviewAnimationTrack[0];
+
+        public bool IsValid
+        {
+            get { return Tracks != null && Tracks.Length > 0 && DurationSeconds > 0.0001f; }
+        }
+    }
+
+    public sealed class PreviewAnimationTrack
+    {
+        public int BoneIndex { get; set; }
+        public Vector3f[] Positions { get; set; } = new Vector3f[0];
+        public PreviewQuaternion[] Rotations { get; set; } = new PreviewQuaternion[0];
+        public Vector3f[] Scales { get; set; } = new Vector3f[0];
+    }
+
+    public struct PreviewQuaternion
+    {
+        public float X;
+        public float Y;
+        public float Z;
+        public float W;
+
+        public PreviewQuaternion(float x, float y, float z, float w)
+        {
+            X = x;
+            Y = y;
+            Z = z;
+            W = w;
+        }
+
+        public static PreviewQuaternion Identity
+        {
+            get { return new PreviewQuaternion(0f, 0f, 0f, 1f); }
         }
     }
 }

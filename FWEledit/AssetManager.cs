@@ -73,6 +73,55 @@ namespace FWEledit
             this.sessionService = sessionService ?? new SessionService();
         }
 
+        public static string GetBackupRootPath()
+        {
+            string root = !string.IsNullOrWhiteSpace(GameRootPath)
+                ? GameRootPath
+                : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "FWEledit");
+            return Path.Combine(root, "backups", "fweledit");
+        }
+
+        public static string GetBackupDirectory(string category)
+        {
+            string safeCategory = SanitizeBackupCategory(category);
+            return Path.Combine(GetBackupRootPath(), safeCategory);
+        }
+
+        public static string CopyLatestBackup(string sourceFile, string category)
+        {
+            if (string.IsNullOrWhiteSpace(sourceFile) || !File.Exists(sourceFile))
+            {
+                return string.Empty;
+            }
+
+            string backupDirectory = GetBackupDirectory(category);
+            Directory.CreateDirectory(backupDirectory);
+            string backupPath = Path.Combine(backupDirectory, Path.GetFileName(sourceFile) + ".bak");
+            File.Copy(sourceFile, backupPath, true);
+            return backupPath;
+        }
+
+        public static string GetTemporaryFilePath(string sourceFile, string category, string suffix)
+        {
+            string safeCategory = SanitizeBackupCategory(category);
+            string tempDirectory = Path.Combine(GetBackupRootPath(), "temp", safeCategory);
+            Directory.CreateDirectory(tempDirectory);
+            string fileName = string.IsNullOrWhiteSpace(sourceFile)
+                ? Guid.NewGuid().ToString("N")
+                : Path.GetFileName(sourceFile);
+            return Path.Combine(tempDirectory, fileName + suffix);
+        }
+
+        private static string SanitizeBackupCategory(string category)
+        {
+            string value = string.IsNullOrWhiteSpace(category) ? "general" : category.Trim();
+            foreach (char invalid in Path.GetInvalidFileNameChars())
+            {
+                value = value.Replace(invalid, '_');
+            }
+            return string.IsNullOrWhiteSpace(value) ? "general" : value;
+        }
+
         public sealed class PathDataImportState
         {
             internal SortedList<int, string> PathById { get; set; }
@@ -730,8 +779,8 @@ namespace FWEledit
                 Directory.CreateDirectory(gameResources);
                 string gamePck = Path.Combine(gameResources, package + ".pck");
                 string gamePkx = Path.Combine(gameResources, package + ".pkx");
-                string gamePckBackup = gamePck + ".bak";
-                string gamePkxBackup = gamePkx + ".bak";
+                string gamePckBackup = string.Empty;
+                string gamePkxBackup = string.Empty;
                 bool hadGamePck = File.Exists(gamePck);
                 bool hadGamePkx = File.Exists(gamePkx);
                 bool packageHasVersion = hadGamePck && PackageContainsVersionFile(package);
@@ -744,24 +793,24 @@ namespace FWEledit
                 {
                     if (string.Equals(package, "configs", StringComparison.OrdinalIgnoreCase))
                     {
-                        string backupDir = Path.Combine(GameRootPath, "backup_configs");
+                        string backupDir = GetBackupDirectory("configs");
                         CreateTimestampedZipBackup(gamePck, backupDir, "configs");
                     }
                     else if (string.Equals(package, "script", StringComparison.OrdinalIgnoreCase))
                     {
-                        string backupDir = Path.Combine(GameRootPath, "backup_script");
+                        string backupDir = GetBackupDirectory("script");
                         CreateTimestampedZipBackup(gamePck, backupDir, "script");
                     }
                     else if (string.Equals(package, "surfaces", StringComparison.OrdinalIgnoreCase))
                     {
-                        string backupDir = Path.Combine(GameRootPath, "backup_surfaces");
+                        string backupDir = GetBackupDirectory("surfaces");
                         CreateTimestampedZipBackup(gamePck, backupDir, "surfaces");
                     }
-                    File.Copy(gamePck, gamePckBackup, true);
+                    gamePckBackup = CopyLatestBackup(gamePck, package);
                 }
                 if (hadGamePkx)
                 {
-                    File.Copy(gamePkx, gamePkxBackup, true);
+                    gamePkxBackup = CopyLatestBackup(gamePkx, package);
                 }
 
                 int timeoutMs = GetPckOperationTimeoutMs(gamePck, true);
@@ -852,14 +901,13 @@ namespace FWEledit
 
                 long originalPckLength = new FileInfo(gamePck).Length;
                 long originalPkxLength = File.Exists(gamePkx) ? new FileInfo(gamePkx).Length : 0L;
-                string gamePckBackup = gamePck + ".bak";
-                string gamePkxBackup = gamePkx + ".bak";
+                string gamePckBackup = CopyLatestBackup(gamePck, package);
+                string gamePkxBackup = string.Empty;
                 bool hadGamePkx = File.Exists(gamePkx);
 
-                File.Copy(gamePck, gamePckBackup, true);
                 if (hadGamePkx)
                 {
-                    File.Copy(gamePkx, gamePkxBackup, true);
+                    gamePkxBackup = CopyLatestBackup(gamePkx, package);
                 }
 
                 string tempPackageRoot = Path.Combine(Path.GetTempPath(), "FWEledit", "pck-safe-update", package + "-" + Guid.NewGuid().ToString("N"));
@@ -1002,12 +1050,11 @@ namespace FWEledit
                     gamePkx = string.Empty;
                 }
 
-                string gamePckBackup = Path.Combine(gameResources, package + ".pck.bak");
-                string gamePkxBackup = string.IsNullOrWhiteSpace(gamePkx) ? string.Empty : Path.Combine(gameResources, package + ".pkx.bak");
-                File.Copy(Path.Combine(gameResources, package + ".pck"), gamePckBackup, true);
+                string gamePckBackup = CopyLatestBackup(Path.Combine(gameResources, package + ".pck"), package);
+                string gamePkxBackup = string.Empty;
                 if (hadGamePkx)
                 {
-                    File.Copy(gamePkx, gamePkxBackup, true);
+                    gamePkxBackup = CopyLatestBackup(gamePkx, package);
                 }
 
                 PckRawCopyImportService rawCopy = new PckRawCopyImportService();
@@ -1314,19 +1361,19 @@ namespace FWEledit
                         File.Delete(fullTarget);
                     }
 
-                    string backupPck = gamePck + ".bak";
-                    string backupPkx = gamePkx + ".bak";
+                    string backupPck = string.Empty;
+                    string backupPkx = string.Empty;
                     bool hadPkx = File.Exists(gamePkx);
 
                     if (string.Equals(package, "surfaces", StringComparison.OrdinalIgnoreCase))
                     {
-                        string backupDir = Path.Combine(GameRootPath, "backup_surfaces");
+                        string backupDir = GetBackupDirectory("surfaces");
                         CreateTimestampedZipBackup(gamePck, backupDir, "surfaces");
                     }
-                    File.Copy(gamePck, backupPck, true);
+                    backupPck = CopyLatestBackup(gamePck, package);
                     if (hadPkx)
                     {
-                        File.Copy(gamePkx, backupPkx, true);
+                        backupPkx = CopyLatestBackup(gamePkx, package);
                     }
 
                     int timeoutMs = GetPckOperationTimeoutMs(gamePck, true);
@@ -1919,20 +1966,20 @@ namespace FWEledit
                     {
                         if (string.Equals(package, "configs", StringComparison.OrdinalIgnoreCase))
                         {
-                            string backupDir = Path.Combine(GameRootPath, "backup_configs");
+                            string backupDir = GetBackupDirectory("configs");
                             CreateTimestampedZipBackup(gamePck, backupDir, "configs");
                         }
                         else if (string.Equals(package, "script", StringComparison.OrdinalIgnoreCase))
                         {
-                            string backupDir = Path.Combine(GameRootPath, "backup_script");
+                            string backupDir = GetBackupDirectory("script");
                             CreateTimestampedZipBackup(gamePck, backupDir, "script");
                         }
                         else if (string.Equals(package, "surfaces", StringComparison.OrdinalIgnoreCase))
                         {
-                            string backupDir = Path.Combine(GameRootPath, "backup_surfaces");
+                            string backupDir = GetBackupDirectory("surfaces");
                             CreateTimestampedZipBackup(gamePck, backupDir, "surfaces");
                         }
-                        File.Copy(gamePck, gamePck + ".bak", true);
+                        CopyLatestBackup(gamePck, package);
                     }
                     File.Copy(workspacePck, gamePck, true);
                     actions.Add(package + ".pck");
@@ -1950,9 +1997,9 @@ namespace FWEledit
                     {
                         if (File.Exists(gamePathData))
                         {
-                            string backupDir = Path.Combine(GameRootPath, "backup_path");
+                            string backupDir = GetBackupDirectory("path");
                             CreateTimestampedZipBackup(gamePathData, backupDir, "path");
-                            File.Copy(gamePathData, gamePathData + ".bak", true);
+                            CopyLatestBackup(gamePathData, "path");
                         }
                         File.Copy(workspacePathData, gamePathData, true);
                         actions.Add("path.data");
@@ -2053,20 +2100,20 @@ namespace FWEledit
                 {
                     if (string.Equals(package, "configs", StringComparison.OrdinalIgnoreCase))
                     {
-                        string backupDir = Path.Combine(GameRootPath, "backup_configs");
+                        string backupDir = GetBackupDirectory("configs");
                         CreateTimestampedZipBackup(gamePck, backupDir, "configs");
                     }
                     else if (string.Equals(package, "script", StringComparison.OrdinalIgnoreCase))
                     {
-                        string backupDir = Path.Combine(GameRootPath, "backup_script");
+                        string backupDir = GetBackupDirectory("script");
                         CreateTimestampedZipBackup(gamePck, backupDir, "script");
                     }
                     else if (string.Equals(package, "surfaces", StringComparison.OrdinalIgnoreCase))
                     {
-                        string backupDir = Path.Combine(GameRootPath, "backup_surfaces");
+                        string backupDir = GetBackupDirectory("surfaces");
                         CreateTimestampedZipBackup(gamePck, backupDir, "surfaces");
                     }
-                    File.Copy(gamePck, gamePck + ".bak", true);
+                    CopyLatestBackup(gamePck, package);
                 }
 
                 File.Copy(workspacePck, gamePck, true);
@@ -2747,9 +2794,9 @@ namespace FWEledit
                 {
                     if (gameExisted)
                     {
-                        string backupDir = Path.Combine(GameRootPath, "backup_path");
+                        string backupDir = GetBackupDirectory("path");
                         CreateTimestampedZipBackup(gamePathData, backupDir, "path");
-                        File.Copy(gamePathData, gamePathData + ".bak", true);
+                        CopyLatestBackup(gamePathData, "path");
                     }
 
                     if (!TryWritePathByIdFile(gamePathData, entries, out string writeGameError))
@@ -2866,9 +2913,9 @@ namespace FWEledit
                 {
                     if (gameExisted)
                     {
-                        string backupDir = Path.Combine(GameRootPath, "backup_path");
+                        string backupDir = GetBackupDirectory("path");
                         CreateTimestampedZipBackup(gamePathData, backupDir, "path");
-                        File.Copy(gamePathData, gamePathData + ".bak", true);
+                        CopyLatestBackup(gamePathData, "path");
                     }
 
                     if (!TryWritePathByIdFile(gamePathData, entries, out string writeGameError))

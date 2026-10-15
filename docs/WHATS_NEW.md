@@ -2,6 +2,21 @@
 
 This file keeps the older release notes that used to live in the README. The README now shows only the newest release notes so it stays easier to scan.
 
+## What's New in v0.9.5.28
+
+- Fixed NPC cloning and NPCGen insertion so cloned NPCs receive safe service/task IDs and load correctly in game.
+- Fixed cloned task-in/task-out data so NPCs using cloned task services no longer disappear when spawned from `npcgen.data`.
+- Added faster picker/resource loading paths and reused existing cache data where possible, reducing stalls when adding icons, models, and custom assets.
+- Hardened item description handling so element-backed descriptions no longer bleed into unrelated config rows with matching IDs, and cloned/deleted descriptions stay attached to the intended item.
+- Fixed multi-item clone/delete behavior in filtered or shifted element lists, including preserving the user's position instead of jumping back to the start after deletes.
+- Fixed equipment package/clone output that could create in-game `Wrong item` entries by keeping imported/cloned item IDs, paths, and package metadata aligned.
+- Improved the model picker layout so all columns remain visible and the splitter cannot open in an invalid hidden-column state.
+- Expanded the task viewer with clearer random reward group handling, including reward chance/probability display for supported task reward layouts.
+- Reworked Equipment Essence hover previews to better match in-game tooltips, including quality-based colors, stat/addon lines, set bonuses, exchange/bind flags, and scroll-safe sizing for long tooltips.
+- Updated project/app version metadata to `v0.9.5.28`.
+
+---
+
 ## What's New in v0.9.5.27
 
 - Added reverse references for `[81] Title Prop Config` by resolving title definition IDs used by reward fields, including references from `[149] Random Gift Bag Essence`.
@@ -390,7 +405,7 @@ This file keeps the older release notes that used to live in the README. The REA
 - Global search with auto-complete now scans **all lists** (with Enter-to-search).
 - Item names and list rows are **quality-colored**, with a black list background for better contrast.
 - Corrected `item_quality` color mapping and quick picker list.
-- Backup system now creates **dated ZIPs** under `backup_elements`, `backup_configs`, and `backup_path`.
+- Backup system now creates **dated ZIPs** under the centralized `backups/fweledit/` tree.
 - Build output now always includes required tools (`spck`, `packdll`, `p2sp_4th_lib`, `Pfim`, `7za`) and the `rules` folder.
 - App version and settings reset logic updated to avoid stale paths when switching installs.
 

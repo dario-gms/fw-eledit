@@ -73,12 +73,12 @@ The session is injectable and must replace any static/global session usage.
 Save is orchestrated by `MainWindowSaveUiService` + `MainWindowSaveCoordinatorService` and follows these steps:
 
 1. **Validate IDs** (duplicate or invalid IDs across lists).
-2. **Write temp file** (`.tmp_fweledit`).
-3. **Create .bak** backup of `elements.data`.
+2. **Write temp file** under `backups/fweledit/temp/elements/`.
+3. **Create .bak** backup of `elements.data` under `backups/fweledit/elements/`.
 4. **Replace target** with temp file atomically.
 5. **Flush description changes** to `item_ext_desc.txt` if staged.
 6. **Repack PCKs** when required (via `spck`).
-7. **Create ZIP backups** in `backup_elements`, `backup_configs`, `backup_path`.
+7. **Create ZIP backups** under `backups/fweledit/<category>/`.
 8. **Capture/restore navigation snapshot** to keep UI consistent.
 
 If any step fails, the original file remains intact.
