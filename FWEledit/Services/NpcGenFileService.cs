@@ -95,7 +95,8 @@ namespace FWEledit
 
             if (File.Exists(filePath))
             {
-                File.Copy(filePath, filePath + ".bak", true);
+                AssetManager.CreateTimestampedZipBackup(filePath, AssetManager.GetBackupDirectory("npcgen"), "npcgen");
+                AssetManager.CopyLatestBackup(filePath, "npcgen");
             }
 
             using (FileStream stream = new FileStream(filePath, FileMode.Create, FileAccess.Write))

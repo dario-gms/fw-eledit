@@ -1511,6 +1511,10 @@ namespace FWEledit
 
             Dictionary<string, float[]> bindMatricesByBoneName = new Dictionary<string, float[]>(StringComparer.OrdinalIgnoreCase);
             float[][] bindMatricesBySkeletonBoneIndex = new float[0][];
+            PreviewSkeletonBone[] skeletonBones = new PreviewSkeletonBone[0];
+            string[] animationPaths = BuildAnimationPathsFromSmd(assetManager, smdPackage, relativeSmd);
+            string[] animationNames = BuildAnimationNames(animationPaths);
+            PreviewAnimationClip[] animationClips = BuildAnimationClips(assetManager, smdPackage, relativeSmd, animationPaths, animationNames);
             if (string.IsNullOrWhiteSpace(bonReference))
             {
                 bonReference = Path.ChangeExtension(relativeSki, ".bon");
@@ -1523,7 +1527,7 @@ namespace FWEledit
                 if (!string.IsNullOrWhiteSpace(relativeBon)
                     && TryReadModelFile(assetManager, bonPackage, relativeBon, out byte[] bonBytes, out string _))
                 {
-                    TryParseBonBindMatrices(bonBytes, out bindMatricesByBoneName, out bindMatricesBySkeletonBoneIndex);
+                    TryParseBonBindMatrices(bonBytes, out bindMatricesByBoneName, out bindMatricesBySkeletonBoneIndex, out skeletonBones);
                 }
             }
 
@@ -1532,7 +1536,12 @@ namespace FWEledit
             int[] indices;
             int[] triangleColors;
             int[] triangleTextureIndices;
+            PreviewSkinVertexData[] skinVertices;
+            int[] skinBoneSkeletonIndices;
             PreviewTextureData[] textures;
+            bool hasSkinningData;
+            int skinBoneCount;
+            int skeletonBoneCount;
             if (!TryParseSkiMesh(
                 assetManager,
                 skiPackage,
@@ -1546,10 +1555,21 @@ namespace FWEledit
                 out indices,
                 out triangleColors,
                 out triangleTextureIndices,
+                out skinVertices,
+                out skinBoneSkeletonIndices,
                 out textures,
+                out hasSkinningData,
+                out skinBoneCount,
+                out skeletonBoneCount,
                 out error))
             {
                 return false;
+            }
+
+            bool hasResolvedSkeleton = skeletonBones != null && skeletonBones.Length > 0;
+            if (hasResolvedSkeleton)
+            {
+                skinVertices = RemapSkinVerticesToSkeletonIndices(skinVertices, skinBoneSkeletonIndices);
             }
 
             List<Vector3f> mergedVertices = new List<Vector3f>(vertices.Length + 2048);
@@ -1557,6 +1577,7 @@ namespace FWEledit
             List<int> mergedIndices = new List<int>(indices.Length + 4096);
             List<int> mergedTriangleColors = new List<int>(triangleColors.Length + 4096);
             List<int> mergedTriangleTextureIndices = new List<int>(triangleTextureIndices.Length + 4096);
+            List<PreviewSkinVertexData> mergedSkinVertices = new List<PreviewSkinVertexData>((skinVertices == null ? 0 : skinVertices.Length) + 2048);
             List<PreviewTextureData> mergedTextures = new List<PreviewTextureData>((textures == null ? 0 : textures.Length) + 8);
 
             AppendParsedMeshSegment(
@@ -1572,6 +1593,7 @@ namespace FWEledit
                 triangleColors,
                 triangleTextureIndices,
                 textures);
+            AppendSkinVertices(mergedSkinVertices, vertices, skinVertices);
 
             if (additionalSkiReferences != null && additionalSkiReferences.Length > 0)
             {
@@ -1622,11 +1644,28 @@ namespace FWEledit
                         out int[] addiIndices,
                         out int[] addiTriangleColors,
                         out int[] addiTriangleTextureIndices,
+                        out PreviewSkinVertexData[] addiSkinVertices,
+                        out int[] addiSkinBoneSkeletonIndices,
                         out PreviewTextureData[] addiTextures,
+                        out bool addiHasSkinningData,
+                        out int addiSkinBoneCount,
+                        out int addiSkeletonBoneCount,
                         out string _))
                     {
                         continue;
                     }
+
+
+                    if (hasResolvedSkeleton)
+                    {
+                        addiSkinVertices = RemapSkinVerticesToSkeletonIndices(
+                            addiSkinVertices,
+                            addiSkinBoneSkeletonIndices);
+                    }
+
+                    hasSkinningData = hasSkinningData || addiHasSkinningData;
+                    skinBoneCount = Math.Max(skinBoneCount, addiSkinBoneCount);
+                    skeletonBoneCount = Math.Max(skeletonBoneCount, addiSkeletonBoneCount);
 
                     AppendParsedMeshSegment(
                         mergedVertices,
@@ -1641,6 +1680,7 @@ namespace FWEledit
                         addiTriangleColors,
                         addiTriangleTextureIndices,
                         addiTextures);
+                    AppendSkinVertices(mergedSkinVertices, addiVertices, addiSkinVertices);
                 }
             }
 
@@ -1666,10 +1706,66 @@ namespace FWEledit
                 EmissiveColorArgb = emissiveColorArgb,
                 OrgColorArgb = orgColorArgb,
                 ShaderFloats = shaderFloats ?? new float[0],
-                OuterNum = outerNum
+                OuterNum = outerNum,
+                HasSkinningData = hasSkinningData,
+                SkinBoneCount = skinBoneCount,
+                SkeletonBoneCount = skeletonBoneCount,
+                AnimationNames = animationNames,
+                AnimationPaths = animationPaths,
+                AnimationClips = animationClips,
+                SkinVertices = mergedSkinVertices.ToArray(),
+                SkinBoneSkeletonIndices = hasResolvedSkeleton
+                    ? BuildIdentityBoneIndices(skeletonBones.Length)
+                    : (skinBoneSkeletonIndices ?? new int[0]),
+                SkeletonBones = skeletonBones ?? new PreviewSkeletonBone[0]
             };
 
             return true;
+        }
+
+        private static PreviewSkinVertexData[] RemapSkinVerticesToSkeletonIndices(
+            PreviewSkinVertexData[] skinVertices,
+            int[] skinBoneSkeletonIndices)
+        {
+            PreviewSkinVertexData[] source = skinVertices ?? new PreviewSkinVertexData[0];
+            if (source.Length == 0 || skinBoneSkeletonIndices == null || skinBoneSkeletonIndices.Length == 0)
+            {
+                return source;
+            }
+
+            PreviewSkinVertexData[] remapped = new PreviewSkinVertexData[source.Length];
+            for (int i = 0; i < source.Length; i++)
+            {
+                PreviewSkinVertexData vertex = source[i];
+                uint packed = vertex.PackedBoneIndices;
+                uint mapped = 0u;
+                for (int slot = 0; slot < 4; slot++)
+                {
+                    int skinBoneIndex = (int)((packed >> (slot * 8)) & 0xFFu);
+                    int skeletonBoneIndex = skinBoneIndex >= 0 && skinBoneIndex < skinBoneSkeletonIndices.Length
+                        ? skinBoneSkeletonIndices[skinBoneIndex]
+                        : skinBoneIndex;
+                    mapped |= ((uint)Math.Max(0, Math.Min(255, skeletonBoneIndex))) << (slot * 8);
+                }
+
+                remapped[i] = new PreviewSkinVertexData(
+                    vertex.Weight0,
+                    vertex.Weight1,
+                    vertex.Weight2,
+                    mapped);
+            }
+            return remapped;
+        }
+
+        private static int[] BuildIdentityBoneIndices(int count)
+        {
+            int safeCount = Math.Max(0, Math.Min(256, count));
+            int[] indices = new int[safeCount];
+            for (int i = 0; i < safeCount; i++)
+            {
+                indices[i] = i;
+            }
+            return indices;
         }
 
         private static void AppendParsedMeshSegment(
@@ -1748,6 +1844,26 @@ namespace FWEledit
             }
 
             mergedTextures.AddRange(safeTextures);
+        }
+
+        private static void AppendSkinVertices(
+            List<PreviewSkinVertexData> mergedSkinVertices,
+            Vector3f[] vertices,
+            PreviewSkinVertexData[] skinVertices)
+        {
+            if (mergedSkinVertices == null)
+            {
+                return;
+            }
+
+            Vector3f[] safeVertices = vertices ?? new Vector3f[0];
+            PreviewSkinVertexData[] safeSkinVertices = skinVertices ?? new PreviewSkinVertexData[0];
+            for (int i = 0; i < safeVertices.Length; i++)
+            {
+                mergedSkinVertices.Add(i < safeSkinVertices.Length
+                    ? safeSkinVertices[i]
+                    : new PreviewSkinVertexData(1f, 0f, 0f, 0u));
+            }
         }
 
         private bool TryBuildPreviewDataFromEcmEffectReferences(
@@ -1899,7 +2015,16 @@ namespace FWEledit
                 EmissiveColorArgb = template.EmissiveColorArgb,
                 OrgColorArgb = template.OrgColorArgb,
                 ShaderFloats = template.ShaderFloats ?? new float[0],
-                OuterNum = template.OuterNum
+                OuterNum = template.OuterNum,
+                HasSkinningData = template.HasSkinningData || basePreview.HasSkinningData,
+                SkinBoneCount = Math.Max(template.SkinBoneCount, basePreview.SkinBoneCount),
+                SkeletonBoneCount = Math.Max(template.SkeletonBoneCount, basePreview.SkeletonBoneCount),
+                AnimationNames = template.AnimationNames ?? basePreview.AnimationNames ?? new string[0],
+                AnimationPaths = template.AnimationPaths ?? basePreview.AnimationPaths ?? new string[0],
+                AnimationClips = template.AnimationClips ?? basePreview.AnimationClips ?? new PreviewAnimationClip[0],
+                SkinVertices = template.SkinVertices ?? basePreview.SkinVertices ?? new PreviewSkinVertexData[0],
+                SkinBoneSkeletonIndices = template.SkinBoneSkeletonIndices ?? basePreview.SkinBoneSkeletonIndices ?? new int[0],
+                SkeletonBones = template.SkeletonBones ?? basePreview.SkeletonBones ?? new PreviewSkeletonBone[0]
             };
             return true;
         }
@@ -2329,6 +2454,13 @@ namespace FWEledit
             List<int> mergedTriangleColors = new List<int>(8192);
             List<int> mergedTriangleTextureIndices = new List<int>(8192);
             List<PreviewTextureData> mergedTextures = new List<PreviewTextureData>(16);
+            List<PreviewSkinVertexData> mergedSkinVertices = new List<PreviewSkinVertexData>(4096);
+            List<PreviewSkeletonBone> mergedSkeletonBones = new List<PreviewSkeletonBone>(64)
+            {
+                CreateStaticPreviewBone()
+            };
+            List<MergedAnimationClipBuilder> mergedAnimationClips = new List<MergedAnimationClipBuilder>();
+            bool hasMergedSkinning = false;
             ModelPreviewMeshData firstResolved = null;
             for (int i = 0; i < candidates.Count; i++)
             {
@@ -2367,6 +2499,11 @@ namespace FWEledit
                         resolvedData.TriangleColors,
                         resolvedData.TriangleTextureIndices,
                         resolvedData.Textures);
+                    hasMergedSkinning = AppendGfxSkinningSegment(
+                        resolvedData,
+                        mergedSkinVertices,
+                        mergedSkeletonBones,
+                        mergedAnimationClips) || hasMergedSkinning;
                     mergedModelCount++;
                     continue;
                 }
@@ -2379,6 +2516,7 @@ namespace FWEledit
 
             if (mergedModelCount > 0 && firstResolved != null && mergedVertices.Count > 0 && mergedIndices.Count >= 3)
             {
+                PreviewAnimationClip[] animationClips = BuildMergedAnimationClips(mergedAnimationClips);
                 previewData = new ModelPreviewMeshData
                 {
                     SourceMappedPath = sourceMappedPath ?? string.Empty,
@@ -2398,8 +2536,22 @@ namespace FWEledit
                     EmissiveColorArgb = firstResolved.EmissiveColorArgb,
                     OrgColorArgb = firstResolved.OrgColorArgb,
                     ShaderFloats = firstResolved.ShaderFloats ?? new float[0],
-                    OuterNum = firstResolved.OuterNum
+                    OuterNum = firstResolved.OuterNum,
+                    HasSkinningData = hasMergedSkinning,
+                    SkinBoneCount = hasMergedSkinning ? mergedSkeletonBones.Count : 0,
+                    SkeletonBoneCount = hasMergedSkinning ? mergedSkeletonBones.Count : 0,
+                    AnimationNames = animationClips.Select(clip => clip.Name ?? string.Empty).ToArray(),
+                    AnimationPaths = animationClips.Select(clip => clip.Path ?? string.Empty).ToArray(),
+                    AnimationClips = animationClips,
+                    SkinVertices = hasMergedSkinning ? mergedSkinVertices.ToArray() : new PreviewSkinVertexData[0],
+                    SkinBoneSkeletonIndices = hasMergedSkinning
+                        ? BuildIdentityBoneIndices(mergedSkeletonBones.Count)
+                        : new int[0],
+                    SkeletonBones = hasMergedSkinning
+                        ? mergedSkeletonBones.ToArray()
+                        : new PreviewSkeletonBone[0]
                 };
+                error = string.Empty;
                 return true;
             }
 
@@ -2407,6 +2559,232 @@ namespace FWEledit
                 ? "Failed to resolve a previewable model from .gfx file."
                 : firstError;
             return false;
+        }
+
+        private sealed class MergedAnimationClipBuilder
+        {
+            public string Name = string.Empty;
+            public string Path = string.Empty;
+            public float DurationSeconds;
+            public float FramesPerSecond;
+            public readonly List<PreviewAnimationTrack> Tracks = new List<PreviewAnimationTrack>();
+        }
+
+        private static PreviewSkeletonBone CreateStaticPreviewBone()
+        {
+            return new PreviewSkeletonBone
+            {
+                Name = "GFX Static",
+                ParentIndex = -1,
+                RelativeMatrix = (float[])IdentitySkinMatrix.Clone(),
+                BindMatrix = (float[])IdentitySkinMatrix.Clone()
+            };
+        }
+
+        private static bool AppendGfxSkinningSegment(
+            ModelPreviewMeshData segment,
+            List<PreviewSkinVertexData> mergedSkinVertices,
+            List<PreviewSkeletonBone> mergedSkeletonBones,
+            List<MergedAnimationClipBuilder> mergedAnimationClips)
+        {
+            int vertexCount = segment == null || segment.Vertices == null ? 0 : segment.Vertices.Length;
+            PreviewSkinVertexData staticSkin = new PreviewSkinVertexData(1f, 0f, 0f, 0u);
+            if (vertexCount == 0)
+            {
+                return false;
+            }
+
+            PreviewSkinVertexData[] localSkin = segment.SkinVertices ?? new PreviewSkinVertexData[0];
+            PreviewSkeletonBone[] localBones = segment.SkeletonBones ?? new PreviewSkeletonBone[0];
+            if (!segment.HasSkinningData
+                || localSkin.Length != vertexCount
+                || localBones.Length == 0)
+            {
+                for (int i = 0; i < vertexCount; i++)
+                {
+                    mergedSkinVertices.Add(staticSkin);
+                }
+                return false;
+            }
+
+            int boneOffset = FindCompatibleSkeletonOffset(mergedSkeletonBones, localBones);
+            bool reusedSkeleton = boneOffset >= 0;
+            if (!reusedSkeleton)
+            {
+                if (mergedSkeletonBones.Count + localBones.Length > 256)
+                {
+                    for (int i = 0; i < vertexCount; i++)
+                    {
+                        mergedSkinVertices.Add(staticSkin);
+                    }
+                    return false;
+                }
+
+                boneOffset = mergedSkeletonBones.Count;
+                for (int i = 0; i < localBones.Length; i++)
+                {
+                    PreviewSkeletonBone bone = localBones[i];
+                    mergedSkeletonBones.Add(new PreviewSkeletonBone
+                    {
+                        Name = bone == null ? string.Empty : bone.Name ?? string.Empty,
+                        ParentIndex = bone != null && bone.ParentIndex >= 0 ? bone.ParentIndex + boneOffset : -1,
+                        IsFlipped = bone != null && bone.IsFlipped,
+                        RelativeMatrix = bone == null || bone.RelativeMatrix == null
+                            ? (float[])IdentitySkinMatrix.Clone()
+                            : (float[])bone.RelativeMatrix.Clone(),
+                        BindMatrix = bone == null || bone.BindMatrix == null
+                            ? (float[])IdentitySkinMatrix.Clone()
+                            : (float[])bone.BindMatrix.Clone()
+                    });
+                }
+            }
+
+            int[] localBoneMap = segment.SkinBoneSkeletonIndices ?? new int[0];
+            for (int i = 0; i < localSkin.Length; i++)
+            {
+                PreviewSkinVertexData skin = localSkin[i];
+                uint packed = 0u;
+                for (int slot = 0; slot < 4; slot++)
+                {
+                    int localSkinBoneIndex = (int)((skin.PackedBoneIndices >> (slot * 8)) & 0xFFu);
+                    int localSkeletonBoneIndex = localSkinBoneIndex < localBoneMap.Length
+                        ? localBoneMap[localSkinBoneIndex]
+                        : localSkinBoneIndex;
+                    int mergedBoneIndex = localSkeletonBoneIndex >= 0 && localSkeletonBoneIndex < localBones.Length
+                        ? boneOffset + localSkeletonBoneIndex
+                        : 0;
+                    packed |= ((uint)mergedBoneIndex & 0xFFu) << (slot * 8);
+                }
+                mergedSkinVertices.Add(new PreviewSkinVertexData(
+                    skin.Weight0,
+                    skin.Weight1,
+                    skin.Weight2,
+                    packed));
+            }
+
+            PreviewAnimationClip[] localClips = reusedSkeleton
+                ? new PreviewAnimationClip[0]
+                : segment.AnimationClips ?? new PreviewAnimationClip[0];
+            for (int clipIndex = 0; clipIndex < localClips.Length; clipIndex++)
+            {
+                PreviewAnimationClip clip = localClips[clipIndex];
+                if (clip == null || !clip.IsValid)
+                {
+                    continue;
+                }
+
+                while (mergedAnimationClips.Count <= clipIndex)
+                {
+                    mergedAnimationClips.Add(new MergedAnimationClipBuilder());
+                }
+                MergedAnimationClipBuilder builder = mergedAnimationClips[clipIndex];
+                if (string.IsNullOrWhiteSpace(builder.Name)) builder.Name = clip.Name ?? string.Empty;
+                if (string.IsNullOrWhiteSpace(builder.Path)) builder.Path = clip.Path ?? string.Empty;
+                builder.DurationSeconds = Math.Max(builder.DurationSeconds, clip.DurationSeconds);
+                builder.FramesPerSecond = Math.Max(builder.FramesPerSecond, clip.FramesPerSecond);
+
+                PreviewAnimationTrack[] tracks = clip.Tracks ?? new PreviewAnimationTrack[0];
+                for (int trackIndex = 0; trackIndex < tracks.Length; trackIndex++)
+                {
+                    PreviewAnimationTrack track = tracks[trackIndex];
+                    if (track == null || track.BoneIndex < 0 || track.BoneIndex >= localBones.Length)
+                    {
+                        continue;
+                    }
+                    builder.Tracks.Add(new PreviewAnimationTrack
+                    {
+                        BoneIndex = boneOffset + track.BoneIndex,
+                        Positions = track.Positions ?? new Vector3f[0],
+                        Rotations = track.Rotations ?? new PreviewQuaternion[0],
+                        Scales = track.Scales ?? new Vector3f[0]
+                    });
+                }
+            }
+            return true;
+        }
+
+        private static int FindCompatibleSkeletonOffset(
+            List<PreviewSkeletonBone> mergedBones,
+            PreviewSkeletonBone[] localBones)
+        {
+            if (mergedBones == null || localBones == null || localBones.Length == 0 || mergedBones.Count < localBones.Length)
+            {
+                return -1;
+            }
+
+            int lastOffset = mergedBones.Count - localBones.Length;
+            for (int offset = 0; offset <= lastOffset; offset++)
+            {
+                bool compatible = true;
+                for (int i = 0; i < localBones.Length; i++)
+                {
+                    PreviewSkeletonBone local = localBones[i];
+                    PreviewSkeletonBone merged = mergedBones[offset + i];
+                    int expectedParent = local != null && local.ParentIndex >= 0
+                        ? offset + local.ParentIndex
+                        : -1;
+                    if (local == null
+                        || merged == null
+                        || !string.Equals(local.Name ?? string.Empty, merged.Name ?? string.Empty, StringComparison.Ordinal)
+                        || local.IsFlipped != merged.IsFlipped
+                        || merged.ParentIndex != expectedParent
+                        || !ArePreviewMatricesEquivalent(local.RelativeMatrix, merged.RelativeMatrix)
+                        || !ArePreviewMatricesEquivalent(local.BindMatrix, merged.BindMatrix))
+                    {
+                        compatible = false;
+                        break;
+                    }
+                }
+
+                if (compatible)
+                {
+                    return offset;
+                }
+            }
+            return -1;
+        }
+
+        private static bool ArePreviewMatricesEquivalent(float[] left, float[] right)
+        {
+            if (left == null || right == null || left.Length < 16 || right.Length < 16)
+            {
+                return left == right;
+            }
+            for (int i = 0; i < 16; i++)
+            {
+                if (Math.Abs(left[i] - right[i]) > 0.00001f)
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        private static PreviewAnimationClip[] BuildMergedAnimationClips(List<MergedAnimationClipBuilder> builders)
+        {
+            if (builders == null || builders.Count == 0)
+            {
+                return new PreviewAnimationClip[0];
+            }
+
+            List<PreviewAnimationClip> clips = new List<PreviewAnimationClip>(builders.Count);
+            for (int i = 0; i < builders.Count; i++)
+            {
+                MergedAnimationClipBuilder builder = builders[i];
+                if (builder == null || builder.Tracks.Count == 0 || builder.DurationSeconds <= 0.0001f)
+                {
+                    continue;
+                }
+                clips.Add(new PreviewAnimationClip
+                {
+                    Name = string.IsNullOrWhiteSpace(builder.Name) ? "Animation " + (i + 1) : builder.Name,
+                    Path = builder.Path ?? string.Empty,
+                    DurationSeconds = builder.DurationSeconds,
+                    FramesPerSecond = Math.Max(1f, builder.FramesPerSecond),
+                    Tracks = builder.Tracks.ToArray()
+                });
+            }
+            return clips.ToArray();
         }
 
         private bool TryBuildPreviewFromReferencedPath(
@@ -2549,6 +2927,13 @@ namespace FWEledit
                         List<int> nestedMergedTriangleColors = new List<int>(8192);
                         List<int> nestedMergedTriangleTextureIndices = new List<int>(8192);
                         List<PreviewTextureData> nestedMergedTextures = new List<PreviewTextureData>(16);
+                        List<PreviewSkinVertexData> nestedMergedSkinVertices = new List<PreviewSkinVertexData>(4096);
+                        List<PreviewSkeletonBone> nestedMergedSkeletonBones = new List<PreviewSkeletonBone>(64)
+                        {
+                            CreateStaticPreviewBone()
+                        };
+                        List<MergedAnimationClipBuilder> nestedMergedAnimationClips = new List<MergedAnimationClipBuilder>();
+                        bool nestedHasMergedSkinning = false;
                         ModelPreviewMeshData firstNestedResolved = null;
                         for (int n = 0; n < nestedReferences.Count; n++)
                         {
@@ -2587,6 +2972,11 @@ namespace FWEledit
                                     nestedResolvedData.TriangleColors,
                                     nestedResolvedData.TriangleTextureIndices,
                                     nestedResolvedData.Textures);
+                                nestedHasMergedSkinning = AppendGfxSkinningSegment(
+                                    nestedResolvedData,
+                                    nestedMergedSkinVertices,
+                                    nestedMergedSkeletonBones,
+                                    nestedMergedAnimationClips) || nestedHasMergedSkinning;
                                 nestedMergedCount++;
                                 continue;
                             }
@@ -2602,6 +2992,7 @@ namespace FWEledit
                             && nestedMergedVertices.Count > 0
                             && nestedMergedIndices.Count >= 3)
                         {
+                            PreviewAnimationClip[] nestedAnimationClips = BuildMergedAnimationClips(nestedMergedAnimationClips);
                             previewData = new ModelPreviewMeshData
                             {
                                 SourceMappedPath = sourceMappedPath ?? string.Empty,
@@ -2621,8 +3012,24 @@ namespace FWEledit
                                 EmissiveColorArgb = firstNestedResolved.EmissiveColorArgb,
                                 OrgColorArgb = firstNestedResolved.OrgColorArgb,
                                 ShaderFloats = firstNestedResolved.ShaderFloats ?? new float[0],
-                                OuterNum = firstNestedResolved.OuterNum
+                                OuterNum = firstNestedResolved.OuterNum,
+                                HasSkinningData = nestedHasMergedSkinning,
+                                SkinBoneCount = nestedHasMergedSkinning ? nestedMergedSkeletonBones.Count : 0,
+                                SkeletonBoneCount = nestedHasMergedSkinning ? nestedMergedSkeletonBones.Count : 0,
+                                AnimationNames = nestedAnimationClips.Select(clip => clip.Name ?? string.Empty).ToArray(),
+                                AnimationPaths = nestedAnimationClips.Select(clip => clip.Path ?? string.Empty).ToArray(),
+                                AnimationClips = nestedAnimationClips,
+                                SkinVertices = nestedHasMergedSkinning
+                                    ? nestedMergedSkinVertices.ToArray()
+                                    : new PreviewSkinVertexData[0],
+                                SkinBoneSkeletonIndices = nestedHasMergedSkinning
+                                    ? BuildIdentityBoneIndices(nestedMergedSkeletonBones.Count)
+                                    : new int[0],
+                                SkeletonBones = nestedHasMergedSkinning
+                                    ? nestedMergedSkeletonBones.ToArray()
+                                    : new PreviewSkeletonBone[0]
                             };
+                            error = string.Empty;
                             return true;
                         }
 
@@ -2653,6 +3060,13 @@ namespace FWEledit
                         List<int> nestedMergedTriangleColors = new List<int>(8192);
                         List<int> nestedMergedTriangleTextureIndices = new List<int>(8192);
                         List<PreviewTextureData> nestedMergedTextures = new List<PreviewTextureData>(16);
+                        List<PreviewSkinVertexData> nestedMergedSkinVertices = new List<PreviewSkinVertexData>(4096);
+                        List<PreviewSkeletonBone> nestedMergedSkeletonBones = new List<PreviewSkeletonBone>(64)
+                        {
+                            CreateStaticPreviewBone()
+                        };
+                        List<MergedAnimationClipBuilder> nestedMergedAnimationClips = new List<MergedAnimationClipBuilder>();
+                        bool nestedHasMergedSkinning = false;
                         ModelPreviewMeshData firstNestedResolved = null;
                         for (int n = 0; n < nestedReferences.Count; n++)
                         {
@@ -2691,6 +3105,11 @@ namespace FWEledit
                                     nestedResolvedData.TriangleColors,
                                     nestedResolvedData.TriangleTextureIndices,
                                     nestedResolvedData.Textures);
+                                nestedHasMergedSkinning = AppendGfxSkinningSegment(
+                                    nestedResolvedData,
+                                    nestedMergedSkinVertices,
+                                    nestedMergedSkeletonBones,
+                                    nestedMergedAnimationClips) || nestedHasMergedSkinning;
                                 nestedMergedCount++;
                                 continue;
                             }
@@ -2706,6 +3125,7 @@ namespace FWEledit
                             && nestedMergedVertices.Count > 0
                             && nestedMergedIndices.Count >= 3)
                         {
+                            PreviewAnimationClip[] nestedAnimationClips = BuildMergedAnimationClips(nestedMergedAnimationClips);
                             previewData = new ModelPreviewMeshData
                             {
                                 SourceMappedPath = sourceMappedPath ?? string.Empty,
@@ -2725,8 +3145,24 @@ namespace FWEledit
                                 EmissiveColorArgb = firstNestedResolved.EmissiveColorArgb,
                                 OrgColorArgb = firstNestedResolved.OrgColorArgb,
                                 ShaderFloats = firstNestedResolved.ShaderFloats ?? new float[0],
-                                OuterNum = firstNestedResolved.OuterNum
+                                OuterNum = firstNestedResolved.OuterNum,
+                                HasSkinningData = nestedHasMergedSkinning,
+                                SkinBoneCount = nestedHasMergedSkinning ? nestedMergedSkeletonBones.Count : 0,
+                                SkeletonBoneCount = nestedHasMergedSkinning ? nestedMergedSkeletonBones.Count : 0,
+                                AnimationNames = nestedAnimationClips.Select(clip => clip.Name ?? string.Empty).ToArray(),
+                                AnimationPaths = nestedAnimationClips.Select(clip => clip.Path ?? string.Empty).ToArray(),
+                                AnimationClips = nestedAnimationClips,
+                                SkinVertices = nestedHasMergedSkinning
+                                    ? nestedMergedSkinVertices.ToArray()
+                                    : new PreviewSkinVertexData[0],
+                                SkinBoneSkeletonIndices = nestedHasMergedSkinning
+                                    ? BuildIdentityBoneIndices(nestedMergedSkeletonBones.Count)
+                                    : new int[0],
+                                SkeletonBones = nestedHasMergedSkinning
+                                    ? nestedMergedSkeletonBones.ToArray()
+                                    : new PreviewSkeletonBone[0]
                             };
+                            error = string.Empty;
                             return true;
                         }
                     }
@@ -3441,6 +3877,857 @@ namespace FWEledit
             return false;
         }
 
+        private string[] BuildAnimationPathsFromSmd(AssetManager assetManager, string smdPackage, string relativeSmd)
+        {
+            if (assetManager == null || string.IsNullOrWhiteSpace(smdPackage) || string.IsNullOrWhiteSpace(relativeSmd))
+            {
+                return new string[0];
+            }
+
+            if (!TryReadModelFile(assetManager, smdPackage, relativeSmd, out byte[] smdBytes, out string _)
+                || smdBytes == null
+                || smdBytes.Length == 0)
+            {
+                return new string[0];
+            }
+
+            string[] refs = ExtractReferencedFilesFromSmd(smdBytes, ".stck");
+            if (refs == null || refs.Length == 0)
+            {
+                return new string[0];
+            }
+
+            List<string> paths = new List<string>(refs.Length);
+            HashSet<string> seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            for (int i = 0; i < refs.Length; i++)
+            {
+                string reference = refs[i] ?? string.Empty;
+                if (string.IsNullOrWhiteSpace(reference))
+                {
+                    continue;
+                }
+
+                reference = NormalizeRelativePath(reference);
+                if (reference.Length == 0 || !seen.Add(reference))
+                {
+                    continue;
+                }
+
+                paths.Add(reference);
+            }
+
+            return paths.ToArray();
+        }
+
+        private static string[] BuildAnimationNames(string[] animationPaths)
+        {
+            if (animationPaths == null || animationPaths.Length == 0)
+            {
+                return new string[0];
+            }
+
+            string[] names = new string[animationPaths.Length];
+            for (int i = 0; i < animationPaths.Length; i++)
+            {
+                string reference = animationPaths[i] ?? string.Empty;
+                string label = GetLegacyAnimationLabel(reference);
+                if (string.IsNullOrWhiteSpace(label))
+                {
+                    label = "Animation " + (i + 1).ToString(CultureInfo.InvariantCulture);
+                }
+
+                names[i] = label;
+            }
+
+            return names;
+        }
+
+        private static string GetLegacyAnimationLabel(string reference)
+        {
+            if (string.IsNullOrEmpty(reference))
+            {
+                return string.Empty;
+            }
+
+            int separator = Math.Max(reference.LastIndexOf('\\'), reference.LastIndexOf('/'));
+            int start = separator >= 0 ? separator + 1 : 0;
+            int end = reference.Length;
+            int extension = reference.LastIndexOf('.');
+            if (extension > start)
+            {
+                end = extension;
+            }
+
+            StringBuilder label = new StringBuilder(Math.Max(0, end - start));
+            for (int i = start; i < end; i++)
+            {
+                char value = reference[i];
+                if (!char.IsControl(value) && value != '\0')
+                {
+                    label.Append(value);
+                }
+            }
+
+            return label.ToString().Trim();
+        }
+
+        private PreviewAnimationClip[] BuildAnimationClips(
+            AssetManager assetManager,
+            string smdPackage,
+            string relativeSmd,
+            string[] animationPaths,
+            string[] animationNames)
+        {
+            if (assetManager == null || animationPaths == null || animationPaths.Length == 0)
+            {
+                return new PreviewAnimationClip[0];
+            }
+
+            List<PreviewAnimationClip> clips = new List<PreviewAnimationClip>(animationPaths.Length);
+            for (int i = 0; i < animationPaths.Length; i++)
+            {
+                string reference = NormalizeRelativePath(animationPaths[i] ?? string.Empty);
+                if (reference.Length == 0)
+                {
+                    continue;
+                }
+                if (!TryReadAnimationClipFile(
+                    assetManager,
+                    smdPackage,
+                    relativeSmd,
+                    reference,
+                    out byte[] clipBytes))
+                {
+                    continue;
+                }
+
+                string name = animationNames != null && i < animationNames.Length ? animationNames[i] : string.Empty;
+                if (TryParseStckAnimationClip(clipBytes, name, reference, out PreviewAnimationClip clip))
+                {
+                    clips.Add(clip);
+                }
+            }
+
+            return clips.ToArray();
+        }
+
+        private bool TryReadAnimationClipFile(
+            AssetManager assetManager,
+            string smdPackage,
+            string relativeSmd,
+            string reference,
+            out byte[] clipBytes)
+        {
+            clipBytes = null;
+            ResolveReferencedPath(smdPackage, relativeSmd, reference, out string clipPackage, out string clipRelative);
+            if (!string.IsNullOrWhiteSpace(clipRelative)
+                && TryReadModelFile(assetManager, clipPackage, clipRelative, out clipBytes, out string _))
+            {
+                return true;
+            }
+
+            string smdDirectory;
+            string smdName;
+            try
+            {
+                string normalizedSmd = NormalizeRelativePath(relativeSmd);
+                smdDirectory = Path.GetDirectoryName(normalizedSmd) ?? string.Empty;
+                smdName = Path.GetFileNameWithoutExtension(normalizedSmd) ?? string.Empty;
+            }
+            catch
+            {
+                return false;
+            }
+
+            string normalizedReference = NormalizeRelativePath(reference);
+            string fileName = Path.GetFileName(normalizedReference);
+            string[] candidates =
+            {
+                NormalizeRelativePath(smdDirectory + "\\" + normalizedReference),
+                NormalizeRelativePath(smdDirectory + "\\tcks_" + smdName + "\\" + fileName)
+            };
+
+            HashSet<string> seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            for (int i = 0; i < candidates.Length; i++)
+            {
+                string candidate = candidates[i];
+                if (string.IsNullOrWhiteSpace(candidate)
+                    || !seen.Add(candidate)
+                    || string.Equals(candidate, clipRelative, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (TryReadModelFile(assetManager, smdPackage, candidate, out clipBytes, out string _))
+                {
+                    return true;
+                }
+            }
+
+            if (pckEntryReaderService.TryResolveNearestEntryByFileNames(
+                    smdPackage,
+                    relativeSmd,
+                    new[] { fileName },
+                    out string nearestClipRelative,
+                    out string _)
+                && !string.IsNullOrWhiteSpace(nearestClipRelative)
+                && TryReadModelFile(assetManager, smdPackage, nearestClipRelative, out clipBytes, out string _))
+            {
+                return true;
+            }
+
+            clipBytes = null;
+            return false;
+        }
+
+        private static bool TryParseStckAnimationClip(byte[] bytes, string name, string path, out PreviewAnimationClip clip)
+        {
+            clip = null;
+            if (bytes == null || bytes.Length < 32)
+            {
+                return false;
+            }
+
+            try
+            {
+                using (MemoryStream stream = new MemoryStream(bytes))
+                using (BinaryReader br = new BinaryReader(stream))
+                {
+                    int magicOffset = FindAsciiBytes(bytes, "MOXBKCTS");
+                    if (magicOffset < 0)
+                    {
+                        return false;
+                    }
+                    if (magicOffset > 0)
+                    {
+                        stream.Position = magicOffset;
+                    }
+
+                    string magic = Encoding.ASCII.GetString(br.ReadBytes(8));
+                    if (!string.Equals(magic, "MOXBKCTS", StringComparison.Ordinal))
+                    {
+                        return false;
+                    }
+
+                    int version = br.ReadInt32();
+                    int trackCount = br.ReadInt32();
+                    int startFrame = br.ReadInt32();
+                    int endFrame = br.ReadInt32();
+                    int fps = br.ReadInt32();
+                    int frameCount = Math.Max(1, endFrame - startFrame + 1);
+                    if (version <= 0 || version > 8 || trackCount <= 0 || trackCount > 4096 || frameCount > 300000)
+                    {
+                        return false;
+                    }
+
+                    List<PreviewAnimationTrack> tracks = new List<PreviewAnimationTrack>(trackCount);
+                    for (int i = 0; i < trackCount && TryEnsureRemaining(br, 4); i++)
+                    {
+                        int boneIndex = br.ReadInt32();
+                        if (TryParseStckTrack(br, version, frameCount, startFrame, fps, boneIndex, out PreviewAnimationTrack track))
+                        {
+                            tracks.Add(track);
+                        }
+                    }
+
+                    if (tracks.Count == 0)
+                    {
+                        return false;
+                    }
+
+                    float safeFps = fps > 0 ? fps : 30f;
+                    clip = new PreviewAnimationClip
+                    {
+                        Name = string.IsNullOrWhiteSpace(name) ? Path.GetFileNameWithoutExtension(path) : name,
+                        Path = path ?? string.Empty,
+                        DurationSeconds = Math.Max(0.033f, frameCount / safeFps),
+                        FramesPerSecond = safeFps,
+                        Tracks = tracks.ToArray()
+                    };
+                    return true;
+                }
+            }
+            catch
+            {
+                clip = null;
+                return false;
+            }
+        }
+
+        private static int FindAsciiBytes(byte[] bytes, string value)
+        {
+            if (bytes == null || string.IsNullOrEmpty(value) || bytes.Length < value.Length)
+            {
+                return -1;
+            }
+
+            byte[] needle = Encoding.ASCII.GetBytes(value);
+            for (int i = 0; i <= bytes.Length - needle.Length; i++)
+            {
+                bool matched = true;
+                for (int n = 0; n < needle.Length; n++)
+                {
+                    if (bytes[i + n] != needle[n])
+                    {
+                        matched = false;
+                        break;
+                    }
+                }
+                if (matched)
+                {
+                    return i;
+                }
+            }
+
+            return -1;
+        }
+
+        private static bool TryParseStckTrack(
+            BinaryReader br,
+            int version,
+            int frameCount,
+            int startFrame,
+            int fps,
+            int boneIndex,
+            out PreviewAnimationTrack track)
+        {
+            track = null;
+            if (!TryEnsureRemaining(br, 12))
+            {
+                return false;
+            }
+
+            int positionCount = br.ReadInt32();
+            int positionSegmentCount = br.ReadInt32();
+            br.ReadInt32();
+            if (positionCount < 0 || positionCount > 300000 || positionSegmentCount < 0 || positionSegmentCount > 300000)
+            {
+                return false;
+            }
+
+            Vector3f[] positions = ReadVector3Array(br, positionCount);
+            if (positions == null)
+            {
+                return false;
+            }
+
+            StckSegment[] positionSegments;
+            if (version < 2)
+            {
+                positionSegments = ReadStckSegments(br, positionSegmentCount);
+                if (positionSegments == null)
+                {
+                    return false;
+                }
+            }
+            else
+            {
+                if (!TryEnsureRemaining(br, 8))
+                {
+                    return false;
+                }
+
+                int segmentEndTime = br.ReadInt32();
+                int compressed = br.ReadInt32();
+                if (compressed != 0)
+                {
+                    short[] keys = ReadShortArray(br, positionCount);
+                    if (keys == null)
+                    {
+                        return false;
+                    }
+                    positions = ExpandVector3Frames(positions, keys, frameCount);
+                }
+                positionSegments = BuildSyntheticStckSegments(positions.Length, segmentEndTime);
+            }
+
+            positions = ExpandVector3Timeline(positions, positionSegments, frameCount, startFrame, fps);
+
+            if (!TryEnsureRemaining(br, 12))
+            {
+                return false;
+            }
+
+            int rotationCount = br.ReadInt32();
+            int rotationSegmentCount = br.ReadInt32();
+            br.ReadInt32();
+            if (rotationCount < 0 || rotationCount > 300000 || rotationSegmentCount < 0 || rotationSegmentCount > 300000)
+            {
+                return false;
+            }
+
+            PreviewQuaternion[] rotations;
+            StckSegment[] rotationSegments;
+            if (version < 2)
+            {
+                rotations = ReadQuaternionArray(br, rotationCount, false);
+                rotationSegments = rotations == null ? null : ReadStckSegments(br, rotationSegmentCount);
+                if (rotations == null || rotationSegments == null)
+                {
+                    return false;
+                }
+            }
+            else
+            {
+                if (!TryEnsureRemaining(br, 4))
+                {
+                    return false;
+                }
+
+                bool compressedRotation = br.ReadInt32() != 0;
+                rotations = ReadQuaternionArray(br, rotationCount, compressedRotation);
+                if (rotations == null || !TryEnsureRemaining(br, 8))
+                {
+                    return false;
+                }
+
+                int segmentEndTime = br.ReadInt32();
+                int compressed = br.ReadInt32();
+                if (compressed != 0)
+                {
+                    short[] keys = ReadShortArray(br, rotationCount);
+                    if (keys == null)
+                    {
+                        return false;
+                    }
+                    rotations = ExpandQuaternionFrames(rotations, keys, frameCount);
+                }
+                rotationSegments = BuildSyntheticStckSegments(rotations.Length, segmentEndTime);
+            }
+
+            rotations = ExpandQuaternionTimeline(rotations, rotationSegments, frameCount, startFrame, fps);
+
+            track = new PreviewAnimationTrack
+            {
+                BoneIndex = boneIndex,
+                Positions = positions ?? new Vector3f[0],
+                Rotations = rotations ?? new PreviewQuaternion[0]
+            };
+            return true;
+        }
+
+        private struct StckSegment
+        {
+            public int StartTime;
+            public int EndTime;
+            public int StartIndex;
+            public int EndIndex;
+        }
+
+        private static StckSegment[] ReadStckSegments(BinaryReader br, int count)
+        {
+            if (count <= 0)
+            {
+                return new StckSegment[0];
+            }
+            if (!TryEnsureRemaining(br, count * 16L))
+            {
+                return null;
+            }
+
+            StckSegment[] segments = new StckSegment[count];
+            for (int i = 0; i < count; i++)
+            {
+                segments[i] = new StckSegment
+                {
+                    StartTime = br.ReadInt32(),
+                    EndTime = br.ReadInt32(),
+                    StartIndex = br.ReadInt32(),
+                    EndIndex = br.ReadInt32()
+                };
+            }
+            return segments;
+        }
+
+        private static StckSegment[] BuildSyntheticStckSegments(int valueCount, int endTime)
+        {
+            if (valueCount <= 0)
+            {
+                return new StckSegment[0];
+            }
+            return new[]
+            {
+                new StckSegment
+                {
+                    StartTime = 0,
+                    EndTime = Math.Max(0, endTime),
+                    StartIndex = 0,
+                    EndIndex = valueCount - 1
+                }
+            };
+        }
+
+        private static Vector3f[] ExpandVector3Timeline(
+            Vector3f[] values,
+            StckSegment[] segments,
+            int frameCount,
+            int startFrame,
+            int fps)
+        {
+            Vector3f[] source = values ?? new Vector3f[0];
+            if (source.Length <= 1 || frameCount <= 1)
+            {
+                return source;
+            }
+
+            Vector3f[] frames = new Vector3f[frameCount];
+            for (int frame = 0; frame < frameCount; frame++)
+            {
+                int index = ResolveStckValueIndex(segments, source.Length, frame, startFrame, fps);
+                frames[frame] = source[index];
+            }
+            return frames;
+        }
+
+        private static PreviewQuaternion[] ExpandQuaternionTimeline(
+            PreviewQuaternion[] values,
+            StckSegment[] segments,
+            int frameCount,
+            int startFrame,
+            int fps)
+        {
+            PreviewQuaternion[] source = values ?? new PreviewQuaternion[0];
+            if (source.Length <= 1 || frameCount <= 1)
+            {
+                return source;
+            }
+
+            PreviewQuaternion[] frames = new PreviewQuaternion[frameCount];
+            for (int frame = 0; frame < frameCount; frame++)
+            {
+                int index = ResolveStckValueIndex(segments, source.Length, frame, startFrame, fps);
+                frames[frame] = source[index];
+            }
+            return frames;
+        }
+
+        private static int ResolveStckValueIndex(
+            StckSegment[] segments,
+            int valueCount,
+            int frame,
+            int startFrame,
+            int fps)
+        {
+            if (valueCount <= 1)
+            {
+                return 0;
+            }
+
+            StckSegment[] safeSegments = segments ?? new StckSegment[0];
+            if (safeSegments.Length == 0)
+            {
+                return Math.Min(frame, valueCount - 1);
+            }
+
+            float safeFps = fps > 0 ? fps : 30f;
+            float time = ((startFrame + frame) / safeFps) * 1000f;
+            if (time <= safeSegments[0].StartTime)
+            {
+                return 0;
+            }
+
+            StckSegment last = safeSegments[safeSegments.Length - 1];
+            if (time >= last.EndTime)
+            {
+                return valueCount - 1;
+            }
+
+            for (int i = 0; i < safeSegments.Length; i++)
+            {
+                StckSegment segment = safeSegments[i];
+                if (time < segment.StartTime || time > segment.EndTime)
+                {
+                    continue;
+                }
+
+                int index = segment.StartIndex;
+                if (segment.StartIndex != segment.EndIndex)
+                {
+                    index += (int)(((time - segment.StartTime) * safeFps) / 1000f);
+                }
+                return Math.Max(0, Math.Min(valueCount - 1, index));
+            }
+
+            return Math.Min(frame, valueCount - 1);
+        }
+
+        private static Vector3f[] ReadVector3Array(BinaryReader br, int count)
+        {
+            if (count <= 0)
+            {
+                return new Vector3f[0];
+            }
+            if (!TryEnsureRemaining(br, count * 12L))
+            {
+                return null;
+            }
+
+            Vector3f[] values = new Vector3f[count];
+            for (int i = 0; i < count; i++)
+            {
+                values[i] = new Vector3f(br.ReadSingle(), br.ReadSingle(), br.ReadSingle());
+            }
+            return values;
+        }
+
+        private static PreviewQuaternion[] ReadQuaternionArray(BinaryReader br, int count, bool compressed)
+        {
+            if (count <= 0)
+            {
+                return new PreviewQuaternion[0];
+            }
+
+            long bytes = count * (compressed ? 12L : 16L);
+            if (!TryEnsureRemaining(br, bytes))
+            {
+                return null;
+            }
+
+            PreviewQuaternion[] values = new PreviewQuaternion[count];
+            for (int i = 0; i < count; i++)
+            {
+                float x = br.ReadSingle();
+                float y = br.ReadSingle();
+                float z = br.ReadSingle();
+                float w = compressed ? ComputeQuaternionW(x, y, z) : br.ReadSingle();
+                values[i] = new PreviewQuaternion(x, y, z, w);
+            }
+            return values;
+        }
+
+        private static float ComputeQuaternionW(float x, float y, float z)
+        {
+            float value = 1f - (x * x) - (y * y) - (z * z);
+            return value > 0f ? (float)Math.Sqrt(value) : 0f;
+        }
+
+        private static short[] ReadShortArray(BinaryReader br, int count)
+        {
+            if (count <= 0)
+            {
+                return new short[0];
+            }
+            if (!TryEnsureRemaining(br, count * 2L))
+            {
+                return null;
+            }
+
+            short[] values = new short[count];
+            for (int i = 0; i < count; i++)
+            {
+                values[i] = br.ReadInt16();
+            }
+            return values;
+        }
+
+        private static Vector3f[] ExpandVector3Frames(Vector3f[] keys, short[] thresholds, int frameCount)
+        {
+            Vector3f[] frames = new Vector3f[Math.Max(1, frameCount)];
+            int keyIndex = 0;
+            int thresholdIndex = 0;
+            for (int frame = 0; frame < frames.Length; frame++)
+            {
+                frames[frame] = keys.Length == 0 ? Vector3f.Zero : keys[Math.Min(keyIndex, keys.Length - 1)];
+                if (thresholds.Length > 0
+                    && thresholdIndex < thresholds.Length
+                    && thresholds[thresholdIndex] == frame
+                    && keyIndex < keys.Length - 1)
+                {
+                    keyIndex++;
+                    thresholdIndex++;
+                }
+            }
+            return frames;
+        }
+
+        private static PreviewQuaternion[] ExpandQuaternionFrames(PreviewQuaternion[] keys, short[] thresholds, int frameCount)
+        {
+            PreviewQuaternion[] frames = new PreviewQuaternion[Math.Max(1, frameCount)];
+            int keyIndex = 0;
+            int thresholdIndex = 0;
+            for (int frame = 0; frame < frames.Length; frame++)
+            {
+                frames[frame] = keys.Length == 0 ? PreviewQuaternion.Identity : keys[Math.Min(keyIndex, keys.Length - 1)];
+                if (thresholds.Length > 0
+                    && thresholdIndex < thresholds.Length
+                    && thresholds[thresholdIndex] == frame
+                    && keyIndex < keys.Length - 1)
+                {
+                    keyIndex++;
+                    thresholdIndex++;
+                }
+            }
+            return frames;
+        }
+
+        private static string[] ExtractReferencedFilesFromSmd(byte[] smdBytes, string extension)
+        {
+            if (smdBytes == null || smdBytes.Length < 8 || string.IsNullOrWhiteSpace(extension))
+            {
+                return new string[0];
+            }
+
+            List<string> values = new List<string>();
+            HashSet<string> seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            Encoding gbk = Encoding.GetEncoding("GBK");
+            string extLower = extension.ToLowerInvariant();
+
+            for (int pos = 0; pos <= smdBytes.Length - 4; pos++)
+            {
+                int len = BitConverter.ToInt32(smdBytes, pos);
+                if (len <= 0 || len > 512 || pos + 4 + len > smdBytes.Length)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    string candidate = gbk.GetString(smdBytes, pos + 4, len).Trim('\0', ' ', '\t', '\r', '\n');
+                    AddReferencedPathCandidate(values, seen, candidate, extLower);
+                }
+                catch
+                {
+                }
+            }
+
+            try
+            {
+                AddReferencedPathsFromText(values, seen, gbk.GetString(smdBytes), extension, extLower);
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                AddReferencedPathsFromText(values, seen, Encoding.Unicode.GetString(smdBytes), extension, extLower);
+            }
+            catch
+            {
+            }
+
+            ExtractReferencedPathsByRawByteScan(values, seen, smdBytes, extension, extLower);
+            return values.ToArray();
+        }
+
+        private static bool SkipBytes(BinaryReader br, long count)
+        {
+            if (count <= 0)
+            {
+                return true;
+            }
+            if (!TryEnsureRemaining(br, count))
+            {
+                return false;
+            }
+
+            br.BaseStream.Seek(count, SeekOrigin.Current);
+            return true;
+        }
+
+        private static void AddReferencedPathsFromText(
+            List<string> values,
+            HashSet<string> seen,
+            string text,
+            string extension,
+            string extensionLower)
+        {
+            if (string.IsNullOrEmpty(text))
+            {
+                return;
+            }
+
+            MatchCollection matches = Regex.Matches(text, @"[^\0\r\n\t]+\" + Regex.Escape(extension), RegexOptions.IgnoreCase);
+            for (int i = 0; i < matches.Count; i++)
+            {
+                AddReferencedPathCandidate(values, seen, matches[i].Value, extensionLower);
+            }
+        }
+
+        private static void ExtractReferencedPathsByRawByteScan(
+            List<string> values,
+            HashSet<string> seen,
+            byte[] bytes,
+            string extension,
+            string extensionLower)
+        {
+            byte[] markerBytes = Encoding.ASCII.GetBytes(extensionLower);
+            if (markerBytes.Length == 0)
+            {
+                return;
+            }
+
+            for (int i = 0; i <= bytes.Length - markerBytes.Length; i++)
+            {
+                bool match = true;
+                for (int m = 0; m < markerBytes.Length; m++)
+                {
+                    byte lower = (byte)char.ToLowerInvariant((char)bytes[i + m]);
+                    if (lower != markerBytes[m])
+                    {
+                        match = false;
+                        break;
+                    }
+                }
+                if (!match)
+                {
+                    continue;
+                }
+
+                int start = i - 1;
+                while (start >= 0 && IsPathByte(bytes[start]))
+                {
+                    start--;
+                }
+                start++;
+
+                int end = i + markerBytes.Length;
+                while (end < bytes.Length && IsPathByte(bytes[end]))
+                {
+                    end++;
+                }
+
+                int len = end - start;
+                if (len <= 0 || len > 1024)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    string candidate = Encoding.GetEncoding("GBK").GetString(bytes, start, len).Trim('\0', ' ', '\t', '\r', '\n');
+                    AddReferencedPathCandidate(values, seen, candidate, extensionLower);
+                }
+                catch
+                {
+                }
+            }
+        }
+
+        private static void AddReferencedPathCandidate(
+            List<string> values,
+            HashSet<string> seen,
+            string candidate,
+            string extensionLower)
+        {
+            if (values == null || seen == null || string.IsNullOrWhiteSpace(candidate))
+            {
+                return;
+            }
+
+            string normalized = NormalizeRelativePath(candidate);
+            if (string.IsNullOrWhiteSpace(normalized)
+                || !normalized.EndsWith(extensionLower, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            if (seen.Add(normalized))
+            {
+                values.Add(normalized);
+            }
+        }
+
         private static bool TryExtractPathByRawByteScan(byte[] bytes, string extension, out string value)
         {
             value = string.Empty;
@@ -3533,12 +4820,27 @@ namespace FWEledit
                 return string.Empty;
             }
 
-            string normalized = value
+            StringBuilder cleaned = new StringBuilder(value.Length);
+            for (int i = 0; i < value.Length; i++)
+            {
+                char current = value[i];
+                if (!char.IsControl(current) && current != '\0')
+                {
+                    cleaned.Append(current);
+                }
+            }
+
+            string normalized = cleaned.ToString()
                 .Replace('/', '\\')
                 .Trim()
                 .Trim('"')
                 .Trim()
                 .TrimStart('\\');
+
+            if (normalized.IndexOfAny(Path.GetInvalidPathChars()) >= 0)
+            {
+                return string.Empty;
+            }
 
             return DecodeHashUnicodeEscapes(normalized);
         }
@@ -3585,7 +4887,12 @@ namespace FWEledit
             out int[] indices,
             out int[] triangleColors,
             out int[] triangleTextureIndices,
+            out PreviewSkinVertexData[] skinVertices,
+            out int[] skinBoneSkeletonIndices,
             out PreviewTextureData[] textures,
+            out bool hasSkinningData,
+            out int skinBoneCount,
+            out int skeletonBoneCount,
             out string error)
         {
             vertices = new Vector3f[0];
@@ -3593,7 +4900,12 @@ namespace FWEledit
             indices = new int[0];
             triangleColors = new int[0];
             triangleTextureIndices = new int[0];
+            skinVertices = new PreviewSkinVertexData[0];
+            skinBoneSkeletonIndices = new int[0];
             textures = new PreviewTextureData[0];
+            hasSkinningData = false;
+            skinBoneCount = 0;
+            skeletonBoneCount = 0;
             error = string.Empty;
 
             if (bytes == null || bytes.Length < 0x80)
@@ -3614,6 +4926,9 @@ namespace FWEledit
                         return false;
                     }
 
+                    skinBoneCount = header.NumSkinBone;
+                    skeletonBoneCount = header.NumSkeletonBone;
+
                     string[] skiBoneNames = new string[Math.Max(0, header.NumSkinBone)];
                     if (header.Version >= 9)
                     {
@@ -3628,6 +4943,7 @@ namespace FWEledit
                             skiBoneNames[i] = boneName ?? string.Empty;
                         }
                     }
+                    skinBoneSkeletonIndices = BuildSkinBoneSkeletonIndices(skiBoneNames, bindMatricesByBoneName, bindMatricesBySkeletonBoneIndex);
 
                     string[] textureNames = new string[Math.Max(0, header.NumTexture)];
                     for (int i = 0; i < textureNames.Length; i++)
@@ -3663,7 +4979,9 @@ namespace FWEledit
                     List<int> allIndices = new List<int>(8192);
                     List<int> allTriangleColors = new List<int>(8192);
                     List<int> allTriangleTextureIndices = new List<int>(8192);
+                    List<PreviewSkinVertexData> allSkinVertices = new List<PreviewSkinVertexData>(4096);
                     string parseError = string.Empty;
+                    bool parsedHasSkinningData = false;
 
                     bool TryReadSkinMeshBlock()
                     {
@@ -3699,6 +5017,10 @@ namespace FWEledit
                             return false;
                         }
 
+                        parsedHasSkinningData = parsedHasSkinningData
+                            || header.NumSkinBone > 0
+                            || header.NumSkeletonBone > 0;
+
                         Color meshColor = ResolveMeshColor(texIndex, matIndex, materials, textureDataByIndex);
                         int meshTextureIndex = ResolveMeshTextureIndex(texIndex, textureNames);
 
@@ -3715,10 +5037,10 @@ namespace FWEledit
                             float px = br.ReadSingle();
                             float py = br.ReadSingle();
                             float pz = br.ReadSingle();
-                            br.ReadSingle(); // weight 0
-                            br.ReadSingle(); // weight 1
-                            br.ReadSingle(); // weight 2
-                            br.ReadUInt32(); // packed matrix indices
+                            float weight0 = br.ReadSingle();
+                            float weight1 = br.ReadSingle();
+                            float weight2 = br.ReadSingle();
+                            uint packedBoneIndices = br.ReadUInt32();
                             br.ReadSingle(); // normal x
                             br.ReadSingle(); // normal y
                             br.ReadSingle(); // normal z
@@ -3734,6 +5056,7 @@ namespace FWEledit
 
                             allVertices.Add(new Vector3f(-px, py, pz));
                             allUvs.Add(new Vector2f(tu, tv));
+                            allSkinVertices.Add(new PreviewSkinVertexData(weight0, weight1, weight2, packedBoneIndices));
                         }
 
                         long indexBytes = (long)indexCount * 2L;
@@ -3833,30 +5156,10 @@ namespace FWEledit
                             float tv = br.ReadSingle();
 
                             Vector3f sourcePoint = new Vector3f(px, py, pz);
-                            float[] rigidMatrix = null;
-                            if (boneIndex >= 0
-                                && bindMatricesBySkeletonBoneIndex != null
-                                && boneIndex < bindMatricesBySkeletonBoneIndex.Length
-                                && bindMatricesBySkeletonBoneIndex[boneIndex] != null
-                                && bindMatricesBySkeletonBoneIndex[boneIndex].Length >= 16)
-                            {
-                                rigidMatrix = bindMatricesBySkeletonBoneIndex[boneIndex];
-                            }
-                            else if (boneIndex >= 0
-                                && boneIndex < skinMatricesByBoneIndex.Length
-                                && skinMatricesByBoneIndex[boneIndex] != null
-                                && skinMatricesByBoneIndex[boneIndex].Length >= 16)
-                            {
-                                rigidMatrix = skinMatricesByBoneIndex[boneIndex];
-                            }
-
-                            if (rigidMatrix != null && rigidMatrix.Length >= 16)
-                            {
-                                sourcePoint = TransformPointRowVector(sourcePoint, rigidMatrix);
-                            }
 
                             allVertices.Add(new Vector3f(-sourcePoint.X, sourcePoint.Y, sourcePoint.Z));
                             allUvs.Add(new Vector2f(tu, tv));
+                            allSkinVertices.Add(new PreviewSkinVertexData(1f, 0f, 0f, (uint)Math.Max(0, boneIndex)));
                         }
 
                         long indexBytes = (long)indexCount * 2L;
@@ -3931,7 +5234,11 @@ namespace FWEledit
                     triangleTextureIndices = allTriangleTextureIndices.Count == (allIndices.Count / 3)
                         ? allTriangleTextureIndices.ToArray()
                         : new int[0];
+                    skinVertices = allSkinVertices.Count == allVertices.Count
+                        ? allSkinVertices.ToArray()
+                        : new PreviewSkinVertexData[0];
                     textures = BuildTextureArray(textureNames, textureDataByIndex);
+                    hasSkinningData = parsedHasSkinningData;
                     return true;
                 }
             }
@@ -4935,25 +6242,10 @@ namespace FWEledit
                         TextureAlphaUsage alphaUsage = ComputeTextureAlphaUsage(relativePath, pixels, alphaPolicy);
                         if (alphaPolicy == TextureAlphaPolicy.PreferMountOpaque)
                         {
-                            if (alphaUsage == TextureAlphaUsage.Cutout)
-                            {
-                                FillHiddenTexelsFromNeighborsInPlace(prepared.Width, prepared.Height, pixels);
-                            }
-                            else
-                            {
-                                if (ShouldRecoverRgbFromAuxAlpha(pixels, TextureAlphaUsage.Opaque, alphaPolicy))
-                                {
-                                    RecoverRgbFromAuxAlphaInPlace(
-                                        pixels,
-                                        alphaPolicy == TextureAlphaPolicy.PreferMountOpaque);
-                                }
-
-                                // Mount atlases often store auxiliary/spec data in alpha.
-                                // Promote hidden texels and force opaque alpha for stable preview parity.
-                                FillHiddenTexelsFromNeighborsInPlace(prepared.Width, prepared.Height, pixels);
-                                ForceOpaqueAlphaInPlace(pixels);
-                                alphaUsage = TextureAlphaUsage.Opaque;
-                            }
+                            // PWModelViewer renders SKI/ECM mount textures with noAlpha=0 and blending
+                            // disabled. Preserve the DDS RGB exactly, including RGB below zero alpha.
+                            ForceOpaqueAlphaInPlace(pixels);
+                            alphaUsage = TextureAlphaUsage.Opaque;
                         }
                         else
                         {
@@ -5263,17 +6555,7 @@ namespace FWEledit
             int targetH = Math.Max(1, (int)Math.Round(srcH * scale));
             if (targetW == srcW && targetH == srcH)
             {
-                // Keep original texel data; this matches the legacy model viewer behavior.
-                Bitmap copy = new Bitmap(srcW, srcH, PixelFormat.Format32bppArgb);
-                using (Graphics g = Graphics.FromImage(copy))
-                {
-                    g.Clear(Color.Transparent);
-                    g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.NearestNeighbor;
-                    g.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.Half;
-                    g.DrawImage(source, new Rectangle(0, 0, srcW, srcH));
-                }
-
-                return copy;
+                return CopyTextureBitmapPreservingArgb(source);
             }
 
             Bitmap prepared = new Bitmap(targetW, targetH, PixelFormat.Format32bppArgb);
@@ -5286,6 +6568,64 @@ namespace FWEledit
             }
 
             return prepared;
+        }
+
+        private static Bitmap CopyTextureBitmapPreservingArgb(Bitmap source)
+        {
+            int width = Math.Max(1, source.Width);
+            int height = Math.Max(1, source.Height);
+            Rectangle rectangle = new Rectangle(0, 0, width, height);
+            Bitmap copy = new Bitmap(width, height, PixelFormat.Format32bppArgb);
+            BitmapData sourceData = null;
+            BitmapData destinationData = null;
+            try
+            {
+                sourceData = source.LockBits(rectangle, ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+                destinationData = copy.LockBits(rectangle, ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
+
+                int rowBytes = width * 4;
+                byte[] row = new byte[rowBytes];
+                for (int y = 0; y < height; y++)
+                {
+                    IntPtr sourceRow = IntPtr.Add(sourceData.Scan0, y * sourceData.Stride);
+                    IntPtr destinationRow = IntPtr.Add(destinationData.Scan0, y * destinationData.Stride);
+                    Marshal.Copy(sourceRow, row, 0, rowBytes);
+                    Marshal.Copy(row, 0, destinationRow, rowBytes);
+                }
+
+                return copy;
+            }
+            catch
+            {
+                if (destinationData != null)
+                {
+                    try { copy.UnlockBits(destinationData); } catch { }
+                    destinationData = null;
+                }
+                if (sourceData != null)
+                {
+                    try { source.UnlockBits(sourceData); } catch { }
+                    sourceData = null;
+                }
+                copy.Dispose();
+                Bitmap fallback = new Bitmap(width, height, PixelFormat.Format32bppArgb);
+                using (Graphics graphics = Graphics.FromImage(fallback))
+                {
+                    graphics.DrawImageUnscaled(source, 0, 0);
+                }
+                return fallback;
+            }
+            finally
+            {
+                if (destinationData != null)
+                {
+                    copy.UnlockBits(destinationData);
+                }
+                if (sourceData != null)
+                {
+                    source.UnlockBits(sourceData);
+                }
+            }
         }
 
         private static int[] ExtractArgbPixels(Bitmap bitmap)
@@ -5606,9 +6946,7 @@ namespace FWEledit
 
             if (alphaPolicy == TextureAlphaPolicy.PreferMountOpaque)
             {
-                return IsLikelyOpacityCutoutTextureForMount(pixels)
-                    ? TextureAlphaUsage.Cutout
-                    : TextureAlphaUsage.Opaque;
+                return TextureAlphaUsage.Opaque;
             }
 
             if (alphaPolicy == TextureAlphaPolicy.PreferCutout)
@@ -5837,10 +7175,12 @@ namespace FWEledit
         private static bool TryParseBonBindMatrices(
             byte[] bonBytes,
             out Dictionary<string, float[]> bindMatricesByBoneName,
-            out float[][] bindMatricesBySkeletonBoneIndex)
+            out float[][] bindMatricesBySkeletonBoneIndex,
+            out PreviewSkeletonBone[] skeletonBones)
         {
             bindMatricesByBoneName = new Dictionary<string, float[]>(StringComparer.OrdinalIgnoreCase);
             bindMatricesBySkeletonBoneIndex = new float[0][];
+            skeletonBones = new PreviewSkeletonBone[0];
             if (bonBytes == null || bonBytes.Length < 200)
             {
                 return false;
@@ -5853,13 +7193,13 @@ namespace FWEledit
                 using (BinaryReader br = new BinaryReader(stream))
                 {
                     // A3DSKELETONFILEHEADER (pack(1))
-                    // dwFlags, dwVersion, iNumBone, iNumJoint, iNumHook, iAnimStart, iAnimEnd, iAnimFPS, reserved[64]
+                    // magic[8], dwVersion, iNumBone, iNumJoint, iNumHook, iAnimStart, iAnimEnd, iAnimFPS, reserved[64]
                     if (!TryEnsureRemaining(br, 8 + (7 * 4) + 64))
                     {
                         return false;
                     }
 
-                    uint flags = br.ReadUInt32();
+                    string magic = Encoding.ASCII.GetString(br.ReadBytes(8));
                     uint version = br.ReadUInt32();
                     int numBones = br.ReadInt32();
                     br.ReadInt32(); // num joints
@@ -5869,12 +7209,18 @@ namespace FWEledit
                     br.ReadInt32(); // anim fps
                     br.ReadBytes(64); // reserved
 
-                    if (flags != 0x41534B45u || version > 6u || numBones <= 0 || numBones > 4096)
+                    if (!string.Equals(magic, "MOXBEKSA", StringComparison.Ordinal)
+                        || version == 0u
+                        || version > 6u
+                        || numBones <= 0
+                        || numBones > 4096)
                     {
                         return false;
                     }
 
                     List<float[]> orderedMatrices = new List<float[]>(numBones);
+                    List<PreviewSkeletonBone> orderedBones = new List<PreviewSkeletonBone>(numBones);
+                    List<int[]> orderedChildIndices = new List<int[]>(numBones);
                     for (int i = 0; i < numBones; i++)
                     {
                         if (!TryReadLengthPrefixedString(br, gbk, 8192, out string boneName))
@@ -5883,13 +7229,13 @@ namespace FWEledit
                         }
 
                         // A3DBone::BONEDATA (pack(1))
-                        if (!TryEnsureRemaining(br, 1 + (3 * 4) + (16 * 4) + (16 * 4)))
+                        if (!TryEnsureRemaining(br, (4 * 4) + (16 * 4) + (16 * 4)))
                         {
                             return false;
                         }
 
-                        br.ReadByte();      // byFlags
-                        br.ReadInt32();     // iParent
+                        int flags = br.ReadInt32();
+                        int parentIndex = br.ReadInt32(); // iParent
                         br.ReadInt32();     // iFirstJoint
                         int childCount = br.ReadInt32(); // iNumChild
                         if (childCount < 0 || childCount > 2048)
@@ -5897,12 +7243,8 @@ namespace FWEledit
                             return false;
                         }
 
-                        br.ReadBytes(16 * 4); // matRelative
-                        float[] bindMatrix = new float[16];
-                        for (int m = 0; m < 16; m++)
-                        {
-                            bindMatrix[m] = br.ReadSingle(); // matBoneInit
-                        }
+                        float[] relativeMatrix = ReadBonMatrix(br); // matRelative
+                        float[] bindMatrix = ReadBonMatrix(br); // matBoneInit
 
                         if (!string.IsNullOrWhiteSpace(boneName) && !bindMatricesByBoneName.ContainsKey(boneName))
                         {
@@ -5910,16 +7252,45 @@ namespace FWEledit
                         }
 
                         orderedMatrices.Add(bindMatrix);
+                        orderedBones.Add(new PreviewSkeletonBone
+                        {
+                            Name = boneName ?? string.Empty,
+                            ParentIndex = parentIndex,
+                            IsFlipped = (flags & 2) != 0,
+                            RelativeMatrix = relativeMatrix,
+                            BindMatrix = bindMatrix
+                        });
 
-                        long childBytes = (long)childCount * 4L;
-                        if (!TryEnsureRemaining(br, childBytes))
+                        if (!TryEnsureRemaining(br, (long)childCount * 4L))
                         {
                             return false;
                         }
-                        br.ReadBytes((int)childBytes); // children indices
+
+                        int[] childIndices = new int[childCount];
+                        for (int child = 0; child < childCount; child++)
+                        {
+                            childIndices[child] = br.ReadInt32();
+                        }
+                        orderedChildIndices.Add(childIndices);
+                    }
+
+                    // The legacy viewer builds the runtime hierarchy from each bone's
+                    // explicit child list. Keep iParent as a fallback for malformed BONs.
+                    for (int parent = 0; parent < orderedChildIndices.Count; parent++)
+                    {
+                        int[] childIndices = orderedChildIndices[parent];
+                        for (int child = 0; child < childIndices.Length; child++)
+                        {
+                            int childIndex = childIndices[child];
+                            if (childIndex >= 0 && childIndex < orderedBones.Count && childIndex != parent)
+                            {
+                                orderedBones[childIndex].ParentIndex = parent;
+                            }
+                        }
                     }
 
                     bindMatricesBySkeletonBoneIndex = orderedMatrices.ToArray();
+                    skeletonBones = orderedBones.ToArray();
                     return bindMatricesByBoneName.Count > 0 || bindMatricesBySkeletonBoneIndex.Length > 0;
                 }
             }
@@ -5927,8 +7298,28 @@ namespace FWEledit
             {
                 bindMatricesByBoneName = new Dictionary<string, float[]>(StringComparer.OrdinalIgnoreCase);
                 bindMatricesBySkeletonBoneIndex = new float[0][];
+                skeletonBones = new PreviewSkeletonBone[0];
                 return false;
             }
+        }
+
+        private static float[] ReadBonMatrix(BinaryReader br)
+        {
+            float[] raw = new float[16];
+            for (int i = 0; i < raw.Length; i++)
+            {
+                raw[i] = br.ReadSingle();
+            }
+
+            float[] matrix = new float[16];
+            for (int row = 0; row < 4; row++)
+            {
+                for (int column = 0; column < 4; column++)
+                {
+                    matrix[(column * 4) + row] = raw[(row * 4) + column];
+                }
+            }
+            return matrix;
         }
 
         private static bool IsLikelyBoneName(string value)
@@ -5976,6 +7367,43 @@ namespace FWEledit
             }
 
             return matrices;
+        }
+
+        private static int[] BuildSkinBoneSkeletonIndices(
+            string[] skiBoneNames,
+            Dictionary<string, float[]> bindMatricesByBoneName,
+            float[][] bindMatricesBySkeletonBoneIndex)
+        {
+            if (skiBoneNames == null || skiBoneNames.Length == 0)
+            {
+                return new int[0];
+            }
+
+            int[] indices = new int[skiBoneNames.Length];
+            for (int i = 0; i < indices.Length; i++)
+            {
+                indices[i] = i;
+                string boneName = skiBoneNames[i] ?? string.Empty;
+                if (string.IsNullOrWhiteSpace(boneName)
+                    || bindMatricesByBoneName == null
+                    || bindMatricesBySkeletonBoneIndex == null
+                    || !bindMatricesByBoneName.TryGetValue(boneName, out float[] matrix)
+                    || matrix == null)
+                {
+                    continue;
+                }
+
+                for (int m = 0; m < bindMatricesBySkeletonBoneIndex.Length; m++)
+                {
+                    if (object.ReferenceEquals(matrix, bindMatricesBySkeletonBoneIndex[m]))
+                    {
+                        indices[i] = m;
+                        break;
+                    }
+                }
+            }
+
+            return indices;
         }
 
         private static Vector3f ApplyBoneSkinning(
@@ -6058,9 +7486,9 @@ namespace FWEledit
             float y = point.Y;
             float z = point.Z;
             return new Vector3f(
-                (x * matrix[0]) + (y * matrix[4]) + (z * matrix[8]) + matrix[12],
-                (x * matrix[1]) + (y * matrix[5]) + (z * matrix[9]) + matrix[13],
-                (x * matrix[2]) + (y * matrix[6]) + (z * matrix[10]) + matrix[14]);
+                (x * matrix[0]) + (y * matrix[1]) + (z * matrix[2]) + matrix[3],
+                (x * matrix[4]) + (y * matrix[5]) + (z * matrix[6]) + matrix[7],
+                (x * matrix[8]) + (y * matrix[9]) + (z * matrix[10]) + matrix[11]);
         }
 
         private bool TryComputeTextureAverageColor(

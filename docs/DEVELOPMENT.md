@@ -47,7 +47,7 @@ FWEledit has no formal test suite yet. Use manual testing:
 - Select lists and items, verify no exceptions.
 - Edit a value and confirm dirty tracking.
 - Stage and save a description.
-- Run **Save** and confirm `.bak` + ZIP backups.
+- Run **Save** and confirm `.bak` + ZIP backups under `backups/fweledit/`.
 - Open icon and model pickers.
 - Run tools: **Rules**, **Field Compare**, **Field Replace**.
 

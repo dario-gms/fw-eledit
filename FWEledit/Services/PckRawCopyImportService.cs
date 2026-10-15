@@ -318,7 +318,7 @@ namespace FWEledit
             long pckLength = new FileInfo(pck).Length;
             bool writeToPkx = target.TableOffset >= pckLength && !string.IsNullOrWhiteSpace(pkx) && File.Exists(pkx);
             string outputPath = writeToPkx ? pkx : pck;
-            string temp = outputPath + ".rawcopy.tmp";
+            string temp = AssetManager.GetTemporaryFilePath(outputPath, "pck-rawcopy", ".rawcopy.tmp");
             if (File.Exists(temp))
             {
                 File.Delete(temp);

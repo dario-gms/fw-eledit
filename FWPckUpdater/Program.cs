@@ -113,7 +113,9 @@ namespace FWPckUpdater
 
                 if (string.Equals(mode, "rebuild", StringComparison.OrdinalIgnoreCase))
                 {
-                    string tempRebuildPck = targetPck + ".rebuild.tmp";
+                    string tempRoot = Path.Combine(targetDirectory, "backups", "fweledit", "temp", "pck-rebuild");
+                    Directory.CreateDirectory(tempRoot);
+                    string tempRebuildPck = Path.Combine(tempRoot, Path.GetFileName(targetPck) + ".rebuild.tmp");
                     try
                     {
                         if (File.Exists(tempRebuildPck))

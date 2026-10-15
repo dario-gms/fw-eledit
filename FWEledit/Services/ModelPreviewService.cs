@@ -809,7 +809,16 @@ namespace FWEledit
                 EmissiveColorArgb = source.EmissiveColorArgb,
                 OrgColorArgb = source.OrgColorArgb,
                 ShaderFloats = source.ShaderFloats ?? new float[0],
-                OuterNum = source.OuterNum
+                OuterNum = source.OuterNum,
+                HasSkinningData = source.HasSkinningData,
+                SkinBoneCount = source.SkinBoneCount,
+                SkeletonBoneCount = source.SkeletonBoneCount,
+                AnimationNames = source.AnimationNames ?? new string[0],
+                AnimationPaths = source.AnimationPaths ?? new string[0],
+                AnimationClips = source.AnimationClips ?? new PreviewAnimationClip[0],
+                SkinVertices = source.SkinVertices ?? new PreviewSkinVertexData[0],
+                SkinBoneSkeletonIndices = source.SkinBoneSkeletonIndices ?? new int[0],
+                SkeletonBones = source.SkeletonBones ?? new PreviewSkeletonBone[0]
             };
         }
     }

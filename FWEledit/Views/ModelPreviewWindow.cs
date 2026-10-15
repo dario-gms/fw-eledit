@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
@@ -8,6 +9,7 @@ using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using FWEledit.Properties;
 using OpenTK;
+using OpenTK.Graphics;
 using OpenTK.Graphics.OpenGL;
 using D3D11 = SharpDX.Direct3D11;
 using DXGI = SharpDX.DXGI;
@@ -18,6 +20,7 @@ namespace FWEledit
     {
         private const int WS_EX_NOACTIVATE = 0x08000000;
         private const int WM_MOUSEACTIVATE = 0x0021;
+        private const int MA_ACTIVATE = 1;
         private const int MA_NOACTIVATE = 3;
         private const int WM_ACTIVATE = 0x0006;
         private const int WA_INACTIVE = 0;
@@ -51,9 +54,12 @@ namespace FWEledit
         private Control activeViewport;
         private readonly CheckBox wireframeCheck;
         private readonly CheckBox animationCheck;
+        private readonly CheckBox modelAnimationCheck;
+        private readonly ComboBox modelAnimationCombo;
         private readonly CheckBox trueScaleCheck;
         private readonly CheckBox hardwareCheck;
-        private readonly ComboBox backendCombo;
+        private readonly RadioButton backendDx11Radio;
+        private readonly RadioButton backendOpenGlRadio;
         private readonly Label backendLabel;
         private readonly Label helpLabel;
         private readonly Label summaryLabel;
@@ -61,16 +67,25 @@ namespace FWEledit
         private readonly Panel footerPanel;
         private readonly Timer animationTimer;
         private readonly Timer cameraPersistenceTimer;
-        private DateTime lastAnimationTickUtc;
+        private long lastAnimationTickTimestamp;
+        private float modelAnimationTimeSeconds;
         private bool suppressRendererPreferenceSave;
+        private bool suppressBackendSelectionEvents;
+        private bool suppressModelAnimationEvents;
+        private bool allowInteractiveActivation;
+        private HardwareRenderBackend selectedBackend;
         private static ViewCameraState persistedCameraState;
         private static bool cameraSettingsLoaded;
         private const float CameraStateEpsilon = 0.0005f;
+        private const float ModelAnimationPlaybackSpeed = 1.0f;
+        private static readonly Color PreviewStudioBackgroundTop = Color.FromArgb(132, 128, 225);
+        private static readonly Color PreviewStudioBackgroundBottom = Color.FromArgb(118, 116, 214);
 
         public ModelPreviewWindow(ModelPreviewMeshData meshData, bool showWithoutActivation, IntPtr nonActivatingOwnerHandle)
         {
             this.showWithoutActivation = showWithoutActivation;
             this.nonActivatingOwnerHandle = nonActivatingOwnerHandle;
+            selectedBackend = HardwareRenderBackend.DirectX11;
             Text = "Preview 3D Model";
             StartPosition = FormStartPosition.CenterParent;
             MinimumSize = new Size(900, 620);
@@ -120,6 +135,7 @@ namespace FWEledit
 
             try
             {
+                ModelPreviewGpuViewport.EnsureOpenTkReadyForControlCreation();
                 gpuViewport = new ModelPreviewGpuViewport(meshData);
                 gpuViewport.Dock = DockStyle.Fill;
                 gpuViewport.Visible = false;
@@ -156,19 +172,26 @@ namespace FWEledit
 
             footerPanel = new Panel();
             footerPanel.Dock = DockStyle.Bottom;
-            footerPanel.Height = 40;
+            footerPanel.Height = 44;
             footerPanel.Padding = new Padding(10, 4, 10, 4);
             footerPanel.BackColor = Color.FromArgb(24, 24, 24);
+
+            Panel footerControlsPanel = new Panel();
+            footerControlsPanel.Dock = DockStyle.Right;
+            footerControlsPanel.Width = 1000;
+            footerControlsPanel.BackColor = footerPanel.BackColor;
+            footerPanel.Controls.Add(footerControlsPanel);
 
             helpLabel = new Label();
             helpLabel.Dock = DockStyle.Fill;
             helpLabel.TextAlign = ContentAlignment.MiddleLeft;
             helpLabel.ForeColor = Color.FromArgb(190, 190, 190);
             footerPanel.Controls.Add(helpLabel);
+            helpLabel.SendToBack();
 
             animationCheck = new CheckBox();
             animationCheck.Dock = DockStyle.Right;
-            animationCheck.Width = 128;
+            animationCheck.Width = 94;
             animationCheck.Checked = false;
             animationCheck.Text = "Auto Orbit";
             animationCheck.ForeColor = Color.Gainsboro;
@@ -180,11 +203,50 @@ namespace FWEledit
                 UpdateHelpLabel();
                 InvalidateActiveViewport();
             };
-            footerPanel.Controls.Add(animationCheck);
+            footerControlsPanel.Controls.Add(animationCheck);
+
+            modelAnimationCheck = new CheckBox();
+            modelAnimationCheck.Dock = DockStyle.Right;
+            modelAnimationCheck.Width = 70;
+            modelAnimationCheck.Checked = false;
+            modelAnimationCheck.Text = "Play";
+            modelAnimationCheck.ForeColor = Color.Gainsboro;
+            modelAnimationCheck.BackColor = footerPanel.BackColor;
+            modelAnimationCheck.CheckedChanged += (s, e) =>
+            {
+                modelAnimationCheck.Text = modelAnimationCheck.Checked ? "Pause" : "Play";
+                if (suppressModelAnimationEvents)
+                {
+                    return;
+                }
+
+                ApplyModelAnimationState();
+                UpdateAnimationTimerState();
+                UpdateHelpLabel();
+                InvalidateActiveViewport();
+            };
+            footerControlsPanel.Controls.Add(modelAnimationCheck);
+
+            modelAnimationCombo = new ComboBox();
+            modelAnimationCombo.Dock = DockStyle.Right;
+            modelAnimationCombo.Width = 260;
+            modelAnimationCombo.DropDownStyle = ComboBoxStyle.DropDownList;
+            modelAnimationCombo.FlatStyle = FlatStyle.Flat;
+            modelAnimationCombo.BackColor = Color.FromArgb(36, 36, 36);
+            modelAnimationCombo.ForeColor = Color.Gainsboro;
+            modelAnimationCombo.SelectedIndexChanged += (s, e) =>
+            {
+                if (!suppressModelAnimationEvents)
+                {
+                    ApplyModelAnimationSelection();
+                }
+            };
+            footerControlsPanel.Controls.Add(modelAnimationCombo);
+            UpdateModelAnimationAvailability(meshData);
 
             trueScaleCheck = new CheckBox();
             trueScaleCheck.Dock = DockStyle.Right;
-            trueScaleCheck.Width = 96;
+            trueScaleCheck.Width = 84;
             trueScaleCheck.Checked = false;
             trueScaleCheck.Text = "True Scale";
             trueScaleCheck.ForeColor = Color.Gainsboro;
@@ -196,11 +258,11 @@ namespace FWEledit
                 ResetActiveViewport();
                 InvalidateActiveViewport();
             };
-            footerPanel.Controls.Add(trueScaleCheck);
+            footerControlsPanel.Controls.Add(trueScaleCheck);
 
             wireframeCheck = new CheckBox();
             wireframeCheck.Dock = DockStyle.Right;
-            wireframeCheck.Width = 90;
+            wireframeCheck.Width = 82;
             wireframeCheck.Checked = false;
             wireframeCheck.Text = "Wireframe";
             wireframeCheck.ForeColor = Color.Gainsboro;
@@ -210,48 +272,67 @@ namespace FWEledit
                 ApplyWireframeMode();
                 InvalidateActiveViewport();
             };
-            footerPanel.Controls.Add(wireframeCheck);
+            footerControlsPanel.Controls.Add(wireframeCheck);
 
-            backendCombo = new ComboBox();
-            backendCombo.Dock = DockStyle.Right;
-            backendCombo.Width = 118;
-            backendCombo.DropDownStyle = ComboBoxStyle.DropDownList;
-            backendCombo.FlatStyle = FlatStyle.Flat;
-            backendCombo.Items.Add("DirectX 11");
-            backendCombo.Items.Add("OpenGL");
-            backendCombo.SelectedIndex = 0;
-            backendCombo.SelectedIndexChanged += (s, e) => ApplyRendererSettings(true);
-            footerPanel.Controls.Add(backendCombo);
+            backendOpenGlRadio = new RadioButton();
+            backendOpenGlRadio.Dock = DockStyle.Right;
+            backendOpenGlRadio.Width = 82;
+            backendOpenGlRadio.Text = "OpenGL";
+            backendOpenGlRadio.ForeColor = Color.Gainsboro;
+            backendOpenGlRadio.BackColor = footerPanel.BackColor;
+            backendOpenGlRadio.CheckedChanged += (s, e) =>
+            {
+                if (backendOpenGlRadio.Checked && !suppressBackendSelectionEvents)
+                {
+                    SelectBackend(HardwareRenderBackend.OpenGL, true);
+                }
+            };
+            footerControlsPanel.Controls.Add(backendOpenGlRadio);
+
+            backendDx11Radio = new RadioButton();
+            backendDx11Radio.Dock = DockStyle.Right;
+            backendDx11Radio.Width = 94;
+            backendDx11Radio.Text = "DirectX 11";
+            backendDx11Radio.ForeColor = Color.Gainsboro;
+            backendDx11Radio.BackColor = footerPanel.BackColor;
+            backendDx11Radio.CheckedChanged += (s, e) =>
+            {
+                if (backendDx11Radio.Checked && !suppressBackendSelectionEvents)
+                {
+                    SelectBackend(HardwareRenderBackend.DirectX11, true);
+                }
+            };
+            footerControlsPanel.Controls.Add(backendDx11Radio);
 
             backendLabel = new Label();
             backendLabel.Dock = DockStyle.Right;
-            backendLabel.Width = 70;
+            backendLabel.Width = 58;
             backendLabel.TextAlign = ContentAlignment.MiddleRight;
             backendLabel.ForeColor = Color.FromArgb(190, 190, 190);
             backendLabel.Text = "Backend:";
-            footerPanel.Controls.Add(backendLabel);
+            footerControlsPanel.Controls.Add(backendLabel);
 
             hardwareCheck = new CheckBox();
             hardwareCheck.Dock = DockStyle.Right;
-            hardwareCheck.Width = 92;
+            hardwareCheck.Width = 86;
             hardwareCheck.Checked = true;
             hardwareCheck.Text = "Hardware";
             hardwareCheck.ForeColor = Color.Gainsboro;
             hardwareCheck.BackColor = footerPanel.BackColor;
             hardwareCheck.CheckedChanged += (s, e) => ApplyRendererSettings(true);
-            footerPanel.Controls.Add(hardwareCheck);
+            footerControlsPanel.Controls.Add(hardwareCheck);
 
             Button resetButton = new Button();
             resetButton.Dock = DockStyle.Right;
-            resetButton.Width = 120;
+            resetButton.Width = 108;
             resetButton.Text = "Reset View";
             resetButton.Click += (s, e) => ResetActiveViewport();
-            footerPanel.Controls.Add(resetButton);
+            footerControlsPanel.Controls.Add(resetButton);
 
             animationTimer = new Timer();
-            animationTimer.Interval = 33;
+            animationTimer.Interval = 16;
             animationTimer.Tick += OnAnimationTimerTick;
-            lastAnimationTickUtc = DateTime.UtcNow;
+            lastAnimationTickTimestamp = Stopwatch.GetTimestamp();
 
             cameraPersistenceTimer = new Timer();
             cameraPersistenceTimer.Interval = 800;
@@ -349,12 +430,7 @@ namespace FWEledit
         {
             get
             {
-                CreateParams cp = base.CreateParams;
-                if (showWithoutActivation)
-                {
-                    cp.ExStyle |= WS_EX_NOACTIVATE;
-                }
-                return cp;
+                return base.CreateParams;
             }
         }
 
@@ -363,7 +439,7 @@ namespace FWEledit
             if (showWithoutActivation && m.Msg == WM_ACTIVATE)
             {
                 int activateState = m.WParam.ToInt32() & 0xFFFF;
-                if (activateState != WA_INACTIVE)
+                if (activateState != WA_INACTIVE && !allowInteractiveActivation)
                 {
                     if (nonActivatingOwnerHandle != IntPtr.Zero)
                     {
@@ -383,11 +459,29 @@ namespace FWEledit
 
             if (showWithoutActivation && m.Msg == WM_MOUSEACTIVATE)
             {
+                if (IsCursorOverInteractiveFooter())
+                {
+                    allowInteractiveActivation = true;
+                    m.Result = (IntPtr)MA_ACTIVATE;
+                    return;
+                }
+
                 m.Result = (IntPtr)MA_NOACTIVATE;
                 return;
             }
 
             base.WndProc(ref m);
+        }
+
+        private bool IsCursorOverInteractiveFooter()
+        {
+            if (footerPanel == null || !footerPanel.Visible || !footerPanel.IsHandleCreated)
+            {
+                return false;
+            }
+
+            Rectangle footerBounds = footerPanel.RectangleToScreen(footerPanel.ClientRectangle);
+            return footerBounds.Contains(Cursor.Position);
         }
 
         private void OnWindowKeyDown(object sender, KeyEventArgs e)
@@ -428,9 +522,16 @@ namespace FWEledit
             float extentZ;
             ModelPreviewViewport.ComputeExtents(meshData.Vertices, out extentX, out extentY, out extentZ);
 
+            string animationInfo = meshData.HasAnimations
+                ? "    Animations: " + meshData.AnimationNames.Length
+                : meshData.HasSkinningData
+                    ? "    Skin bones: " + meshData.SkinBoneCount + "/" + meshData.SkeletonBoneCount
+                    : string.Empty;
+
             return "Vertices: " + meshData.VertexCount
                 + "    Triangles: " + meshData.TriangleCount
                 + "    Textures: " + loadedTextures + "/" + totalTextures
+                + animationInfo
                 + "    Size: " + extentX.ToString("0.##") + " x " + extentY.ToString("0.##") + " x " + extentZ.ToString("0.##");
         }
 
@@ -621,13 +722,16 @@ namespace FWEledit
                 savedBackendIndex = (int)HardwareRenderBackend.OpenGL;
             }
 
-            savedBackendIndex = ClampInt(savedBackendIndex, 0, Math.Max(0, backendCombo.Items.Count - 1));
+            savedBackendIndex = ClampInt(savedBackendIndex, 0, 1);
 
             suppressRendererPreferenceSave = true;
             try
             {
                 hardwareCheck.Checked = savedUseHardware;
-                backendCombo.SelectedIndex = savedBackendIndex;
+                selectedBackend = savedBackendIndex == (int)HardwareRenderBackend.OpenGL
+                    ? HardwareRenderBackend.OpenGL
+                    : HardwareRenderBackend.DirectX11;
+                UpdateBackendRadios();
             }
             finally
             {
@@ -645,8 +749,7 @@ namespace FWEledit
             try
             {
                 Settings.Default.ModelPreviewUseHardware = hardwareCheck.Checked;
-                int selectedBackendIndex = backendCombo.SelectedIndex;
-                Settings.Default.ModelPreviewBackend = selectedBackendIndex >= 0 ? selectedBackendIndex : 0;
+                Settings.Default.ModelPreviewBackend = (int)GetSelectedBackend();
                 Settings.Default.Save();
             }
             catch
@@ -768,11 +871,25 @@ namespace FWEledit
                 state = NormalizeCameraState(persistedCameraState);
             }
 
+            if (animationTimer != null)
+            {
+                animationTimer.Stop();
+            }
+
+            if (modelAnimationCheck != null && modelAnimationCheck.Checked)
+            {
+                modelAnimationCheck.Checked = false;
+            }
+            else
+            {
+                SetModelAnimationPlaying(false);
+            }
+
+            suppressModelAnimationEvents = true;
             SuspendLayout();
             try
             {
                 ShowStatusMessageInternal(string.Empty);
-                UpdateHeaderForMesh(meshData);
                 if (cpuViewport != null)
                 {
                     cpuViewport.UpdateMeshData(meshData);
@@ -785,13 +902,29 @@ namespace FWEledit
                 {
                     gpuViewport.UpdateMeshData(meshData);
                 }
+
+                UpdateHeaderForMesh(meshData);
+                ApplyModelAnimationSelection();
+                if (modelAnimationCheck != null)
+                {
+                    modelAnimationCheck.Text = "Play";
+                }
                 ApplyCameraState(activeViewport, state);
                 UpdateHelpLabel();
-                InvalidateActiveViewport();
             }
             finally
             {
+                suppressModelAnimationEvents = false;
                 ResumeLayout(true);
+                lastAnimationTickTimestamp = Stopwatch.GetTimestamp();
+                if (modelAnimationCheck != null)
+                {
+                    modelAnimationCheck.Checked = false;
+                    modelAnimationCheck.Text = "Play";
+                }
+                ApplyModelAnimationState();
+                UpdateAnimationTimerState();
+                InvalidateActiveViewport();
             }
         }
 
@@ -872,6 +1005,8 @@ namespace FWEledit
                 sourceLabel.Text = sourceText;
                 sourceLabel.Height = ComputeSourceLabelHeight(sourceText);
             }
+
+            UpdateModelAnimationAvailability(meshData);
         }
 
         private void RecreateViewports(ModelPreviewMeshData meshData, ViewCameraState cameraState)
@@ -904,6 +1039,7 @@ namespace FWEledit
 
             try
             {
+                ModelPreviewGpuViewport.EnsureOpenTkReadyForControlCreation();
                 gpuViewport = new ModelPreviewGpuViewport(meshData);
                 gpuViewport.Dock = DockStyle.Fill;
                 gpuViewport.Visible = false;
@@ -924,6 +1060,11 @@ namespace FWEledit
             if (gpuViewport != null)
             {
                 viewportHost.Controls.Add(gpuViewport);
+            }
+            if (previewStatusLabel != null)
+            {
+                viewportHost.Controls.Add(previewStatusLabel);
+                previewStatusLabel.BringToFront();
             }
 
             activeViewport = null;
@@ -995,9 +1136,10 @@ namespace FWEledit
             ApplyTrueScaleMode();
             EnsureActiveViewport(useHardware);
 
-            bool hardwareEnabled = useHardware;
-            backendCombo.Enabled = hardwareEnabled;
-            backendLabel.Enabled = hardwareEnabled;
+            backendDx11Radio.Enabled = true;
+            backendOpenGlRadio.Enabled = true;
+            backendLabel.Enabled = true;
+            UpdateBackendRadios();
             UpdateHelpLabel();
             if (persistSettings)
             {
@@ -1005,6 +1147,39 @@ namespace FWEledit
             }
 
             InvalidateActiveViewport();
+        }
+
+        private void SelectBackend(HardwareRenderBackend backend, bool persistSettings)
+        {
+            selectedBackend = backend;
+            UpdateBackendRadios();
+
+            if (hardwareCheck != null && !hardwareCheck.Checked)
+            {
+                hardwareCheck.Checked = true;
+                return;
+            }
+
+            ApplyRendererSettings(persistSettings);
+        }
+
+        private void UpdateBackendRadios()
+        {
+            if (backendDx11Radio == null || backendOpenGlRadio == null)
+            {
+                return;
+            }
+
+            suppressBackendSelectionEvents = true;
+            try
+            {
+                backendDx11Radio.Checked = selectedBackend == HardwareRenderBackend.DirectX11;
+                backendOpenGlRadio.Checked = selectedBackend == HardwareRenderBackend.OpenGL;
+            }
+            finally
+            {
+                suppressBackendSelectionEvents = false;
+            }
         }
 
         private void ApplyAnimationMode()
@@ -1021,6 +1196,123 @@ namespace FWEledit
             if (gpuViewport != null)
             {
                 gpuViewport.ExperimentalAnimationEnabled = enabled;
+            }
+        }
+
+        private void ApplyModelAnimationSelection()
+        {
+            int selectedIndex = modelAnimationCombo != null && modelAnimationCombo.Enabled
+                ? modelAnimationCombo.SelectedIndex
+                : -1;
+            modelAnimationTimeSeconds = 0f;
+            if (cpuViewport != null)
+            {
+                cpuViewport.SetModelAnimation(selectedIndex);
+            }
+            if (dx11Viewport != null)
+            {
+                dx11Viewport.SetModelAnimation(selectedIndex);
+            }
+            if (gpuViewport != null)
+            {
+                gpuViewport.SetModelAnimation(selectedIndex);
+            }
+            InvalidateActiveViewport();
+        }
+
+        private void ApplyModelAnimationState()
+        {
+            bool enabled = modelAnimationCheck != null && modelAnimationCheck.Checked;
+            SetModelAnimationPlaying(enabled);
+        }
+
+        private void SetModelAnimationPlaying(bool enabled)
+        {
+            if (cpuViewport != null)
+            {
+                cpuViewport.ModelAnimationPlaying = enabled;
+            }
+            if (dx11Viewport != null)
+            {
+                dx11Viewport.ModelAnimationPlaying = enabled;
+            }
+            if (gpuViewport != null)
+            {
+                gpuViewport.ModelAnimationPlaying = enabled;
+            }
+        }
+
+        private void UpdateModelAnimationAvailability(ModelPreviewMeshData meshData)
+        {
+            if (modelAnimationCheck == null)
+            {
+                return;
+            }
+
+            string[] animations = meshData != null && meshData.AnimationNames != null
+                ? meshData.AnimationNames
+                : new string[0];
+            bool hasAnimationClips = meshData != null && meshData.AnimationClips != null && meshData.AnimationClips.Length > 0;
+            if (hasAnimationClips)
+            {
+                animations = new string[meshData.AnimationClips.Length];
+                for (int i = 0; i < animations.Length; i++)
+                {
+                    PreviewAnimationClip clip = meshData.AnimationClips[i];
+                    animations[i] = clip == null || string.IsNullOrWhiteSpace(clip.Name)
+                        ? "Animation " + (i + 1).ToString()
+                        : clip.Name;
+                }
+            }
+            bool hasAnimationNames = animations.Length > 0 && hasAnimationClips;
+            bool hasSkinning = meshData != null && meshData.HasSkinningData;
+
+            if (modelAnimationCombo != null)
+            {
+                modelAnimationCombo.BeginUpdate();
+                try
+                {
+                    modelAnimationCombo.Items.Clear();
+                    if (hasAnimationNames)
+                    {
+                        for (int i = 0; i < animations.Length; i++)
+                        {
+                            if (!string.IsNullOrWhiteSpace(animations[i]))
+                            {
+                                modelAnimationCombo.Items.Add(animations[i]);
+                            }
+                        }
+                    }
+
+                    if (modelAnimationCombo.Items.Count == 0)
+                    {
+                        modelAnimationCombo.Items.Add(hasSkinning ? "Skinning detected" : "No animations");
+                    }
+
+                    modelAnimationCombo.SelectedIndex = 0;
+                }
+                finally
+                {
+                    modelAnimationCombo.EndUpdate();
+                }
+
+                modelAnimationCombo.Enabled = hasAnimationNames;
+                modelAnimationCombo.ForeColor = hasAnimationNames ? Color.Gainsboro : Color.FromArgb(210, 210, 210);
+            }
+
+            bool canToggle = hasAnimationClips;
+            modelAnimationCheck.Enabled = canToggle;
+            modelAnimationCheck.ForeColor = canToggle ? Color.Gainsboro : Color.FromArgb(210, 210, 210);
+            modelAnimationCheck.Text = modelAnimationCheck.Checked ? "Pause" : "Play";
+            if (!canToggle)
+            {
+                modelAnimationCheck.Checked = false;
+            }
+
+            if (!suppressModelAnimationEvents)
+            {
+                ApplyModelAnimationSelection();
+                ApplyModelAnimationState();
             }
         }
 
@@ -1048,12 +1340,14 @@ namespace FWEledit
                 return;
             }
 
-            bool shouldRun = animationCheck != null
-                && animationCheck.Checked
-                && !IsDisposed;
+            bool openGlDrivesAnimation = ReferenceEquals(activeViewport, gpuViewport) && gpuViewport != null;
+            bool shouldRun = !IsDisposed
+                && !openGlDrivesAnimation
+                && ((animationCheck != null && animationCheck.Checked)
+                    || (modelAnimationCheck != null && modelAnimationCheck.Checked));
             if (shouldRun)
             {
-                lastAnimationTickUtc = DateTime.UtcNow;
+                lastAnimationTickTimestamp = Stopwatch.GetTimestamp();
                 animationTimer.Start();
                 return;
             }
@@ -1063,38 +1357,66 @@ namespace FWEledit
 
         private void OnAnimationTimerTick(object sender, EventArgs e)
         {
-            if (IsDisposed || animationCheck == null || !animationCheck.Checked)
+            if (IsDisposed)
             {
                 return;
             }
 
-            DateTime nowUtc = DateTime.UtcNow;
-            float deltaSeconds = (float)(nowUtc - lastAnimationTickUtc).TotalSeconds;
+            long nowTimestamp = Stopwatch.GetTimestamp();
+            float deltaSeconds = (float)((nowTimestamp - lastAnimationTickTimestamp) / (double)Stopwatch.Frequency);
             if (deltaSeconds <= 0f)
             {
                 return;
             }
 
-            if (deltaSeconds > 0.2f)
+            lastAnimationTickTimestamp = nowTimestamp;
+            bool didUpdate = false;
+            bool orbitEnabled = animationCheck != null && animationCheck.Checked;
+            bool modelAnimationEnabled = modelAnimationCheck != null && modelAnimationCheck.Checked;
+            if (orbitEnabled)
             {
-                deltaSeconds = 0.2f;
+                float orbitDeltaSeconds = Math.Min(deltaSeconds, 0.1f);
+                if (ReferenceEquals(activeViewport, cpuViewport) && cpuViewport != null)
+                {
+                    cpuViewport.AdvanceAnimation(orbitDeltaSeconds);
+                }
+                else if (ReferenceEquals(activeViewport, dx11Viewport) && dx11Viewport != null)
+                {
+                    dx11Viewport.AdvanceAnimation(orbitDeltaSeconds);
+                }
+                else if (ReferenceEquals(activeViewport, gpuViewport) && gpuViewport != null)
+                {
+                    gpuViewport.AdvanceAnimation(orbitDeltaSeconds);
+                }
+                didUpdate = true;
+            }
+            if (modelAnimationEnabled)
+            {
+                modelAnimationTimeSeconds += Math.Min(deltaSeconds, 0.25f) * ModelAnimationPlaybackSpeed;
+                didUpdate = ApplyModelAnimationTimeToViewport(activeViewport, modelAnimationTimeSeconds) || didUpdate;
             }
 
-            lastAnimationTickUtc = nowUtc;
-            if (cpuViewport != null)
+            if (didUpdate)
             {
-                cpuViewport.AdvanceAnimation(deltaSeconds);
+                InvalidateActiveViewport();
             }
-            if (dx11Viewport != null)
-            {
-                dx11Viewport.AdvanceAnimation(deltaSeconds);
-            }
-            if (gpuViewport != null)
-            {
-                gpuViewport.AdvanceAnimation(deltaSeconds);
-            }
+        }
 
-            InvalidateActiveViewport();
+        private bool ApplyModelAnimationTimeToViewport(Control viewport, float timeSeconds)
+        {
+            if (ReferenceEquals(viewport, cpuViewport) && cpuViewport != null)
+            {
+                return cpuViewport.SetModelAnimationTime(timeSeconds);
+            }
+            if (ReferenceEquals(viewport, dx11Viewport) && dx11Viewport != null)
+            {
+                return dx11Viewport.SetModelAnimationTime(timeSeconds);
+            }
+            if (ReferenceEquals(viewport, gpuViewport) && gpuViewport != null)
+            {
+                return gpuViewport.SetModelAnimationTime(timeSeconds);
+            }
+            return false;
         }
 
         private void UpdateHelpLabel()
@@ -1109,6 +1431,12 @@ namespace FWEledit
             if (animationCheck != null && animationCheck.Checked)
             {
                 text += " | Auto orbit";
+            }
+            if (modelAnimationCheck != null)
+            {
+                text += modelAnimationCheck.Enabled
+                    ? (modelAnimationCheck.Checked ? " | Animation clip selected" : " | Animation selectable")
+                    : " | No animation data";
             }
             if (trueScaleCheck != null && trueScaleCheck.Checked)
             {
@@ -1160,7 +1488,7 @@ namespace FWEledit
                         return;
                     }
 
-                    if (TryActivateDx11Viewport())
+                    if (gpuViewport != null && IsHandleCreated && Visible && viewportHost.IsHandleCreated)
                     {
                         return;
                     }
@@ -1170,7 +1498,6 @@ namespace FWEledit
                 }
 
             }
-
             SetActiveViewport(cpuViewport);
         }
 
@@ -1210,13 +1537,7 @@ namespace FWEledit
 
         private HardwareRenderBackend GetSelectedBackend()
         {
-            switch (backendCombo.SelectedIndex)
-            {
-                case (int)HardwareRenderBackend.OpenGL:
-                    return HardwareRenderBackend.OpenGL;
-                default:
-                    return HardwareRenderBackend.DirectX11;
-            }
+            return selectedBackend;
         }
 
         private void SetActiveViewport(Control viewport)
@@ -1232,6 +1553,10 @@ namespace FWEledit
             }
 
             ViewCameraState state = CaptureCameraState(activeViewport);
+            if (ReferenceEquals(activeViewport, gpuViewport) && gpuViewport != null)
+            {
+                modelAnimationTimeSeconds = gpuViewport.CurrentModelAnimationTimeSeconds;
+            }
 
             if (cpuViewport != null)
             {
@@ -1251,6 +1576,11 @@ namespace FWEledit
             activeViewport = viewport;
             activeViewport.BringToFront();
             ApplyCameraState(activeViewport, state);
+            if (modelAnimationCheck != null && modelAnimationCheck.Checked)
+            {
+                ApplyModelAnimationTimeToViewport(activeViewport, modelAnimationTimeSeconds);
+            }
+            UpdateAnimationTimerState();
         }
 
         private string GetActiveRendererStatusText()
@@ -1435,6 +1765,433 @@ namespace FWEledit
             }
         }
 
+        private sealed class AnimationEvaluationCache
+        {
+            public PreviewAnimationClip Clip;
+            public readonly Dictionary<int, PreviewAnimationTrack> TracksByBone = new Dictionary<int, PreviewAnimationTrack>();
+            public float[][] LocalMatrices = new float[0][];
+            public float[][] WorldMatrices = new float[0][];
+            public float[][] SkinMatrices = new float[0][];
+            public bool[] Resolving = new bool[0];
+            public bool[] Resolved = new bool[0];
+            public Vector3f[] AnimatedVertices = new Vector3f[0];
+
+            public void Prepare(PreviewAnimationClip clip, int boneCount, int vertexCount)
+            {
+                if (!ReferenceEquals(Clip, clip))
+                {
+                    Clip = clip;
+                    TracksByBone.Clear();
+                    if (clip != null && clip.Tracks != null)
+                    {
+                        for (int i = 0; i < clip.Tracks.Length; i++)
+                        {
+                            PreviewAnimationTrack track = clip.Tracks[i];
+                            if (track != null && !TracksByBone.ContainsKey(track.BoneIndex))
+                            {
+                                TracksByBone[track.BoneIndex] = track;
+                            }
+                        }
+                    }
+                }
+
+                if (SkinMatrices.Length != boneCount)
+                {
+                    LocalMatrices = CreateMatrixBuffer(boneCount);
+                    WorldMatrices = CreateMatrixBuffer(boneCount);
+                    SkinMatrices = CreateMatrixBuffer(boneCount);
+                    Resolving = new bool[boneCount];
+                    Resolved = new bool[boneCount];
+                }
+                else
+                {
+                    Array.Clear(Resolving, 0, Resolving.Length);
+                    Array.Clear(Resolved, 0, Resolved.Length);
+                }
+
+                if (AnimatedVertices.Length != vertexCount)
+                {
+                    AnimatedVertices = new Vector3f[vertexCount];
+                }
+            }
+
+            private static float[][] CreateMatrixBuffer(int count)
+            {
+                float[][] matrices = new float[count][];
+                for (int i = 0; i < count; i++)
+                {
+                    matrices[i] = new float[16];
+                }
+                return matrices;
+            }
+        }
+
+        private static Vector3f[] BuildAnimatedVertices(
+            Vector3f[] baseVertices,
+            PreviewSkinVertexData[] skinVertices,
+            int[] skinBoneSkeletonIndices,
+            PreviewSkeletonBone[] skeletonBones,
+            PreviewAnimationClip clip,
+            float timeSeconds,
+            AnimationEvaluationCache cache)
+        {
+            if (baseVertices == null || baseVertices.Length == 0 || clip == null || !clip.IsValid)
+            {
+                return baseVertices ?? new Vector3f[0];
+            }
+            if (skinVertices == null || skinVertices.Length != baseVertices.Length)
+            {
+                return baseVertices;
+            }
+            if (skeletonBones == null || skeletonBones.Length == 0)
+            {
+                return baseVertices;
+            }
+
+            if (cache == null)
+            {
+                cache = new AnimationEvaluationCache();
+            }
+            cache.Prepare(clip, skeletonBones.Length, baseVertices.Length);
+            if (cache.TracksByBone.Count == 0)
+            {
+                return baseVertices;
+            }
+
+            float duration = Math.Max(0.033f, clip.DurationSeconds);
+            float normalizedTime = timeSeconds % duration;
+            if (normalizedTime < 0f)
+            {
+                normalizedTime += duration;
+            }
+            float frame = normalizedTime * Math.Max(1f, clip.FramesPerSecond);
+            BuildAnimatedSkinMatrices(skeletonBones, cache, frame);
+
+            Vector3f[] animated = cache.AnimatedVertices;
+            for (int i = 0; i < baseVertices.Length; i++)
+            {
+                PreviewSkinVertexData skin = skinVertices[i];
+                animated[i] = ApplyAnimatedSkin(baseVertices[i], skin, skinBoneSkeletonIndices, cache.SkinMatrices);
+            }
+            return animated;
+        }
+
+        private static void BuildAnimatedSkinMatrices(
+            PreviewSkeletonBone[] skeletonBones,
+            AnimationEvaluationCache cache,
+            float frame)
+        {
+            for (int i = 0; i < skeletonBones.Length; i++)
+            {
+                BuildAnimatedBoneMatrix(i, skeletonBones, cache, frame);
+            }
+        }
+
+        private static void BuildAnimatedBoneMatrix(
+            int boneIndex,
+            PreviewSkeletonBone[] skeletonBones,
+            AnimationEvaluationCache cache,
+            float frame)
+        {
+            if (boneIndex < 0 || boneIndex >= skeletonBones.Length || cache.Resolved[boneIndex])
+            {
+                return;
+            }
+            if (cache.Resolving[boneIndex])
+            {
+                SetIdentityMatrix(cache.WorldMatrices[boneIndex]);
+                SetIdentityMatrix(cache.SkinMatrices[boneIndex]);
+                cache.Resolved[boneIndex] = true;
+                return;
+            }
+
+            cache.Resolving[boneIndex] = true;
+            PreviewSkeletonBone bone = skeletonBones[boneIndex];
+            float[] localMatrix = cache.LocalMatrices[boneIndex];
+            if (cache.TracksByBone.TryGetValue(boneIndex, out PreviewAnimationTrack track) && track != null)
+            {
+                BuildAnimationMatrix(track, frame, bone != null && bone.IsFlipped, localMatrix);
+            }
+            else
+            {
+                CopyMatrix(bone == null ? null : bone.RelativeMatrix, localMatrix);
+            }
+
+            int parentIndex = bone == null ? -1 : bone.ParentIndex;
+            if (parentIndex >= 0 && parentIndex < skeletonBones.Length && parentIndex != boneIndex)
+            {
+                BuildAnimatedBoneMatrix(parentIndex, skeletonBones, cache, frame);
+                MultiplyMatrices(localMatrix, cache.WorldMatrices[parentIndex], cache.WorldMatrices[boneIndex]);
+            }
+            else
+            {
+                CopyMatrix(localMatrix, cache.WorldMatrices[boneIndex]);
+            }
+
+            MultiplyMatrices(
+                bone == null ? null : bone.BindMatrix,
+                cache.WorldMatrices[boneIndex],
+                cache.SkinMatrices[boneIndex]);
+            cache.Resolving[boneIndex] = false;
+            cache.Resolved[boneIndex] = true;
+        }
+
+        private static void BuildAnimationMatrix(PreviewAnimationTrack track, float frame, bool flipped, float[] matrix)
+        {
+            PreviewQuaternion q = SampleQuaternion(track == null ? null : track.Rotations, frame);
+            Vector3f position = SampleVector(track == null ? null : track.Positions, frame);
+            Vector3f scale = SampleScale(track == null ? null : track.Scales, frame);
+            float xx = q.X * q.X;
+            float yy = q.Y * q.Y;
+            float zz = q.Z * q.Z;
+            float xy = q.X * q.Y;
+            float xz = q.X * q.Z;
+            float xw = q.X * q.W;
+            float yz = q.Y * q.Z;
+            float yw = q.Y * q.W;
+            float zw = q.Z * q.W;
+            matrix[0] = 1f - (2f * (yy + zz)); matrix[1] = 2f * (xy - zw); matrix[2] = 2f * (xz + yw); matrix[3] = position.X;
+            matrix[4] = 2f * (xy + zw); matrix[5] = 1f - (2f * (xx + zz)); matrix[6] = 2f * (yz - xw); matrix[7] = position.Y;
+            matrix[8] = 2f * (xz - yw); matrix[9] = 2f * (yz + xw); matrix[10] = 1f - (2f * (xx + yy)); matrix[11] = position.Z;
+            matrix[12] = 0f; matrix[13] = 0f; matrix[14] = 0f; matrix[15] = 1f;
+            matrix[0] *= scale.X; matrix[1] *= scale.Y; matrix[2] *= scale.Z;
+            matrix[4] *= scale.X; matrix[5] *= scale.Y; matrix[6] *= scale.Z;
+            matrix[8] *= scale.X; matrix[9] *= scale.Y; matrix[10] *= scale.Z;
+            if (flipped)
+            {
+                matrix[0] = -matrix[0];
+                matrix[4] = -matrix[4];
+                matrix[8] = -matrix[8];
+            }
+        }
+
+        private static void MultiplyMatrices(float[] left, float[] right, float[] result)
+        {
+            if (left == null || left.Length < 16)
+            {
+                CopyMatrix(right, result);
+                return;
+            }
+            if (right == null || right.Length < 16)
+            {
+                CopyMatrix(left, result);
+                return;
+            }
+            for (int column = 0; column < 4; column++)
+            {
+                int c = column * 4;
+                for (int row = 0; row < 4; row++)
+                {
+                    result[c + row] =
+                        (left[row] * right[c])
+                        + (left[4 + row] * right[c + 1])
+                        + (left[8 + row] * right[c + 2])
+                        + (left[12 + row] * right[c + 3]);
+                }
+            }
+        }
+
+        private static void CopyMatrix(float[] matrix, float[] destination)
+        {
+            if (matrix == null || matrix.Length < 16)
+            {
+                SetIdentityMatrix(destination);
+                return;
+            }
+            Array.Copy(matrix, destination, 16);
+        }
+
+        private static void SetIdentityMatrix(float[] matrix)
+        {
+            Array.Clear(matrix, 0, matrix.Length);
+            matrix[0] = 1f;
+            matrix[5] = 1f;
+            matrix[10] = 1f;
+            matrix[15] = 1f;
+        }
+
+        private static Vector3f ApplyAnimatedSkin(
+            Vector3f point,
+            PreviewSkinVertexData skin,
+            int[] skinBoneSkeletonIndices,
+            float[][] skinMatrices)
+        {
+            float weight3 = 1f - skin.Weight0 - skin.Weight1 - skin.Weight2;
+            if (weight3 < 0f)
+            {
+                weight3 = 0f;
+            }
+
+            Vector3f accumulated = Vector3f.Zero;
+            float totalWeight = 0f;
+            Vector3f sourcePoint = new Vector3f(-point.X, point.Y, point.Z);
+            AccumulateAnimatedSkin(ref accumulated, ref totalWeight, sourcePoint, skin.Weight0, (int)(skin.PackedBoneIndices & 0xFFu), skinBoneSkeletonIndices, skinMatrices);
+            AccumulateAnimatedSkin(ref accumulated, ref totalWeight, sourcePoint, skin.Weight1, (int)((skin.PackedBoneIndices >> 8) & 0xFFu), skinBoneSkeletonIndices, skinMatrices);
+            AccumulateAnimatedSkin(ref accumulated, ref totalWeight, sourcePoint, skin.Weight2, (int)((skin.PackedBoneIndices >> 16) & 0xFFu), skinBoneSkeletonIndices, skinMatrices);
+            AccumulateAnimatedSkin(ref accumulated, ref totalWeight, sourcePoint, weight3, (int)((skin.PackedBoneIndices >> 24) & 0xFFu), skinBoneSkeletonIndices, skinMatrices);
+            Vector3f result = totalWeight > 0.000001f ? accumulated / totalWeight : sourcePoint;
+            return new Vector3f(-result.X, result.Y, result.Z);
+        }
+
+        private static void AccumulateAnimatedSkin(
+            ref Vector3f accumulated,
+            ref float totalWeight,
+            Vector3f point,
+            float weight,
+            int skinBoneIndex,
+            int[] skinBoneSkeletonIndices,
+            float[][] skinMatrices)
+        {
+            if (weight <= 0.000001f)
+            {
+                return;
+            }
+
+            int skeletonBoneIndex = skinBoneIndex;
+            if (skinBoneSkeletonIndices != null
+                && skinBoneIndex >= 0
+                && skinBoneIndex < skinBoneSkeletonIndices.Length)
+            {
+                skeletonBoneIndex = skinBoneSkeletonIndices[skinBoneIndex];
+            }
+
+            float[] matrix = skeletonBoneIndex >= 0 && skinMatrices != null && skeletonBoneIndex < skinMatrices.Length
+                ? skinMatrices[skeletonBoneIndex]
+                : null;
+            Vector3f transformed = TransformPointByMatrix(point, matrix);
+
+            accumulated = new Vector3f(
+                accumulated.X + (transformed.X * weight),
+                accumulated.Y + (transformed.Y * weight),
+                accumulated.Z + (transformed.Z * weight));
+            totalWeight += weight;
+        }
+
+        private static Vector3f TransformPointByMatrix(Vector3f point, float[] matrix)
+        {
+            if (matrix == null || matrix.Length < 16)
+            {
+                return point;
+            }
+            return new Vector3f(
+                (point.X * matrix[0]) + (point.Y * matrix[1]) + (point.Z * matrix[2]) + matrix[3],
+                (point.X * matrix[4]) + (point.Y * matrix[5]) + (point.Z * matrix[6]) + matrix[7],
+                (point.X * matrix[8]) + (point.Y * matrix[9]) + (point.Z * matrix[10]) + matrix[11]);
+        }
+
+        private static Vector3f TransformByAnimationTrack(Vector3f point, PreviewAnimationTrack track, float frame)
+        {
+            PreviewQuaternion rotation = SampleQuaternion(track.Rotations, frame);
+            Vector3f position = SampleVector(track.Positions, frame);
+            Vector3f rotated = RotateVector(point, rotation);
+            return new Vector3f(rotated.X - position.X, rotated.Y + position.Y, rotated.Z + position.Z);
+        }
+
+        private static Vector3f SampleVector(Vector3f[] values, float frame)
+        {
+            if (values == null || values.Length == 0)
+            {
+                return Vector3f.Zero;
+            }
+            if (values.Length == 1)
+            {
+                return values[0];
+            }
+
+            int i0 = ((int)Math.Floor(frame)) % values.Length;
+            if (i0 < 0)
+            {
+                i0 += values.Length;
+            }
+            int i1 = Math.Min(i0 + 1, values.Length - 1);
+            float t = frame - (float)Math.Floor(frame);
+            Vector3f a = values[i0];
+            Vector3f b = values[i1];
+            return new Vector3f(a.X + ((b.X - a.X) * t), a.Y + ((b.Y - a.Y) * t), a.Z + ((b.Z - a.Z) * t));
+        }
+
+        private static Vector3f SampleScale(Vector3f[] values, float frame)
+        {
+            if (values == null || values.Length == 0)
+            {
+                return new Vector3f(1f, 1f, 1f);
+            }
+            if (values.Length == 1)
+            {
+                return values[0];
+            }
+
+            int i0 = ((int)Math.Floor(frame)) % values.Length;
+            if (i0 < 0)
+            {
+                i0 += values.Length;
+            }
+            int i1 = Math.Min(i0 + 1, values.Length - 1);
+            float t = frame - (float)Math.Floor(frame);
+            Vector3f a = values[i0];
+            Vector3f b = values[i1];
+            return new Vector3f(a.X + ((b.X - a.X) * t), a.Y + ((b.Y - a.Y) * t), a.Z + ((b.Z - a.Z) * t));
+        }
+
+        private static PreviewQuaternion SampleQuaternion(PreviewQuaternion[] values, float frame)
+        {
+            if (values == null || values.Length == 0)
+            {
+                return PreviewQuaternion.Identity;
+            }
+            if (values.Length == 1)
+            {
+                return NormalizeQuaternion(values[0]);
+            }
+
+            int i0 = ((int)Math.Floor(frame)) % values.Length;
+            if (i0 < 0)
+            {
+                i0 += values.Length;
+            }
+            int i1 = Math.Min(i0 + 1, values.Length - 1);
+            float t = frame - (float)Math.Floor(frame);
+            return NormalizeQuaternion(LerpQuaternion(values[i0], values[i1], t));
+        }
+
+        private static PreviewQuaternion LerpQuaternion(PreviewQuaternion a, PreviewQuaternion b, float t)
+        {
+            float dot = (a.X * b.X) + (a.Y * b.Y) + (a.Z * b.Z) + (a.W * b.W);
+            if (dot < 0f)
+            {
+                b = new PreviewQuaternion(-b.X, -b.Y, -b.Z, -b.W);
+            }
+            return new PreviewQuaternion(a.X + ((b.X - a.X) * t), a.Y + ((b.Y - a.Y) * t), a.Z + ((b.Z - a.Z) * t), a.W + ((b.W - a.W) * t));
+        }
+
+        private static PreviewQuaternion NormalizeQuaternion(PreviewQuaternion q)
+        {
+            float len = (float)Math.Sqrt((q.X * q.X) + (q.Y * q.Y) + (q.Z * q.Z) + (q.W * q.W));
+            if (len <= 0.000001f)
+            {
+                return PreviewQuaternion.Identity;
+            }
+            return new PreviewQuaternion(q.X / len, q.Y / len, q.Z / len, q.W / len);
+        }
+
+        private static Vector3f RotateVector(Vector3f point, PreviewQuaternion q)
+        {
+            q = NormalizeQuaternion(q);
+            float xx = q.X * q.X;
+            float yy = q.Y * q.Y;
+            float zz = q.Z * q.Z;
+            float xy = q.X * q.Y;
+            float xz = q.X * q.Z;
+            float yz = q.Y * q.Z;
+            float wx = q.W * q.X;
+            float wy = q.W * q.Y;
+            float wz = q.W * q.Z;
+            return new Vector3f(
+                ((1f - (2f * (yy + zz))) * point.X) + ((2f * (xy - wz)) * point.Y) + ((2f * (xz + wy)) * point.Z),
+                ((2f * (xy + wz)) * point.X) + ((1f - (2f * (xx + zz))) * point.Y) + ((2f * (yz - wx)) * point.Z),
+                ((2f * (xz - wy)) * point.X) + ((2f * (yz + wx)) * point.Y) + ((1f - (2f * (xx + yy))) * point.Z));
+        }
+
         private sealed class ModelPreviewDx11Viewport : Control
         {
             private struct DrawSubset
@@ -1465,11 +2222,20 @@ namespace FWEledit
             }
 
             private Vector3f[] vertices;
+            private Vector3f[] baseVertices;
             private Vector2f[] uvs;
             private int[] indices;
             private int[] triangleColors;
             private int[] triangleTextureIndices;
             private PreviewTextureData[] textures;
+            private PreviewSkinVertexData[] skinVertices;
+            private int[] skinBoneSkeletonIndices;
+            private PreviewSkeletonBone[] skeletonBones;
+            private PreviewAnimationClip[] animationClips;
+            private readonly AnimationEvaluationCache animationEvaluationCache = new AnimationEvaluationCache();
+            private int selectedAnimationIndex = -1;
+            private float modelAnimationTimeSeconds;
+            private bool modelAnimationPlaying;
             private Vector3f[] normals;
             private Vector3f center;
             private float radius;
@@ -1533,6 +2299,11 @@ namespace FWEledit
                 get { return experimentalAnimationEnabled; }
                 set { experimentalAnimationEnabled = value; }
             }
+            public bool ModelAnimationPlaying
+            {
+                get { return modelAnimationPlaying; }
+                set { modelAnimationPlaying = value; }
+            }
 
             public ModelPreviewDx11Viewport(ModelPreviewMeshData meshData)
             {
@@ -1586,15 +2357,68 @@ namespace FWEledit
 
             private void UpdateMeshSources(ModelPreviewMeshData meshData)
             {
-                vertices = meshData != null && meshData.Vertices != null ? meshData.Vertices : new Vector3f[0];
+                baseVertices = meshData != null && meshData.Vertices != null ? meshData.Vertices : new Vector3f[0];
+                vertices = baseVertices;
                 uvs = meshData != null && meshData.UVs != null ? meshData.UVs : new Vector2f[0];
                 indices = meshData != null && meshData.Indices != null ? meshData.Indices : new int[0];
                 triangleColors = meshData != null && meshData.TriangleColors != null ? meshData.TriangleColors : new int[0];
                 triangleTextureIndices = meshData != null && meshData.TriangleTextureIndices != null ? meshData.TriangleTextureIndices : new int[0];
                 textures = meshData != null && meshData.Textures != null ? meshData.Textures : new PreviewTextureData[0];
-                normals = ModelPreviewViewport.ComputeVertexNormals(vertices, indices);
+                skinVertices = meshData != null && meshData.SkinVertices != null ? meshData.SkinVertices : new PreviewSkinVertexData[0];
+                skinBoneSkeletonIndices = meshData != null && meshData.SkinBoneSkeletonIndices != null ? meshData.SkinBoneSkeletonIndices : new int[0];
+                skeletonBones = meshData != null && meshData.SkeletonBones != null ? meshData.SkeletonBones : new PreviewSkeletonBone[0];
+                animationClips = meshData != null && meshData.AnimationClips != null ? meshData.AnimationClips : new PreviewAnimationClip[0];
+                selectedAnimationIndex = animationClips.Length > 0 ? 0 : -1;
+                modelAnimationTimeSeconds = 0f;
+                normals = ModelPreviewViewport.ComputeVertexNormals(vertices, indices, normals);
                 ModelPreviewViewport.ComputeBounds(vertices, out center, out radius);
                 BuildRenderData(out renderVertices, out renderIndices);
+            }
+
+            public void SetModelAnimation(int selectedIndex)
+            {
+                selectedAnimationIndex = selectedIndex >= 0 && animationClips != null && selectedIndex < animationClips.Length ? selectedIndex : -1;
+                modelAnimationTimeSeconds = 0f;
+                ApplyModelAnimationFrame();
+            }
+
+            public bool AdvanceModelAnimation(float deltaSeconds)
+            {
+                if (!modelAnimationPlaying || deltaSeconds <= 0f || selectedAnimationIndex < 0)
+                {
+                    return false;
+                }
+
+                return SetModelAnimationTime(modelAnimationTimeSeconds + deltaSeconds);
+            }
+
+            public bool SetModelAnimationTime(float timeSeconds)
+            {
+                if (selectedAnimationIndex < 0)
+                {
+                    return false;
+                }
+
+                modelAnimationTimeSeconds = Math.Max(0f, timeSeconds);
+                ApplyModelAnimationFrame();
+                return true;
+            }
+
+            private void ApplyModelAnimationFrame()
+            {
+                PreviewAnimationClip clip = selectedAnimationIndex >= 0 && animationClips != null && selectedAnimationIndex < animationClips.Length
+                    ? animationClips[selectedAnimationIndex]
+                    : null;
+                vertices = BuildAnimatedVertices(baseVertices, skinVertices, skinBoneSkeletonIndices, skeletonBones, clip, modelAnimationTimeSeconds, animationEvaluationCache);
+                normals = ModelPreviewViewport.ComputeVertexNormals(vertices, indices, normals);
+                BuildRenderData(out renderVertices, out renderIndices);
+                if (dxResourcesInitialized && device != null)
+                {
+                    SharpDX.Utilities.Dispose(ref vertexBuffer);
+                    SharpDX.Utilities.Dispose(ref indexBuffer);
+                    CreateGeometryBuffers();
+                }
+                Invalidate();
             }
 
             public bool TryEnsureGpuReady()
@@ -2424,6 +3248,14 @@ float4 PSMain(PS_INPUT input) : SV_Target
 
         private sealed class ModelPreviewGpuViewport : GLControl
         {
+            private sealed class GpuDrawBatch
+            {
+                public int TextureIndex;
+                public int ColorArgb;
+                public bool Transparent;
+                public int[] Indices;
+            }
+
             private struct TriangleGpuItem
             {
                 public int I0;
@@ -2436,11 +3268,20 @@ float4 PSMain(PS_INPUT input) : SV_Target
             }
 
             private Vector3f[] vertices;
+            private Vector3f[] baseVertices;
             private Vector2f[] uvs;
             private int[] indices;
             private int[] triangleColors;
             private int[] triangleTextureIndices;
             private PreviewTextureData[] textures;
+            private PreviewSkinVertexData[] skinVertices;
+            private int[] skinBoneSkeletonIndices;
+            private PreviewSkeletonBone[] skeletonBones;
+            private PreviewAnimationClip[] animationClips;
+            private readonly AnimationEvaluationCache animationEvaluationCache = new AnimationEvaluationCache();
+            private int selectedAnimationIndex = -1;
+            private float modelAnimationTimeSeconds;
+            private bool modelAnimationPlaying;
             private Vector3f[] normals;
             private Vector3f center;
             private float radius;
@@ -2449,6 +3290,13 @@ float4 PSMain(PS_INPUT input) : SV_Target
             private readonly List<TriangleGpuItem> opaqueTriangles = new List<TriangleGpuItem>();
             private readonly List<TriangleGpuItem> cutoutTriangles = new List<TriangleGpuItem>();
             private readonly List<TriangleGpuItem> transparentTriangles = new List<TriangleGpuItem>();
+            private readonly List<GpuDrawBatch> opaqueBatches = new List<GpuDrawBatch>();
+            private readonly List<GpuDrawBatch> cutoutBatches = new List<GpuDrawBatch>();
+            private readonly List<GpuDrawBatch> transparentBatches = new List<GpuDrawBatch>();
+            private float[] clientVertexData = new float[0];
+            private float[] clientNormalData = new float[0];
+            private float[] clientUvData = new float[0];
+            private bool clientVertexDataDirty = true;
             private static readonly object toolkitInitSync = new object();
             private static bool toolkitInitialized;
             private const float PitchLimit = 1.35f;
@@ -2463,6 +3311,7 @@ float4 PSMain(PS_INPUT input) : SV_Target
             private bool glResourcesInitialized;
             private string gpuInitializationError = string.Empty;
             private int[] textureHandles = new int[0];
+            private long lastRenderAnimationTimestamp;
 
             public bool ShowWireframe { get; set; }
             public bool UseTrueScale
@@ -2480,11 +3329,33 @@ float4 PSMain(PS_INPUT input) : SV_Target
             public bool ExperimentalAnimationEnabled
             {
                 get { return experimentalAnimationEnabled; }
-                set { experimentalAnimationEnabled = value; }
+                set
+                {
+                    experimentalAnimationEnabled = value;
+                    ResetRenderAnimationClock();
+                    if (value)
+                    {
+                        Invalidate();
+                    }
+                }
             }
+            public bool ModelAnimationPlaying
+            {
+                get { return modelAnimationPlaying; }
+                set
+                {
+                    modelAnimationPlaying = value;
+                    ResetRenderAnimationClock();
+                    if (value)
+                    {
+                        Invalidate();
+                    }
+                }
+            }
+            public float CurrentModelAnimationTimeSeconds { get { return modelAnimationTimeSeconds; } }
 
             public ModelPreviewGpuViewport(ModelPreviewMeshData meshData)
-                : base()
+                : base(new GraphicsMode(new ColorFormat(32), 24, 8, 0))
             {
                 defaultYaw = 0f;
                 defaultPitch = 0f;
@@ -2540,15 +3411,108 @@ float4 PSMain(PS_INPUT input) : SV_Target
 
             private void UpdateMeshSources(ModelPreviewMeshData meshData)
             {
-                vertices = meshData != null && meshData.Vertices != null ? meshData.Vertices : new Vector3f[0];
+                baseVertices = meshData != null && meshData.Vertices != null ? meshData.Vertices : new Vector3f[0];
+                vertices = baseVertices;
                 uvs = meshData != null && meshData.UVs != null ? meshData.UVs : new Vector2f[0];
                 indices = meshData != null && meshData.Indices != null ? meshData.Indices : new int[0];
                 triangleColors = meshData != null && meshData.TriangleColors != null ? meshData.TriangleColors : new int[0];
                 triangleTextureIndices = meshData != null && meshData.TriangleTextureIndices != null ? meshData.TriangleTextureIndices : new int[0];
                 textures = meshData != null && meshData.Textures != null ? meshData.Textures : new PreviewTextureData[0];
+                skinVertices = meshData != null && meshData.SkinVertices != null ? meshData.SkinVertices : new PreviewSkinVertexData[0];
+                skinBoneSkeletonIndices = meshData != null && meshData.SkinBoneSkeletonIndices != null ? meshData.SkinBoneSkeletonIndices : new int[0];
+                skeletonBones = meshData != null && meshData.SkeletonBones != null ? meshData.SkeletonBones : new PreviewSkeletonBone[0];
+                animationClips = meshData != null && meshData.AnimationClips != null ? meshData.AnimationClips : new PreviewAnimationClip[0];
+                selectedAnimationIndex = animationClips.Length > 0 ? 0 : -1;
+                modelAnimationTimeSeconds = 0f;
                 normals = ModelPreviewViewport.ComputeVertexNormals(vertices, indices);
                 ModelPreviewViewport.ComputeBounds(vertices, out center, out radius);
                 BuildTriangleLists();
+                clientVertexDataDirty = true;
+            }
+
+            public void SetModelAnimation(int selectedIndex)
+            {
+                selectedAnimationIndex = selectedIndex >= 0 && animationClips != null && selectedIndex < animationClips.Length ? selectedIndex : -1;
+                modelAnimationTimeSeconds = 0f;
+                ResetRenderAnimationClock();
+                ApplyModelAnimationFrame();
+            }
+
+            public bool AdvanceModelAnimation(float deltaSeconds)
+            {
+                if (!modelAnimationPlaying || deltaSeconds <= 0f || selectedAnimationIndex < 0)
+                {
+                    return false;
+                }
+
+                return SetModelAnimationTime(modelAnimationTimeSeconds + deltaSeconds);
+            }
+
+            public bool SetModelAnimationTime(float timeSeconds)
+            {
+                if (selectedAnimationIndex < 0)
+                {
+                    return false;
+                }
+
+                modelAnimationTimeSeconds = Math.Max(0f, timeSeconds);
+                ApplyModelAnimationFrame();
+                return true;
+            }
+
+            private void ApplyModelAnimationFrame(bool invalidate = true)
+            {
+                PreviewAnimationClip clip = selectedAnimationIndex >= 0 && animationClips != null && selectedAnimationIndex < animationClips.Length
+                    ? animationClips[selectedAnimationIndex]
+                    : null;
+                vertices = BuildAnimatedVertices(baseVertices, skinVertices, skinBoneSkeletonIndices, skeletonBones, clip, modelAnimationTimeSeconds, animationEvaluationCache);
+                normals = ModelPreviewViewport.ComputeVertexNormals(vertices, indices, normals);
+                clientVertexDataDirty = true;
+                if (invalidate)
+                {
+                    Invalidate();
+                }
+            }
+
+            private void ResetRenderAnimationClock()
+            {
+                lastRenderAnimationTimestamp = Stopwatch.GetTimestamp();
+            }
+
+            private bool UpdateRenderAnimationClock()
+            {
+                if (!modelAnimationPlaying && !experimentalAnimationEnabled)
+                {
+                    lastRenderAnimationTimestamp = 0L;
+                    return false;
+                }
+
+                long now = Stopwatch.GetTimestamp();
+                if (lastRenderAnimationTimestamp <= 0L)
+                {
+                    lastRenderAnimationTimestamp = now;
+                    return true;
+                }
+
+                float deltaSeconds = (float)((now - lastRenderAnimationTimestamp) / (double)Stopwatch.Frequency);
+                lastRenderAnimationTimestamp = now;
+                if (deltaSeconds <= 0f)
+                {
+                    return true;
+                }
+
+                deltaSeconds = Math.Min(deltaSeconds, 0.25f);
+                if (experimentalAnimationEnabled)
+                {
+                    yaw = NormalizeAngle(yaw + (deltaSeconds * 0.9f));
+                }
+                if (modelAnimationPlaying && selectedAnimationIndex >= 0)
+                {
+                    modelAnimationTimeSeconds += deltaSeconds * ModelAnimationPlaybackSpeed;
+                    ApplyModelAnimationFrame(false);
+                }
+
+                return true;
             }
 
             public bool TryEnsureGpuReady()
@@ -2601,6 +3565,8 @@ float4 PSMain(PS_INPUT input) : SV_Target
 
                     stage = "InitializeGlState";
                     InitializeGlState();
+                    stage = "EnableVSync";
+                    VSync = true;
                     stage = "UploadTextures";
                     UploadTextures();
                     glResourcesInitialized = true;
@@ -2634,6 +3600,11 @@ float4 PSMain(PS_INPUT input) : SV_Target
                 }
             }
 
+            public static void EnsureOpenTkReadyForControlCreation()
+            {
+                EnsureToolkitInitialized();
+            }
+
             public string GetRendererStatusText()
             {
                 if (!glResourcesInitialized)
@@ -2641,7 +3612,7 @@ float4 PSMain(PS_INPUT input) : SV_Target
                     string reason = string.IsNullOrWhiteSpace(gpuInitializationError)
                         ? "OpenGL not available"
                         : gpuInitializationError;
-                    return "Renderer: Software (CPU fallback - " + reason + ")";
+                    return "Renderer: OpenGL unavailable - " + reason;
                 }
 
                 string profile;
@@ -2722,16 +3693,34 @@ float4 PSMain(PS_INPUT input) : SV_Target
             {
                 if (!TryEnsureGpuReady())
                 {
-                    e.Graphics.Clear(Color.FromArgb(206, 206, 206));
-                    using (Brush brush = new SolidBrush(Color.FromArgb(80, 80, 80)))
+                    using (LinearGradientBrush brush = new LinearGradientBrush(
+                        ClientRectangle,
+                        PreviewStudioBackgroundTop,
+                        PreviewStudioBackgroundBottom,
+                        LinearGradientMode.Vertical))
                     {
-                        e.Graphics.DrawString("GPU init failed. Using CPU fallback.", Font, brush, new PointF(16f, 16f));
+                        e.Graphics.FillRectangle(brush, ClientRectangle);
+                    }
+
+                    string reason = string.IsNullOrWhiteSpace(gpuInitializationError)
+                        ? "OpenGL initialization failed."
+                        : gpuInitializationError;
+                    using (Brush textBrush = new SolidBrush(Color.White))
+                    using (Brush detailBrush = new SolidBrush(Color.FromArgb(225, 235, 255)))
+                    {
+                        e.Graphics.DrawString("OpenGL preview could not start.", Font, textBrush, new PointF(16f, 16f));
+                        e.Graphics.DrawString(reason, Font, detailBrush, new RectangleF(16f, 40f, Math.Max(1, Width - 32), Math.Max(1, Height - 56)));
                     }
                     return;
                 }
 
+                bool continueRendering = UpdateRenderAnimationClock();
                 RenderScene();
                 SwapBuffers();
+                if (continueRendering && Visible && !IsDisposed)
+                {
+                    Invalidate();
+                }
             }
 
             protected override void OnResize(EventArgs e)
@@ -2746,7 +3735,7 @@ float4 PSMain(PS_INPUT input) : SV_Target
 
             private void InitializeGlState()
             {
-                GL.ClearColor(Color.FromArgb(206, 206, 206));
+                GL.ClearColor(PreviewStudioBackgroundTop);
                 GL.Enable(EnableCap.DepthTest);
                 GL.DepthFunc(DepthFunction.Lequal);
                 // Match CPU renderer behavior (two-sided rasterization). Some game meshes
@@ -2896,24 +3885,45 @@ float4 PSMain(PS_INPUT input) : SV_Target
                 GL.LoadMatrix(ref model);
 
                 GL.PolygonMode(MaterialFace.FrontAndBack, PolygonMode.Fill);
+                DrawClientArrayGeometry();
+            }
+
+            private unsafe void DrawClientArrayGeometry()
+            {
+                UpdateClientVertexData();
+                if (clientVertexData.Length == 0 || clientNormalData.Length == 0 || clientUvData.Length == 0)
+                {
+                    return;
+                }
+
+                fixed (float* vertexPointer = clientVertexData)
+                fixed (float* normalPointer = clientNormalData)
+                fixed (float* uvPointer = clientUvData)
+                {
+                    GL.EnableClientState(ArrayCap.VertexArray);
+                    GL.EnableClientState(ArrayCap.NormalArray);
+                    GL.EnableClientState(ArrayCap.TextureCoordArray);
+                    GL.VertexPointer(3, VertexPointerType.Float, 0, new IntPtr(vertexPointer));
+                    GL.NormalPointer(NormalPointerType.Float, 0, new IntPtr(normalPointer));
+                    GL.TexCoordPointer(2, TexCoordPointerType.Float, 0, new IntPtr(uvPointer));
 
                 // Pass 1: depth pre-pass for opaque fragments (including opaque parts of alpha textures).
                 GL.DepthMask(true);
                 GL.Disable(EnableCap.Blend);
                 GL.Disable(EnableCap.AlphaTest);
-                DrawTriangleList(opaqueTriangles, false, false);
+                    DrawGpuBatchList(opaqueBatches, false, false);
 
                 const float cutoutAlphaThreshold = 0.01f;
                 GL.Enable(EnableCap.AlphaTest);
                 GL.AlphaFunc(AlphaFunction.Greater, cutoutAlphaThreshold);
-                DrawTriangleList(cutoutTriangles, false, false);
-                DrawTriangleList(transparentTriangles, false, false);
+                    DrawGpuBatchList(cutoutBatches, false, false);
+                    DrawGpuBatchList(transparentBatches, false, false);
 
                 // Pass 2: blended fragments from alpha textures / transparent materials.
                 GL.DepthMask(false);
                 GL.Enable(EnableCap.Blend);
                 GL.AlphaFunc(AlphaFunction.Less, 0.98f);
-                DrawTriangleList(transparentTriangles, true, false);
+                    DrawGpuBatchList(transparentBatches, true, false);
 
                 GL.Disable(EnableCap.AlphaTest);
                 GL.DepthMask(true);
@@ -2924,11 +3934,16 @@ float4 PSMain(PS_INPUT input) : SV_Target
                     GL.Disable(EnableCap.Texture2D);
                     GL.Color4(245f / 255f, 255f / 255f, 255f / 255f, 150f / 255f);
                     GL.PolygonMode(MaterialFace.FrontAndBack, PolygonMode.Line);
-                    DrawTriangleList(opaqueTriangles, false, false);
-                    DrawTriangleList(cutoutTriangles, false, false);
-                    DrawTriangleList(transparentTriangles, false, false);
+                        DrawGpuBatchList(opaqueBatches, false, false);
+                        DrawGpuBatchList(cutoutBatches, false, false);
+                        DrawGpuBatchList(transparentBatches, false, false);
                     GL.PolygonMode(MaterialFace.FrontAndBack, PolygonMode.Fill);
                     GL.Enable(EnableCap.Texture2D);
+                }
+
+                    GL.DisableClientState(ArrayCap.TextureCoordArray);
+                    GL.DisableClientState(ArrayCap.NormalArray);
+                    GL.DisableClientState(ArrayCap.VertexArray);
                 }
             }
 
@@ -2945,7 +3960,8 @@ float4 PSMain(PS_INPUT input) : SV_Target
                 int currentTexture = int.MinValue;
                 bool currentBlend = false;
                 bool currentTexturing = true;
-                for (int i = 0; i < triangles.Count; i++)
+                int i = 0;
+                while (i < triangles.Count)
                 {
                     TriangleGpuItem tri = triangles[i];
                     int textureHandle = GetTextureHandle(tri.TextureIndex);
@@ -2987,12 +4003,122 @@ float4 PSMain(PS_INPUT input) : SV_Target
                         currentTexture = textureHandle;
                     }
 
-                    Color triColor = hasTexture ? Color.FromArgb(255, 255, 255, 255) : Color.FromArgb(tri.ColorArgb);
                     GL.Begin(PrimitiveType.Triangles);
-                    DrawVertex(tri.I0, triColor);
-                    DrawVertex(tri.I1, triColor);
-                    DrawVertex(tri.I2, triColor);
+                    do
+                    {
+                        tri = triangles[i];
+                        Color triColor = hasTexture ? Color.FromArgb(255, 255, 255, 255) : Color.FromArgb(tri.ColorArgb);
+                        DrawVertex(tri.I0, triColor);
+                        DrawVertex(tri.I1, triColor);
+                        DrawVertex(tri.I2, triColor);
+                        i++;
+
+                        if (i >= triangles.Count)
+                        {
+                            break;
+                        }
+
+                        TriangleGpuItem next = triangles[i];
+                        int nextTextureHandle = GetTextureHandle(next.TextureIndex);
+                        bool nextHasTexture = nextTextureHandle != 0;
+                        bool nextUseBlend = forceBlend || (useTriangleTransparency && next.Transparent);
+                        if (nextTextureHandle != textureHandle
+                            || nextHasTexture != hasTexture
+                            || nextUseBlend != useBlend)
+                        {
+                            break;
+                        }
+                    }
+                    while (true);
                     GL.End();
+                }
+
+                GL.Enable(EnableCap.Texture2D);
+                GL.Enable(EnableCap.Blend);
+            }
+
+            private void UpdateClientVertexData()
+            {
+                if (!clientVertexDataDirty)
+                {
+                    return;
+                }
+
+                int vertexCount = vertices == null ? 0 : vertices.Length;
+                if (clientVertexData.Length != vertexCount * 3)
+                {
+                    clientVertexData = new float[vertexCount * 3];
+                    clientNormalData = new float[vertexCount * 3];
+                    clientUvData = new float[vertexCount * 2];
+                }
+
+                for (int i = 0; i < vertexCount; i++)
+                {
+                    int vertexOffset = i * 3;
+                    Vector3f vertex = vertices[i];
+                    Vector3f normal = i < normals.Length ? normals[i] : Vector3f.Zero;
+                    clientVertexData[vertexOffset] = vertex.X;
+                    clientVertexData[vertexOffset + 1] = vertex.Y;
+                    clientVertexData[vertexOffset + 2] = vertex.Z;
+                    clientNormalData[vertexOffset] = normal.X;
+                    clientNormalData[vertexOffset + 1] = normal.Y;
+                    clientNormalData[vertexOffset + 2] = normal.Z;
+
+                    int uvOffset = i * 2;
+                    Vector2f uv = i < uvs.Length ? uvs[i] : new Vector2f(0f, 0f);
+                    clientUvData[uvOffset] = uv.X;
+                    clientUvData[uvOffset + 1] = uv.Y;
+                }
+
+                clientVertexDataDirty = false;
+            }
+
+            private void DrawGpuBatchList(List<GpuDrawBatch> batches, bool forceBlend, bool useBatchTransparency)
+            {
+                if (batches == null || batches.Count == 0)
+                {
+                    return;
+                }
+
+                int currentTexture = int.MinValue;
+                bool currentBlend = false;
+                bool currentTexturing = true;
+                for (int i = 0; i < batches.Count; i++)
+                {
+                    GpuDrawBatch batch = batches[i];
+                    int textureHandle = GetTextureHandle(batch.TextureIndex);
+                    bool hasTexture = textureHandle != 0;
+                    bool useBlend = forceBlend || (useBatchTransparency && batch.Transparent);
+                    if (useBlend != currentBlend)
+                    {
+                        if (useBlend) GL.Enable(EnableCap.Blend); else GL.Disable(EnableCap.Blend);
+                        currentBlend = useBlend;
+                    }
+
+                    if (hasTexture != currentTexturing)
+                    {
+                        if (hasTexture)
+                        {
+                            GL.Enable(EnableCap.Texture2D);
+                        }
+                        else
+                        {
+                            GL.Disable(EnableCap.Texture2D);
+                            GL.BindTexture(TextureTarget.Texture2D, 0);
+                            currentTexture = int.MinValue;
+                        }
+                        currentTexturing = hasTexture;
+                    }
+
+                    if (hasTexture && textureHandle != currentTexture)
+                    {
+                        GL.BindTexture(TextureTarget.Texture2D, textureHandle);
+                        currentTexture = textureHandle;
+                    }
+
+                    Color color = hasTexture ? Color.White : Color.FromArgb(batch.ColorArgb);
+                    GL.Color4(color.R / 255f, color.G / 255f, color.B / 255f, color.A / 255f);
+                    GL.DrawElements(PrimitiveType.Triangles, batch.Indices.Length, DrawElementsType.UnsignedInt, batch.Indices);
                 }
 
                 GL.Enable(EnableCap.Texture2D);
@@ -3031,6 +4157,9 @@ float4 PSMain(PS_INPUT input) : SV_Target
                 opaqueTriangles.Clear();
                 cutoutTriangles.Clear();
                 transparentTriangles.Clear();
+                opaqueBatches.Clear();
+                cutoutBatches.Clear();
+                transparentBatches.Clear();
                 if (indices == null || indices.Length < 3)
                 {
                     return;
@@ -3094,6 +4223,63 @@ float4 PSMain(PS_INPUT input) : SV_Target
                         opaqueTriangles.Add(item);
                     }
                 }
+
+                BuildGpuDrawBatches(opaqueTriangles, opaqueBatches);
+                BuildGpuDrawBatches(cutoutTriangles, cutoutBatches);
+                BuildGpuDrawBatches(transparentTriangles, transparentBatches);
+            }
+
+            private static void BuildGpuDrawBatches(List<TriangleGpuItem> triangles, List<GpuDrawBatch> batches)
+            {
+                if (triangles == null || batches == null || triangles.Count == 0)
+                {
+                    return;
+                }
+
+                List<int> batchIndices = new List<int>();
+                int textureIndex = triangles[0].TextureIndex;
+                int colorArgb = triangles[0].ColorArgb;
+                bool transparent = triangles[0].Transparent;
+                for (int i = 0; i < triangles.Count; i++)
+                {
+                    TriangleGpuItem triangle = triangles[i];
+                    bool sameMaterial = triangle.TextureIndex == textureIndex
+                        && triangle.Transparent == transparent
+                        && (textureIndex >= 0 || triangle.ColorArgb == colorArgb);
+                    if (!sameMaterial && batchIndices.Count > 0)
+                    {
+                        AddGpuDrawBatch(batches, textureIndex, colorArgb, transparent, batchIndices);
+                        batchIndices.Clear();
+                        textureIndex = triangle.TextureIndex;
+                        colorArgb = triangle.ColorArgb;
+                        transparent = triangle.Transparent;
+                    }
+
+                    batchIndices.Add(triangle.I0);
+                    batchIndices.Add(triangle.I1);
+                    batchIndices.Add(triangle.I2);
+                }
+
+                if (batchIndices.Count > 0)
+                {
+                    AddGpuDrawBatch(batches, textureIndex, colorArgb, transparent, batchIndices);
+                }
+            }
+
+            private static void AddGpuDrawBatch(
+                List<GpuDrawBatch> batches,
+                int textureIndex,
+                int colorArgb,
+                bool transparent,
+                List<int> indices)
+            {
+                batches.Add(new GpuDrawBatch
+                {
+                    TextureIndex = textureIndex,
+                    ColorArgb = colorArgb,
+                    Transparent = transparent,
+                    Indices = indices.ToArray()
+                });
             }
 
             private void OnMouseDown(object sender, MouseEventArgs e)
@@ -3154,11 +4340,20 @@ float4 PSMain(PS_INPUT input) : SV_Target
         private sealed class ModelPreviewViewport : Control
         {
             private Vector3f[] vertices;
+            private Vector3f[] baseVertices;
             private Vector2f[] uvs;
             private int[] indices;
             private int[] triangleColors;
             private int[] triangleTextureIndices;
             private PreviewTextureData[] textures;
+            private PreviewSkinVertexData[] skinVertices;
+            private int[] skinBoneSkeletonIndices;
+            private PreviewSkeletonBone[] skeletonBones;
+            private PreviewAnimationClip[] animationClips;
+            private readonly AnimationEvaluationCache animationEvaluationCache = new AnimationEvaluationCache();
+            private int selectedAnimationIndex = -1;
+            private float modelAnimationTimeSeconds;
+            private bool modelAnimationPlaying;
             private int ecmSrcBlend;
             private int ecmDestBlend;
             private int ecmEmissiveColorArgb;
@@ -3197,6 +4392,11 @@ float4 PSMain(PS_INPUT input) : SV_Target
             {
                 get { return experimentalAnimationEnabled; }
                 set { experimentalAnimationEnabled = value; }
+            }
+            public bool ModelAnimationPlaying
+            {
+                get { return modelAnimationPlaying; }
+                set { modelAnimationPlaying = value; }
             }
             public bool UseHardwareRendering
             {
@@ -3271,20 +4471,66 @@ float4 PSMain(PS_INPUT input) : SV_Target
 
             private void UpdateMeshSources(ModelPreviewMeshData meshData)
             {
-                vertices = meshData != null && meshData.Vertices != null ? meshData.Vertices : new Vector3f[0];
+                baseVertices = meshData != null && meshData.Vertices != null ? meshData.Vertices : new Vector3f[0];
+                vertices = baseVertices;
                 uvs = meshData != null && meshData.UVs != null ? meshData.UVs : new Vector2f[0];
                 indices = meshData != null && meshData.Indices != null ? meshData.Indices : new int[0];
                 triangleColors = meshData != null && meshData.TriangleColors != null ? meshData.TriangleColors : new int[0];
                 triangleTextureIndices = meshData != null && meshData.TriangleTextureIndices != null ? meshData.TriangleTextureIndices : new int[0];
                 textures = meshData != null && meshData.Textures != null ? meshData.Textures : new PreviewTextureData[0];
+                skinVertices = meshData != null && meshData.SkinVertices != null ? meshData.SkinVertices : new PreviewSkinVertexData[0];
+                skinBoneSkeletonIndices = meshData != null && meshData.SkinBoneSkeletonIndices != null ? meshData.SkinBoneSkeletonIndices : new int[0];
+                skeletonBones = meshData != null && meshData.SkeletonBones != null ? meshData.SkeletonBones : new PreviewSkeletonBone[0];
+                animationClips = meshData != null && meshData.AnimationClips != null ? meshData.AnimationClips : new PreviewAnimationClip[0];
+                selectedAnimationIndex = animationClips.Length > 0 ? 0 : -1;
+                modelAnimationTimeSeconds = 0f;
                 ecmSrcBlend = meshData != null ? meshData.SrcBlend : 5;
                 ecmDestBlend = meshData != null ? meshData.DestBlend : 6;
                 ecmEmissiveColorArgb = meshData != null ? meshData.EmissiveColorArgb : 0;
                 ecmOrgColorArgb = meshData != null ? meshData.OrgColorArgb : unchecked((int)0xFFFFFFFF);
                 ecmShaderFloats = meshData != null && meshData.ShaderFloats != null ? meshData.ShaderFloats : new float[0];
                 overlayTextureIndex = FindAttachmentTextureIndex(textures);
-                baseNormals = ComputeVertexNormals(vertices, indices);
+                baseNormals = ComputeVertexNormals(vertices, indices, baseNormals);
                 ComputeBounds(vertices, out center, out radius);
+            }
+
+            public void SetModelAnimation(int selectedIndex)
+            {
+                selectedAnimationIndex = selectedIndex >= 0 && animationClips != null && selectedIndex < animationClips.Length ? selectedIndex : -1;
+                modelAnimationTimeSeconds = 0f;
+                ApplyModelAnimationFrame();
+            }
+
+            public bool AdvanceModelAnimation(float deltaSeconds)
+            {
+                if (!modelAnimationPlaying || deltaSeconds <= 0f || selectedAnimationIndex < 0)
+                {
+                    return false;
+                }
+
+                return SetModelAnimationTime(modelAnimationTimeSeconds + deltaSeconds);
+            }
+
+            public bool SetModelAnimationTime(float timeSeconds)
+            {
+                if (selectedAnimationIndex < 0)
+                {
+                    return false;
+                }
+
+                modelAnimationTimeSeconds = Math.Max(0f, timeSeconds);
+                ApplyModelAnimationFrame();
+                return true;
+            }
+
+            private void ApplyModelAnimationFrame()
+            {
+                PreviewAnimationClip clip = selectedAnimationIndex >= 0 && animationClips != null && selectedAnimationIndex < animationClips.Length
+                    ? animationClips[selectedAnimationIndex]
+                    : null;
+                vertices = BuildAnimatedVertices(baseVertices, skinVertices, skinBoneSkeletonIndices, skeletonBones, clip, modelAnimationTimeSeconds, animationEvaluationCache);
+                baseNormals = ComputeVertexNormals(vertices, indices, baseNormals);
+                Invalidate();
             }
 
             public void ResetView()
@@ -3590,36 +4836,11 @@ float4 PSMain(PS_INPUT input) : SV_Target
 
                 using (LinearGradientBrush sky = new LinearGradientBrush(
                     new Rectangle(0, 0, width, height),
-                    Color.FromArgb(215, 215, 215),
-                    Color.FromArgb(188, 188, 188),
+                    PreviewStudioBackgroundTop,
+                    PreviewStudioBackgroundBottom,
                     LinearGradientMode.Vertical))
                 {
                     g.FillRectangle(sky, 0, 0, width, height);
-                }
-
-                float horizonY = height * 0.58f;
-                float centerX = width * 0.5f;
-                float topHalf = width * 0.12f;
-                float bottomHalf = width * 0.48f;
-
-                using (Pen gridPen = new Pen(Color.FromArgb(162, 174, 174, 174), 1f))
-                {
-                    for (int i = -28; i <= 28; i++)
-                    {
-                        float t = i / 28f;
-                        float xTop = centerX + (topHalf * t);
-                        float xBottom = centerX + (bottomHalf * t);
-                        g.DrawLine(gridPen, xTop, horizonY, xBottom, height - 1f);
-                    }
-
-                    for (int i = 0; i <= 24; i++)
-                    {
-                        float t = i / 24f;
-                        float p = (float)Math.Pow(t, 1.65f);
-                        float y = horizonY + ((height - horizonY) * p);
-                        float half = topHalf + ((bottomHalf - topHalf) * (float)Math.Pow(t, 1.1f));
-                        g.DrawLine(gridPen, centerX - half, y, centerX + half, y);
-                    }
                 }
             }
 
@@ -3630,63 +4851,20 @@ float4 PSMain(PS_INPUT input) : SV_Target
                     return;
                 }
 
-                int horizon = Math.Max(1, Math.Min(height - 2, (int)(height * 0.58f)));
-                Color skyTop = Color.FromArgb(216, 216, 216);
-                Color skyHorizon = Color.FromArgb(196, 196, 196);
-                Color groundNear = Color.FromArgb(188, 188, 188);
-                Color groundFar = Color.FromArgb(174, 174, 174);
-
                 for (int y = 0; y < height; y++)
                 {
                     int row = y * width;
-                    int argb;
-                    if (y <= horizon)
-                    {
-                        float t = y / (float)Math.Max(1, horizon);
-                        argb = Color.FromArgb(
-                            255,
-                            LerpByte(skyTop.R, skyHorizon.R, t),
-                            LerpByte(skyTop.G, skyHorizon.G, t),
-                            LerpByte(skyTop.B, skyHorizon.B, t)).ToArgb();
-                    }
-                    else
-                    {
-                        float t = (y - horizon) / (float)Math.Max(1, (height - 1 - horizon));
-                        argb = Color.FromArgb(
-                            255,
-                            LerpByte(groundNear.R, groundFar.R, t),
-                            LerpByte(groundNear.G, groundFar.G, t),
-                            LerpByte(groundNear.B, groundFar.B, t)).ToArgb();
-                    }
+                    float t = y / (float)Math.Max(1, height - 1);
+                    int argb = Color.FromArgb(
+                        255,
+                        LerpByte(PreviewStudioBackgroundTop.R, PreviewStudioBackgroundBottom.R, t),
+                        LerpByte(PreviewStudioBackgroundTop.G, PreviewStudioBackgroundBottom.G, t),
+                        LerpByte(PreviewStudioBackgroundTop.B, PreviewStudioBackgroundBottom.B, t)).ToArgb();
 
                     for (int x = 0; x < width; x++)
                     {
                         colorBuffer[row + x] = argb;
                     }
-                }
-
-                int gridColor = Color.FromArgb(255, 175, 175, 175).ToArgb();
-                float centerX = width * 0.5f;
-                float topHalf = width * 0.12f;
-                float bottomHalf = width * 0.48f;
-                float topY = horizon;
-                float bottomY = height - 1;
-
-                for (int i = -28; i <= 28; i++)
-                {
-                    float t = i / 28f;
-                    float xTop = centerX + (topHalf * t);
-                    float xBottom = centerX + (bottomHalf * t);
-                    DrawLineToBuffer(colorBuffer, width, height, xTop, topY, xBottom, bottomY, gridColor);
-                }
-
-                for (int i = 0; i <= 24; i++)
-                {
-                    float t = i / 24f;
-                    float p = (float)Math.Pow(t, 1.65f);
-                    float y = topY + ((bottomY - topY) * p);
-                    float half = topHalf + ((bottomHalf - topHalf) * (float)Math.Pow(t, 1.1f));
-                    DrawLineToBuffer(colorBuffer, width, height, centerX - half, y, centerX + half, y, gridColor);
                 }
             }
 
@@ -4584,14 +5762,17 @@ float4 PSMain(PS_INPUT input) : SV_Target
                 extentZ = Math.Max(0.0001f, max.Z - min.Z);
             }
 
-            internal static Vector3f[] ComputeVertexNormals(Vector3f[] inputVertices, int[] inputIndices)
+            internal static Vector3f[] ComputeVertexNormals(Vector3f[] inputVertices, int[] inputIndices, Vector3f[] reusableNormals = null)
             {
                 if (inputVertices == null || inputVertices.Length == 0)
                 {
                     return new Vector3f[0];
                 }
 
-                Vector3f[] normals = new Vector3f[inputVertices.Length];
+                Vector3f[] normals = reusableNormals != null && reusableNormals.Length == inputVertices.Length
+                    ? reusableNormals
+                    : new Vector3f[inputVertices.Length];
+                Array.Clear(normals, 0, normals.Length);
                 if (inputIndices == null || inputIndices.Length < 3)
                 {
                     for (int i = 0; i < normals.Length; i++)

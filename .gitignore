@@ -16,6 +16,9 @@ tools/preview-profile/Resources/
 *.bak
 *.tmp_fweledit
 0000.ico.bak
+.tmp/
+tmp-map-ui/
+backups/
 
 # Logs
 logs/
