@@ -243,6 +243,12 @@ namespace FWEledit
             {
                 targetListName = "SPECIAL_STATUS_PACKAGE_CONFIG";
             }
+            else if (string.Equals(name, "id_identify", StringComparison.OrdinalIgnoreCase)
+                && IsEquipmentEssenceAlias(sourceListName))
+            {
+                targetListIndex = ItemListsTargetIndex;
+                return true;
+            }
             else if (string.Equals(name, "id_identify", StringComparison.OrdinalIgnoreCase))
             {
                 targetListName = "IDENTIFY_SCROLL_ESSENCE";

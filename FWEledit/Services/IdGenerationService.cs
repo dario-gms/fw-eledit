@@ -90,48 +90,10 @@ namespace FWEledit
 
         public HashSet<int> BuildUsedIdsForElementNamespace(eListCollection listCollection, int listIndex, int excludedRowIndex)
         {
-            if (ItemListCatalog.IsItemList(listCollection, listIndex))
-            {
-                return BuildUsedIdsAcrossLists(listCollection, listIndex, excludedRowIndex);
-            }
-
-            if (IsNpcRuntimeEssenceList(listCollection, listIndex))
-            {
-                return BuildUsedIdsAcrossLists(listCollection, listIndex, excludedRowIndex);
-            }
-
-            int idFieldIndex = GetIdFieldIndex(listCollection, listIndex);
-            HashSet<int> used = BuildUsedIds(listCollection, listIndex, idFieldIndex);
-            if (listCollection != null
-                && listIndex >= 0
-                && listIndex < listCollection.Lists.Length
-                && excludedRowIndex >= 0
-                && excludedRowIndex < listCollection.Lists[listIndex].elementValues.Length
-                && idFieldIndex >= 0)
-            {
-                int currentId;
-                if (int.TryParse(listCollection.GetValue(listIndex, excludedRowIndex, idFieldIndex), out currentId))
-                {
-                    used.Remove(currentId);
-                }
-            }
-
-            return used;
-        }
-
-        private static bool IsNpcRuntimeEssenceList(eListCollection listCollection, int listIndex)
-        {
-            if (listCollection == null || listIndex < 0 || listIndex >= listCollection.Lists.Length)
-            {
-                return false;
-            }
-
-            string listName = ItemListCatalog.NormalizeListName(listCollection.Lists[listIndex].listName);
-            return string.Equals(listName, "NPC_ESSENCE", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(listName, "MONSTER_ESSENCE", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(listName, "NPC_TASK_IN_SERVICE", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(listName, "NPC_TASK_OUT_SERVICE", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(listName, "NPC_TASK_MATTER_SERVICE", StringComparison.OrdinalIgnoreCase);
+            // FW resolves several configuration families through shared runtime ID indexes.
+            // New IDs must therefore avoid every list, even though legacy data can contain
+            // intentional cross-list duplicates that remain untouched.
+            return BuildUsedIdsAcrossLists(listCollection, listIndex, excludedRowIndex);
         }
 
         public HashSet<int> BuildUsedItemIdsAcrossLists(eListCollection listCollection, int excludedListIndex, int excludedRowIndex)

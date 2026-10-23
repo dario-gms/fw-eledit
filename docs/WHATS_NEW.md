@@ -2,6 +2,24 @@
 
 This file keeps the older release notes that used to live in the README. The README now shows only the newest release notes so it stays easier to scan.
 
+## What's New in v0.9.5.30
+
+- Added direct PCK file reads through persistent sessions, reducing temporary extraction and accelerating model changes.
+- Added a shared package-index cache with automatic invalidation when a PCK changes.
+- Accelerated texture loading by trying exact paths before searching for similar entries.
+- Fixed colors and textures for mount variants.
+- Correctly resolved numbered SKI/SMD models and local model variants.
+- Added mount-specific transparency handling.
+- Fixed dark parts, black planes, incorrect cutouts, and apparently missing model components.
+- Detected duplicate SKI meshes to prevent overlapping geometry and visual artifacts.
+- Fixed isolated model deformations.
+- Applied race-specific skinning correctly.
+- Added right-mouse dragging to move models left, right, up, and down.
+- Reset View and double-click now also restore the model's displaced position.
+- Added model movement support to the OpenGL, DirectX 11, and software renderers.
+
+---
+
 ## What's New in v0.9.5.29
 
 - Completely reworked the 3D Preview based on PWModelViewer behavior.
