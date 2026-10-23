@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace FWEledit
 {
@@ -92,10 +93,13 @@ namespace FWEledit
                 return result;
             }
 
+            int currentItemId = viewModel.DescriptionViewModel.CurrentItemId;
             int[] selectedItemIds = getSelectedItemIds != null ? getSelectedItemIds() : new int[0];
-            if (selectedItemIds == null || selectedItemIds.Length == 0)
+            if (selectedItemIds == null
+                || selectedItemIds.Length == 0
+                || !selectedItemIds.Contains(currentItemId))
             {
-                selectedItemIds = new int[] { viewModel.DescriptionViewModel.CurrentItemId };
+                selectedItemIds = new int[] { currentItemId };
             }
 
             result = workflowService.StageEditorTextForItems(viewModel.DescriptionViewModel, selectedItemIds, editorText);

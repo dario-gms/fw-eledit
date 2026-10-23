@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
@@ -17,7 +18,8 @@ namespace FWEledit
         private readonly CreaturePortraitIconService portraitIconService = new CreaturePortraitIconService();
         private readonly ComboBox listComboBox;
         private readonly TextBox searchBox;
-        private readonly ListBox listBox;
+        private readonly VirtualListBox listBox;
+        private readonly List<ItemReferenceOption> visibleOptions = new List<ItemReferenceOption>();
         private readonly TextBox detailsBox;
         private readonly bool isTitlePicker;
         private readonly TabControl bottomTabs;
@@ -33,6 +35,7 @@ namespace FWEledit
         private bool suppressTitleSelectionGuard;
         private bool titleSaveInProgress;
         private bool titleEditorInitialized;
+        private bool suppressOptionReload;
         private int lastSelectedTitleId;
         private string searchText = string.Empty;
 
@@ -90,7 +93,13 @@ namespace FWEledit
             listComboBox.BackColor = Color.FromArgb(28, 32, 37);
             listComboBox.ForeColor = Color.White;
             listComboBox.FlatStyle = FlatStyle.Flat;
-            listComboBox.SelectedIndexChanged += (s, e) => LoadOptions();
+            listComboBox.SelectedIndexChanged += (s, e) =>
+            {
+                if (!suppressOptionReload)
+                {
+                    LoadOptions();
+                }
+            };
 
             searchBox = new TextBox();
             searchBox.Dock = DockStyle.Fill;
@@ -121,7 +130,7 @@ namespace FWEledit
                 filterPanel.Controls.Add(applyTitleButton, 2, 0);
             }
 
-            listBox = new ListBox();
+            listBox = new VirtualListBox();
             listBox.Dock = DockStyle.Fill;
             listBox.BorderStyle = BorderStyle.FixedSingle;
             listBox.DrawMode = DrawMode.OwnerDrawFixed;
@@ -240,16 +249,18 @@ namespace FWEledit
             Controls.Add(layout);
 
             suppressTitleSelectionGuard = true;
+            suppressOptionReload = true;
             try
             {
                 PopulateListFilters(targetListIndex);
+                suppressOptionReload = false;
                 LoadOptions();
-                SelectValue(currentId);
                 lastSelectedTitleId = currentId;
                 titleEditorInitialized = true;
             }
             finally
             {
+                suppressOptionReload = false;
                 suppressTitleSelectionGuard = false;
             }
             Shown += (s, e) =>
@@ -319,7 +330,7 @@ namespace FWEledit
         {
             if (isTitlePicker && !suppressTitleSelectionGuard && !titleSaveInProgress)
             {
-                ItemReferenceOption selectedOption = listBox.SelectedItem as ItemReferenceOption;
+                ItemReferenceOption selectedOption = GetSelectedOption();
                 int newId = selectedOption != null ? selectedOption.Id : 0;
                 if (newId != lastSelectedTitleId && !PromptSaveTitleChanges())
                 {
@@ -339,7 +350,7 @@ namespace FWEledit
             UpdateDetailsPanel();
             if (isTitlePicker)
             {
-                ItemReferenceOption currentSelection = listBox.SelectedItem as ItemReferenceOption;
+                ItemReferenceOption currentSelection = GetSelectedOption();
                 lastSelectedTitleId = currentSelection != null ? currentSelection.Id : 0;
             }
         }
@@ -351,32 +362,36 @@ namespace FWEledit
                 return;
             }
 
-            ItemReferenceOption selected = listBox.SelectedItem as ItemReferenceOption;
+            ItemReferenceOption selected = GetSelectedOption();
             int selectedId = selected != null ? selected.Id : SelectedId;
             int selectedListIndex = GetSelectedListIndex();
-            bool globalSearch = !string.IsNullOrWhiteSpace(searchText);
+            string query = (searchText ?? string.Empty).Trim();
+            bool globalSearch = query.Length > 0;
+            int selectedOptionIndex = -1;
 
             listBox.BeginUpdate();
-            listBox.Items.Clear();
+            visibleOptions.Clear();
 
             for (int i = 0; i < allOptions.Count; i++)
             {
                 ItemReferenceOption option = allOptions[i];
                 if ((!globalSearch && selectedListIndex != AllListsIndex && option.ListIndex != selectedListIndex)
-                    || !Matches(option, searchText))
+                    || !Matches(option, query))
                 {
                     continue;
                 }
 
-                listBox.Items.Add(option);
+                if (selectedOptionIndex < 0 && option.Id == selectedId)
+                {
+                    selectedOptionIndex = visibleOptions.Count;
+                }
+                visibleOptions.Add(option);
             }
 
+            listBox.SetVirtualItemCount(visibleOptions.Count);
+            listBox.SetVirtualSelectedIndex(selectedOptionIndex >= 0 ? selectedOptionIndex : visibleOptions.Count > 0 ? 0 : -1);
+            listBox.SetVirtualTopIndex(selectedOptionIndex >= 0 ? Math.Max(0, selectedOptionIndex - 6) : 0);
             listBox.EndUpdate();
-            SelectValue(selectedId);
-            if (listBox.SelectedIndex < 0 && listBox.Items.Count > 0)
-            {
-                listBox.SelectedIndex = 0;
-            }
         }
 
         private int GetSelectedListIndex()
@@ -396,7 +411,7 @@ namespace FWEledit
                 return true;
             }
 
-            string q = query.Trim();
+            string q = query;
             return option.Id.ToString().IndexOf(q, StringComparison.OrdinalIgnoreCase) >= 0
                 || (option.Name ?? string.Empty).IndexOf(q, StringComparison.OrdinalIgnoreCase) >= 0
                 || (option.ListName ?? string.Empty).IndexOf(q, StringComparison.OrdinalIgnoreCase) >= 0
@@ -407,21 +422,29 @@ namespace FWEledit
 
         private void SelectValue(int id)
         {
-            for (int i = 0; i < listBox.Items.Count; i++)
+            for (int i = 0; i < visibleOptions.Count; i++)
             {
-                ItemReferenceOption option = listBox.Items[i] as ItemReferenceOption;
+                ItemReferenceOption option = visibleOptions[i];
                 if (option != null && option.Id == id)
                 {
-                    listBox.SelectedIndex = i;
-                    listBox.TopIndex = Math.Max(0, i - 6);
+                    listBox.SetVirtualSelectedIndex(i);
+                    listBox.SetVirtualTopIndex(Math.Max(0, i - 6));
                     return;
                 }
             }
         }
 
+        private ItemReferenceOption GetSelectedOption()
+        {
+            int selectedIndex = listBox != null ? listBox.GetVirtualSelectedIndex() : -1;
+            return selectedIndex >= 0 && selectedIndex < visibleOptions.Count
+                ? visibleOptions[selectedIndex]
+                : null;
+        }
+
         private void ConfirmSelection()
         {
-            ItemReferenceOption option = listBox.SelectedItem as ItemReferenceOption;
+            ItemReferenceOption option = GetSelectedOption();
             if (option == null)
             {
                 return;
@@ -435,12 +458,12 @@ namespace FWEledit
 
         private void DrawItem(object sender, DrawItemEventArgs e)
         {
-            if (e.Index < 0 || e.Index >= listBox.Items.Count)
+            if (e.Index < 0 || e.Index >= visibleOptions.Count)
             {
                 return;
             }
 
-            ItemReferenceOption option = listBox.Items[e.Index] as ItemReferenceOption;
+            ItemReferenceOption option = visibleOptions[e.Index];
             if (option == null)
             {
                 return;
@@ -580,7 +603,7 @@ namespace FWEledit
                 return;
             }
 
-            ItemReferenceOption option = listBox != null ? listBox.SelectedItem as ItemReferenceOption : null;
+            ItemReferenceOption option = GetSelectedOption();
             if (option == null)
             {
                 detailsBox.Text = string.Empty;
@@ -677,7 +700,7 @@ namespace FWEledit
             suppressTitleEditorUpdates = true;
             try
             {
-                ItemReferenceOption option = listBox != null ? listBox.SelectedItem as ItemReferenceOption : null;
+                ItemReferenceOption option = GetSelectedOption();
                 if (option == null || !TitleDefinitionCatalog.TryGetEditableDefinition(option.Id, out EditableTitleDefinition definition))
                 {
                     titleNameTextBox.Text = string.Empty;
@@ -744,7 +767,7 @@ namespace FWEledit
                 return;
             }
 
-            ItemReferenceOption option = listBox != null ? listBox.SelectedItem as ItemReferenceOption : null;
+            ItemReferenceOption option = GetSelectedOption();
             if (option == null)
             {
                 MessageBox.Show(this, "Select a title first.", "Title editor", MessageBoxButtons.OK, MessageBoxIcon.Information);
@@ -799,7 +822,7 @@ namespace FWEledit
                 return false;
             }
 
-            ItemReferenceOption option = listBox != null ? listBox.SelectedItem as ItemReferenceOption : null;
+            ItemReferenceOption option = GetSelectedOption();
             if (option == null)
             {
                 if (showSuccessMessage)
@@ -986,6 +1009,109 @@ namespace FWEledit
             }
 
             TextRenderer.DrawText(graphics, text, Font, bounds, color, TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
+        }
+
+        private sealed class VirtualListBox : ListBox
+        {
+            private const int LbsSort = 0x0002;
+            private const int LbsHasStrings = 0x0040;
+            private const int LbsNoData = 0x2000;
+            private const int LbGetCurSel = 0x0188;
+            private const int LbSetCurSel = 0x0186;
+            private const int LbGetTopIndex = 0x018E;
+            private const int LbSetTopIndex = 0x0197;
+            private const int LbSetCount = 0x01A7;
+
+            private int virtualItemCount;
+            private int virtualSelectedIndex = -1;
+            private int virtualTopIndex;
+
+            protected override CreateParams CreateParams
+            {
+                get
+                {
+                    CreateParams parameters = base.CreateParams;
+                    parameters.Style &= ~(LbsSort | LbsHasStrings);
+                    parameters.Style |= LbsNoData;
+                    return parameters;
+                }
+            }
+
+            public void SetVirtualItemCount(int count)
+            {
+                virtualItemCount = Math.Max(0, count);
+                if (virtualSelectedIndex >= virtualItemCount)
+                {
+                    virtualSelectedIndex = -1;
+                }
+
+                if (IsHandleCreated)
+                {
+                    SendMessage(Handle, LbSetCount, new IntPtr(virtualItemCount), IntPtr.Zero);
+                    ApplyVirtualSelection();
+                    Invalidate();
+                }
+            }
+
+            public int GetVirtualSelectedIndex()
+            {
+                if (IsHandleCreated)
+                {
+                    virtualSelectedIndex = SendMessage(Handle, LbGetCurSel, IntPtr.Zero, IntPtr.Zero).ToInt32();
+                }
+                return virtualSelectedIndex;
+            }
+
+            public void SetVirtualSelectedIndex(int index)
+            {
+                int normalizedIndex = index >= 0 && index < virtualItemCount ? index : -1;
+                int previousIndex = GetVirtualSelectedIndex();
+                virtualSelectedIndex = normalizedIndex;
+                if (IsHandleCreated)
+                {
+                    ApplyVirtualSelection();
+                }
+                if (previousIndex != normalizedIndex)
+                {
+                    OnSelectedIndexChanged(EventArgs.Empty);
+                }
+            }
+
+            public void SetVirtualTopIndex(int index)
+            {
+                virtualTopIndex = Math.Max(0, Math.Min(index, Math.Max(0, virtualItemCount - 1)));
+                if (IsHandleCreated)
+                {
+                    SendMessage(Handle, LbSetTopIndex, new IntPtr(virtualTopIndex), IntPtr.Zero);
+                }
+            }
+
+            protected override void OnHandleCreated(EventArgs e)
+            {
+                base.OnHandleCreated(e);
+                SendMessage(Handle, LbSetCount, new IntPtr(virtualItemCount), IntPtr.Zero);
+                ApplyVirtualSelection();
+                SendMessage(Handle, LbSetTopIndex, new IntPtr(virtualTopIndex), IntPtr.Zero);
+            }
+
+            protected override void OnHandleDestroyed(EventArgs e)
+            {
+                if (IsHandleCreated)
+                {
+                    virtualSelectedIndex = SendMessage(Handle, LbGetCurSel, IntPtr.Zero, IntPtr.Zero).ToInt32();
+                    virtualTopIndex = Math.Max(0, SendMessage(Handle, LbGetTopIndex, IntPtr.Zero, IntPtr.Zero).ToInt32());
+                    SendMessage(Handle, LbSetCount, IntPtr.Zero, IntPtr.Zero);
+                }
+                base.OnHandleDestroyed(e);
+            }
+
+            private void ApplyVirtualSelection()
+            {
+                SendMessage(Handle, LbSetCurSel, new IntPtr(virtualSelectedIndex), IntPtr.Zero);
+            }
+
+            [DllImport("user32.dll")]
+            private static extern IntPtr SendMessage(IntPtr windowHandle, int message, IntPtr wordParameter, IntPtr longParameter);
         }
 
         private sealed class ListFilter

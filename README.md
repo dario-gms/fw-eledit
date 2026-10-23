@@ -12,21 +12,16 @@ FWEledit is based on [sELedit++ by Wrechid](https://github.com/Wrechid/sELedit-)
 
 ---
 
-## What's New in v0.9.5.30
+## What's New in v0.9.5.31
 
-- Added direct PCK file reads through persistent sessions, reducing temporary extraction and accelerating model changes.
-- Added a shared package-index cache with automatic invalidation when a PCK changes.
-- Accelerated texture loading by trying exact paths before searching for similar entries.
-- Fixed colors and textures for mount variants.
-- Correctly resolved numbered SKI/SMD models and local model variants.
-- Added mount-specific transparency handling.
-- Fixed dark parts, black planes, incorrect cutouts, and apparently missing model components.
-- Detected duplicate SKI meshes to prevent overlapping geometry and visual artifacts.
-- Fixed isolated model deformations.
-- Applied race-specific skinning correctly.
-- Added right-mouse dragging to move models left, right, up, and down.
-- Reset View and double-click now also restore the model's displaced position.
-- Added model movement support to the OpenGL, DirectX 11, and software renderers.
+- Fixed `Equipment Essence > Refine` references so `id_identify` selects the correct item instead of an identify attribute/config entry.
+- Prevented a staged item description from being applied to another item after the selection changes.
+- Made generated IDs globally unique across element lists for cloning, importing, and the **Set unique ID** action.
+- Fixed cross-list ID collisions that could break existing equipment addon packages or prevent cloned drop tables from working in game.
+- Virtualized the item reference picker so large lists and **All lists** open dramatically faster without limiting results.
+- Accelerated item search, filtering, scrolling, and keyboard navigation in the reference picker.
+- Removed duplicate initial picker loading and unnecessary UI work during list changes.
+- Updated project/app version metadata to `v0.9.5.31`.
 
 Previous release notes were moved to [docs/WHATS_NEW.md](docs/WHATS_NEW.md).
 
