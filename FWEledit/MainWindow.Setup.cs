@@ -92,7 +92,7 @@ namespace FWEledit
                 assembly,
                 label_Version,
                 navigationStateService,
-                "0.9.5.31");
+                "0.9.5.32");
 
             fwDarkMode = Properties.Settings.Default.UseDarkMode;
             cpb2.Value = 0;
@@ -1090,6 +1090,7 @@ namespace FWEledit
                 () =>
                 {
                     IconPickerWindow.BeginBackgroundWarmup(sessionService.Database);
+                    StartReferenceCacheWarmup();
                 },
                 colorTheme,
                 LoadItemDescriptionsFromConfigs,
@@ -1101,7 +1102,6 @@ namespace FWEledit
                     sessionService.Xrefs = result.Xrefs;
                     viewModel.ElementsPath = result.ElementsPath ?? string.Empty;
                     ConfigureReferenceCachePersistence(viewModel.ElementsPath);
-                    StartReferenceCacheWarmup();
                 },
                 listDisplayService,
                 listComboPopulationService,

@@ -2305,7 +2305,15 @@ namespace FWEledit
             public bool ModelAnimationPlaying
             {
                 get { return modelAnimationPlaying; }
-                set { modelAnimationPlaying = value; }
+                set
+                {
+                    bool startAnimation = value && !modelAnimationPlaying;
+                    modelAnimationPlaying = value;
+                    if (startAnimation)
+                    {
+                        ApplyModelAnimationFrame();
+                    }
+                }
             }
 
             public ModelPreviewDx11Viewport(ModelPreviewMeshData meshData)
@@ -2382,7 +2390,28 @@ namespace FWEledit
             {
                 selectedAnimationIndex = selectedIndex >= 0 && animationClips != null && selectedIndex < animationClips.Length ? selectedIndex : -1;
                 modelAnimationTimeSeconds = 0f;
-                ApplyModelAnimationFrame();
+                if (modelAnimationPlaying)
+                {
+                    ApplyModelAnimationFrame();
+                }
+                else
+                {
+                    ApplyModelRestPose();
+                }
+            }
+
+            private void ApplyModelRestPose()
+            {
+                vertices = baseVertices;
+                normals = ModelPreviewViewport.ComputeVertexNormals(vertices, indices, normals);
+                BuildRenderData(out renderVertices, out renderIndices);
+                if (dxResourcesInitialized && device != null)
+                {
+                    SharpDX.Utilities.Dispose(ref vertexBuffer);
+                    SharpDX.Utilities.Dispose(ref indexBuffer);
+                    CreateGeometryBuffers();
+                }
+                Invalidate();
             }
 
             public bool AdvanceModelAnimation(float deltaSeconds)
@@ -3370,8 +3399,13 @@ float4 PSMain(PS_INPUT input) : SV_Target
                 get { return modelAnimationPlaying; }
                 set
                 {
+                    bool startAnimation = value && !modelAnimationPlaying;
                     modelAnimationPlaying = value;
                     ResetRenderAnimationClock();
+                    if (startAnimation)
+                    {
+                        ApplyModelAnimationFrame();
+                    }
                     if (value)
                     {
                         Invalidate();
@@ -3461,7 +3495,22 @@ float4 PSMain(PS_INPUT input) : SV_Target
                 selectedAnimationIndex = selectedIndex >= 0 && animationClips != null && selectedIndex < animationClips.Length ? selectedIndex : -1;
                 modelAnimationTimeSeconds = 0f;
                 ResetRenderAnimationClock();
-                ApplyModelAnimationFrame();
+                if (modelAnimationPlaying)
+                {
+                    ApplyModelAnimationFrame();
+                }
+                else
+                {
+                    ApplyModelRestPose();
+                }
+            }
+
+            private void ApplyModelRestPose()
+            {
+                vertices = baseVertices;
+                normals = ModelPreviewViewport.ComputeVertexNormals(vertices, indices, normals);
+                clientVertexDataDirty = true;
+                Invalidate();
             }
 
             public bool AdvanceModelAnimation(float deltaSeconds)
@@ -4445,7 +4494,15 @@ float4 PSMain(PS_INPUT input) : SV_Target
             public bool ModelAnimationPlaying
             {
                 get { return modelAnimationPlaying; }
-                set { modelAnimationPlaying = value; }
+                set
+                {
+                    bool startAnimation = value && !modelAnimationPlaying;
+                    modelAnimationPlaying = value;
+                    if (startAnimation)
+                    {
+                        ApplyModelAnimationFrame();
+                    }
+                }
             }
             public bool UseHardwareRendering
             {
@@ -4547,7 +4604,21 @@ float4 PSMain(PS_INPUT input) : SV_Target
             {
                 selectedAnimationIndex = selectedIndex >= 0 && animationClips != null && selectedIndex < animationClips.Length ? selectedIndex : -1;
                 modelAnimationTimeSeconds = 0f;
-                ApplyModelAnimationFrame();
+                if (modelAnimationPlaying)
+                {
+                    ApplyModelAnimationFrame();
+                }
+                else
+                {
+                    ApplyModelRestPose();
+                }
+            }
+
+            private void ApplyModelRestPose()
+            {
+                vertices = baseVertices;
+                baseNormals = ComputeVertexNormals(vertices, indices, baseNormals);
+                Invalidate();
             }
 
             public bool AdvanceModelAnimation(float deltaSeconds)

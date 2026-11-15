@@ -2123,6 +2123,7 @@ namespace FWEledit
         public bool TryFindOptionById(eListCollection listCollection, int targetListIndex, int id, CacheSave database, IconResolutionService iconResolutionService, out ItemReferenceOption option)
         {
             option = null;
+            EnsureCacheContext(listCollection, database, iconResolutionService);
             if (targetListIndex == TitleDefinitionsTargetIndex)
             {
                 return TitleDefinitionCatalog.TryGetOptionById(id, out option);
@@ -2135,8 +2136,6 @@ namespace FWEledit
                     && taskById.TryGetValue(id, out option);
             }
 
-            BuildOptions(listCollection, targetListIndex, database, iconResolutionService);
-
             Dictionary<int, ItemReferenceOption> byId;
             if (optionsByIdByListIndex.TryGetValue(targetListIndex, out byId)
                 && byId.TryGetValue(id, out option))
@@ -2144,6 +2143,94 @@ namespace FWEledit
                 EnsureInheritedOptionIcon(listCollection, targetListIndex, option, database, iconResolutionService);
                 return true;
             }
+
+            if (!TryBuildOptionByIdUncached(
+                listCollection,
+                targetListIndex,
+                id,
+                database,
+                iconResolutionService,
+                out option))
+            {
+                return false;
+            }
+
+            if (!optionsByIdByListIndex.TryGetValue(targetListIndex, out byId))
+            {
+                byId = new Dictionary<int, ItemReferenceOption>();
+                optionsByIdByListIndex[targetListIndex] = byId;
+            }
+            byId[id] = option;
+            return true;
+        }
+
+        private bool TryBuildOptionByIdUncached(
+            eListCollection listCollection,
+            int targetListIndex,
+            int id,
+            CacheSave database,
+            IconResolutionService iconResolutionService,
+            out ItemReferenceOption option)
+        {
+            option = null;
+            if (listCollection == null
+                || targetListIndex < 0
+                || targetListIndex >= listCollection.Lists.Length
+                || listCollection.Lists[targetListIndex] == null
+                || listCollection.Lists[targetListIndex].elementFields == null
+                || listCollection.Lists[targetListIndex].elementValues == null)
+            {
+                return false;
+            }
+
+            int nameIndex = GetNameFieldIndex(listCollection, targetListIndex);
+            int iconIndex = GetIconFieldIndex(listCollection, targetListIndex);
+            int qualityIndex = GetQualityFieldIndex(listCollection, targetListIndex);
+            string listName = listCollection.Lists[targetListIndex].listName ?? string.Empty;
+            string normalizedListName = NormalizeListName(listName);
+            for (int elementIndex = 0; elementIndex < listCollection.Lists[targetListIndex].elementValues.Length; elementIndex++)
+            {
+                int candidateId;
+                if (!int.TryParse(listCollection.GetValue(targetListIndex, elementIndex, 0), out candidateId)
+                    || candidateId != id)
+                {
+                    continue;
+                }
+
+                string rawName = ResolveOptionName(listCollection, targetListIndex, elementIndex, nameIndex, normalizedListName);
+                Color? nameForeColor;
+                string name = NormalizeOptionDisplayName(rawName, out nameForeColor);
+                if (string.Equals(normalizedListName, "EQUIPMENT_ADDON", StringComparison.OrdinalIgnoreCase))
+                {
+                    string decodedName = DecodeEquipmentAddonName(listCollection, database, id);
+                    if (!string.IsNullOrWhiteSpace(decodedName))
+                    {
+                        rawName = decodedName;
+                        name = NormalizeOptionDisplayName(rawName, out nameForeColor);
+                    }
+                }
+
+                option = new ItemReferenceOption
+                {
+                    ListIndex = targetListIndex,
+                    ElementIndex = elementIndex,
+                    Id = id,
+                    Name = name,
+                    RawName = rawName,
+                    NameForeColor = nameForeColor,
+                    ListName = listName,
+                    IconKey = ResolveSourceElementIconKey(
+                        listCollection,
+                        database,
+                        iconResolutionService,
+                        targetListIndex,
+                        elementIndex,
+                        iconIndex),
+                    Quality = ResolveOptionQuality(listCollection, targetListIndex, elementIndex, qualityIndex)
+                };
+                return true;
+            }
+
             return false;
         }
 
@@ -2176,10 +2263,20 @@ namespace FWEledit
         private bool TryFindOptionByIdAcrossLists(eListCollection listCollection, int id, CacheSave database, IconResolutionService iconResolutionService, out ItemReferenceOption option)
         {
             option = null;
-            BuildSearchableOptions(listCollection, database, iconResolutionService);
             if (searchableOptionsById != null && searchableOptionsById.TryGetValue(id, out option))
             {
                 return true;
+            }
+
+            if (listCollection != null && listCollection.Lists != null)
+            {
+                for (int listIndex = 0; listIndex < listCollection.Lists.Length; listIndex++)
+                {
+                    if (TryBuildOptionByIdUncached(listCollection, listIndex, id, database, iconResolutionService, out option))
+                    {
+                        return true;
+                    }
+                }
             }
             return false;
         }
@@ -2187,12 +2284,11 @@ namespace FWEledit
         private bool TryFindItemOptionByIdAcrossLists(eListCollection listCollection, int id, CacheSave database, IconResolutionService iconResolutionService, out ItemReferenceOption option)
         {
             option = null;
-            BuildSearchableItemOptions(listCollection, database, iconResolutionService);
             if (searchableItemOptionsById != null && searchableItemOptionsById.TryGetValue(id, out option))
             {
                 return true;
             }
-            return false;
+            return TryBuildItemOptionByIdUncached(listCollection, id, database, iconResolutionService, out option);
         }
 
         private bool TryFindOptionByNameAcrossLists(eListCollection listCollection, string name, out ItemReferenceOption option)

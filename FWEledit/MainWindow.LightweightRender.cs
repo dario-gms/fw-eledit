@@ -6,7 +6,7 @@ namespace FWEledit
 {
     public partial class MainWindow : Form
     {
-        private const int LightweightListRenderThreshold = 1000;
+        private const int LightweightListRenderThreshold = 100;
 
         private bool ShouldUseLightweightListRender(int listIndex)
         {

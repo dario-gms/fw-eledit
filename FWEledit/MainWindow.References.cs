@@ -107,8 +107,10 @@ namespace FWEledit
             referenceIndexService.Clear();
             referenceIndexReady = false;
             referenceIndexBuildTask = null;
+            referenceIndexLoadedFromDisk = false;
             itemReferenceService.ClearCache();
             itemReferenceOptionsReady = false;
+            itemReferenceOptionsLoadedFromDisk = false;
             itemReferenceOptionsWarmupTask = null;
             lock (referenceRowsCacheSync)
             {
@@ -121,6 +123,7 @@ namespace FWEledit
             referenceIndexService.Clear();
             referenceIndexReady = false;
             referenceIndexBuildTask = null;
+            referenceIndexLoadedFromDisk = false;
             lock (referenceRowsCacheSync)
             {
                 referenceRowsCache.Clear();
@@ -131,6 +134,7 @@ namespace FWEledit
         {
             itemReferenceService.ClearCache();
             itemReferenceOptionsReady = false;
+            itemReferenceOptionsLoadedFromDisk = false;
             itemReferenceOptionsWarmupTask = null;
             lock (referenceRowsCacheSync)
             {
@@ -142,6 +146,8 @@ namespace FWEledit
         {
             persistedReferenceCachePath = string.Empty;
             persistedReferenceCacheSignature = string.Empty;
+            referenceIndexLoadedFromDisk = false;
+            itemReferenceOptionsLoadedFromDisk = false;
 
             if (string.IsNullOrWhiteSpace(elementsPath) || !File.Exists(elementsPath))
             {
@@ -194,18 +200,16 @@ namespace FWEledit
             try
             {
                 referenceIndexService.ElementsPath = viewModel != null ? viewModel.ElementsPath : string.Empty;
-                string json;
                 using (FileStream stream = File.OpenRead(persistedReferenceCachePath))
                 using (GZipStream gzip = new GZipStream(stream, CompressionMode.Decompress))
                 using (StreamReader reader = new StreamReader(gzip))
+                using (JsonTextReader jsonReader = new JsonTextReader(reader))
                 {
-                    json = reader.ReadToEnd();
-                }
-
-                PersistedReferenceIndexCache cache = JsonConvert.DeserializeObject<PersistedReferenceIndexCache>(json);
+                    PersistedReferenceIndexCache cache = new JsonSerializer().Deserialize<PersistedReferenceIndexCache>(jsonReader);
                 if (cache == null
                     || !string.Equals(cache.Signature, persistedReferenceCacheSignature, StringComparison.OrdinalIgnoreCase)
-                    || cache.ReferencesByTarget == null)
+                        || cache.ReferencesByTarget == null
+                        || cache.ReferencesByTarget.Count == 0)
                 {
                     return false;
                 }
@@ -214,8 +218,10 @@ namespace FWEledit
                     sessionService.ListCollection,
                     itemReferenceService,
                     cache.ReferencesByTarget);
+                }
 
                 referenceIndexReady = true;
+                referenceIndexLoadedFromDisk = true;
                 return true;
             }
             catch
@@ -256,7 +262,8 @@ namespace FWEledit
                 || sessionService.ListCollection == null
                 || itemReferenceService == null
                 || viewModel == null
-                || viewModel.HasUnsavedChanges)
+                || viewModel.HasUnsavedChanges
+                || referenceIndexLoadedFromDisk)
             {
                 return;
             }
@@ -282,12 +289,12 @@ namespace FWEledit
                         Directory.CreateDirectory(directory);
                     }
 
-                    string json = JsonConvert.SerializeObject(payload);
                     using (FileStream stream = File.Create(cachePath))
                     using (GZipStream gzip = new GZipStream(stream, CompressionMode.Compress))
                     using (StreamWriter writer = new StreamWriter(gzip))
+                    using (JsonTextWriter jsonWriter = new JsonTextWriter(writer))
                     {
-                        writer.Write(json);
+                        new JsonSerializer().Serialize(jsonWriter, payload);
                     }
                 }
                 catch
@@ -357,18 +364,16 @@ namespace FWEledit
 
             try
             {
-                string json;
                 using (FileStream stream = File.OpenRead(persistedItemReferenceOptionsCachePath))
                 using (GZipStream gzip = new GZipStream(stream, CompressionMode.Decompress))
                 using (StreamReader reader = new StreamReader(gzip))
+                using (JsonTextReader jsonReader = new JsonTextReader(reader))
                 {
-                    json = reader.ReadToEnd();
-                }
-
-                PersistedItemReferenceOptionsCache cache = JsonConvert.DeserializeObject<PersistedItemReferenceOptionsCache>(json);
+                    PersistedItemReferenceOptionsCache cache = new JsonSerializer().Deserialize<PersistedItemReferenceOptionsCache>(jsonReader);
                 if (cache == null
                     || !string.Equals(cache.Signature, persistedReferenceCacheSignature, StringComparison.OrdinalIgnoreCase)
-                    || cache.OptionsByList == null)
+                        || cache.OptionsByList == null
+                        || cache.OptionsByList.Count == 0)
                 {
                     return false;
                 }
@@ -378,7 +383,9 @@ namespace FWEledit
                     sessionService.Database,
                     iconResolutionService,
                     cache.OptionsByList);
+                }
                 itemReferenceOptionsReady = true;
+                itemReferenceOptionsLoadedFromDisk = true;
                 return true;
             }
             catch
@@ -397,7 +404,8 @@ namespace FWEledit
                 || itemReferenceService == null
                 || iconResolutionService == null
                 || viewModel == null
-                || viewModel.HasUnsavedChanges)
+                || viewModel.HasUnsavedChanges
+                || itemReferenceOptionsLoadedFromDisk)
             {
                 return;
             }
@@ -406,6 +414,10 @@ namespace FWEledit
                 sessionService.ListCollection,
                 sessionService.Database,
                 iconResolutionService);
+            if (exported == null || exported.Count == 0)
+            {
+                return;
+            }
 
             PersistedItemReferenceOptionsCache payload = new PersistedItemReferenceOptionsCache
             {
@@ -424,12 +436,12 @@ namespace FWEledit
                         Directory.CreateDirectory(directory);
                     }
 
-                    string json = JsonConvert.SerializeObject(payload);
                     using (FileStream stream = File.Create(cachePath))
                     using (GZipStream gzip = new GZipStream(stream, CompressionMode.Compress))
                     using (StreamWriter writer = new StreamWriter(gzip))
+                    using (JsonTextWriter jsonWriter = new JsonTextWriter(writer))
                     {
-                        writer.Write(json);
+                        new JsonSerializer().Serialize(jsonWriter, payload);
                     }
                 }
                 catch
