@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -39,6 +40,26 @@ namespace FWEledit
             public int EndOffset { get; set; }
         }
 
+        private sealed class PckComparisonResult
+        {
+            public string PackageName { get; set; }
+            public string SourceRelativePath { get; set; }
+            public string RelativePath { get; set; }
+            public long SourceLength { get; set; }
+            public long TargetLength { get; set; }
+            public string SourceHash { get; set; }
+            public string TargetHash { get; set; }
+            public bool TargetExists { get; set; }
+            public bool IsIdentical { get; set; }
+        }
+
+        private sealed class PckPackageLoadResult
+        {
+            public bool Success { get; set; }
+            public List<string> Entries { get; set; }
+            public string Error { get; set; }
+        }
+
         private readonly AssetManager assetManager;
         private readonly PckEntryReaderService reader = new PckEntryReaderService();
         private readonly TgaImageService tgaImageService = new TgaImageService();
@@ -67,6 +88,8 @@ namespace FWEledit
         private TextBox targetPrefixTextBox;
         private CheckBox preservePathCheckBox;
         private Button importButton;
+        private Button compareButton;
+        private Button replaceDifferentButton;
         private Label statusLabel;
         private SplitContainer mainSplitContainer;
 
@@ -75,8 +98,10 @@ namespace FWEledit
         private string sourcePackageName = string.Empty;
         private readonly string targetClientRootPath;
         private int previewRequestId;
+        private int packageLoadRequestId;
         private ModelPreviewWindow embeddedPreviewWindow;
         private bool updatingExtensionFilters;
+        private List<PckComparisonResult> lastComparison = new List<PckComparisonResult>();
 
         public PckExplorerWindow(AssetManager assetManager)
         {
@@ -205,7 +230,7 @@ namespace FWEledit
             right.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
             right.RowStyles.Add(new RowStyle(SizeType.Absolute, 30F));
             right.RowStyles.Add(new RowStyle(SizeType.Absolute, 112F));
-            right.RowStyles.Add(new RowStyle(SizeType.Absolute, 122F));
+            right.RowStyles.Add(new RowStyle(SizeType.Absolute, 158F));
             right.BackColor = back;
             mainSplitContainer.Panel2.Controls.Add(right);
 
@@ -253,7 +278,7 @@ namespace FWEledit
             importLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
             importLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 30F));
             importLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 30F));
-            importLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+            importLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 34F));
             importGroup.Controls.Add(importLayout);
 
             importLayout.Controls.Add(BuildLabel("Package:"), 0, 0);
@@ -283,6 +308,21 @@ namespace FWEledit
             importLayout.Controls.Add(targetPrefixTextBox, 1, 1);
             importLayout.SetColumnSpan(targetPrefixTextBox, 3);
 
+            compareButton = BuildButton("Compare with Client", raised, text);
+            compareButton.Margin = new Padding(0, 4, 4, 0);
+            compareButton.TabStop = false;
+            compareButton.MouseClick += delegate { CompareSelectedEntries(); };
+            importLayout.Controls.Add(compareButton, 0, 2);
+            importLayout.SetColumnSpan(compareButton, 2);
+
+            replaceDifferentButton = BuildButton("Replace Different", raised, text);
+            replaceDifferentButton.Margin = new Padding(4, 4, 0, 0);
+            replaceDifferentButton.Enabled = false;
+            replaceDifferentButton.TabStop = false;
+            replaceDifferentButton.MouseClick += delegate { ReplaceDifferentEntries(); };
+            importLayout.Controls.Add(replaceDifferentButton, 2, 2);
+            importLayout.SetColumnSpan(replaceDifferentButton, 2);
+
             statusLabel = BuildLabel("Open a PCK/PKX file to inspect it.");
             statusLabel.Dock = DockStyle.Fill;
             root.Controls.Add(statusLabel, 0, 3);
@@ -294,6 +334,10 @@ namespace FWEledit
             {
                 ClearEmbeddedPreview();
                 DisposeExtensionFilterDropDown();
+                entryListView.Items.Clear();
+                entries.Clear();
+                lastComparison.Clear();
+                ReleaseExternalSourcePackageIndexes();
             };
         }
 
@@ -376,8 +420,12 @@ namespace FWEledit
             }
         }
 
-        private void LoadPackage(string selectedPath)
+        private async void LoadPackage(string selectedPath)
         {
+            int requestId = Interlocked.Increment(ref packageLoadRequestId);
+            ClearEmbeddedPreview();
+            ReleaseExternalSourcePackageIndexes();
+
             string extension = Path.GetExtension(selectedPath) ?? string.Empty;
             if (extension.Equals(".pkx", StringComparison.OrdinalIgnoreCase))
             {
@@ -398,21 +446,49 @@ namespace FWEledit
             targetEntryColorCache.Clear();
             entryListView.Items.Clear();
             ClearImagePreview();
-            ClearEmbeddedPreview();
             infoTextBox.Clear();
 
             Cursor previousCursor = Cursor.Current;
             Cursor.Current = Cursors.WaitCursor;
+            openButton.Enabled = false;
+            statusLabel.Text = "Loading " + sourcePackageName + ".pck...";
             try
             {
-                if (!reader.TryEnumeratePackageFileEntries(sourcePackageName, sourcePckPath, sourcePkxPath, out List<string> packageEntries, out string error))
+                string packageName = sourcePackageName;
+                string pckPath = sourcePckPath;
+                string pkxPath = sourcePkxPath;
+                PckPackageLoadResult loadResult = await Task.Run(() =>
                 {
+                    List<string> packageEntries;
+                    string error;
+                    bool success = reader.TryEnumeratePackageFileEntries(
+                        packageName,
+                        pckPath,
+                        pkxPath,
+                        out packageEntries,
+                        out error);
+                    return new PckPackageLoadResult
+                    {
+                        Success = success,
+                        Entries = packageEntries,
+                        Error = error
+                    };
+                });
+
+                if (IsDisposed || requestId != packageLoadRequestId)
+                {
+                    return;
+                }
+
+                if (loadResult == null || !loadResult.Success)
+                {
+                    string error = loadResult != null ? loadResult.Error : "Package loading failed.";
                     statusLabel.Text = error;
                     MessageBox.Show(this, error, "PCK Explorer", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     return;
                 }
 
-                entries.AddRange(packageEntries
+                entries.AddRange((loadResult.Entries ?? new List<string>())
                     .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
                     .Select(path => new PckExplorerEntry
                     {
@@ -426,6 +502,50 @@ namespace FWEledit
             finally
             {
                 Cursor.Current = previousCursor;
+                if (!IsDisposed && requestId == packageLoadRequestId)
+                {
+                    openButton.Enabled = true;
+                }
+            }
+        }
+
+        private void ReleaseExternalSourcePackageIndexes()
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(sourcePckPath))
+                {
+                    return;
+                }
+
+                string sourceResources = Path.GetDirectoryName(sourcePckPath);
+                if (string.IsNullOrWhiteSpace(sourceResources) || !Directory.Exists(sourceResources))
+                {
+                    return;
+                }
+
+                string targetResources = string.IsNullOrWhiteSpace(targetClientRootPath)
+                    ? string.Empty
+                    : Path.Combine(targetClientRootPath, "resources");
+                string sourceFull = Path.GetFullPath(sourceResources).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                string targetFull = string.IsNullOrWhiteSpace(targetResources)
+                    ? string.Empty
+                    : Path.GetFullPath(targetResources).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                if (!string.IsNullOrWhiteSpace(targetFull)
+                    && string.Equals(sourceFull, targetFull, StringComparison.OrdinalIgnoreCase))
+                {
+                    return;
+                }
+
+                int released = PckEntryReaderService.ReleasePackageIndexesUnderDirectory(sourceFull);
+                if (released > 0)
+                {
+                    GC.Collect(2, GCCollectionMode.Forced, true);
+                    GC.WaitForPendingFinalizers();
+                }
+            }
+            catch
+            {
             }
         }
 
@@ -737,6 +857,12 @@ namespace FWEledit
 
         private void RefreshPreview()
         {
+            lastComparison.Clear();
+            if (replaceDifferentButton != null)
+            {
+                replaceDifferentButton.Enabled = false;
+            }
+
             ClearImagePreview();
 
             if (entryListView.SelectedItems.Count == 0 || !(entryListView.SelectedItems[0].Tag is PckExplorerEntry entry))
@@ -1042,6 +1168,346 @@ namespace FWEledit
             }
         }
 
+        private async void CompareSelectedEntries()
+        {
+            if (entryListView.SelectedItems.Count == 0)
+            {
+                MessageBox.Show(this, "Select one or more package entries first.", "PCK Explorer", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(targetClientRootPath) || !Directory.Exists(targetClientRootPath))
+            {
+                MessageBox.Show(this, "Load a game client before comparing its PCK files.", "PCK Explorer", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            List<PckExplorerEntry> selectedEntries = entryListView.SelectedItems
+                .Cast<ListViewItem>()
+                .Select(item => item.Tag as PckExplorerEntry)
+                .Where(entry => entry != null)
+                .ToList();
+
+            compareButton.Enabled = false;
+            replaceDifferentButton.Enabled = false;
+            Cursor previousCursor = Cursor.Current;
+            Cursor.Current = Cursors.WaitCursor;
+            statusLabel.Text = "Comparing selected entries and model dependencies...";
+            try
+            {
+                List<PckComparisonResult> comparison = await Task.Run(() => BuildClientComparison(selectedEntries));
+                lastComparison = comparison ?? new List<PckComparisonResult>();
+                ShowComparisonResults(lastComparison);
+                replaceDifferentButton.Enabled = lastComparison.Any(item => !item.IsIdentical);
+            }
+            catch (Exception ex)
+            {
+                lastComparison.Clear();
+                infoTextBox.Text = "Comparison failed." + Environment.NewLine + ex.Message;
+                statusLabel.Text = "Comparison failed.";
+                MessageBox.Show(this, ex.Message, "PCK Explorer", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                Cursor.Current = previousCursor;
+                compareButton.Enabled = true;
+            }
+        }
+
+        private List<PckComparisonResult> BuildClientComparison(IList<PckExplorerEntry> selectedEntries)
+        {
+            Dictionary<string, HashSet<string>> sourceEntryCache = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+            Dictionary<string, ImportAssetRequest> queued = new Dictionary<string, ImportAssetRequest>(StringComparer.OrdinalIgnoreCase);
+            Queue<ImportAssetRequest> pending = new Queue<ImportAssetRequest>();
+            Dictionary<string, string> packageRemap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            int dependencyCount = 0;
+
+            foreach (PckExplorerEntry entry in selectedEntries ?? new List<PckExplorerEntry>())
+            {
+                if (entry == null || string.IsNullOrWhiteSpace(entry.RelativePath))
+                {
+                    continue;
+                }
+
+                ImportAssetRequest root = new ImportAssetRequest
+                {
+                    SourcePackage = sourcePackageName,
+                    SourceRelativePath = NormalizePath(entry.RelativePath),
+                    TargetPackage = sourcePackageName,
+                    TargetRelativePath = NormalizePath(entry.RelativePath),
+                    IsRoot = true
+                };
+                AddQueuedImport(queued, pending, root);
+                QueuePreviewResolvedDependencies(root, packageRemap, sourceEntryCache, queued, pending, ref dependencyCount);
+            }
+
+            List<PckComparisonResult> results = new List<PckComparisonResult>();
+            int processed = 0;
+            while (pending.Count > 0 && processed < 5000)
+            {
+                processed++;
+                ImportAssetRequest current = pending.Dequeue();
+                if (!TryReadSourceAsset(current.SourcePackage, current.SourceRelativePath, out byte[] sourcePayload, out string resolvedPath, out string sourceError))
+                {
+                    continue;
+                }
+
+                current.SourceRelativePath = NormalizePath(resolvedPath);
+                current.TargetRelativePath = NormalizePath(current.TargetRelativePath);
+                byte[] targetPayload;
+                string targetResolved;
+                string targetError;
+                bool targetExists = TryReadTargetClientAsset(current.TargetPackage, current.TargetRelativePath, out targetPayload, out targetResolved, out targetError);
+                string sourceHash = ComputeSha256(sourcePayload);
+                string targetHash = targetExists ? ComputeSha256(targetPayload) : string.Empty;
+                results.Add(new PckComparisonResult
+                {
+                    PackageName = NormalizePackageName(current.TargetPackage),
+                    SourceRelativePath = current.SourceRelativePath,
+                    RelativePath = targetExists ? NormalizePath(targetResolved) : current.TargetRelativePath,
+                    SourceLength = sourcePayload.LongLength,
+                    TargetLength = targetExists ? targetPayload.LongLength : 0,
+                    SourceHash = sourceHash,
+                    TargetHash = targetHash,
+                    TargetExists = targetExists,
+                    IsIdentical = targetExists && string.Equals(sourceHash, targetHash, StringComparison.OrdinalIgnoreCase)
+                });
+
+                if (!ShouldScanForDependencies(current.SourceRelativePath))
+                {
+                    continue;
+                }
+
+                foreach (string candidate in CollectReferenceCandidates(current.SourcePackage, current.SourceRelativePath, sourcePayload))
+                {
+                    ImportAssetRequest dependency;
+                    if (!TryResolveSourceDependency(candidate, sourceEntryCache, out dependency))
+                    {
+                        continue;
+                    }
+
+                    dependency.TargetPackage = dependency.SourcePackage;
+                    dependency.TargetRelativePath = dependency.SourceRelativePath;
+                    if (AddQueuedImport(queued, pending, dependency))
+                    {
+                        dependencyCount++;
+                    }
+                }
+            }
+
+            return results
+                .GroupBy(item => NormalizePackageName(item.PackageName) + "\n" + NormalizePath(item.RelativePath), StringComparer.OrdinalIgnoreCase)
+                .Select(group => group.First())
+                .OrderBy(item => item.IsIdentical)
+                .ThenBy(item => item.PackageName, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(item => item.RelativePath, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
+        private bool TryReadTargetClientAsset(string packageName, string relativePath, out byte[] payload, out string resolvedPath, out string error)
+        {
+            payload = null;
+            resolvedPath = string.Empty;
+            error = string.Empty;
+            string package = NormalizePackageName(packageName);
+            string resourcesRoot = Path.Combine(targetClientRootPath, "resources");
+            string pckPath = Path.Combine(resourcesRoot, package + ".pck");
+            string pkxPath = Path.Combine(resourcesRoot, package + ".pkx");
+            if (!File.Exists(pckPath))
+            {
+                error = "Target package was not found: " + package + ".pck";
+                return false;
+            }
+            if (!File.Exists(pkxPath))
+            {
+                pkxPath = string.Empty;
+            }
+
+            return reader.TryReadPackageFileEntry(package, pckPath, pkxPath, relativePath, out payload, out resolvedPath, out error);
+        }
+
+        private static string ComputeSha256(byte[] payload)
+        {
+            using (SHA256 sha = SHA256.Create())
+            {
+                return BitConverter.ToString(sha.ComputeHash(payload ?? new byte[0])).Replace("-", string.Empty);
+            }
+        }
+
+        private void ShowComparisonResults(IList<PckComparisonResult> comparison)
+        {
+            int total = comparison == null ? 0 : comparison.Count;
+            int identical = comparison == null ? 0 : comparison.Count(item => item.IsIdentical);
+            int missing = comparison == null ? 0 : comparison.Count(item => !item.TargetExists);
+            int different = total - identical - missing;
+            List<string> lines = new List<string>
+            {
+                "Comparison with current client",
+                "Checked: " + total.ToString("N0") + " file(s)",
+                "Identical: " + identical.ToString("N0"),
+                "Different: " + different.ToString("N0"),
+                "Missing: " + missing.ToString("N0")
+            };
+
+            foreach (PckComparisonResult item in (comparison ?? new List<PckComparisonResult>()).Where(result => !result.IsIdentical).Take(250))
+            {
+                string state = item.TargetExists ? "DIFFERENT" : "MISSING";
+                lines.Add(string.Empty);
+                lines.Add("[" + state + "] " + item.PackageName + ".pck\\" + item.RelativePath);
+                lines.Add("Source: " + item.SourceLength.ToString("N0") + " bytes  " + ShortHash(item.SourceHash));
+                lines.Add(item.TargetExists
+                    ? "Client: " + item.TargetLength.ToString("N0") + " bytes  " + ShortHash(item.TargetHash)
+                    : "Client: file not found");
+            }
+
+            if (total - identical > 250)
+            {
+                lines.Add(string.Empty);
+                lines.Add("... " + (total - identical - 250).ToString("N0") + " additional difference(s).");
+            }
+
+            infoTextBox.Text = string.Join(Environment.NewLine, lines);
+            statusLabel.Text = "Comparison complete: " + different.ToString("N0") + " different, " + missing.ToString("N0") + " missing, " + identical.ToString("N0") + " identical.";
+        }
+
+        private static string ShortHash(string hash)
+        {
+            return string.IsNullOrWhiteSpace(hash) ? "-" : hash.Substring(0, Math.Min(12, hash.Length));
+        }
+
+        private async void ReplaceDifferentEntries()
+        {
+            List<PckComparisonResult> different = lastComparison
+                .Where(item => item != null && !item.IsIdentical)
+                .ToList();
+            if (different.Count == 0)
+            {
+                MessageBox.Show(this, "There are no compared differences to replace.", "PCK Explorer", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            string packages = string.Join(", ", different
+                .Select(item => NormalizePackageName(item.PackageName) + ".pck")
+                .Distinct(StringComparer.OrdinalIgnoreCase));
+            DialogResult confirmation = MessageBox.Show(
+                this,
+                "Replace " + different.Count.ToString("N0") + " different or missing file(s) in the current client?"
+                    + Environment.NewLine + Environment.NewLine
+                    + packages
+                    + Environment.NewLine + Environment.NewLine
+                    + "A backup of each changed package will be created automatically.",
+                "PCK Explorer - Replace Differences",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Warning);
+            if (confirmation != DialogResult.Yes)
+            {
+                return;
+            }
+
+            compareButton.Enabled = false;
+            replaceDifferentButton.Enabled = false;
+            importButton.Enabled = false;
+            Cursor previousCursor = Cursor.Current;
+            Cursor.Current = Cursors.WaitCursor;
+            statusLabel.Text = "Replacing different files...";
+            try
+            {
+                int copied = await Task.Run(() => ReplaceComparedAssets(different));
+                List<PckExplorerEntry> selectedEntries = entryListView.SelectedItems
+                    .Cast<ListViewItem>()
+                    .Select(item => item.Tag as PckExplorerEntry)
+                    .Where(entry => entry != null)
+                    .ToList();
+                List<PckComparisonResult> verified = await Task.Run(() => BuildClientComparison(selectedEntries));
+                lastComparison = verified ?? new List<PckComparisonResult>();
+                ShowComparisonResults(lastComparison);
+                int remaining = lastComparison.Count(item => !item.IsIdentical);
+                replaceDifferentButton.Enabled = remaining > 0;
+
+                string message = copied.ToString("N0") + " file(s) replaced and verified.";
+                if (remaining > 0)
+                {
+                    message += Environment.NewLine + remaining.ToString("N0") + " difference(s) remain; see the comparison details.";
+                }
+                MessageBox.Show(this, message, "PCK Explorer", MessageBoxButtons.OK, remaining == 0 ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
+            }
+            catch (Exception ex)
+            {
+                statusLabel.Text = "Replacement failed.";
+                MessageBox.Show(this, ex.Message, "PCK Explorer", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                Cursor.Current = previousCursor;
+                compareButton.Enabled = true;
+                importButton.Enabled = true;
+            }
+        }
+
+        private int ReplaceComparedAssets(IList<PckComparisonResult> different)
+        {
+            int totalCopied = 0;
+            foreach (IGrouping<string, PckComparisonResult> packageGroup in different
+                .Where(item => item != null && !item.IsIdentical)
+                .GroupBy(item => NormalizePackageName(item.PackageName), StringComparer.OrdinalIgnoreCase))
+            {
+                string packageName = packageGroup.Key;
+                if (string.IsNullOrWhiteSpace(packageName))
+                {
+                    continue;
+                }
+
+                string sourcePck;
+                string sourcePkx;
+                if (!TryGetSourcePackagePaths(packageName, out sourcePck, out sourcePkx))
+                {
+                    throw new InvalidOperationException("Source package was not found: " + packageName + ".pck");
+                }
+
+                string targetPck = Path.Combine(targetClientRootPath, "resources", packageName + ".pck");
+                if (!File.Exists(targetPck))
+                {
+                    throw new InvalidOperationException("Target package was not found: " + packageName + ".pck");
+                }
+
+                List<PckRawCopyImportItem> items = packageGroup
+                    .Select(item => new PckRawCopyImportItem
+                    {
+                        SourceRelativePath = NormalizePackageRelativePath(packageName, item.SourceRelativePath),
+                        TargetRelativePath = NormalizePackageRelativePath(packageName, item.RelativePath)
+                    })
+                    .GroupBy(item => item.TargetRelativePath, StringComparer.OrdinalIgnoreCase)
+                    .Select(group => group.First())
+                    .ToList();
+
+                int copied = 0;
+                string error = string.Empty;
+                bool imported;
+                lock (gameRootSwitchSync)
+                {
+                    string previousGameRoot = AssetManager.GameRootPath;
+                    try
+                    {
+                        AssetManager.GameRootPath = targetClientRootPath;
+                        imported = assetManager != null
+                            && assetManager.ImportPackageAssetsByRawCopy(packageName, sourcePck, sourcePkx, items, out copied, out error);
+                    }
+                    finally
+                    {
+                        AssetManager.GameRootPath = previousGameRoot;
+                    }
+                }
+
+                if (!imported)
+                {
+                    throw new InvalidOperationException(error ?? "The package could not be updated: " + packageName + ".pck");
+                }
+                totalCopied += copied;
+            }
+
+            return totalCopied;
+        }
+
         private void ImportSelectedEntries()
         {
             if (entryListView.SelectedItems.Count == 0)
@@ -1342,7 +1808,6 @@ namespace FWEledit
                 {
                     message += Environment.NewLine + "Import audit: " + auditLogPath;
                 }
-                targetEntryColorCache.Clear();
                 ReportImportProgress(progressWindow, "Refreshing list", "Restoring selection...", 0, 0, true);
                 RefreshEntries(selectedPathsToRestore, topPathToRestore);
                 statusLabel.Text = message.Replace(Environment.NewLine, " ");

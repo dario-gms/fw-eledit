@@ -4,6 +4,7 @@ using System.Drawing;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 
 namespace FWEledit
@@ -18,6 +19,7 @@ namespace FWEledit
         private readonly IconResolutionService iconResolutionService = new IconResolutionService();
         private readonly NpcGenMapNameResolverService mapNameResolverService = new NpcGenMapNameResolverService();
         private readonly NpcGenMapPreviewService mapPreviewService = new NpcGenMapPreviewService();
+        private readonly NpcGenGamePositionCaptureService gamePositionCaptureService = new NpcGenGamePositionCaptureService();
         private readonly GameFolderDialogService folderDialogService = new GameFolderDialogService();
         private readonly ISessionService sessionService;
         private NpcGenData currentData;
@@ -77,6 +79,8 @@ namespace FWEledit
         private NumericUpDown posX;
         private NumericUpDown posY;
         private NumericUpDown posZ;
+        private Button setCaptureRegionButton;
+        private Button capturePositionButton;
         private NumericUpDown dirX;
         private NumericUpDown dirY;
         private NumericUpDown dirZ;
@@ -249,7 +253,7 @@ namespace FWEledit
             right.RowCount = 3;
             right.RowStyles.Add(new RowStyle(SizeType.Absolute, 370));
             right.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-            right.RowStyles.Add(new RowStyle(SizeType.Absolute, 118));
+            right.RowStyles.Add(new RowStyle(SizeType.Absolute, 142));
             main.Controls.Add(right, 1, 0);
 
             TableLayoutPanel upper = new TableLayoutPanel();
@@ -299,11 +303,78 @@ namespace FWEledit
             vectorPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33.333F));
             vectorPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33.334F));
             right.Controls.Add(vectorPanel, 0, 2);
-            vectorPanel.Controls.Add(BuildVectorGroup("Position", out posX, out posY, out posZ), 0, 0);
+            vectorPanel.Controls.Add(BuildPositionGroup(), 0, 0);
             vectorPanel.Controls.Add(BuildVectorGroup("Direction", out dirX, out dirY, out dirZ), 1, 0);
             vectorPanel.Controls.Add(BuildVectorGroup("Spawn Area", out extX, out extY, out extZ), 2, 0);
 
             return page;
+        }
+
+        private GroupBox BuildPositionGroup()
+        {
+            GroupBox group = new GroupBox { Text = "Position", Dock = DockStyle.Fill };
+            TableLayoutPanel layout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Top,
+                ColumnCount = 2,
+                RowCount = 4,
+                Padding = new Padding(0, 4, 0, 0),
+                Height = 116
+            };
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 24));
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
+
+            TableLayoutPanel captureButtons = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, Margin = Padding.Empty };
+            captureButtons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+            captureButtons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+            setCaptureRegionButton = new Button { Text = "Set", Dock = DockStyle.Fill, Margin = new Padding(3, 0, 2, 3) };
+            capturePositionButton = new Button { Text = "Capture", Dock = DockStyle.Fill, Margin = new Padding(2, 0, 3, 3) };
+            setCaptureRegionButton.Click += setCaptureRegionButton_Click;
+            capturePositionButton.Click += capturePositionButton_Click;
+            captureButtons.Controls.Add(setCaptureRegionButton, 0, 0);
+            captureButtons.Controls.Add(capturePositionButton, 1, 0);
+            layout.Controls.Add(captureButtons, 0, 0);
+            layout.SetColumnSpan(captureButtons, 2);
+
+            posX = CreateFloatBox();
+            posY = CreateFloatBox();
+            posZ = CreateFloatBox();
+            AddLabeledControl(layout, "X:", posX, 1);
+            AddLabeledControl(layout, "Y:", posY, 2);
+            AddLabeledControl(layout, "Z:", posZ, 3);
+            WireAreaEditorEvents(layout);
+            group.Controls.Add(layout);
+            return group;
+        }
+
+        private void setCaptureRegionButton_Click(object sender, EventArgs e)
+        {
+            setCaptureRegionButton.Enabled = false;
+            statusLabel.Text = "Select the character coordinate area in Forsaken World...";
+            try
+            {
+                string error;
+                if (!gamePositionCaptureService.ConfigureCaptureRegion(Handle, out error))
+                {
+                    statusLabel.Text = string.IsNullOrWhiteSpace(error) ? "Coordinate area selection canceled." : error;
+                    if (!string.IsNullOrWhiteSpace(error))
+                    {
+                        MessageBox.Show(this, error, "Set Capture Area", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    }
+                    return;
+                }
+
+                setCaptureRegionButton.Text = "Set ✓";
+                statusLabel.Text = "Capture area set. Click Capture to read X, Y and Z.";
+            }
+            finally
+            {
+                setCaptureRegionButton.Enabled = true;
+            }
         }
 
         private GroupBox BuildVectorGroup(string title, out NumericUpDown x, out NumericUpDown y, out NumericUpDown z)
@@ -324,6 +395,60 @@ namespace FWEledit
             WireAreaEditorEvents(layout);
             group.Controls.Add(layout);
             return group;
+        }
+
+        private async void capturePositionButton_Click(object sender, EventArgs e)
+        {
+            if (GetSelectedArea() == null)
+            {
+                MessageBox.Show(this, "Select an NPC or monster group first.", "Capture Position", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            capturePositionButton.Enabled = false;
+            capturePositionButton.Text = "Capturing...";
+            statusLabel.Text = "Reading the character position from Forsaken World...";
+            try
+            {
+                NpcGenGamePositionCaptureResult result = await gamePositionCaptureService.CaptureAsync(Handle);
+                if (!result.Success)
+                {
+                    statusLabel.Text = result.Error;
+                    MessageBox.Show(this, result.Error, "Capture Position", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
+                bool previousSuppressChanges = suppressChanges;
+                suppressChanges = true;
+                try
+                {
+                    SetFloatBox(posX, result.Position.X);
+                    SetFloatBox(posY, result.Position.Y);
+                    SetFloatBox(posZ, result.Position.Z);
+                }
+                finally
+                {
+                    suppressChanges = previousSuppressChanges;
+                }
+
+                SaveSelectedArea();
+                statusLabel.Text = string.Format(
+                    CultureInfo.InvariantCulture,
+                    "Captured character position: {0:0.000}, {1:0.000}, {2:0.000}",
+                    result.Position.X,
+                    result.Position.Y,
+                    result.Position.Z);
+            }
+            catch (Exception ex)
+            {
+                statusLabel.Text = "Position capture failed.";
+                MessageBox.Show(this, ex.Message, "Capture Position", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                capturePositionButton.Text = "Capture";
+                capturePositionButton.Enabled = true;
+            }
         }
 
         private GroupBox BuildParametersGroup()

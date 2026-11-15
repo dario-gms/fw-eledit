@@ -19,6 +19,10 @@ namespace FWEledit
             {
                 return gridRowIndex;
             }
+            if (grid.VirtualMode)
+            {
+                return gridRowIndex;
+            }
 
             object rowTag = grid.Rows[gridRowIndex].Tag;
             if (rowTag is int)

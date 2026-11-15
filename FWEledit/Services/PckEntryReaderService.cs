@@ -80,6 +80,68 @@ namespace FWEledit
             }
         }
 
+        public static int ReleasePackageIndexesUnderDirectory(string directoryPath)
+        {
+            if (string.IsNullOrWhiteSpace(directoryPath))
+            {
+                return 0;
+            }
+
+            string root;
+            try
+            {
+                root = Path.GetFullPath(directoryPath)
+                    .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                    + Path.DirectorySeparatorChar;
+            }
+            catch
+            {
+                return 0;
+            }
+
+            List<PckPackageIndex> released = new List<PckPackageIndex>();
+            lock (packageCacheSync)
+            {
+                List<string> keys = packageCache
+                    .Where(pair => pair.Value != null && IsPathUnderDirectory(pair.Value.PckPath, root))
+                    .Select(pair => pair.Key)
+                    .ToList();
+                for (int i = 0; i < keys.Count; i++)
+                {
+                    PckPackageIndex index;
+                    if (packageCache.TryGetValue(keys[i], out index) && index != null)
+                    {
+                        released.Add(index);
+                    }
+                    packageCache.Remove(keys[i]);
+                }
+            }
+
+            for (int i = 0; i < released.Count; i++)
+            {
+                released[i].Dispose();
+            }
+            return released.Count;
+        }
+
+        private static bool IsPathUnderDirectory(string filePath, string normalizedRoot)
+        {
+            if (string.IsNullOrWhiteSpace(filePath) || string.IsNullOrWhiteSpace(normalizedRoot))
+            {
+                return false;
+            }
+
+            try
+            {
+                string fullPath = Path.GetFullPath(filePath);
+                return fullPath.StartsWith(normalizedRoot, StringComparison.OrdinalIgnoreCase);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         public bool TryWarmPackageIndex(string packageName, out string error)
         {
             error = string.Empty;
@@ -785,6 +847,8 @@ namespace FWEledit
             {
                 PckPackageIndex cachedFromDisk = new PckPackageIndex
                 {
+                    PckPath = pckPath,
+                    PkxPath = pkxPath,
                     Signature = signature,
                     PackageVersion = packageVersion,
                     Entries = decodedEntries,
@@ -821,6 +885,8 @@ namespace FWEledit
 
             PckPackageIndex built = new PckPackageIndex
             {
+                PckPath = pckPath,
+                PkxPath = pkxPath,
                 Signature = signature,
                 PackageVersion = packageVersion,
                 Entries = decodedEntries,
@@ -1891,6 +1957,8 @@ namespace FWEledit
 
         private sealed class PckPackageIndex : IDisposable
         {
+            public string PckPath { get; set; } = string.Empty;
+            public string PkxPath { get; set; } = string.Empty;
             public string Signature { get; set; } = string.Empty;
             public int PackageVersion { get; set; }
             public Dictionary<string, PckFileEntry> Entries { get; set; } = new Dictionary<string, PckFileEntry>(StringComparer.OrdinalIgnoreCase);
@@ -1907,6 +1975,11 @@ namespace FWEledit
                     ReadSession.Dispose();
                     ReadSession = null;
                 }
+                Entries.Clear();
+                OrderedEntries.Clear();
+                EntryPositions.Clear();
+                EntriesByExtension.Clear();
+                EntriesByFileName.Clear();
             }
         }
 

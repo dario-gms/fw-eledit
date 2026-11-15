@@ -101,9 +101,11 @@ namespace FWEledit
         private readonly Dictionary<string, List<ReferenceGridRowData>> referenceRowsCache = new Dictionary<string, List<ReferenceGridRowData>>();
         private string persistedReferenceCachePath = string.Empty;
         private string persistedReferenceCacheSignature = string.Empty;
+        private bool referenceIndexLoadedFromDisk;
         private string persistedItemReferenceOptionsCachePath = string.Empty;
         private System.Threading.Tasks.Task itemReferenceOptionsWarmupTask;
         private bool itemReferenceOptionsReady;
+        private bool itemReferenceOptionsLoadedFromDisk;
         private readonly HashSet<string> hydratedElementRowIconKeys = new HashSet<string>(StringComparer.Ordinal);
         private int lightweightListRenderIndex = -1;
         

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 
 namespace FWEledit
 {
@@ -46,7 +47,9 @@ namespace FWEledit
             lock (syncRoot)
             {
                 EnsureIndex(listCollection, referenceService);
-                return CloneIndex(referencesByTarget);
+                // The usage objects are immutable after an index build. A shallow snapshot
+                // avoids duplicating the entire (often very large) graph just to serialize it.
+                return new Dictionary<string, List<ReferenceUsage>>(referencesByTarget);
             }
         }
 
@@ -64,10 +67,11 @@ namespace FWEledit
 
                 if (cache != null)
                 {
-                    Dictionary<string, List<ReferenceUsage>> cloned = CloneIndex(cache);
-                    foreach (KeyValuePair<string, List<ReferenceUsage>> pair in cloned)
+                    // Deserialized cache data is already exclusively owned by this service.
+                    // Reusing the lists prevents a second full copy during application startup.
+                    foreach (KeyValuePair<string, List<ReferenceUsage>> pair in cache)
                     {
-                        referencesByTarget[pair.Key] = pair.Value;
+                        referencesByTarget[pair.Key] = pair.Value ?? new List<ReferenceUsage>();
                     }
                 }
 
@@ -190,14 +194,20 @@ namespace FWEledit
                 return;
             }
 
-            for (int sourceListIndex = 0; sourceListIndex < listCollection.Lists.Length; sourceListIndex++)
+            Dictionary<string, List<ReferenceUsage>>[] usagesBySourceList =
+                new Dictionary<string, List<ReferenceUsage>>[listCollection.Lists.Length];
+            Parallel.For(
+                0,
+                listCollection.Lists.Length,
+                CreateParallelOptions(),
+                sourceListIndex =>
             {
                 if (sourceListIndex == listCollection.ConversationListIndex
                     || listCollection.Lists[sourceListIndex] == null
                     || listCollection.Lists[sourceListIndex].elementFields == null
                     || listCollection.Lists[sourceListIndex].elementValues == null)
                 {
-                    continue;
+                    return;
                 }
 
                 int[] referenceFieldIndexes;
@@ -205,9 +215,11 @@ namespace FWEledit
                     || referenceFieldIndexes == null
                     || referenceFieldIndexes.Length == 0)
                 {
-                    continue;
+                    return;
                 }
 
+                Dictionary<string, List<ReferenceUsage>> localUsages =
+                    new Dictionary<string, List<ReferenceUsage>>();
                 string[] fields = listCollection.Lists[sourceListIndex].elementFields;
                 int elementCount = listCollection.Lists[sourceListIndex].elementValues.Length;
                 for (int sourceElementIndex = 0; sourceElementIndex < elementCount; sourceElementIndex++)
@@ -216,6 +228,7 @@ namespace FWEledit
                     {
                         int fieldIndex = referenceFieldIndexes[i];
                         AddUsageForField(
+                            localUsages,
                             listCollection,
                             referenceService,
                             sourceListIndex,
@@ -224,7 +237,97 @@ namespace FWEledit
                             fields[fieldIndex] ?? string.Empty);
                     }
                 }
+                usagesBySourceList[sourceListIndex] = localUsages;
+            });
+
+            // Merge in source-list order so callers continue to receive stable results.
+            for (int sourceListIndex = 0; sourceListIndex < usagesBySourceList.Length; sourceListIndex++)
+            {
+                Dictionary<string, List<ReferenceUsage>> localUsages = usagesBySourceList[sourceListIndex];
+                if (localUsages == null)
+                {
+                    continue;
+                }
+
+                foreach (KeyValuePair<string, List<ReferenceUsage>> pair in localUsages)
+                {
+                    List<ReferenceUsage> target;
+                    if (!referencesByTarget.TryGetValue(pair.Key, out target))
+                    {
+                        target = new List<ReferenceUsage>();
+                        referencesByTarget[pair.Key] = target;
+                    }
+                    target.AddRange(pair.Value);
+                }
             }
+        }
+
+        private static ParallelOptions CreateParallelOptions()
+        {
+            int logicalProcessorCount = Math.Max(1, Environment.ProcessorCount);
+            int workerCount = logicalProcessorCount > 1
+                ? logicalProcessorCount - 1
+                : 1;
+            return new ParallelOptions
+            {
+                MaxDegreeOfParallelism = workerCount
+            };
+        }
+
+        private void AddUsageForField(
+            Dictionary<string, List<ReferenceUsage>> destination,
+            eListCollection listCollection,
+            ItemReferenceService referenceService,
+            int sourceListIndex,
+            int sourceElementIndex,
+            int fieldIndex,
+            string fieldName)
+        {
+            int targetListIndex;
+            if (!referenceService.TryGetTargetListIndex(listCollection, sourceListIndex, sourceElementIndex, fieldName, out targetListIndex))
+            {
+                return;
+            }
+
+            int targetId;
+            if (!int.TryParse(listCollection.GetValue(sourceListIndex, sourceElementIndex, fieldIndex), out targetId) || targetId <= 0)
+            {
+                return;
+            }
+
+            ReferenceUsage usage = BuildUsage(listCollection, sourceListIndex, sourceElementIndex, fieldIndex, fieldName, targetId);
+            if (referenceService.IsItemListTargetIndex(targetListIndex))
+            {
+                AddUsage(destination, -1, targetId, usage);
+                List<int> listIndexes;
+                if (itemListIndexesById != null && itemListIndexesById.TryGetValue(targetId, out listIndexes))
+                {
+                    for (int i = 0; i < listIndexes.Count; i++)
+                    {
+                        AddUsage(destination, listIndexes[i], targetId, usage);
+                    }
+                }
+            }
+            else
+            {
+                AddUsage(destination, targetListIndex, targetId, usage);
+            }
+        }
+
+        private static void AddUsage(
+            Dictionary<string, List<ReferenceUsage>> destination,
+            int targetListIndex,
+            int targetId,
+            ReferenceUsage usage)
+        {
+            string key = BuildKey(targetListIndex, targetId);
+            List<ReferenceUsage> usages;
+            if (!destination.TryGetValue(key, out usages))
+            {
+                usages = new List<ReferenceUsage>();
+                destination[key] = usages;
+            }
+            usages.Add(usage);
         }
 
         private void AddUsagesForSourceElement(
@@ -291,14 +394,16 @@ namespace FWEledit
             ItemReferenceService referenceService)
         {
             Dictionary<int, List<int>> itemListIndexesById = new Dictionary<int, List<int>>();
-            for (int listIndex = 0; listIndex < listCollection.Lists.Length; listIndex++)
+            HashSet<int>[] idsByList = new HashSet<int>[listCollection.Lists.Length];
+            Parallel.For(0, listCollection.Lists.Length, CreateParallelOptions(), listIndex =>
             {
                 if (!referenceService.IsItemBearingList(listCollection, listIndex)
                     || listCollection.Lists[listIndex].elementValues == null)
                 {
-                    continue;
+                    return;
                 }
 
+                HashSet<int> ids = new HashSet<int>();
                 for (int elementIndex = 0; elementIndex < listCollection.Lists[listIndex].elementValues.Length; elementIndex++)
                 {
                     int candidateId;
@@ -306,18 +411,27 @@ namespace FWEledit
                     {
                         continue;
                     }
+                    ids.Add(candidateId);
+                }
+                idsByList[listIndex] = ids;
+            });
 
+            for (int listIndex = 0; listIndex < idsByList.Length; listIndex++)
+            {
+                HashSet<int> ids = idsByList[listIndex];
+                if (ids == null)
+                {
+                    continue;
+                }
+                foreach (int candidateId in ids)
+                {
                     List<int> listIndexes;
                     if (!itemListIndexesById.TryGetValue(candidateId, out listIndexes))
                     {
                         listIndexes = new List<int>();
                         itemListIndexesById[candidateId] = listIndexes;
                     }
-
-                    if (!listIndexes.Contains(listIndex))
-                    {
-                        listIndexes.Add(listIndex);
-                    }
+                    listIndexes.Add(listIndex);
                 }
             }
 

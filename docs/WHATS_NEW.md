@@ -2,6 +2,19 @@
 
 This file keeps the older release notes that used to live in the README. The README now shows only the newest release notes so it stays easier to scan.
 
+## What's New in v0.9.5.31
+
+- Fixed `Equipment Essence > Refine` references so `id_identify` selects the correct item instead of an identify attribute/config entry.
+- Prevented a staged item description from being applied to another item after the selection changes.
+- Made generated IDs globally unique across element lists for cloning, importing, and the **Set unique ID** action.
+- Fixed cross-list ID collisions that could break existing equipment addon packages or prevent cloned drop tables from working in game.
+- Virtualized the item reference picker so large lists and **All lists** open dramatically faster without limiting results.
+- Accelerated item search, filtering, scrolling, and keyboard navigation in the reference picker.
+- Removed duplicate initial picker loading and unnecessary UI work during list changes.
+- Updated project/app version metadata to `v0.9.5.31`.
+
+---
+
 ## What's New in v0.9.5.30
 
 - Added direct PCK file reads through persistent sessions, reducing temporary extraction and accelerating model changes.

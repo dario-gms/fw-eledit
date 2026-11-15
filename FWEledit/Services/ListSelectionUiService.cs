@@ -6,6 +6,11 @@ namespace FWEledit
 {
     public sealed class ListSelectionUiService
     {
+        private readonly Dictionary<DataGridView, List<object[]>> virtualRowsByGrid =
+            new Dictionary<DataGridView, List<object[]>>();
+        private readonly HashSet<DataGridView> configuredVirtualGrids =
+            new HashSet<DataGridView>();
+
         public void ApplySelection(
             ListSelectionWorkflowService workflowService,
             ListSelectionRequest request,
@@ -29,7 +34,7 @@ namespace FWEledit
             int currentItemId = GetCurrentItemId(elementGrid);
 
             elementGrid.SuspendLayout();
-            elementGrid.Rows.Clear();
+            ClearElementGrid(elementGrid);
             itemGrid.Rows.Clear();
 
             if (!selection.Success)
@@ -48,7 +53,11 @@ namespace FWEledit
             }
 
             List<object[]> rows = selection.Rows ?? new List<object[]>();
-            if (rows.Count > 0)
+            if (request.UseLightweightRows)
+            {
+                SetVirtualRows(elementGrid, rows);
+            }
+            else if (rows.Count > 0)
             {
                 DataGridViewRow[] dgRows = new DataGridViewRow[rows.Count];
                 for (int i = 0; i < rows.Count; i++)
@@ -56,7 +65,9 @@ namespace FWEledit
                     DataGridViewRow row = (DataGridViewRow)elementGrid.RowTemplate.Clone();
                     row.CreateCells(elementGrid, rows[i]);
                     row.Tag = i;
-                    if (listIndex != conversationListIndex && applyQualityColor != null)
+                    if (!request.UseLightweightRows
+                        && listIndex != conversationListIndex
+                        && applyQualityColor != null)
                     {
                         applyQualityColor(listIndex, i, row);
                     }
@@ -97,6 +108,88 @@ namespace FWEledit
             {
                 persistNavigation();
             }
+        }
+
+        private void ClearElementGrid(DataGridView grid)
+        {
+            if (grid == null)
+            {
+                return;
+            }
+
+            virtualRowsByGrid.Remove(grid);
+            if (grid.VirtualMode)
+            {
+                grid.RowCount = 0;
+                grid.VirtualMode = false;
+            }
+            grid.Rows.Clear();
+        }
+
+        private void SetVirtualRows(DataGridView grid, List<object[]> rows)
+        {
+            if (grid == null)
+            {
+                return;
+            }
+
+            EnsureVirtualGridHandlers(grid);
+            virtualRowsByGrid[grid] = rows ?? new List<object[]>();
+            grid.VirtualMode = true;
+            grid.RowCount = rows != null ? rows.Count : 0;
+        }
+
+        private void EnsureVirtualGridHandlers(DataGridView grid)
+        {
+            if (grid == null || configuredVirtualGrids.Contains(grid))
+            {
+                return;
+            }
+
+            grid.CellValueNeeded += VirtualGridCellValueNeeded;
+            grid.CellValuePushed += VirtualGridCellValuePushed;
+            grid.Disposed += delegate
+            {
+                virtualRowsByGrid.Remove(grid);
+                configuredVirtualGrids.Remove(grid);
+            };
+            configuredVirtualGrids.Add(grid);
+        }
+
+        private void VirtualGridCellValueNeeded(object sender, DataGridViewCellValueEventArgs e)
+        {
+            DataGridView grid = sender as DataGridView;
+            List<object[]> rows;
+            if (grid == null
+                || !virtualRowsByGrid.TryGetValue(grid, out rows)
+                || e.RowIndex < 0
+                || e.RowIndex >= rows.Count
+                || rows[e.RowIndex] == null
+                || e.ColumnIndex < 0
+                || e.ColumnIndex >= rows[e.RowIndex].Length)
+            {
+                return;
+            }
+
+            e.Value = rows[e.RowIndex][e.ColumnIndex];
+        }
+
+        private void VirtualGridCellValuePushed(object sender, DataGridViewCellValueEventArgs e)
+        {
+            DataGridView grid = sender as DataGridView;
+            List<object[]> rows;
+            if (grid == null
+                || !virtualRowsByGrid.TryGetValue(grid, out rows)
+                || e.RowIndex < 0
+                || e.RowIndex >= rows.Count
+                || rows[e.RowIndex] == null
+                || e.ColumnIndex < 0
+                || e.ColumnIndex >= rows[e.RowIndex].Length)
+            {
+                return;
+            }
+
+            rows[e.RowIndex][e.ColumnIndex] = e.Value;
         }
 
         private static int GetCurrentItemId(DataGridView elementGrid)

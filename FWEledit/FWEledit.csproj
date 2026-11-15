@@ -22,7 +22,7 @@
     <UpdateRequired>false</UpdateRequired>
     <MapFileExtensions>true</MapFileExtensions>
     <ApplicationRevision>0</ApplicationRevision>
-    <ApplicationVersion>0.9.5.31</ApplicationVersion>
+    <ApplicationVersion>0.9.5.32</ApplicationVersion>
     <IsWebBootstrapper>false</IsWebBootstrapper>
     <UseApplicationTrust>false</UseApplicationTrust>
     <BootstrapperEnabled>true</BootstrapperEnabled>
@@ -118,6 +118,15 @@
     <Reference Include="System.Management" />
     <Reference Include="System.Numerics" />
     <Reference Include="System.Runtime.Serialization" />
+    <Reference Include="System.Runtime.WindowsRuntime">
+      <HintPath>$(MSBuildProgramFiles32)\Reference Assemblies\Microsoft\Framework\.NETCore\v4.5\System.Runtime.WindowsRuntime.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Windows">
+      <HintPath>$(MSBuildProgramFiles32)\Windows Kits\10\UnionMetadata\10.0.19041.0\Windows.winmd</HintPath>
+      <IsWinMDFile>true</IsWinMDFile>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="System.Xml.Linq" />
     <Reference Include="System.Data.DataSetExtensions" />
     <Reference Include="Microsoft.CSharp" />
@@ -870,6 +879,7 @@
     <Compile Include="Services\ItemTransferPackageService.cs" />
     <Compile Include="Services\NpcGenEntityLookupService.cs" />
     <Compile Include="Services\NpcGenFileService.cs" />
+    <Compile Include="Services\NpcGenGamePositionCaptureService.cs" />
     <Compile Include="Services\NpcGenMapNameResolverService.cs" />
     <Compile Include="Services\NpcGenMapPreviewService.cs" />
     <Compile Include="Services\NpcGenScriptReferenceService.cs" />
@@ -1079,6 +1089,9 @@
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="Views\NpcGenEditorWindow.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Views\GameCaptureRegionOverlay.cs">
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="Views\NpcGenMapPreviewWindow.cs">

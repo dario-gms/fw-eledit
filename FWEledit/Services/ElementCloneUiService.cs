@@ -144,12 +144,13 @@ namespace FWEledit
             for (int rowIndex = 0; rowIndex < elementGrid.Rows.Count; rowIndex++)
             {
                 DataGridViewRow row = elementGrid.Rows[rowIndex];
-                if (!(row.Tag is int))
+                int elementIndex = row.Tag is int
+                    ? (int)row.Tag
+                    : elementGrid.VirtualMode ? rowIndex : -1;
+                if (elementIndex < 0)
                 {
                     continue;
                 }
-
-                int elementIndex = (int)row.Tag;
                 if (!pendingElementIndices.Contains(elementIndex))
                 {
                     continue;

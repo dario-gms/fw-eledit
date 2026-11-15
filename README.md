@@ -12,16 +12,15 @@ FWEledit is based on [sELedit++ by Wrechid](https://github.com/Wrechid/sELedit-)
 
 ---
 
-## What's New in v0.9.5.31
+## What's New in v0.9.5.32
 
-- Fixed `Equipment Essence > Refine` references so `id_identify` selects the correct item instead of an identify attribute/config entry.
-- Prevented a staged item description from being applied to another item after the selection changes.
-- Made generated IDs globally unique across element lists for cloning, importing, and the **Set unique ID** action.
-- Fixed cross-list ID collisions that could break existing equipment addon packages or prevent cloned drop tables from working in game.
-- Virtualized the item reference picker so large lists and **All lists** open dramatically faster without limiting results.
-- Accelerated item search, filtering, scrolling, and keyboard navigation in the reference picker.
-- Removed duplicate initial picker loading and unnecessary UI work during list changes.
-- Updated project/app version metadata to `v0.9.5.31`.
+- Added automatic in-game character coordinate capture to the NPCGen editor, with visual capture-region selection and direct X/Y/Z filling.
+- Added PCK Explorer comparison for models and their dependencies, including detection and replacement of different or missing client files.
+- Fixed and optimized PCK loading, validation, package-index lifetime, and memory release.
+- Significantly improved responsiveness with adaptive multithreading, streamlined reference caches, direct ID lookup, and virtualization of large lists.
+- Fixed compatibility issues involving cloning, item selection, index resolution, and references in virtualized lists.
+- Fixed wing previews so they start in the open rest pose while preserving Play/Pause animations in OpenGL, DirectX 11, and software rendering.
+- Updated project/app version metadata to `v0.9.5.32`.
 
 Previous release notes were moved to [docs/WHATS_NEW.md](docs/WHATS_NEW.md).
 
@@ -68,7 +67,7 @@ Previous release notes were moved to [docs/WHATS_NEW.md](docs/WHATS_NEW.md).
 **Resource integration**
 - Game-folder workflow — point to your game root and the editor locates `elements.data` and all resources automatically
 - PCK package support — reads model, icon, description, script, and asset data from `.pck` packages without requiring manually extracted resource folders
-- Built-in PCK Explorer / Importer with live 3D preview, dependency discovery, cross-package imports, progress feedback, and audit logs
+- Built-in PCK Explorer / Importer with live 3D preview, dependency discovery, cross-package imports, client comparison/replacement, progress feedback, and audit logs
 - Automatic per-client workspace/cache hydration for package-backed resources such as `configs.pck` and `surfaces.pck`
 - `path.data` integration for deterministic icon and model path resolution
 
@@ -213,7 +212,7 @@ FWEledit hydrates package-backed data into a per-client workspace/cache under `%
 
 Model, icon, description, script, and asset lists are read from PCK package data instead of depending on manually extracted folders.
 
-The **PCK Explorer / Importer** can open an external package, preview supported 3D assets, filter by file type, and import selected entries into the current client. Imports resolve associated dependencies across packages where possible and finish with an audit summary showing which packages and file types were updated.
+The **PCK Explorer / Importer** can open an external package, preview supported 3D assets, filter by file type, and import selected entries into the current client. It can also compare selected models and their dependencies against the current client, then replace different or missing files with automatic package backups. Imports resolve associated dependencies across packages where possible and finish with an audit summary showing which packages and file types were updated.
 
 **On Save**, the editor:
 1. Writes `elements.data` atomically (central temp → backup → replace).
@@ -319,9 +318,9 @@ A failure at any step does not corrupt the original file.
 | **Tools > EL Version** | Displays the detected `elements.data` version and structure summary. |
 | **Tools > GShop Editor** | Opens the integrated `gshop.data` editor. |
 | **Tools > Import Item Package** | Imports `.fweitem` packages into the current client, including related resource dependencies where available. |
-| **Tools > NPCGen Editor** | Opens the integrated `npcgen.data` editor. |
+| **Tools > NPCGen Editor** | Opens the integrated `npcgen.data` editor, including visual in-game coordinate capture for NPC and monster placement. |
 | **Tools > Advanced Title Editor** | Edits `title_def_u.lua` from `script.pck`, including graphic title and chat display controls. |
-| **Tools > PCK Explorer / Importer** | Browses external PCK files, previews supported models/effects, and imports selected entries plus resolved dependencies into the current client. |
+| **Tools > PCK Explorer / Importer** | Browses external PCK files, previews supported models/effects, compares/replaces client assets, and imports selected entries plus resolved dependencies. |
 | **Tools > Open Empty Instance** | Opens a second editor instance without loading the current folder. |
 | **Tools > Create List with Counts** | Generates a list summary with entry counts. |
 | **Search xrefs to Item** | (right-click on item) Finds all entries across all lists that reference the selected item's ID. |
